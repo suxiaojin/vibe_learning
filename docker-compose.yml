@@ -1,0 +1,15 @@
+services:
+  web:
+    build: .
+    container_name: vibelearning-web
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - 3000:3000
+    command:
+      - sh
+      - -c
+      - npx prisma migrate deploy && npx prisma db seed && npm run start

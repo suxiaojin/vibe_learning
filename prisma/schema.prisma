@@ -1,0 +1,201 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  student
+  admin
+}
+
+enum ContentStatus {
+  draft
+  published
+  archived
+}
+
+enum QuestionType {
+  single_choice
+  multiple_choice
+  true_false
+}
+
+enum Difficulty {
+  easy
+  medium
+  hard
+}
+
+enum ProgressStatus {
+  locked
+  unlocked
+  passed
+}
+
+enum WrongQuestionStatus {
+  active
+  mastered
+}
+
+model User {
+  id              String             @id @default(cuid())
+  username        String             @unique
+  passwordHash    String
+  role            UserRole           @default(student)
+  createdAt       DateTime           @default(now())
+  lastLoginAt     DateTime?
+  progress        UserProgress[]
+  attempts        QuestionAttempt[]
+  wrongQuestions  WrongQuestion[]
+  aiConversations AiConversation[]
+  studyStats      StudyStat[]
+
+  @@map("users")
+}
+
+model Subject {
+  id        String        @id @default(cuid())
+  province  String
+  examType  String
+  name      String
+  status    ContentStatus @default(published)
+  chapters  Chapter[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@unique([province, examType, name])
+  @@map("subjects")
+}
+
+model Chapter {
+  id        String          @id @default(cuid())
+  subjectId String
+  subject   Subject         @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  title     String
+  sortOrder Int             @default(0)
+  status    ContentStatus   @default(draft)
+  points    KnowledgePoint[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([subjectId, sortOrder])
+  @@map("chapters")
+}
+
+model KnowledgePoint {
+  id               String          @id @default(cuid())
+  chapterId        String
+  chapter          Chapter         @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  title            String
+  summary          String
+  content          String
+  sortOrder        Int             @default(0)
+  estimatedMinutes Int             @default(8)
+  status           ContentStatus   @default(draft)
+  questions        Question[]
+  progress         UserProgress[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([chapterId, sortOrder])
+  @@map("knowledge_points")
+}
+
+model Question {
+  id               String            @id @default(cuid())
+  knowledgePointId String
+  knowledgePoint   KnowledgePoint    @relation(fields: [knowledgePointId], references: [id], onDelete: Cascade)
+  type             QuestionType
+  stem             String
+  options          Json
+  answer           Json
+  analysis         String
+  source           String            @default("人工录入")
+  difficulty       Difficulty        @default(medium)
+  status           ContentStatus     @default(draft)
+  attempts         QuestionAttempt[]
+  wrongQuestions   WrongQuestion[]
+  aiConversations  AiConversation[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([knowledgePointId, status])
+  @@map("questions")
+}
+
+model UserProgress {
+  id               String         @id @default(cuid())
+  userId           String
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  knowledgePointId String
+  knowledgePoint   KnowledgePoint @relation(fields: [knowledgePointId], references: [id], onDelete: Cascade)
+  status           ProgressStatus @default(locked)
+  bestScore        Int            @default(0)
+  passedAt         DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([userId, knowledgePointId])
+  @@map("user_progress")
+}
+
+model QuestionAttempt {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questionId     String
+  question       Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  selectedAnswer Json
+  isCorrect      Boolean
+  createdAt      DateTime @default(now())
+
+  @@index([userId, questionId])
+  @@map("question_attempts")
+}
+
+model WrongQuestion {
+  id          String              @id @default(cuid())
+  userId      String
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questionId  String
+  question    Question            @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  status      WrongQuestionStatus @default(active)
+  wrongCount  Int                 @default(1)
+  lastWrongAt DateTime            @default(now())
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@unique([userId, questionId])
+  @@map("wrong_questions")
+}
+
+model AiConversation {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  messages   Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId, questionId])
+  @@map("ai_conversations")
+}
+
+model StudyStat {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date              DateTime @db.Date
+  studySeconds      Int      @default(0)
+  questionsAnswered Int      @default(0)
+  pointsPassed      Int      @default(0)
+
+  @@unique([userId, date])
+  @@map("study_stats")
+}

@@ -1,0 +1,97 @@
+import { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+
+export function normalizeAnswer(value: unknown) {
+  const array = Array.isArray(value) ? value : [value];
+  return array
+    .map((item) => String(item).trim())
+    .filter(Boolean)
+    .sort();
+}
+
+export function answersEqual(left: unknown, right: unknown) {
+  return JSON.stringify(normalizeAnswer(left)) === JSON.stringify(normalizeAnswer(right));
+}
+
+export async function ensureInitialProgress(userId: string) {
+  const points = await prisma.knowledgePoint.findMany({
+    where: { status: "published", chapter: { status: "published", subject: { status: "published" } } },
+    orderBy: [{ chapter: { sortOrder: "asc" } }, { sortOrder: "asc" }],
+    select: { id: true }
+  });
+
+  if (points.length === 0) {
+    return;
+  }
+
+  const existing = await prisma.userProgress.findMany({
+    where: { userId },
+    select: { knowledgePointId: true }
+  });
+  const existingIds = new Set(existing.map((item) => item.knowledgePointId));
+
+  for (const [index, point] of points.entries()) {
+    if (!existingIds.has(point.id)) {
+      await prisma.userProgress.create({
+        data: {
+          userId,
+          knowledgePointId: point.id,
+          status: index === 0 ? "unlocked" : "locked"
+        }
+      });
+    }
+  }
+}
+
+export async function unlockNextPoint(userId: string, currentPointId: string) {
+  const points = await prisma.knowledgePoint.findMany({
+    where: { status: "published", chapter: { status: "published", subject: { status: "published" } } },
+    orderBy: [{ chapter: { sortOrder: "asc" } }, { sortOrder: "asc" }],
+    select: { id: true }
+  });
+  const currentIndex = points.findIndex((point) => point.id === currentPointId);
+  const next = currentIndex >= 0 ? points[currentIndex + 1] : null;
+
+  if (next) {
+    await prisma.userProgress.upsert({
+      where: { userId_knowledgePointId: { userId, knowledgePointId: next.id } },
+      update: { status: "unlocked" },
+      create: { userId, knowledgePointId: next.id, status: "unlocked" }
+    });
+  }
+}
+
+export async function bumpStudyStat(
+  userId: string,
+  data: { questionsAnswered?: number; pointsPassed?: number; studySeconds?: number }
+) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  await prisma.studyStat.upsert({
+    where: { userId_date: { userId, date: today } },
+    update: {
+      questionsAnswered: { increment: data.questionsAnswered ?? 0 },
+      pointsPassed: { increment: data.pointsPassed ?? 0 },
+      studySeconds: { increment: data.studySeconds ?? 0 }
+    },
+    create: {
+      userId,
+      date: today,
+      questionsAnswered: data.questionsAnswered ?? 0,
+      pointsPassed: data.pointsPassed ?? 0,
+      studySeconds: data.studySeconds ?? 0
+    }
+  });
+}
+
+export function parseJsonField(value: FormDataEntryValue | null, fallback: Prisma.InputJsonValue) {
+  if (!value || typeof value !== "string") {
+    return fallback;
+  }
+  try {
+    return JSON.parse(value) as Prisma.InputJsonValue;
+  } catch {
+    return fallback;
+  }
+}
