@@ -1,122 +1,12 @@
 import { ContentStatus, QuestionType, type Prisma } from "@prisma/client";
 import Link from "next/link";
 import { createQuestion, updateQuestion, updateQuestionStatus } from "@/app/admin/actions";
+import { AdminQuestionFields } from "@/components/admin-question-fields";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-const optionKeys = ["A", "B", "C", "D"] as const;
 const contentStatuses = new Set<string>(Object.values(ContentStatus));
 const questionTypes = new Set<string>(Object.values(QuestionType));
-
-type OptionValue = {
-  key: string;
-  text: string;
-};
-
-function optionText(options: Prisma.JsonValue, key: string) {
-  if (!Array.isArray(options)) {
-    return "";
-  }
-  const option = options.find((item) => {
-    if (typeof item !== "object" || item === null || !("key" in item)) {
-      return false;
-    }
-    return String((item as { key?: unknown }).key) === key;
-  }) as OptionValue | undefined;
-  return option?.text || "";
-}
-
-function answerHas(answer: Prisma.JsonValue, key: string) {
-  return Array.isArray(answer) && answer.map(String).includes(key);
-}
-
-function QuestionFields({
-  defaultType = "single_choice",
-  defaultDifficulty = "medium",
-  defaultStatus = "draft",
-  defaultSource = "人工录入",
-  defaultStem = "",
-  defaultAnalysis = "",
-  options,
-  answer
-}: {
-  defaultType?: string;
-  defaultDifficulty?: string;
-  defaultStatus?: string;
-  defaultSource?: string;
-  defaultStem?: string;
-  defaultAnalysis?: string;
-  options?: Prisma.JsonValue;
-  answer?: Prisma.JsonValue;
-}) {
-  return (
-    <>
-      <div className="mt-4 grid grid-cols-2 gap-3">
-        <div>
-          <label className="label">题型</label>
-          <select className="input" name="type" defaultValue={defaultType}>
-            <option value="single_choice">单选</option>
-            <option value="multiple_choice">多选</option>
-            <option value="true_false">判断</option>
-          </select>
-        </div>
-        <div>
-          <label className="label">难度</label>
-          <select className="input" name="difficulty" defaultValue={defaultDifficulty}>
-            <option value="easy">简单</option>
-            <option value="medium">中等</option>
-            <option value="hard">困难</option>
-          </select>
-        </div>
-      </div>
-
-      <label className="label mt-4">题干</label>
-      <textarea className="input min-h-24" name="stem" defaultValue={defaultStem} required />
-
-      <div className="mt-4 rounded-2xl bg-mist p-4">
-        <div className="flex items-center justify-between gap-3">
-          <label className="text-sm font-semibold text-slate-700">选项与答案</label>
-          <p className="text-xs text-slate-500">单选/判断只勾一个，多选可勾多个</p>
-        </div>
-        <div className="mt-3 grid gap-3">
-          {optionKeys.map((key) => (
-            <div key={key} className="grid grid-cols-[48px_1fr_72px] items-center gap-2">
-              <span className="font-semibold text-slate-700">{key}</span>
-              <input
-                className="input"
-                name={`option${key}`}
-                placeholder={key === "A" && defaultType === "true_false" ? "正确" : key === "B" && defaultType === "true_false" ? "错误" : `选项 ${key}`}
-                defaultValue={options ? optionText(options, key) : key === "A" && defaultType === "true_false" ? "正确" : key === "B" && defaultType === "true_false" ? "错误" : ""}
-              />
-              <label className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-sm">
-                <input name="answer" type="checkbox" value={key} defaultChecked={answer ? answerHas(answer, key) : key === "A"} />
-                答案
-              </label>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <label className="label mt-4">解析</label>
-      <textarea className="input min-h-24" name="analysis" defaultValue={defaultAnalysis} required />
-
-      <div className="mt-4 grid grid-cols-2 gap-3">
-        <div>
-          <label className="label">来源</label>
-          <input className="input" name="source" defaultValue={defaultSource} />
-        </div>
-        <div>
-          <label className="label">状态</label>
-          <select className="input" name="status" defaultValue={defaultStatus}>
-            <option value="draft">待审核</option>
-            <option value="published">发布</option>
-            <option value="archived">下架</option>
-          </select>
-        </div>
-      </div>
-    </>
-  );
-}
 
 export default async function QuestionsPage({
   searchParams
@@ -155,12 +45,12 @@ export default async function QuestionsPage({
       <form action={createQuestion} className="panel h-fit">
         <h1 className="text-xl font-bold">新增题目</h1>
         <label className="label mt-5">所属知识点</label>
-        <select className="input" name="knowledgePointId" required>
+        <select className="input" name="knowledgePointId" defaultValue={selectedPointId} required>
           {points.map((point) => (
             <option key={point.id} value={point.id}>{point.chapter.title} / {point.title}</option>
           ))}
         </select>
-        <QuestionFields />
+        <AdminQuestionFields />
         <button className="primary-button mt-5 w-full" type="submit">保存题目</button>
       </form>
 
@@ -241,7 +131,7 @@ export default async function QuestionsPage({
                       <option key={point.id} value={point.id}>{point.chapter.title} / {point.title}</option>
                     ))}
                   </select>
-                  <QuestionFields
+                  <AdminQuestionFields
                     defaultType={question.type}
                     defaultDifficulty={question.difficulty}
                     defaultStatus={question.status}

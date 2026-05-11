@@ -130,9 +130,10 @@ export async function updateKnowledgePoint(formData: FormData) {
 export async function createQuestion(formData: FormData) {
   await requireAdmin();
   const type = getQuestionType(formData);
+  const knowledgePointId = String(formData.get("knowledgePointId"));
   await prisma.question.create({
     data: {
-      knowledgePointId: String(formData.get("knowledgePointId")),
+      knowledgePointId,
       type,
       stem: String(formData.get("stem") || "").trim(),
       options: buildQuestionOptions(formData),
@@ -144,7 +145,7 @@ export async function createQuestion(formData: FormData) {
     }
   });
   revalidatePath("/admin/questions");
-  redirect("/admin/questions");
+  redirect(`/admin/questions?knowledgePointId=${encodeURIComponent(knowledgePointId)}`);
 }
 
 export async function updateQuestion(formData: FormData) {
