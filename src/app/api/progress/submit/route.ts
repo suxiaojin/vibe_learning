@@ -10,12 +10,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
+  const submittedAt = new Date();
   const questions = await prisma.question.findMany({
     where: { knowledgePointId: body.pointId, status: "published" },
     select: { id: true, answer: true }
   });
 
   let correct = 0;
+  const wrongAttemptIds: string[] = [];
   for (const question of questions) {
     const selected = body.answers[question.id] || [];
     const isCorrect = answersEqual(selected, question.answer);
@@ -23,7 +25,7 @@ export async function POST(request: Request) {
       correct += 1;
     }
 
-    await prisma.questionAttempt.create({
+    const attempt = await prisma.questionAttempt.create({
       data: {
         userId: user.id,
         questionId: question.id,
@@ -33,6 +35,7 @@ export async function POST(request: Request) {
     });
 
     if (!isCorrect) {
+      wrongAttemptIds.push(attempt.id);
       await prisma.wrongQuestion.upsert({
         where: { userId_questionId: { userId: user.id, questionId: question.id } },
         update: { wrongCount: { increment: 1 }, lastWrongAt: new Date(), status: "active" },
@@ -74,5 +77,6 @@ export async function POST(request: Request) {
     studySeconds: 60
   });
 
-  return NextResponse.json({ score, passed, correct, total });
+  const resultPath = `/learn/${body.pointId}/result?attemptIds=${wrongAttemptIds.join(",")}&score=${score}&correct=${correct}&total=${total}&submittedAt=${encodeURIComponent(submittedAt.toISOString())}`;
+  return NextResponse.json({ score, passed, correct, total, wrongAttemptIds, resultPath });
 }

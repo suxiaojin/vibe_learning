@@ -69,6 +69,20 @@ export async function updateChapterStatus(formData: FormData) {
   revalidatePath("/admin/chapters");
 }
 
+export async function updateChapter(formData: FormData) {
+  await requireAdmin();
+  await prisma.chapter.update({
+    where: { id: String(formData.get("id")) },
+    data: {
+      title: String(formData.get("title") || "").trim(),
+      sortOrder: Number(formData.get("sortOrder") || 0),
+      status: getStatus(formData)
+    }
+  });
+  revalidatePath("/admin/chapters");
+  redirect("/admin/chapters");
+}
+
 export async function createKnowledgePoint(formData: FormData) {
   await requireAdmin();
   await prisma.knowledgePoint.create({
@@ -93,6 +107,24 @@ export async function updateKnowledgePointStatus(formData: FormData) {
     data: { status: getStatus(formData) }
   });
   revalidatePath("/admin/knowledge-points");
+}
+
+export async function updateKnowledgePoint(formData: FormData) {
+  await requireAdmin();
+  await prisma.knowledgePoint.update({
+    where: { id: String(formData.get("id")) },
+    data: {
+      chapterId: String(formData.get("chapterId")),
+      title: String(formData.get("title") || "").trim(),
+      summary: String(formData.get("summary") || "").trim(),
+      content: String(formData.get("content") || "").trim(),
+      sortOrder: Number(formData.get("sortOrder") || 0),
+      estimatedMinutes: Number(formData.get("estimatedMinutes") || 8),
+      status: getStatus(formData)
+    }
+  });
+  revalidatePath("/admin/knowledge-points");
+  redirect("/admin/knowledge-points");
 }
 
 export async function createQuestion(formData: FormData) {
