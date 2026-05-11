@@ -43,6 +43,49 @@ export async function ensureInitialProgress(userId: string) {
   }
 }
 
+export async function repairUnlockedProgress(userId: string) {
+  const points = await prisma.knowledgePoint.findMany({
+    where: { status: "published", chapter: { status: "published", subject: { status: "published" } } },
+    orderBy: [{ chapter: { sortOrder: "asc" } }, { sortOrder: "asc" }],
+    select: { id: true }
+  });
+
+  if (points.length === 0) {
+    return;
+  }
+
+  const progress = await prisma.userProgress.findMany({
+    where: { userId, knowledgePointId: { in: points.map((point) => point.id) } },
+    select: { knowledgePointId: true, status: true }
+  });
+  const statusByPointId = new Map(progress.map((item) => [item.knowledgePointId, item.status]));
+  const idsToUnlock = new Set<string>();
+
+  if (statusByPointId.get(points[0].id) !== "passed") {
+    idsToUnlock.add(points[0].id);
+  }
+
+  for (const [index, point] of points.entries()) {
+    if (statusByPointId.get(point.id) !== "passed") {
+      continue;
+    }
+    const next = points[index + 1];
+    if (next && statusByPointId.get(next.id) !== "passed") {
+      idsToUnlock.add(next.id);
+    }
+  }
+
+  await Promise.all(
+    Array.from(idsToUnlock).map((knowledgePointId) =>
+      prisma.userProgress.upsert({
+        where: { userId_knowledgePointId: { userId, knowledgePointId } },
+        update: { status: "unlocked" },
+        create: { userId, knowledgePointId, status: "unlocked" }
+      })
+    )
+  );
+}
+
 export async function unlockNextPoint(userId: string, currentPointId: string) {
   const points = await prisma.knowledgePoint.findMany({
     where: { status: "published", chapter: { status: "published", subject: { status: "published" } } },

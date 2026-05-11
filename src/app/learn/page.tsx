@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { Lock, Sparkles, Trophy } from "lucide-react";
 import { requireUser } from "@/lib/auth";
-import { ensureInitialProgress } from "@/lib/learning";
+import { ensureInitialProgress, repairUnlockedProgress } from "@/lib/learning";
 import { prisma } from "@/lib/prisma";
 import { cn } from "@/lib/utils";
 
 export default async function LearnPage() {
   const user = await requireUser();
   await ensureInitialProgress(user.id);
+  await repairUnlockedProgress(user.id);
 
   const points = await prisma.knowledgePoint.findMany({
     where: { status: "published", chapter: { status: "published" } },
