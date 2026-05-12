@@ -18,8 +18,6 @@ const text = {
   pieces: "\u4e2a\u8282",
   progress: "\u5b66\u4e60\u8fdb\u5ea6",
   empty: "\u5f53\u524d\u6ca1\u6709\u5df2\u53d1\u5e03\u7684\u7ae0\u8282\u3002",
-  currentSpeech: "\u7ee7\u7eed\u5b66\u5b8c\u8fd9\u4e00\u7ae0\u5427\u3002",
-  lockedSpeech: "\u5b8c\u6210\u524d\u9762\u7684\u7ae0\u540e\u89e3\u9501\u3002"
 };
 
 async function getChapters(userId: string) {
@@ -75,7 +73,7 @@ export default async function StagesPage() {
 
               return (
                 <section key={chapter.id} className={`overflow-hidden rounded-2xl border border-slate-200 ${current ? "bg-sky-100" : completed ? "bg-white" : "bg-slate-50"}`}>
-                  <div className="grid gap-4 p-5 md:grid-cols-[1fr_240px]">
+                  <div className="p-5">
                     <div>
                       <h2 className="text-2xl font-black text-ink">{text.part} {chapter.sortOrder} {text.section} <span className="ml-3">{chapter.title}</span></h2>
                       <div className="mt-5 flex items-center gap-3">
@@ -96,12 +94,6 @@ export default async function StagesPage() {
                         ) : (
                           <button className="secondary-button w-64 text-sky-500" type="button" disabled>{text.part} {chapter.sortOrder} {text.section}</button>
                         )}
-                      </div>
-                    </div>
-
-                    <div className="hidden min-h-40 items-center justify-center md:flex">
-                      <div className="rounded-2xl bg-white p-5 text-base font-semibold leading-7 text-slate-700 shadow-sm">
-                        {current ? text.currentSpeech : locked ? text.lockedSpeech : chapter.title}
                       </div>
                     </div>
                   </div>

@@ -25,6 +25,9 @@ const text = {
   empty: "\u8fd9\u4e2a\u77e5\u8bc6\u70b9\u8fd8\u6ca1\u6709\u53d1\u5e03\u9898\u76ee\uff0c\u8bf7\u5148\u5728\u540e\u53f0\u5f55\u5165\u9898\u76ee\u3002",
   exit: "\u9000\u51fa\u7ec3\u4e60",
   question: "\u9898",
+  singleChoice: "\u5355\u9009",
+  multipleChoice: "\u591a\u9009",
+  trueFalse: "\u5224\u65ad",
   skip: "\u8df3\u8fc7",
   check: "\u68c0\u67e5",
   done: "\u5b8c\u6210",
@@ -80,6 +83,7 @@ export function QuizRunner({ pointId, questions }: { pointId: string; questions:
   const isLast = currentIndex === questions.length - 1;
 
   const options = useMemo(() => coerceOptions(current?.options), [current]);
+  const questionTypeLabel = current ? questionTypeText(current.type) : "";
 
   function toggleAnswer(question: Question, key: string) {
     if (checkState !== "idle") {
@@ -163,7 +167,7 @@ export function QuizRunner({ pointId, questions }: { pointId: string; questions:
 
       <article className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center overflow-y-auto px-5 py-5">
         <p className="text-sm font-black text-[#b76cff]">
-          {text.question} {currentIndex + 1} / {questions.length} · {current.source}
+          {text.question} {currentIndex + 1} / {questions.length} · {questionTypeLabel}
         </p>
         <h3 className="mt-3 text-2xl font-black leading-snug text-ink">{current.stem}</h3>
 
@@ -239,4 +243,14 @@ export function QuizRunner({ pointId, questions }: { pointId: string; questions:
       </div>
     </section>
   );
+}
+
+function questionTypeText(type: Question["type"]) {
+  if (type === "multiple_choice") {
+    return text.multipleChoice;
+  }
+  if (type === "true_false") {
+    return text.trueFalse;
+  }
+  return text.singleChoice;
 }
