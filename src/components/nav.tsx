@@ -1,9 +1,13 @@
 import Link from "next/link";
-import { BookOpenCheck, LayoutDashboard, LogOut, UserRound } from "lucide-react";
+import { BookOpenCheck, LayoutDashboard, LogOut } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 
 export async function Nav() {
   const user = await getCurrentUser();
+
+  if (user?.role === "student") {
+    return null;
+  }
 
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
@@ -20,15 +24,6 @@ export async function Nav() {
               <LayoutDashboard size={16} />
               后台
             </Link>
-          ) : user ? (
-            <>
-              <Link className="nav-link" href="/learn">闯关</Link>
-              <Link className="nav-link" href="/wrong-book">错题</Link>
-              <Link className="nav-link" href="/me">
-                <UserRound size={16} />
-                我的
-              </Link>
-            </>
           ) : null}
           {user ? (
             <form action="/api/auth/logout" method="post">
