@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { QuizRunner } from "@/components/quiz-runner";
 import { requireUser } from "@/lib/auth";
+import { canAccessKnowledgePoint } from "@/lib/learning";
 import { prisma } from "@/lib/prisma";
 
 export default async function PointPage({
@@ -10,6 +11,11 @@ export default async function PointPage({
 }) {
   const { id } = await params;
   const user = await requireUser();
+  const canAccess = await canAccessKnowledgePoint(user.id, id);
+  if (!canAccess) {
+    redirect("/learn");
+  }
+
   const point = await prisma.knowledgePoint.findUnique({
     where: { id: id },
     include: {
@@ -18,16 +24,11 @@ export default async function PointPage({
         where: { status: "published" },
         orderBy: { createdAt: "asc" },
         select: { id: true, type: true, stem: true, options: true, answer: true, source: true }
-      },
-      progress: { where: { userId: user.id } }
+      }
     }
   });
 
-  if (!point || point.status !== "published") {
-    redirect("/learn");
-  }
-  const status = point.progress[0]?.status;
-  if (status === "locked") {
+  if (!point) {
     redirect("/learn");
   }
 

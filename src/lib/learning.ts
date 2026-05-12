@@ -104,6 +104,55 @@ export async function unlockNextPoint(userId: string, currentPointId: string) {
   }
 }
 
+export async function syncLearningProgress(userId: string) {
+  await ensureInitialProgress(userId);
+  await repairUnlockedProgress(userId);
+}
+
+export async function canAccessKnowledgePoint(userId: string, knowledgePointId: string) {
+  await syncLearningProgress(userId);
+
+  const point = await prisma.knowledgePoint.findUnique({
+    where: { id: knowledgePointId },
+    select: {
+      id: true,
+      status: true,
+      chapter: {
+        select: {
+          status: true,
+          subject: { select: { status: true } }
+        }
+      },
+      progress: {
+        where: { userId },
+        select: { status: true }
+      }
+    }
+  });
+
+  if (!point || point.status !== "published" || point.chapter.status !== "published" || point.chapter.subject.status !== "published") {
+    return false;
+  }
+
+  const status = point.progress[0]?.status;
+  return status === "unlocked" || status === "passed";
+}
+
+export async function canExplainQuestion(userId: string, questionId: string) {
+  const [wrongQuestion, wrongAttempt] = await Promise.all([
+    prisma.wrongQuestion.findUnique({
+      where: { userId_questionId: { userId, questionId } },
+      select: { id: true }
+    }),
+    prisma.questionAttempt.findFirst({
+      where: { userId, questionId, isCorrect: false },
+      select: { id: true }
+    })
+  ]);
+
+  return Boolean(wrongQuestion || wrongAttempt);
+}
+
 export async function bumpStudyStat(
   userId: string,
   data: { questionsAnswered?: number; pointsPassed?: number; studySeconds?: number }

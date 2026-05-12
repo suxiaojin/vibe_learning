@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { answersEqual, bumpStudyStat, unlockNextPoint } from "@/lib/learning";
+import { answersEqual, bumpStudyStat, canAccessKnowledgePoint, unlockNextPoint } from "@/lib/learning";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
@@ -8,6 +8,11 @@ export async function POST(request: Request) {
   const body = (await request.json()) as { pointId?: string; answers?: Record<string, string[]> };
   if (!body.pointId || !body.answers) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+  }
+
+  const canAccess = await canAccessKnowledgePoint(user.id, body.pointId);
+  if (!canAccess) {
+    return NextResponse.json({ error: "Knowledge point is locked or unavailable" }, { status: 403 });
   }
 
   const submittedAt = new Date();

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
+import { canExplainQuestion } from "@/lib/learning";
 import { askQwen } from "@/lib/qwen";
 import { prisma } from "@/lib/prisma";
 
@@ -17,6 +18,11 @@ export async function POST(request: Request) {
 
   if (!question || question.status !== "published") {
     return NextResponse.json({ error: "题目不存在或未发布" }, { status: 404 });
+  }
+
+  const canExplain = await canExplainQuestion(user.id, question.id);
+  if (!canExplain) {
+    return NextResponse.json({ error: "只能讲解你自己的错题" }, { status: 403 });
   }
 
   const userPrompt = body.prompt || "请把这道题用通俗的方式讲解一下。";
