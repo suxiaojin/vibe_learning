@@ -11,7 +11,9 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
-    "verify:foundation": "tsx scripts/verify-foundation.ts"
+    "verify:foundation": "tsx scripts/verify-foundation.ts",
+    "verify:learning-courses": "tsx scripts/verify-learning-courses.ts",
+    "verify:learning-http": "tsx scripts/verify-learning-http.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

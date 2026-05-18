@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { getStudentFoundationProfileStatus } from "@/lib/foundation";
 import { prisma } from "@/lib/prisma";
 
 export function normalizeAnswer(value: unknown) {
@@ -107,6 +108,15 @@ export async function unlockNextPoint(userId: string, currentPointId: string) {
 export async function syncLearningProgress(userId: string) {
   await ensureInitialProgress(userId);
   await repairUnlockedProgress(userId);
+}
+
+export async function getLearningEntryStatus(userId: string) {
+  const foundationProfile = await getStudentFoundationProfileStatus(userId);
+
+  return {
+    canStartLearning: foundationProfile.completed,
+    foundationProfile
+  };
 }
 
 export async function canAccessKnowledgePoint(userId: string, knowledgePointId: string) {

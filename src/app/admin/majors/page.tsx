@@ -1,30 +1,11 @@
 import { ContentStatus, type Prisma } from "@prisma/client";
 import { Filter, Plus } from "lucide-react";
-import { createMajor, cycleMajorStatus, updateMajor } from "@/app/admin/actions";
+import Link from "next/link";
+import { createMajor, updateMajor, updateMajorStatus } from "@/app/admin/actions";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 const contentStatuses = new Set<string>(Object.values(ContentStatus));
-
-function statusText(status: ContentStatus) {
-  if (status === "published") {
-    return "已发布";
-  }
-  if (status === "archived") {
-    return "停用";
-  }
-  return "草稿";
-}
-
-function statusClass(status: ContentStatus) {
-  if (status === "published") {
-    return "bg-lime-300 text-lime-800";
-  }
-  if (status === "archived") {
-    return "bg-slate-200 text-slate-600";
-  }
-  return "bg-slate-200 text-slate-600";
-}
 
 export default async function MajorsPage({
   searchParams
@@ -49,7 +30,7 @@ export default async function MajorsPage({
       where,
       include: {
         regions: { include: { region: true }, orderBy: { createdAt: "asc" } },
-        _count: { select: { studentProfiles: true } }
+        _count: { select: { studentProfiles: true, learningCourses: true } }
       },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }]
     })
@@ -137,6 +118,7 @@ export default async function MajorsPage({
                 <th className="border-b border-slate-300 px-4 py-3">专业名称</th>
                 <th className="border-b border-slate-300 px-4 py-3">适用区域</th>
                 <th className="border-b border-slate-300 px-4 py-3">学生数</th>
+                <th className="border-b border-slate-300 px-4 py-3">课程数</th>
                 <th className="border-b border-slate-300 px-4 py-3">状态</th>
                 <th className="border-b border-slate-300 px-4 py-3 text-right">操作</th>
               </tr>
@@ -147,17 +129,21 @@ export default async function MajorsPage({
                 return (
                   <tr key={major.id} className="align-top hover:bg-slate-50">
                     <td className="px-4 py-4">
-                      <p className="font-semibold">{major.name}</p>
+                      <Link className="font-semibold text-[#0869a9] hover:underline" href={`/admin/majors/${major.id}/courses`}>{major.name}</Link>
                       {major.description ? <p className="mt-1 text-xs text-slate-500">{major.description}</p> : null}
                     </td>
                     <td className="px-4 py-4 text-slate-600">{major.regions.length ? major.regions.map((item) => item.region.name).join("、") : "未绑定"}</td>
                     <td className="px-4 py-4 text-slate-700">{major._count.studentProfiles}</td>
+                    <td className="px-4 py-4 text-slate-700">{major._count.learningCourses}</td>
                     <td className="px-4 py-4">
-                      <form action={cycleMajorStatus}>
+                      <form action={updateMajorStatus} className="flex items-center gap-2">
                         <input type="hidden" name="id" value={major.id} />
-                        <button className={`rounded-full px-3 py-1 text-xs font-semibold ${statusClass(major.status)}`} type="submit">
-                          {statusText(major.status)}
-                        </button>
+                        <select className="input h-9 rounded-none py-1 text-xs font-semibold" name="status" defaultValue={major.status}>
+                          <option value="draft">草稿</option>
+                          <option value="published">已发布</option>
+                          <option value="archived">停用</option>
+                        </select>
+                        <button className="secondary-button h-9 rounded-none px-3 text-xs" type="submit">保存</button>
                       </form>
                     </td>
                     <td className="px-4 py-4 text-right">

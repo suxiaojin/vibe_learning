@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { ContentStatus, Difficulty, QuestionType, RegionStatus } from "@prisma/client";
+import { ContentStatus, Difficulty, QuestionType, RegionStatus, SyllabusRequirement } from "@prisma/client";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -15,6 +15,11 @@ const optionKeys = ["A", "B", "C", "D"] as const;
 
 function getStatus(formData: FormData) {
   return String(formData.get("status") || "draft") as ContentStatus;
+}
+
+function getSyllabusRequirement(formData: FormData) {
+  const value = String(formData.get("requirement") || "");
+  return value ? (value as SyllabusRequirement) : null;
 }
 
 function getRegionStatus(formData: FormData) {
@@ -46,6 +51,33 @@ async function nextPublicSubjectSortOrder() {
 
 async function nextMajorSortOrder() {
   const latest = await prisma.major.findFirst({
+    orderBy: { sortOrder: "desc" },
+    select: { sortOrder: true }
+  });
+  return (latest?.sortOrder ?? 0) + 1;
+}
+
+async function nextMajorCourseSortOrder(regionId: string, majorId: string) {
+  const latest = await prisma.learningCourse.findFirst({
+    where: { regionId, majorId, courseType: "major" },
+    orderBy: { sortOrder: "desc" },
+    select: { sortOrder: true }
+  });
+  return (latest?.sortOrder ?? 0) + 1;
+}
+
+async function nextPublicSubjectCourseSortOrder(regionId: string, publicSubjectId: string) {
+  const latest = await prisma.learningCourse.findFirst({
+    where: { regionId, publicSubjectId, courseType: "public_subject" },
+    orderBy: { sortOrder: "desc" },
+    select: { sortOrder: true }
+  });
+  return (latest?.sortOrder ?? 0) + 1;
+}
+
+async function nextSyllabusItemSortOrder(courseId: string, parentId: string | null) {
+  const latest = await prisma.syllabusItem.findFirst({
+    where: { courseId, parentId },
     orderBy: { sortOrder: "desc" },
     select: { sortOrder: true }
   });
@@ -189,6 +221,72 @@ export async function cyclePublicSubjectStatus(formData: FormData) {
   revalidatePath("/admin/public-subjects");
 }
 
+export async function updatePublicSubjectStatus(formData: FormData) {
+  await requireAdmin();
+  await prisma.publicSubject.update({
+    where: { id: String(formData.get("id")) },
+    data: { status: getStatus(formData) }
+  });
+  revalidatePath("/admin/public-subjects");
+}
+
+export async function createPublicSubjectCourse(formData: FormData) {
+  await requireAdmin();
+  const publicSubjectId = String(formData.get("publicSubjectId") || "");
+  const regionId = String(formData.get("regionId") || "");
+  await prisma.regionPublicSubject.findUniqueOrThrow({
+    where: { regionId_publicSubjectId: { regionId, publicSubjectId } }
+  });
+  await prisma.learningCourse.create({
+    data: {
+      regionId,
+      publicSubjectId,
+      courseType: "public_subject",
+      name: String(formData.get("name") || "").trim(),
+      description: String(formData.get("description") || "").trim() || null,
+      status: getStatus(formData),
+      sortOrder: await nextPublicSubjectCourseSortOrder(regionId, publicSubjectId)
+    }
+  });
+  revalidatePath(`/admin/public-subjects/${publicSubjectId}/courses`);
+  redirect(`/admin/public-subjects/${publicSubjectId}/courses`);
+}
+
+export async function updatePublicSubjectCourse(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") || "");
+  const publicSubjectId = String(formData.get("publicSubjectId") || "");
+  const regionId = String(formData.get("regionId") || "");
+  await prisma.regionPublicSubject.findUniqueOrThrow({
+    where: { regionId_publicSubjectId: { regionId, publicSubjectId } }
+  });
+  await prisma.learningCourse.update({
+    where: { id },
+    data: {
+      regionId,
+      publicSubjectId,
+      majorId: null,
+      courseType: "public_subject",
+      name: String(formData.get("name") || "").trim(),
+      description: String(formData.get("description") || "").trim() || null,
+      status: getStatus(formData)
+    }
+  });
+  revalidatePath(`/admin/public-subjects/${publicSubjectId}/courses`);
+  redirect(`/admin/public-subjects/${publicSubjectId}/courses`);
+}
+
+export async function updatePublicSubjectCourseStatus(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id"));
+  const publicSubjectId = String(formData.get("publicSubjectId"));
+  await prisma.learningCourse.update({
+    where: { id },
+    data: { status: getStatus(formData) }
+  });
+  revalidatePath(`/admin/public-subjects/${publicSubjectId}/courses`);
+}
+
 export async function createMajor(formData: FormData) {
   await requireAdmin();
   const regionIds = getRegionIds(formData);
@@ -242,6 +340,151 @@ export async function cycleMajorStatus(formData: FormData) {
     data: { status: nextStatus }
   });
   revalidatePath("/admin/majors");
+}
+
+export async function updateMajorStatus(formData: FormData) {
+  await requireAdmin();
+  await prisma.major.update({
+    where: { id: String(formData.get("id")) },
+    data: { status: getStatus(formData) }
+  });
+  revalidatePath("/admin/majors");
+}
+
+export async function createMajorCourse(formData: FormData) {
+  await requireAdmin();
+  const majorId = String(formData.get("majorId") || "");
+  const regionId = String(formData.get("regionId") || "");
+  await prisma.regionMajor.findUniqueOrThrow({
+    where: { regionId_majorId: { regionId, majorId } }
+  });
+  await prisma.learningCourse.create({
+    data: {
+      regionId,
+      majorId,
+      courseType: "major",
+      name: String(formData.get("name") || "").trim(),
+      description: String(formData.get("description") || "").trim() || null,
+      status: getStatus(formData),
+      sortOrder: await nextMajorCourseSortOrder(regionId, majorId)
+    }
+  });
+  revalidatePath(`/admin/majors/${majorId}/courses`);
+  redirect(`/admin/majors/${majorId}/courses`);
+}
+
+export async function updateMajorCourse(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") || "");
+  const majorId = String(formData.get("majorId") || "");
+  const regionId = String(formData.get("regionId") || "");
+  await prisma.regionMajor.findUniqueOrThrow({
+    where: { regionId_majorId: { regionId, majorId } }
+  });
+  await prisma.learningCourse.update({
+    where: { id },
+    data: {
+      regionId,
+      majorId,
+      publicSubjectId: null,
+      courseType: "major",
+      name: String(formData.get("name") || "").trim(),
+      description: String(formData.get("description") || "").trim() || null,
+      status: getStatus(formData)
+    }
+  });
+  revalidatePath(`/admin/majors/${majorId}/courses`);
+  redirect(`/admin/majors/${majorId}/courses`);
+}
+
+export async function cycleMajorCourseStatus(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id"));
+  const majorId = String(formData.get("majorId"));
+  const course = await prisma.learningCourse.findUniqueOrThrow({
+    where: { id },
+    select: { status: true }
+  });
+  const nextStatus = course.status === "draft" ? "published" : course.status === "published" ? "archived" : "draft";
+  await prisma.learningCourse.update({
+    where: { id },
+    data: { status: nextStatus }
+  });
+  revalidatePath(`/admin/majors/${majorId}/courses`);
+}
+
+export async function updateMajorCourseStatus(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id"));
+  const majorId = String(formData.get("majorId"));
+  await prisma.learningCourse.update({
+    where: { id },
+    data: { status: getStatus(formData) }
+  });
+  revalidatePath(`/admin/majors/${majorId}/courses`);
+}
+
+function courseDetailPath(formData: FormData) {
+  const ownerType = String(formData.get("ownerType") || "");
+  const ownerId = String(formData.get("ownerId") || "");
+  const courseId = String(formData.get("courseId") || "");
+
+  if (ownerType === "public_subject") {
+    return `/admin/public-subjects/${ownerId}/courses/${courseId}`;
+  }
+  return `/admin/majors/${ownerId}/courses/${courseId}`;
+}
+
+export async function createSyllabusItem(formData: FormData) {
+  await requireAdmin();
+  const courseId = String(formData.get("courseId") || "");
+  const parentId = String(formData.get("parentId") || "") || null;
+  await prisma.syllabusItem.create({
+    data: {
+      courseId,
+      parentId,
+      code: String(formData.get("code") || "").trim() || null,
+      title: String(formData.get("title") || "").trim(),
+      description: String(formData.get("description") || "").trim() || null,
+      requirement: getSyllabusRequirement(formData),
+      status: getStatus(formData),
+      sortOrder: await nextSyllabusItemSortOrder(courseId, parentId)
+    }
+  });
+  const path = courseDetailPath(formData);
+  revalidatePath(path);
+  redirect(path);
+}
+
+export async function updateSyllabusItem(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") || "");
+  const courseId = String(formData.get("courseId") || "");
+  const parentId = String(formData.get("parentId") || "") || null;
+  await prisma.syllabusItem.update({
+    where: { id },
+    data: {
+      courseId,
+      parentId,
+      code: String(formData.get("code") || "").trim() || null,
+      title: String(formData.get("title") || "").trim(),
+      description: String(formData.get("description") || "").trim() || null,
+      requirement: getSyllabusRequirement(formData),
+      status: getStatus(formData)
+    }
+  });
+  const path = courseDetailPath(formData);
+  revalidatePath(path);
+  redirect(path);
+}
+
+export async function updateSyllabusItemStatus(formData: FormData) {
+  await requireAdmin();
+  await prisma.syllabusItem.update({
+    where: { id: String(formData.get("id") || "") },
+    data: { status: getStatus(formData) }
+  });
+  revalidatePath(courseDetailPath(formData));
 }
 
 export async function createChapter(formData: FormData) {

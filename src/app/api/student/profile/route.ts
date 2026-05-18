@@ -3,8 +3,8 @@ import { apiError, apiOk } from "@/lib/api-response";
 import { getCurrentUser } from "@/lib/auth";
 import {
   FoundationSelectionError,
-  hasCompletedFoundationProfile,
   getStudentFoundationProfile,
+  getStudentFoundationProfileStatus,
   saveStudentFoundationProfile
 } from "@/lib/foundation";
 
@@ -20,12 +20,12 @@ export async function GET() {
     return apiError("Authentication required.", 401, "UNAUTHORIZED");
   }
 
-  const [profile, completed] = await Promise.all([
+  const [profile, profileStatus] = await Promise.all([
     getStudentFoundationProfile(user.id),
-    hasCompletedFoundationProfile(user.id)
+    getStudentFoundationProfileStatus(user.id)
   ]);
 
-  return apiOk({ profile, completed });
+  return apiOk({ profile, completed: profileStatus.completed, missingFields: profileStatus.missingFields });
 }
 
 export async function POST(request: Request) {
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
 
   try {
     const profile = await saveStudentFoundationProfile(user.id, parsed.data);
-    return apiOk({ profile, completed: true });
+    return apiOk({ profile, completed: true, missingFields: [] });
   } catch (error) {
     if (error instanceof FoundationSelectionError) {
       return apiError(error.message, error.status, "FOUNDATION_SELECTION_UNAVAILABLE");

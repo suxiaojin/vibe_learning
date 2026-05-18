@@ -46,6 +46,31 @@ enum WrongQuestionStatus {
   mastered
 }
 
+enum LearningCourseType {
+  public_subject
+  major
+}
+
+enum SyllabusRequirement {
+  know
+  understand
+  master
+  apply
+}
+
+enum PaperType {
+  real_exam
+  mock_exam
+  practice_set
+}
+
+enum QuestionSourceType {
+  manual
+  real_exam
+  outline
+  import
+}
+
 model User {
   id              String            @id @default(cuid())
   username        String            @unique
@@ -74,6 +99,7 @@ model Region {
   publicSubjects  RegionPublicSubject[]
   majors          RegionMajor[]
   studentProfiles StudentProfile[]
+  learningCourses LearningCourse[]
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
@@ -91,6 +117,7 @@ model PublicSubject {
   sortOrder       Int                   @default(0)
   regions         RegionPublicSubject[]
   studentProfiles StudentProfile[]
+  learningCourses LearningCourse[]
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
@@ -106,6 +133,7 @@ model Major {
   sortOrder       Int              @default(0)
   regions         RegionMajor[]
   studentProfiles StudentProfile[]
+  learningCourses LearningCourse[]
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
@@ -160,6 +188,54 @@ model StudentProfile {
   @@map("student_profiles")
 }
 
+model LearningCourse {
+  id              String             @id @default(cuid())
+  regionId        String
+  publicSubjectId String?
+  majorId         String?
+  name            String
+  courseType      LearningCourseType
+  description     String?
+  status          ContentStatus      @default(draft)
+  sortOrder       Int                @default(0)
+  region          Region             @relation(fields: [regionId], references: [id], onDelete: Cascade)
+  publicSubject   PublicSubject?     @relation(fields: [publicSubjectId], references: [id], onDelete: SetNull)
+  major           Major?             @relation(fields: [majorId], references: [id], onDelete: SetNull)
+  chapters        Chapter[]
+  syllabusItems   SyllabusItem[]
+  examPapers      ExamPaper[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([regionId, courseType, status, sortOrder])
+  @@index([publicSubjectId])
+  @@index([majorId])
+  @@map("learning_courses")
+}
+
+model SyllabusItem {
+  id              String               @id @default(cuid())
+  courseId        String
+  parentId        String?
+  code            String?
+  title           String
+  description     String?
+  requirement     SyllabusRequirement?
+  sortOrder       Int                  @default(0)
+  status          ContentStatus        @default(draft)
+  course          LearningCourse       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  parent          SyllabusItem?        @relation("SyllabusItemChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children        SyllabusItem[]       @relation("SyllabusItemChildren")
+  knowledgePoints KnowledgePoint[]
+  questions       Question[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([courseId, parentId, sortOrder])
+  @@index([status, sortOrder])
+  @@map("syllabus_items")
+}
+
 model Subject {
   id        String        @id @default(cuid())
   province  String
@@ -177,7 +253,9 @@ model Subject {
 model Chapter {
   id        String           @id @default(cuid())
   subjectId String
+  courseId  String?
   subject   Subject          @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  course    LearningCourse?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
   title     String
   sortOrder Int              @default(0)
   status    ContentStatus    @default(draft)
@@ -186,13 +264,16 @@ model Chapter {
   updatedAt DateTime         @updatedAt
 
   @@index([subjectId, sortOrder])
+  @@index([courseId, sortOrder])
   @@map("chapters")
 }
 
 model KnowledgePoint {
   id               String         @id @default(cuid())
   chapterId        String
+  syllabusItemId   String?
   chapter          Chapter        @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  syllabusItem     SyllabusItem?  @relation(fields: [syllabusItemId], references: [id], onDelete: SetNull)
   title            String
   summary          String
   content          String
@@ -205,21 +286,27 @@ model KnowledgePoint {
   updatedAt        DateTime       @updatedAt
 
   @@index([chapterId, sortOrder])
+  @@index([syllabusItemId])
   @@map("knowledge_points")
 }
 
 model Question {
   id               String            @id @default(cuid())
   knowledgePointId String
+  syllabusItemId   String?
   knowledgePoint   KnowledgePoint    @relation(fields: [knowledgePointId], references: [id], onDelete: Cascade)
+  syllabusItem     SyllabusItem?     @relation(fields: [syllabusItemId], references: [id], onDelete: SetNull)
   type             QuestionType
   stem             String
   options          Json
   answer           Json
   analysis         String
   source           String            @default("人工录入")
+  sourceType       QuestionSourceType @default(manual)
+  sourceYear       Int?
   difficulty       Difficulty        @default(medium)
   status           ContentStatus     @default(draft)
+  paperQuestions   ExamPaperQuestion[]
   attempts         QuestionAttempt[]
   wrongQuestions   WrongQuestion[]
   aiConversations  AiConversation[]
@@ -227,7 +314,44 @@ model Question {
   updatedAt        DateTime          @updatedAt
 
   @@index([knowledgePointId, status])
+  @@index([syllabusItemId])
+  @@index([sourceType, sourceYear])
   @@map("questions")
+}
+
+model ExamPaper {
+  id          String              @id @default(cuid())
+  courseId    String
+  title       String
+  year        Int?
+  paperType   PaperType           @default(real_exam)
+  description String?
+  status      ContentStatus       @default(draft)
+  sortOrder   Int                 @default(0)
+  course      LearningCourse      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  questions   ExamPaperQuestion[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([courseId, status, sortOrder])
+  @@index([year, paperType])
+  @@map("exam_papers")
+}
+
+model ExamPaperQuestion {
+  id        String    @id @default(cuid())
+  paperId   String
+  questionId String
+  sortOrder Int       @default(0)
+  score     Float?
+  paper     ExamPaper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  question  Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+
+  @@unique([paperId, questionId])
+  @@index([paperId, sortOrder])
+  @@index([questionId])
+  @@map("exam_paper_questions")
 }
 
 model UserProgress {

@@ -10,6 +10,10 @@ export class FoundationSelectionError extends Error {
   }
 }
 
+export type FoundationProfileField = "regionId" | "publicSubjectId" | "majorId";
+
+const foundationProfileFields: FoundationProfileField[] = ["regionId", "publicSubjectId", "majorId"];
+
 export async function getFoundationOptions(regionId?: string) {
   const regions = await prisma.region.findMany({
     where: { status: "active" },
@@ -73,7 +77,7 @@ export async function getStudentFoundationProfile(userId: string) {
   });
 }
 
-export async function hasCompletedFoundationProfile(userId: string) {
+export async function getStudentFoundationProfileStatus(userId: string) {
   const profile = await prisma.studentProfile.findUnique({
     where: { userId },
     select: {
@@ -83,7 +87,17 @@ export async function hasCompletedFoundationProfile(userId: string) {
     }
   });
 
-  return Boolean(profile?.regionId && profile.publicSubjectId && profile.majorId);
+  const missingFields = foundationProfileFields.filter((field) => !profile?.[field]);
+
+  return {
+    completed: missingFields.length === 0,
+    missingFields
+  };
+}
+
+export async function hasCompletedFoundationProfile(userId: string) {
+  const status = await getStudentFoundationProfileStatus(userId);
+  return status.completed;
 }
 
 export async function saveStudentFoundationProfile(
