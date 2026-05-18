@@ -1,18 +1,22 @@
-import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { apiError, apiOk } from "@/lib/api-response";
+import { getCurrentUser } from "@/lib/auth";
 import { answersEqual, bumpStudyStat, canAccessKnowledgePoint, unlockNextPoint } from "@/lib/learning";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
-  const user = await requireUser();
-  const body = (await request.json()) as { pointId?: string; answers?: Record<string, string[]> };
-  if (!body.pointId || !body.answers) {
-    return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+  const user = await getCurrentUser();
+  if (!user) {
+    return apiError("Authentication required.", 401, "UNAUTHORIZED");
+  }
+
+  const body = (await request.json().catch(() => null)) as { pointId?: string; answers?: Record<string, string[]> } | null;
+  if (!body?.pointId || !body.answers) {
+    return apiError("Invalid payload", 400, "INVALID_PROGRESS_SUBMISSION");
   }
 
   const canAccess = await canAccessKnowledgePoint(user.id, body.pointId);
   if (!canAccess) {
-    return NextResponse.json({ error: "Knowledge point is locked or unavailable" }, { status: 403 });
+    return apiError("Knowledge point is locked or unavailable", 403, "KNOWLEDGE_POINT_LOCKED");
   }
 
   const submittedAt = new Date();
@@ -83,5 +87,5 @@ export async function POST(request: Request) {
   });
 
   const resultPath = `/learn/${body.pointId}/result?attemptIds=${wrongAttemptIds.join(",")}&score=${score}&correct=${correct}&total=${total}&submittedAt=${encodeURIComponent(submittedAt.toISOString())}`;
-  return NextResponse.json({ score, passed, correct, total, wrongAttemptIds, resultPath });
+  return apiOk({ score, passed, correct, total, wrongAttemptIds, resultPath });
 }

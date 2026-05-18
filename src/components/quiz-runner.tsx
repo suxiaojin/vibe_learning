@@ -119,8 +119,9 @@ export function QuizRunner({ pointId, questions }: { pointId: string; questions:
       body: JSON.stringify({ pointId, answers })
     });
     const payload = await response.json();
-    if (payload.resultPath) {
-      router.push(payload.resultPath);
+    const resultPath = payload.data?.resultPath || payload.resultPath;
+    if (resultPath) {
+      router.push(resultPath);
       return;
     }
     setLoading(false);

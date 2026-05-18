@@ -1,14 +1,18 @@
-import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { apiError, apiOk } from "@/lib/api-response";
+import { getCurrentUser } from "@/lib/auth";
 import { canExplainQuestion } from "@/lib/learning";
 import { askQwen } from "@/lib/qwen";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
-  const user = await requireUser();
-  const body = (await request.json()) as { questionId?: string; prompt?: string };
-  if (!body.questionId) {
-    return NextResponse.json({ error: "缺少题目 ID" }, { status: 400 });
+  const user = await getCurrentUser();
+  if (!user) {
+    return apiError("Authentication required.", 401, "UNAUTHORIZED");
+  }
+
+  const body = (await request.json().catch(() => null)) as { questionId?: string; prompt?: string } | null;
+  if (!body?.questionId) {
+    return apiError("缺少题目 ID", 400, "MISSING_QUESTION_ID");
   }
 
   const question = await prisma.question.findUnique({
@@ -17,12 +21,12 @@ export async function POST(request: Request) {
   });
 
   if (!question || question.status !== "published") {
-    return NextResponse.json({ error: "题目不存在或未发布" }, { status: 404 });
+    return apiError("题目不存在或未发布", 404, "QUESTION_NOT_FOUND");
   }
 
   const canExplain = await canExplainQuestion(user.id, question.id);
   if (!canExplain) {
-    return NextResponse.json({ error: "只能讲解你自己的错题" }, { status: 403 });
+    return apiError("只能讲解你自己的错题", 403, "QUESTION_EXPLANATION_FORBIDDEN");
   }
 
   const userPrompt = body.prompt || "请把这道题用通俗的方式讲解一下。";
@@ -59,9 +63,9 @@ export async function POST(request: Request) {
       }
     });
 
-    return NextResponse.json({ answer });
+    return apiOk({ answer });
   } catch (error) {
     const message = error instanceof Error ? error.message : "AI 服务暂时不可用";
-    return NextResponse.json({ error: `AI 服务暂时不可用：${message}` }, { status: 503 });
+    return apiError(`AI 服务暂时不可用：${message}`, 503, "AI_SERVICE_UNAVAILABLE");
   }
 }

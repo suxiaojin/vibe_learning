@@ -27,6 +27,9 @@ export async function getFoundationOptions(regionId?: string) {
   if (!selectedRegionId) {
     return { regions, selectedRegionId, publicSubjects: [], majors: [] };
   }
+  if (regionId && !regions.some((region) => region.id === regionId)) {
+    throw new FoundationSelectionError("Selected region is unavailable.");
+  }
 
   const [publicSubjects, majors] = await Promise.all([
     prisma.publicSubject.findMany({
@@ -68,6 +71,19 @@ export async function getStudentFoundationProfile(userId: string) {
       major: true
     }
   });
+}
+
+export async function hasCompletedFoundationProfile(userId: string) {
+  const profile = await prisma.studentProfile.findUnique({
+    where: { userId },
+    select: {
+      regionId: true,
+      publicSubjectId: true,
+      majorId: true
+    }
+  });
+
+  return Boolean(profile?.regionId && profile.publicSubjectId && profile.majorId);
 }
 
 export async function saveStudentFoundationProfile(

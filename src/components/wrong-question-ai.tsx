@@ -28,7 +28,7 @@ export function WrongQuestionAi({ questionId }: { questionId: string }) {
       body: JSON.stringify({ questionId, prompt: nextPrompt || text.defaultPrompt })
     });
     const payload = await response.json();
-    setAnswer(payload.answer || payload.error || text.fallback);
+    setAnswer(payload.data?.answer || payload.answer || payload.error?.message || payload.error || text.fallback);
     setLoading(false);
   }
 

@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireUser } from "@/lib/auth";
+import { apiError, apiOk } from "@/lib/api-response";
+import { getCurrentUser } from "@/lib/auth";
 import {
   FoundationSelectionError,
+  hasCompletedFoundationProfile,
   getStudentFoundationProfile,
   saveStudentFoundationProfile
 } from "@/lib/foundation";
@@ -14,26 +15,38 @@ const profileSchema = z.object({
 });
 
 export async function GET() {
-  const user = await requireUser();
-  const profile = await getStudentFoundationProfile(user.id);
-  return NextResponse.json({ profile });
+  const user = await getCurrentUser();
+  if (!user) {
+    return apiError("Authentication required.", 401, "UNAUTHORIZED");
+  }
+
+  const [profile, completed] = await Promise.all([
+    getStudentFoundationProfile(user.id),
+    hasCompletedFoundationProfile(user.id)
+  ]);
+
+  return apiOk({ profile, completed });
 }
 
 export async function POST(request: Request) {
-  const user = await requireUser();
+  const user = await getCurrentUser();
+  if (!user) {
+    return apiError("Authentication required.", 401, "UNAUTHORIZED");
+  }
+
   const body = await request.json().catch(() => null);
   const parsed = profileSchema.safeParse(body);
 
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid profile selection." }, { status: 400 });
+    return apiError("Invalid profile selection.", 400, "INVALID_PROFILE_SELECTION");
   }
 
   try {
     const profile = await saveStudentFoundationProfile(user.id, parsed.data);
-    return NextResponse.json({ profile });
+    return apiOk({ profile, completed: true });
   } catch (error) {
     if (error instanceof FoundationSelectionError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+      return apiError(error.message, error.status, "FOUNDATION_SELECTION_UNAVAILABLE");
     }
     throw error;
   }
