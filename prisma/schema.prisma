@@ -18,6 +18,11 @@ enum ContentStatus {
   archived
 }
 
+enum RegionStatus {
+  active
+  inactive
+}
+
 enum QuestionType {
   single_choice
   multiple_choice
@@ -42,12 +47,13 @@ enum WrongQuestionStatus {
 }
 
 model User {
-  id              String             @id @default(cuid())
-  username        String             @unique
+  id              String            @id @default(cuid())
+  username        String            @unique
   passwordHash    String
-  role            UserRole           @default(student)
-  createdAt       DateTime           @default(now())
+  role            UserRole          @default(student)
+  createdAt       DateTime          @default(now())
   lastLoginAt     DateTime?
+  studentProfile  StudentProfile?
   progress        UserProgress[]
   attempts        QuestionAttempt[]
   wrongQuestions  WrongQuestion[]
@@ -55,6 +61,103 @@ model User {
   studyStats      StudyStat[]
 
   @@map("users")
+}
+
+model Region {
+  id              String                @id @default(cuid())
+  name            String                @unique
+  province        String
+  studySystem     String
+  description     String?
+  status          RegionStatus          @default(active)
+  sortOrder       Int                   @default(0)
+  publicSubjects  RegionPublicSubject[]
+  majors          RegionMajor[]
+  studentProfiles StudentProfile[]
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([province, studySystem])
+  @@index([status, sortOrder])
+  @@map("regions")
+}
+
+model PublicSubject {
+  id              String                @id @default(cuid())
+  name            String                @unique
+  code            String?               @unique
+  description     String?
+  status          ContentStatus         @default(draft)
+  sortOrder       Int                   @default(0)
+  regions         RegionPublicSubject[]
+  studentProfiles StudentProfile[]
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([status, sortOrder])
+  @@map("public_subjects")
+}
+
+model Major {
+  id              String           @id @default(cuid())
+  name            String           @unique
+  description     String?
+  status          ContentStatus    @default(draft)
+  sortOrder       Int              @default(0)
+  regions         RegionMajor[]
+  studentProfiles StudentProfile[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([status, sortOrder])
+  @@map("majors")
+}
+
+model RegionPublicSubject {
+  id              String        @id @default(cuid())
+  regionId        String
+  publicSubjectId String
+  region          Region        @relation(fields: [regionId], references: [id], onDelete: Cascade)
+  publicSubject   PublicSubject @relation(fields: [publicSubjectId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+
+  @@unique([regionId, publicSubjectId])
+  @@index([regionId])
+  @@index([publicSubjectId])
+  @@map("region_public_subjects")
+}
+
+model RegionMajor {
+  id        String   @id @default(cuid())
+  regionId  String
+  majorId   String
+  region    Region   @relation(fields: [regionId], references: [id], onDelete: Cascade)
+  major     Major    @relation(fields: [majorId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([regionId, majorId])
+  @@index([regionId])
+  @@index([majorId])
+  @@map("region_majors")
+}
+
+model StudentProfile {
+  id              String         @id @default(cuid())
+  userId          String         @unique
+  regionId        String?
+  publicSubjectId String?
+  majorId         String?
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  region          Region?        @relation(fields: [regionId], references: [id], onDelete: SetNull)
+  publicSubject   PublicSubject? @relation(fields: [publicSubjectId], references: [id], onDelete: SetNull)
+  major           Major?         @relation(fields: [majorId], references: [id], onDelete: SetNull)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([regionId])
+  @@index([publicSubjectId])
+  @@index([majorId])
+  @@map("student_profiles")
 }
 
 model Subject {
@@ -72,34 +175,34 @@ model Subject {
 }
 
 model Chapter {
-  id        String          @id @default(cuid())
+  id        String           @id @default(cuid())
   subjectId String
-  subject   Subject         @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  subject   Subject          @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   title     String
-  sortOrder Int             @default(0)
-  status    ContentStatus   @default(draft)
+  sortOrder Int              @default(0)
+  status    ContentStatus    @default(draft)
   points    KnowledgePoint[]
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
 
   @@index([subjectId, sortOrder])
   @@map("chapters")
 }
 
 model KnowledgePoint {
-  id               String          @id @default(cuid())
+  id               String         @id @default(cuid())
   chapterId        String
-  chapter          Chapter         @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  chapter          Chapter        @relation(fields: [chapterId], references: [id], onDelete: Cascade)
   title            String
   summary          String
   content          String
-  sortOrder        Int             @default(0)
-  estimatedMinutes Int             @default(8)
-  status           ContentStatus   @default(draft)
+  sortOrder        Int            @default(0)
+  estimatedMinutes Int            @default(8)
+  status           ContentStatus  @default(draft)
   questions        Question[]
   progress         UserProgress[]
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
   @@index([chapterId, sortOrder])
   @@map("knowledge_points")

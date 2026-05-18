@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { ContentStatus, Difficulty, QuestionType } from "@prisma/client";
+import { ContentStatus, Difficulty, QuestionType, RegionStatus } from "@prisma/client";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -15,6 +15,45 @@ const optionKeys = ["A", "B", "C", "D"] as const;
 
 function getStatus(formData: FormData) {
   return String(formData.get("status") || "draft") as ContentStatus;
+}
+
+function getRegionStatus(formData: FormData) {
+  return String(formData.get("status") || "active") as RegionStatus;
+}
+
+function getRegionIds(formData: FormData) {
+  return formData
+    .getAll("regionIds")
+    .map((item) => String(item).trim())
+    .filter(Boolean);
+}
+
+async function nextRegionSortOrder() {
+  const latest = await prisma.region.findFirst({
+    orderBy: { sortOrder: "desc" },
+    select: { sortOrder: true }
+  });
+  return (latest?.sortOrder ?? 0) + 1;
+}
+
+async function nextPublicSubjectSortOrder() {
+  const latest = await prisma.publicSubject.findFirst({
+    orderBy: { sortOrder: "desc" },
+    select: { sortOrder: true }
+  });
+  return (latest?.sortOrder ?? 0) + 1;
+}
+
+async function nextMajorSortOrder() {
+  const latest = await prisma.major.findFirst({
+    orderBy: { sortOrder: "desc" },
+    select: { sortOrder: true }
+  });
+  return (latest?.sortOrder ?? 0) + 1;
+}
+
+function buildRegionName(province: string, studySystem: string) {
+  return `${province}${studySystem}`.trim();
 }
 
 function getQuestionType(formData: FormData) {
@@ -41,6 +80,168 @@ function buildQuestionAnswer(formData: FormData, type: QuestionType) {
   }
 
   return type === "multiple_choice" ? selected.sort() : [selected[0]];
+}
+
+export async function createRegion(formData: FormData) {
+  await requireAdmin();
+  const province = String(formData.get("province") || "").trim();
+  const studySystem = String(formData.get("studySystem") || "").trim();
+  await prisma.region.create({
+    data: {
+      name: buildRegionName(province, studySystem),
+      province,
+      studySystem,
+      description: String(formData.get("description") || "").trim() || null,
+      sortOrder: await nextRegionSortOrder(),
+      status: getRegionStatus(formData)
+    }
+  });
+  revalidatePath("/admin/regions");
+  redirect("/admin/regions");
+}
+
+export async function updateRegion(formData: FormData) {
+  await requireAdmin();
+  const province = String(formData.get("province") || "").trim();
+  const studySystem = String(formData.get("studySystem") || "").trim();
+  await prisma.region.update({
+    where: { id: String(formData.get("id")) },
+    data: {
+      name: buildRegionName(province, studySystem),
+      province,
+      studySystem,
+      description: String(formData.get("description") || "").trim() || null,
+      status: getRegionStatus(formData)
+    }
+  });
+  revalidatePath("/admin/regions");
+  redirect("/admin/regions");
+}
+
+export async function toggleRegionStatus(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id"));
+  const region = await prisma.region.findUniqueOrThrow({
+    where: { id },
+    select: { status: true }
+  });
+  await prisma.region.update({
+    where: { id },
+    data: { status: region.status === "active" ? "inactive" : "active" }
+  });
+  revalidatePath("/admin/regions");
+}
+
+export async function createPublicSubject(formData: FormData) {
+  await requireAdmin();
+  const regionIds = getRegionIds(formData);
+  await prisma.publicSubject.create({
+    data: {
+      name: String(formData.get("name") || "").trim(),
+      code: String(formData.get("code") || "").trim() || null,
+      description: String(formData.get("description") || "").trim() || null,
+      sortOrder: await nextPublicSubjectSortOrder(),
+      status: getStatus(formData),
+      regions: {
+        create: regionIds.map((regionId) => ({ regionId }))
+      }
+    }
+  });
+  revalidatePath("/admin/public-subjects");
+  redirect("/admin/public-subjects");
+}
+
+export async function updatePublicSubject(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id"));
+  const regionIds = getRegionIds(formData);
+  await prisma.$transaction([
+    prisma.regionPublicSubject.deleteMany({ where: { publicSubjectId: id } }),
+    prisma.publicSubject.update({
+      where: { id },
+      data: {
+        name: String(formData.get("name") || "").trim(),
+        code: String(formData.get("code") || "").trim() || null,
+        description: String(formData.get("description") || "").trim() || null,
+        status: getStatus(formData),
+        regions: {
+          create: regionIds.map((regionId) => ({ regionId }))
+        }
+      }
+    })
+  ]);
+  revalidatePath("/admin/public-subjects");
+  redirect("/admin/public-subjects");
+}
+
+export async function cyclePublicSubjectStatus(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id"));
+  const subject = await prisma.publicSubject.findUniqueOrThrow({
+    where: { id },
+    select: { status: true }
+  });
+  const nextStatus = subject.status === "draft" ? "published" : subject.status === "published" ? "archived" : "draft";
+  await prisma.publicSubject.update({
+    where: { id },
+    data: { status: nextStatus }
+  });
+  revalidatePath("/admin/public-subjects");
+}
+
+export async function createMajor(formData: FormData) {
+  await requireAdmin();
+  const regionIds = getRegionIds(formData);
+  await prisma.major.create({
+    data: {
+      name: String(formData.get("name") || "").trim(),
+      description: String(formData.get("description") || "").trim() || null,
+      sortOrder: await nextMajorSortOrder(),
+      status: getStatus(formData),
+      regions: {
+        create: regionIds.map((regionId) => ({ regionId }))
+      }
+    }
+  });
+  revalidatePath("/admin/majors");
+  redirect("/admin/majors");
+}
+
+export async function updateMajor(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id"));
+  const regionIds = getRegionIds(formData);
+  await prisma.$transaction([
+    prisma.regionMajor.deleteMany({ where: { majorId: id } }),
+    prisma.major.update({
+      where: { id },
+      data: {
+        name: String(formData.get("name") || "").trim(),
+        description: String(formData.get("description") || "").trim() || null,
+        status: getStatus(formData),
+        regions: {
+          create: regionIds.map((regionId) => ({ regionId }))
+        }
+      }
+    })
+  ]);
+  revalidatePath("/admin/majors");
+  redirect("/admin/majors");
+}
+
+export async function cycleMajorStatus(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id"));
+  const major = await prisma.major.findUniqueOrThrow({
+    where: { id },
+    select: { status: true }
+  });
+  const nextStatus = major.status === "draft" ? "published" : major.status === "published" ? "archived" : "draft";
+  await prisma.major.update({
+    where: { id },
+    data: { status: nextStatus }
+  });
+  revalidatePath("/admin/majors");
 }
 
 export async function createChapter(formData: FormData) {
