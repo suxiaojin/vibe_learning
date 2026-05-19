@@ -84,6 +84,46 @@ async function nextSyllabusItemSortOrder(courseId: string, parentId: string | nu
   return (latest?.sortOrder ?? 0) + 1;
 }
 
+async function nextSyllabusItemCode(courseId: string, parentId: string | null) {
+  const [parent, siblings] = await Promise.all([
+    parentId
+      ? prisma.syllabusItem.findFirstOrThrow({
+          where: { id: parentId, courseId },
+          select: { code: true }
+        })
+      : Promise.resolve(null),
+    prisma.syllabusItem.findMany({
+      where: { courseId, parentId },
+      select: { code: true, sortOrder: true }
+    })
+  ]);
+  const maxIndex = siblings.reduce((max, item) => {
+    const lastSegment = item.code?.split(".").at(-1);
+    const value = Number(lastSegment || item.sortOrder || 0);
+    return Number.isFinite(value) ? Math.max(max, value) : max;
+  }, 0);
+  const nextIndex = maxIndex + 1;
+  return parent?.code ? `${parent.code}.${nextIndex}` : String(nextIndex);
+}
+
+async function nextCourseChapterSortOrder(courseId: string) {
+  const latest = await prisma.chapter.findFirst({
+    where: { courseId },
+    orderBy: { sortOrder: "desc" },
+    select: { sortOrder: true }
+  });
+  return (latest?.sortOrder ?? 0) + 1;
+}
+
+async function nextKnowledgePointSortOrder(chapterId: string, syllabusItemId?: string | null) {
+  const latest = await prisma.knowledgePoint.findFirst({
+    where: syllabusItemId ? { syllabusItemId } : { chapterId },
+    orderBy: { sortOrder: "desc" },
+    select: { sortOrder: true }
+  });
+  return (latest?.sortOrder ?? 0) + 1;
+}
+
 function buildRegionName(province: string, studySystem: string) {
   return `${province}${studySystem}`.trim();
 }
@@ -439,16 +479,20 @@ export async function createSyllabusItem(formData: FormData) {
   await requireAdmin();
   const courseId = String(formData.get("courseId") || "");
   const parentId = String(formData.get("parentId") || "") || null;
+  const [code, sortOrder] = await Promise.all([
+    nextSyllabusItemCode(courseId, parentId),
+    nextSyllabusItemSortOrder(courseId, parentId)
+  ]);
   await prisma.syllabusItem.create({
     data: {
       courseId,
       parentId,
-      code: String(formData.get("code") || "").trim() || null,
+      code,
       title: String(formData.get("title") || "").trim(),
       description: String(formData.get("description") || "").trim() || null,
       requirement: getSyllabusRequirement(formData),
       status: getStatus(formData),
-      sortOrder: await nextSyllabusItemSortOrder(courseId, parentId)
+      sortOrder
     }
   });
   const path = courseDetailPath(formData);
@@ -460,17 +504,29 @@ export async function updateSyllabusItem(formData: FormData) {
   await requireAdmin();
   const id = String(formData.get("id") || "");
   const courseId = String(formData.get("courseId") || "");
-  const parentId = String(formData.get("parentId") || "") || null;
+  const current = await prisma.syllabusItem.findFirstOrThrow({
+    where: { id, courseId },
+    select: { id: true, parentId: true, code: true, sortOrder: true }
+  });
+  const parentId = formData.has("parentId") ? String(formData.get("parentId") || "") || null : current.parentId;
+  if (parentId) {
+    await prisma.syllabusItem.findFirstOrThrow({
+      where: { id: parentId, courseId },
+      select: { id: true }
+    });
+  }
+  const code = parentId === current.parentId ? current.code : await nextSyllabusItemCode(courseId, parentId);
   await prisma.syllabusItem.update({
     where: { id },
     data: {
       courseId,
       parentId,
-      code: String(formData.get("code") || "").trim() || null,
+      code,
       title: String(formData.get("title") || "").trim(),
       description: String(formData.get("description") || "").trim() || null,
       requirement: getSyllabusRequirement(formData),
-      status: getStatus(formData)
+      status: getStatus(formData),
+      sortOrder: formData.has("sortOrder") ? Number(formData.get("sortOrder") || current.sortOrder) : current.sortOrder
     }
   });
   const path = courseDetailPath(formData);
@@ -482,6 +538,127 @@ export async function updateSyllabusItemStatus(formData: FormData) {
   await requireAdmin();
   await prisma.syllabusItem.update({
     where: { id: String(formData.get("id") || "") },
+    data: { status: getStatus(formData) }
+  });
+  revalidatePath(courseDetailPath(formData));
+}
+
+export async function deleteSyllabusItem(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") || "");
+  const courseId = String(formData.get("courseId") || "");
+  await prisma.syllabusItem.findFirstOrThrow({
+    where: { id, courseId },
+    select: { id: true }
+  });
+  await prisma.syllabusItem.delete({ where: { id } });
+  const path = courseDetailPath(formData);
+  revalidatePath(path);
+  redirect(path);
+}
+
+function buildSyllabusChapterTitle(syllabusItem: { code: string | null; title: string }) {
+  return `${syllabusItem.code ? `${syllabusItem.code} ` : ""}${syllabusItem.title}`.trim();
+}
+
+async function ensureCourseChapter(courseId: string, title: string) {
+  const existing = await prisma.chapter.findFirst({
+    where: { courseId, title },
+    select: { id: true }
+  });
+  if (existing) {
+    return existing;
+  }
+
+  const subject = await prisma.subject.findFirstOrThrow({
+    where: { province: "江苏", examType: "专转本", name: "计算机" },
+    select: { id: true }
+  });
+
+  return prisma.chapter.create({
+    data: {
+      subjectId: subject.id,
+      courseId,
+      title,
+      sortOrder: await nextCourseChapterSortOrder(courseId),
+      status: "published"
+    },
+    select: { id: true }
+  });
+}
+
+export async function createCourseKnowledgePoint(formData: FormData) {
+  await requireAdmin();
+  const courseId = String(formData.get("courseId") || "");
+  const syllabusItemId = String(formData.get("syllabusItemId") || "");
+  const syllabusItem = await prisma.syllabusItem.findFirstOrThrow({
+    where: { id: syllabusItemId, courseId },
+    select: { id: true, code: true, title: true }
+  });
+  const chapterTitle = String(formData.get("chapterTitle") || "").trim() || buildSyllabusChapterTitle(syllabusItem);
+  const chapter = await ensureCourseChapter(courseId, chapterTitle);
+
+  await prisma.knowledgePoint.create({
+    data: {
+      chapterId: chapter.id,
+      syllabusItemId,
+      title: String(formData.get("title") || "").trim(),
+      summary: String(formData.get("summary") || "").trim(),
+      content: String(formData.get("content") || "").trim(),
+      sortOrder: await nextKnowledgePointSortOrder(chapter.id, syllabusItemId),
+      estimatedMinutes: Number(formData.get("estimatedMinutes") || 8),
+      status: getStatus(formData)
+    }
+  });
+  const path = courseDetailPath(formData);
+  revalidatePath(path);
+  redirect(path);
+}
+
+export async function updateCourseKnowledgePoint(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") || "");
+  const courseId = String(formData.get("courseId") || "");
+  const syllabusItemId = String(formData.get("syllabusItemId") || "") || null;
+
+  if (syllabusItemId) {
+    await prisma.syllabusItem.findFirstOrThrow({
+      where: { id: syllabusItemId, courseId },
+      select: { id: true }
+    });
+  }
+  await prisma.knowledgePoint.findFirstOrThrow({
+    where: { id, chapter: { courseId } },
+    select: { id: true }
+  });
+
+  await prisma.knowledgePoint.update({
+    where: { id },
+    data: {
+      syllabusItemId,
+      title: String(formData.get("title") || "").trim(),
+      summary: String(formData.get("summary") || "").trim(),
+      content: String(formData.get("content") || "").trim(),
+      sortOrder: Number(formData.get("sortOrder") || 0),
+      estimatedMinutes: Number(formData.get("estimatedMinutes") || 8),
+      status: getStatus(formData)
+    }
+  });
+  const path = courseDetailPath(formData);
+  revalidatePath(path);
+  redirect(path);
+}
+
+export async function updateCourseKnowledgePointStatus(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") || "");
+  const courseId = String(formData.get("courseId") || "");
+  await prisma.knowledgePoint.findFirstOrThrow({
+    where: { id, chapter: { courseId } },
+    select: { id: true }
+  });
+  await prisma.knowledgePoint.update({
+    where: { id },
     data: { status: getStatus(formData) }
   });
   revalidatePath(courseDetailPath(formData));
@@ -575,9 +752,14 @@ export async function createQuestion(formData: FormData) {
   await requireAdmin();
   const type = getQuestionType(formData);
   const knowledgePointId = String(formData.get("knowledgePointId"));
+  const knowledgePoint = await prisma.knowledgePoint.findUniqueOrThrow({
+    where: { id: knowledgePointId },
+    select: { syllabusItemId: true }
+  });
   await prisma.question.create({
     data: {
       knowledgePointId,
+      syllabusItemId: knowledgePoint.syllabusItemId,
       type,
       stem: String(formData.get("stem") || "").trim(),
       options: buildQuestionOptions(formData),
@@ -595,10 +777,16 @@ export async function createQuestion(formData: FormData) {
 export async function updateQuestion(formData: FormData) {
   await requireAdmin();
   const type = getQuestionType(formData);
+  const knowledgePointId = String(formData.get("knowledgePointId"));
+  const knowledgePoint = await prisma.knowledgePoint.findUniqueOrThrow({
+    where: { id: knowledgePointId },
+    select: { syllabusItemId: true }
+  });
   await prisma.question.update({
     where: { id: String(formData.get("id")) },
     data: {
-      knowledgePointId: String(formData.get("knowledgePointId")),
+      knowledgePointId,
+      syllabusItemId: knowledgePoint.syllabusItemId,
       type,
       stem: String(formData.get("stem") || "").trim(),
       options: buildQuestionOptions(formData),
