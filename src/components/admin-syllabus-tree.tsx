@@ -48,22 +48,6 @@ function statusText(status: ContentStatus) {
   return "草稿";
 }
 
-function requirementText(requirement: SyllabusRequirement) {
-  if (requirement === "know") {
-    return "了解";
-  }
-  if (requirement === "understand") {
-    return "理解";
-  }
-  if (requirement === "master") {
-    return "掌握";
-  }
-  if (requirement === "apply") {
-    return "应用";
-  }
-  return "未设置";
-}
-
 function statusOptions() {
   return (
     <>
@@ -110,6 +94,14 @@ function buildTree(items: AdminSyllabusTreeItem[]) {
   return { roots, nodes };
 }
 
+function collectNodeDescendantIds(node: TreeNode, ids = new Set<string>()) {
+  node.children.forEach((child) => {
+    ids.add(child.id);
+    collectNodeDescendantIds(child, ids);
+  });
+  return ids;
+}
+
 function HiddenContext({ ownerType, ownerId, courseId }: Pick<AdminSyllabusTreeProps, "ownerType" | "ownerId" | "courseId">) {
   return (
     <>
@@ -124,14 +116,13 @@ export function AdminSyllabusTree({ ownerType, ownerId, courseId, items }: Admin
   const { roots, nodes } = useMemo(() => buildTree(items), [items]);
   const containerRef = useRef<HTMLElement | null>(null);
   const [selectedId, setSelectedId] = useState(items[0]?.id || "");
-  const [expandedIds, setExpandedIds] = useState(() => new Set(items.map((item) => item.id)));
+  const [expandedIds, setExpandedIds] = useState(() => new Set<string>());
   const [menu, setMenu] = useState<MenuState>(null);
   const [panelMode, setPanelMode] = useState<PanelMode>("detail");
   const [treeWidth, setTreeWidth] = useState(420);
   const [isResizing, setIsResizing] = useState(false);
 
   const selected = selectedId ? nodes.get(selectedId) || null : null;
-  const parentNode = selected?.parentId ? nodes.get(selected.parentId) : null;
 
   useEffect(() => {
     if (items.length > 0 && (!selectedId || !nodes.has(selectedId))) {
@@ -180,13 +171,14 @@ export function AdminSyllabusTree({ ownerType, ownerId, courseId, items }: Admin
     };
   }, [isResizing]);
 
-  function toggleExpanded(itemId: string) {
+  function toggleExpanded(node: TreeNode) {
     setExpandedIds((current) => {
       const next = new Set(current);
-      if (next.has(itemId)) {
-        next.delete(itemId);
+      collectNodeDescendantIds(node).forEach((id) => next.delete(id));
+      if (next.has(node.id)) {
+        next.delete(node.id);
       } else {
-        next.add(itemId);
+        next.add(node.id);
       }
       return next;
     });
@@ -210,7 +202,12 @@ export function AdminSyllabusTree({ ownerType, ownerId, courseId, items }: Admin
             isSelected ? "border-[#0872b9] bg-[#e8f4fb] text-[#075b93]" : "border-transparent hover:bg-slate-50"
           }`}
           style={{ paddingLeft: 8 + level * 18 }}
-          onClick={() => chooseItem(node.id)}
+          onClick={() => {
+            chooseItem(node.id);
+            if (hasChildren) {
+              toggleExpanded(node);
+            }
+          }}
           onContextMenu={(event) => {
             event.preventDefault();
             setSelectedId(node.id);
@@ -222,14 +219,14 @@ export function AdminSyllabusTree({ ownerType, ownerId, courseId, items }: Admin
             type="button"
             onClick={(event) => {
               event.stopPropagation();
-              toggleExpanded(node.id);
+              toggleExpanded(node);
             }}
           >
             {hasChildren ? isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} /> : <span className="size-1.5 rounded-full bg-slate-300" />}
           </button>
           <span className="min-w-12 shrink-0 font-semibold tabular-nums text-slate-500">{node.code || "-"}</span>
           <span className="min-w-0 flex-1 truncate font-semibold">{node.title}</span>
-          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${node.status === "published" ? "bg-emerald-50 text-emerald-700" : node.status === "archived" ? "bg-slate-100 text-slate-500" : "bg-amber-50 text-amber-700"}`}>
+          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${node.status === "published" ? "bg-emerald-50 text-emerald-700" : node.status === "archived" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>
             {statusText(node.status)}
           </span>
           <MoreVertical className="opacity-0 transition group-hover:opacity-100" size={15} />
@@ -291,11 +288,7 @@ export function AdminSyllabusTree({ ownerType, ownerId, courseId, items }: Admin
               <div>
                 <p className="text-xs font-semibold uppercase text-slate-400">节点详情</p>
                 <h2 className="mt-1 text-xl font-black">{selected.code ? `${selected.code} ` : ""}{selected.title}</h2>
-                <p className="mt-1 text-sm text-slate-500">父节点：{parentNode ? `${parentNode.code || "-"} ${parentNode.title}` : "根节点"} · {requirementText(selected.requirement)}</p>
-              </div>
-              <div className="flex gap-2">
-                <button className="secondary-button h-9 rounded-none px-3 text-xs" type="button" onClick={() => setPanelMode("add-child")}>添加子节点</button>
-                <button className="danger-button h-9 rounded-none px-3 text-xs" type="button" onClick={() => setPanelMode("delete")}>删除</button>
+                <p className="mt-1 text-sm text-slate-500">右键左侧节点可添加子节点或删除节点。</p>
               </div>
             </div>
 
@@ -357,8 +350,8 @@ export function AdminSyllabusTree({ ownerType, ownerId, courseId, items }: Admin
                 <input type="hidden" name="id" value={selected.id} />
                 <div className="grid gap-3 md:grid-cols-[140px_1fr]">
                   <div>
-                    <label className="label">自动编码</label>
-                    <div className="flex min-h-11 items-center border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-600">{selected.code || "-"}</div>
+                    <label className="label">编码</label>
+                    <input className="input rounded-none font-semibold" name="code" defaultValue={selected.code || ""} />
                   </div>
                   <div>
                     <label className="label">节点名称</label>

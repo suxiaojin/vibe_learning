@@ -10,3 +10,8 @@ export async function POST(request: Request) {
   await clearSession();
   return redirectTo(request, "/login");
 }
+
+export async function GET(request: Request) {
+  await clearSession();
+  return redirectTo(request, "/login");
+}
