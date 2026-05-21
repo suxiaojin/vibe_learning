@@ -72,8 +72,7 @@ export default async function QuestionBankDetailPage({
             }
           }
         },
-        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-        take: 50
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
       }
     }
   });

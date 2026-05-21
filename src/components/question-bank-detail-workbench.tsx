@@ -20,6 +20,7 @@ import {
   type LucideIcon
 } from "lucide-react";
 import {
+  createQuestionBankComprehensiveQuestion,
   createQuestionBankFillBlankQuestion,
   createQuestionBankMultipleChoiceQuestion,
   createQuestionBankSingleChoiceQuestion,
@@ -55,7 +56,7 @@ type QuestionBankDetailWorkbenchProps = {
   questions: QuestionRow[];
 };
 
-type ActiveEditorType = "single_choice" | "multiple_choice" | "true_false" | "fill_blank" | null;
+type ActiveEditorType = "single_choice" | "multiple_choice" | "true_false" | "fill_blank" | "comprehensive" | null;
 type EditableQuestionType = Exclude<ActiveEditorType, null>;
 type ChoiceQuestionType = "single_choice" | "multiple_choice";
 
@@ -209,6 +210,10 @@ function toRichTextHtml(value: string) {
   return escapeHtml(value).replace(/\n/g, "<br>");
 }
 
+function stripHtml(value: string) {
+  return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
 function initialChoiceOptionKeys(question?: QuestionRow) {
   if (!question?.options.length) {
     return [...optionKeys];
@@ -271,11 +276,24 @@ function RichTextEditor({ name, defaultValue = "" }: { name: string; defaultValu
   const initialHtml = toRichTextHtml(defaultValue);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
-  const applyCommand = (command: string) => {
-    document.execCommand(command, false);
+  const syncValue = () => {
     if (inputRef.current) {
       inputRef.current.value = editorRef.current?.innerHTML || "";
     }
+  };
+  const applyCommand = (command: string) => {
+    editorRef.current?.focus();
+    document.execCommand(command, false);
+    syncValue();
+  };
+  const insertTable = () => {
+    editorRef.current?.focus();
+    document.execCommand(
+      "insertHTML",
+      false,
+      '<table><tbody><tr><td><br></td><td><br></td></tr><tr><td><br></td><td><br></td></tr></tbody></table><p><br></p>'
+    );
+    syncValue();
   };
 
   return (
@@ -301,10 +319,20 @@ function RichTextEditor({ name, defaultValue = "" }: { name: string; defaultValu
             {item.label}
           </button>
         ))}
+        <button
+          className="grid h-6 min-w-10 place-items-center rounded border border-[#d4dae4] bg-[#f8fafc] px-2 text-xs font-black text-[#1f2b3d] hover:border-[#94a3b8]"
+          type="button"
+          onMouseDown={(event) => {
+            event.preventDefault();
+            insertTable();
+          }}
+        >
+          表格
+        </button>
       </div>
       <div
         ref={editorRef}
-        className="min-h-[240px] w-full bg-[#d9e5fb] px-4 py-4 text-base leading-8 text-[#071b38] outline-none focus:ring-2 focus:ring-inset focus:ring-[#3b82f6]/40"
+        className="min-h-[240px] w-full bg-[#d9e5fb] px-4 py-4 text-base leading-8 text-[#071b38] outline-none focus:ring-2 focus:ring-inset focus:ring-[#3b82f6]/40 [&_td]:min-w-24 [&_td]:border [&_td]:border-[#8ea3c2] [&_td]:bg-white/35 [&_td]:px-2 [&_td]:py-1 [&_table]:my-2 [&_table]:border-collapse"
         contentEditable
         dangerouslySetInnerHTML={{ __html: initialHtml }}
         role="textbox"
@@ -321,7 +349,7 @@ function RichTextEditor({ name, defaultValue = "" }: { name: string; defaultValu
 }
 
 function RichTextDisplay({ value }: { value: string }) {
-  return <div className="min-h-[150px] bg-[#d9e5fb] px-4 py-4 text-base leading-8 text-[#071b38]" dangerouslySetInnerHTML={{ __html: toRichTextHtml(value) }} />;
+  return <div className="min-h-[150px] bg-[#d9e5fb] px-4 py-4 text-base leading-8 text-[#071b38] [&_td]:min-w-24 [&_td]:border [&_td]:border-[#8ea3c2] [&_td]:bg-white/35 [&_td]:px-2 [&_td]:py-1 [&_table]:my-2 [&_table]:border-collapse" dangerouslySetInnerHTML={{ __html: toRichTextHtml(value) }} />;
 }
 
 function QuestionTypeChip({ type, active }: { type: string; active: boolean }) {
@@ -366,7 +394,7 @@ function isChoiceQuestionType(type?: string): type is ChoiceQuestionType {
 }
 
 function isEditableQuestionType(type?: string): type is EditableQuestionType {
-  return type === "single_choice" || type === "multiple_choice" || type === "true_false" || type === "fill_blank";
+  return type === "single_choice" || type === "multiple_choice" || type === "true_false" || type === "fill_blank" || type === "comprehensive";
 }
 
 function createQuestionFormId(type: EditableQuestionType) {
@@ -557,11 +585,33 @@ function FillBlankQuestionForm({ paperId, question }: { paperId: string; questio
   );
 }
 
+function ComprehensiveQuestionForm({ paperId, question }: { paperId: string; question?: QuestionRow }) {
+  const editing = Boolean(question);
+  const formId = editing && question ? editQuestionFormId(question.id) : createQuestionFormId("comprehensive");
+
+  return (
+    <form id={formId} action={editing ? updateQuestionBankQuestion : createQuestionBankComprehensiveQuestion} key={question?.id || "comprehensive"}>
+      <input type="hidden" name="paperId" value={paperId} />
+      <input type="hidden" name="questionType" value="comprehensive" />
+      {question ? <input type="hidden" name="paperQuestionId" value={question.id} /> : null}
+      <EditorShell title="题干">
+        <RichTextEditor name="stem" defaultValue={question?.title || ""} />
+      </EditorShell>
+      <EditorShell title="答案">
+        <RichTextEditor name="answer" defaultValue={question?.answer[0] || ""} />
+      </EditorShell>
+      <EditorShell title="解答详情">
+        <RichTextEditor name="analysis" defaultValue={question?.analysis || ""} />
+      </EditorShell>
+    </form>
+  );
+}
+
 function ReadonlyQuestionPreview({ question }: { question: QuestionRow }) {
   return (
     <>
       <EditorShell title="题干">
-        <div className="min-h-[150px] bg-[#d9e5fb] px-4 py-4 text-base leading-8 text-[#071b38]">{question.title}</div>
+        <RichTextDisplay value={question.title} />
       </EditorShell>
       {question.options.length > 0 ? (
         <section>
@@ -671,7 +721,15 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
               setActiveEditorType("fill_blank");
             }
           },
-          { label: "综合", icon: Sigma, tone: "normal" as const }
+          {
+            label: "综合",
+            icon: Sigma,
+            tone: "normal" as const,
+            onClick: () => {
+              setSelectedQuestionId(null);
+              setActiveEditorType("comprehensive");
+            }
+          }
         ]
       : []),
     {
@@ -726,7 +784,8 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
                     activeEditorType === "single_choice" && item.label === "单选" && "bg-[#eaf7ef] text-[#15803d]",
                     activeEditorType === "multiple_choice" && item.label === "多选" && "bg-[#eaf2ff] text-[#1d4ed8]",
                     activeEditorType === "true_false" && item.label === "判断" && "bg-[#fff7e6] text-[#b45309]",
-                    activeEditorType === "fill_blank" && item.label === "填空" && "bg-[#e9fbff] text-[#0e7490]"
+                    activeEditorType === "fill_blank" && item.label === "填空" && "bg-[#e9fbff] text-[#0e7490]",
+                    activeEditorType === "comprehensive" && item.label === "综合" && "bg-[#fff0f3] text-[#be123c]"
                   )}
                   form={item.form}
                   type={item.form ? "submit" : "button"}
@@ -748,12 +807,16 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
             <TrueFalseQuestionForm key="create-true_false" paperId={paperId} />
           ) : activeEditorType === "fill_blank" ? (
             <FillBlankQuestionForm key="create-fill_blank" paperId={paperId} />
+          ) : activeEditorType === "comprehensive" ? (
+            <ComprehensiveQuestionForm key="create-comprehensive" paperId={paperId} />
           ) : selectedQuestion && selectedChoiceType ? (
             <ChoiceQuestionForm key={`edit-${selectedQuestion.id}`} paperId={paperId} question={selectedQuestion} type={selectedChoiceType} />
           ) : selectedQuestion && selectedEditableType === "true_false" ? (
             <TrueFalseQuestionForm key={`edit-${selectedQuestion.id}`} paperId={paperId} question={selectedQuestion} />
           ) : selectedQuestion && selectedEditableType === "fill_blank" ? (
             <FillBlankQuestionForm key={`edit-${selectedQuestion.id}`} paperId={paperId} question={selectedQuestion} />
+          ) : selectedQuestion && selectedEditableType === "comprehensive" ? (
+            <ComprehensiveQuestionForm key={`edit-${selectedQuestion.id}`} paperId={paperId} question={selectedQuestion} />
           ) : selectedQuestion ? (
             <ReadonlyQuestionPreview question={selectedQuestion} />
           ) : (
@@ -788,7 +851,7 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
                         setSelectedQuestionId(question.id);
                       }}
                     >
-                      <span className={cn("min-w-0 truncate", selected && "font-black")}>{question.title}</span>
+                      <span className={cn("min-w-0 truncate", selected && "font-black")}>{stripHtml(question.title) || questionTypeText(question.type)}</span>
                       <span className="shrink-0 rounded border border-current bg-white/55 px-1.5 py-0.5 text-[10px] font-black">{meta.label}</span>
                     </button>
                   </div>

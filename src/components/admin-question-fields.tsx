@@ -4,7 +4,7 @@ import { useState } from "react";
 
 const optionKeys = ["A", "B", "C", "D"] as const;
 
-type QuestionType = "single_choice" | "multiple_choice" | "true_false" | "fill_blank";
+type QuestionType = "single_choice" | "multiple_choice" | "true_false" | "fill_blank" | "comprehensive";
 
 type OptionValue = {
   key: string;
@@ -64,7 +64,7 @@ export function AdminQuestionFields({
   const [type, setType] = useState<QuestionType>(defaultType);
   const [optionValues, setOptionValues] = useState(() => getInitialOptions(options, defaultType));
   const [answers, setAnswers] = useState(() => normalizeAnswer(answer, defaultType));
-  const visibleOptionKeys = type === "fill_blank" ? [] : type === "true_false" ? optionKeys.slice(0, 2) : optionKeys;
+  const visibleOptionKeys = type === "fill_blank" || type === "comprehensive" ? [] : type === "true_false" ? optionKeys.slice(0, 2) : optionKeys;
 
   function changeType(nextType: QuestionType) {
     setType(nextType);
@@ -79,7 +79,7 @@ export function AdminQuestionFields({
     if (nextType === "single_choice") {
       setAnswers((current) => [current[0] || "A"]);
     }
-    if (nextType === "fill_blank") {
+    if (nextType === "fill_blank" || nextType === "comprehensive") {
       setAnswers((current) => (current[0] && !optionKeys.some((key) => key === current[0]) ? current : [""]));
     }
   }
@@ -102,6 +102,7 @@ export function AdminQuestionFields({
             <option value="multiple_choice">多选</option>
             <option value="true_false">判断</option>
             <option value="fill_blank">填空</option>
+            <option value="comprehensive">综合</option>
           </select>
         </div>
         <div>
@@ -117,7 +118,7 @@ export function AdminQuestionFields({
       <label className="label mt-4">题干</label>
       <textarea className="input min-h-24" name="stem" defaultValue={defaultStem} required />
 
-      {type === "fill_blank" ? (
+      {type === "fill_blank" || type === "comprehensive" ? (
         <div className="mt-4 rounded-2xl bg-mist p-4">
           <label className="text-sm font-semibold text-slate-700">答案</label>
           <textarea

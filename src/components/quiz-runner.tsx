@@ -7,7 +7,7 @@ import { CheckCircle2, Heart, Loader2, X, XCircle } from "lucide-react";
 
 type Question = {
   id: string;
-  type: "single_choice" | "multiple_choice" | "true_false" | "fill_blank";
+  type: "single_choice" | "multiple_choice" | "true_false" | "fill_blank" | "comprehensive";
   stem: string;
   options: unknown;
   answer: unknown;
@@ -29,6 +29,7 @@ const text = {
   multipleChoice: "\u591a\u9009",
   trueFalse: "\u5224\u65ad",
   fillBlank: "\u586b\u7a7a",
+  comprehensive: "\u7efc\u5408",
   skip: "\u8df3\u8fc7",
   check: "\u68c0\u67e5",
   done: "\u5b8c\u6210",
@@ -180,7 +181,7 @@ export function QuizRunner({ pointId, questions }: { pointId: string; questions:
         </p>
         <h3 className="mt-3 text-2xl font-black leading-snug text-ink">{current.stem}</h3>
 
-        {current.type === "fill_blank" ? (
+        {current.type === "fill_blank" || current.type === "comprehensive" ? (
           <div className="mt-6">
             <input
               className={`min-h-14 w-full rounded-2xl border-2 px-5 py-3 text-base font-bold outline-none transition ${
@@ -280,6 +281,9 @@ function questionTypeText(type: Question["type"]) {
   }
   if (type === "fill_blank") {
     return text.fillBlank;
+  }
+  if (type === "comprehensive") {
+    return text.comprehensive;
   }
   return text.singleChoice;
 }
