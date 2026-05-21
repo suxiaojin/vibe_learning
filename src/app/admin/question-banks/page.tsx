@@ -3,7 +3,6 @@ import {
   ArrowUpDown,
   ChevronLeft,
   ChevronRight,
-  FileInput,
   FilePlus2,
   ListFilter,
   Shuffle,
@@ -11,6 +10,7 @@ import {
 } from "lucide-react";
 import { createQuestionBankPaper, deleteQuestionBankPaper, toggleQuestionBankPaperStatus, updateQuestionBankPaper } from "@/app/admin/actions";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
+import { QuestionBankImportDialog } from "@/components/question-bank-import-dialog";
 import { QuestionBankSidebar } from "@/components/question-bank-sidebar";
 import { requireAdmin } from "@/lib/auth";
 import { ensureDefaultQuestionBankCatalog, type QuestionBankOwnerType } from "@/lib/question-bank-catalog";
@@ -265,12 +265,11 @@ export default async function QuestionBanksPage({
                 </form>
               </details>
 
-              <button className="grid justify-items-center gap-1 text-xs font-medium text-[#071b38]" type="button">
-                <span className="grid size-8 place-items-center text-[#f0a000]">
-                  <FileInput size={29} strokeWidth={2.4} />
-                </span>
-                导入导出
-              </button>
+              <QuestionBankImportDialog
+                selectedOwner={{ type: selectedOwner.type, id: selectedOwner.id, name: selectedOwner.name, regions: selectedOwner.regions }}
+                owners={owners.map((owner) => ({ type: owner.type, id: owner.id, name: owner.name, regions: owner.regions }))}
+                regions={regions}
+              />
 
               <button className="grid justify-items-center gap-1 text-xs font-medium text-[#071b38]" type="button">
                 <span className="grid size-8 place-items-center text-[#168bd4]">
