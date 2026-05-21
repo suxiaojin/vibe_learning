@@ -1036,7 +1036,50 @@ function getQuestionBankChoiceAnswers(formData: FormData, options: QuestionOptio
     .sort((left, right) => alphabetOptionKeys.indexOf(left) - alphabetOptionKeys.indexOf(right));
 }
 
-function validateQuestionBankChoiceQuestion({
+type QuestionBankChoiceQuestionType = "single_choice" | "multiple_choice";
+type QuestionBankEditableQuestionType = QuestionBankChoiceQuestionType | "true_false" | "fill_blank";
+
+const trueFalseOptions: QuestionOption[] = [
+  { key: "A", text: "正确" },
+  { key: "B", text: "错误" }
+];
+
+function getFillBlankAnswers(formData: FormData) {
+  return formData
+    .getAll("answer")
+    .map((item) => String(item).trim())
+    .filter(Boolean);
+}
+
+function getQuestionBankQuestionPayload(formData: FormData, type: QuestionBankEditableQuestionType) {
+  const stem = String(formData.get("stem") || "").trim();
+
+  if (type === "true_false") {
+    const answer = String(formData.get("answer") || "").trim();
+    return {
+      stem,
+      options: trueFalseOptions,
+      answers: answer === "A" || answer === "B" ? [answer] : []
+    };
+  }
+
+  if (type === "fill_blank") {
+    return {
+      stem,
+      options: [],
+      answers: getFillBlankAnswers(formData)
+    };
+  }
+
+  const options = getQuestionBankChoiceOptions(formData);
+  return {
+    stem,
+    options,
+    answers: getQuestionBankChoiceAnswers(formData, options)
+  };
+}
+
+function validateQuestionBankQuestion({
   stem,
   options,
   answers,
@@ -1045,12 +1088,12 @@ function validateQuestionBankChoiceQuestion({
   stem: string;
   options: QuestionOption[];
   answers: string[];
-  type: "single_choice" | "multiple_choice";
+  type: QuestionBankEditableQuestionType;
 }) {
   if (!stem) {
     throw new Error("Question stem is required");
   }
-  if (options.some((option) => !option.text)) {
+  if ((type === "single_choice" || type === "multiple_choice") && options.some((option) => !option.text)) {
     throw new Error("Choice options are required");
   }
   if (type === "single_choice" && answers.length !== 1) {
@@ -1059,16 +1102,20 @@ function validateQuestionBankChoiceQuestion({
   if (type === "multiple_choice" && answers.length < 2) {
     throw new Error("Multiple choice answers are required");
   }
+  if (type === "true_false" && answers.length !== 1) {
+    throw new Error("True false answer is required");
+  }
+  if (type === "fill_blank" && answers.length < 1) {
+    throw new Error("Fill blank answer is required");
+  }
 }
 
-async function createQuestionBankChoiceQuestion(formData: FormData, type: "single_choice" | "multiple_choice") {
+async function createQuestionBankQuestion(formData: FormData, type: QuestionBankEditableQuestionType) {
   await requireAdmin();
   const paperId = String(formData.get("paperId") || "");
-  const stem = String(formData.get("stem") || "").trim();
-  const options = getQuestionBankChoiceOptions(formData);
-  const answers = getQuestionBankChoiceAnswers(formData, options);
+  const { stem, options, answers } = getQuestionBankQuestionPayload(formData, type);
 
-  validateQuestionBankChoiceQuestion({ stem, options, answers, type });
+  validateQuestionBankQuestion({ stem, options, answers, type });
 
   const paper = await prisma.examPaper.findUniqueOrThrow({
     where: { id: paperId },
@@ -1112,26 +1159,37 @@ async function createQuestionBankChoiceQuestion(formData: FormData, type: "singl
 }
 
 export async function createQuestionBankSingleChoiceQuestion(formData: FormData) {
-  await createQuestionBankChoiceQuestion(formData, "single_choice");
+  await createQuestionBankQuestion(formData, "single_choice");
 }
 
 export async function createQuestionBankMultipleChoiceQuestion(formData: FormData) {
-  await createQuestionBankChoiceQuestion(formData, "multiple_choice");
+  await createQuestionBankQuestion(formData, "multiple_choice");
 }
 
-export async function updateQuestionBankChoiceQuestion(formData: FormData) {
+export async function createQuestionBankTrueFalseQuestion(formData: FormData) {
+  await createQuestionBankQuestion(formData, "true_false");
+}
+
+export async function createQuestionBankFillBlankQuestion(formData: FormData) {
+  await createQuestionBankQuestion(formData, "fill_blank");
+}
+
+function isQuestionBankEditableQuestionType(type: string): type is QuestionBankEditableQuestionType {
+  return type === "single_choice" || type === "multiple_choice" || type === "true_false" || type === "fill_blank";
+}
+
+export async function updateQuestionBankQuestion(formData: FormData) {
   await requireAdmin();
   const paperId = String(formData.get("paperId") || "");
   const paperQuestionId = String(formData.get("paperQuestionId") || "");
-  const type = String(formData.get("questionType") || "") as "single_choice" | "multiple_choice";
-  const stem = String(formData.get("stem") || "").trim();
-  const options = getQuestionBankChoiceOptions(formData);
-  const answers = getQuestionBankChoiceAnswers(formData, options);
+  const type = String(formData.get("questionType") || "");
 
-  if (type !== "single_choice" && type !== "multiple_choice") {
+  if (!isQuestionBankEditableQuestionType(type)) {
     throw new Error("Unsupported question type");
   }
-  validateQuestionBankChoiceQuestion({ stem, options, answers, type });
+
+  const { stem, options, answers } = getQuestionBankQuestionPayload(formData, type);
+  validateQuestionBankQuestion({ stem, options, answers, type });
 
   const paperQuestion = await prisma.examPaperQuestion.findFirstOrThrow({
     where: {
@@ -1158,6 +1216,10 @@ export async function updateQuestionBankChoiceQuestion(formData: FormData) {
 
   revalidatePath(`/admin/question-banks/${paperQuestion.paperId}`);
   redirect(`/admin/question-banks/${paperQuestion.paperId}`);
+}
+
+export async function updateQuestionBankChoiceQuestion(formData: FormData) {
+  await updateQuestionBankQuestion(formData);
 }
 
 export async function deleteQuestionBankPaperQuestion(formData: FormData) {

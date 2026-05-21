@@ -27,6 +27,7 @@ enum QuestionType {
   single_choice
   multiple_choice
   true_false
+  fill_blank
 }
 
 enum Difficulty {

@@ -20,10 +20,12 @@ import {
   type LucideIcon
 } from "lucide-react";
 import {
+  createQuestionBankFillBlankQuestion,
   createQuestionBankMultipleChoiceQuestion,
   createQuestionBankSingleChoiceQuestion,
+  createQuestionBankTrueFalseQuestion,
   deleteQuestionBankPaperQuestion,
-  updateQuestionBankChoiceQuestion
+  updateQuestionBankQuestion
 } from "@/app/admin/actions";
 import { cn } from "@/lib/utils";
 
@@ -53,8 +55,9 @@ type QuestionBankDetailWorkbenchProps = {
   questions: QuestionRow[];
 };
 
-type ActiveEditorType = "single_choice" | "multiple_choice" | null;
-type ChoiceQuestionType = Exclude<ActiveEditorType, null>;
+type ActiveEditorType = "single_choice" | "multiple_choice" | "true_false" | "fill_blank" | null;
+type EditableQuestionType = Exclude<ActiveEditorType, null>;
+type ChoiceQuestionType = "single_choice" | "multiple_choice";
 
 type ToolItem = {
   label: string;
@@ -362,6 +365,18 @@ function isChoiceQuestionType(type?: string): type is ChoiceQuestionType {
   return type === "single_choice" || type === "multiple_choice";
 }
 
+function isEditableQuestionType(type?: string): type is EditableQuestionType {
+  return type === "single_choice" || type === "multiple_choice" || type === "true_false" || type === "fill_blank";
+}
+
+function createQuestionFormId(type: EditableQuestionType) {
+  return `create-${type}-question-form`;
+}
+
+function editQuestionFormId(questionId: string) {
+  return `edit-question-form-${questionId}`;
+}
+
 function ChoiceQuestionForm({
   paperId,
   question,
@@ -372,9 +387,9 @@ function ChoiceQuestionForm({
   type: ChoiceQuestionType;
 }) {
   const editing = Boolean(question);
-  const formId = editing && question ? `edit-choice-question-form-${question.id}` : "create-choice-question-form";
+  const formId = editing && question ? editQuestionFormId(question.id) : createQuestionFormId(type);
   const action = editing
-    ? updateQuestionBankChoiceQuestion
+    ? updateQuestionBankQuestion
     : type === "single_choice"
       ? createQuestionBankSingleChoiceQuestion
       : createQuestionBankMultipleChoiceQuestion;
@@ -450,6 +465,98 @@ function ChoiceQuestionForm({
   );
 }
 
+function TrueFalseQuestionForm({ paperId, question }: { paperId: string; question?: QuestionRow }) {
+  const editing = Boolean(question);
+  const formId = editing && question ? editQuestionFormId(question.id) : createQuestionFormId("true_false");
+  const answer = question?.answer[0] || "";
+
+  return (
+    <form id={formId} action={editing ? updateQuestionBankQuestion : createQuestionBankTrueFalseQuestion} key={question?.id || "true_false"}>
+      <input type="hidden" name="paperId" value={paperId} />
+      <input type="hidden" name="questionType" value="true_false" />
+      {question ? <input type="hidden" name="paperQuestionId" value={question.id} /> : null}
+      <EditorShell title="题干">
+        <textarea
+          className="min-h-[150px] w-full resize-none bg-[#d9e5fb] px-4 py-4 text-base leading-8 text-[#071b38] outline-none"
+          name="stem"
+          defaultValue={question?.title || ""}
+          required
+        />
+      </EditorShell>
+      <section>
+        <div className="flex h-10 items-center justify-between border-b border-[#d4dae4] bg-[#eef3f9] px-3">
+          <h2 className="text-sm font-black text-[#111827]">判断选项</h2>
+          <span className="text-xs font-medium text-[#60718a]">选择正确答案</span>
+        </div>
+        <div className="grid gap-3 bg-[#eef3f8] p-4">
+          {[
+            { key: "A", text: "正确" },
+            { key: "B", text: "错误" }
+          ].map((option) => (
+            <label key={option.key} className="grid min-h-[64px] grid-cols-[40px_1fr_52px] items-center gap-2">
+              <input type="hidden" name="optionKey" value={option.key} />
+              <input type="hidden" name={`option${option.key}`} value={option.text} />
+              <span className="text-center text-sm font-black">({option.key})</span>
+              <div className="flex h-12 items-center border border-[#c6d3e6] bg-[#d9e5fb] px-3 text-sm">{option.text}</div>
+              <span className="grid place-items-center">
+                <input
+                  className="size-4 accent-[#f59e0b]"
+                  name="answer"
+                  type="radio"
+                  value={option.key}
+                  defaultChecked={answer === option.key}
+                  required
+                  aria-label={`${option.text}为正确答案`}
+                />
+              </span>
+            </label>
+          ))}
+        </div>
+      </section>
+      <EditorShell title="解答详情">
+        <RichTextEditor name="analysis" defaultValue={question?.analysis || ""} />
+      </EditorShell>
+    </form>
+  );
+}
+
+function FillBlankQuestionForm({ paperId, question }: { paperId: string; question?: QuestionRow }) {
+  const editing = Boolean(question);
+  const formId = editing && question ? editQuestionFormId(question.id) : createQuestionFormId("fill_blank");
+
+  return (
+    <form id={formId} action={editing ? updateQuestionBankQuestion : createQuestionBankFillBlankQuestion} key={question?.id || "fill_blank"}>
+      <input type="hidden" name="paperId" value={paperId} />
+      <input type="hidden" name="questionType" value="fill_blank" />
+      {question ? <input type="hidden" name="paperQuestionId" value={question.id} /> : null}
+      <EditorShell title="题干">
+        <textarea
+          className="min-h-[150px] w-full resize-none bg-[#d9e5fb] px-4 py-4 text-base leading-8 text-[#071b38] outline-none"
+          name="stem"
+          defaultValue={question?.title || ""}
+          required
+        />
+      </EditorShell>
+      <section>
+        <div className="flex h-10 items-center border-b border-[#d4dae4] bg-[#eef3f9] px-3">
+          <h2 className="text-sm font-black text-[#111827]">答案</h2>
+        </div>
+        <div className="bg-[#eef3f8] p-4">
+          <textarea
+            className="min-h-[96px] w-full resize-y border border-[#c6d3e6] bg-[#d9e5fb] px-3 py-3 text-sm leading-7 text-[#071b38] outline-none focus:border-[#06b6d4]"
+            name="answer"
+            defaultValue={question?.answer.join("\n") || ""}
+            required
+          />
+        </div>
+      </section>
+      <EditorShell title="解答详情">
+        <RichTextEditor name="analysis" defaultValue={question?.analysis || ""} />
+      </EditorShell>
+    </form>
+  );
+}
+
 function ReadonlyQuestionPreview({ question }: { question: QuestionRow }) {
   return (
     <>
@@ -492,13 +599,14 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
   const [columnLayout, setColumnLayout] = useState(readColumnLayout);
   const selectedQuestion = questions.find((question) => question.id === selectedQuestionId) || null;
   const selectedChoiceType = isChoiceQuestionType(selectedQuestion?.type) ? selectedQuestion.type : null;
+  const selectedEditableType = isEditableQuestionType(selectedQuestion?.type) ? selectedQuestion.type : null;
   const activeType = activeEditorType || selectedQuestion?.type || "";
   const activeTypeText = questionTypeText(activeType);
   const activeDifficulty = activeEditorType ? "3星" : difficultyText(selectedQuestion?.difficulty);
   const activeFormId = activeEditorType
-    ? "create-choice-question-form"
-    : selectedQuestion && selectedChoiceType
-      ? `edit-choice-question-form-${selectedQuestion.id}`
+    ? createQuestionFormId(activeEditorType)
+    : selectedQuestion && selectedEditableType
+      ? editQuestionFormId(selectedQuestion.id)
       : undefined;
   const visibleTypeOrder = questionTypeOrder.filter((type) => isComputerMajor || !["true_false", "fill_blank", "comprehensive"].includes(type));
   const resizeColumns = (left: "editor" | "list", right: "list" | "attributes", startX: number, startLayout: typeof defaultColumnLayout, clientX: number) => {
@@ -545,8 +653,24 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
     },
     ...(isComputerMajor
       ? [
-          { label: "判断", icon: ListChecks, tone: "normal" as const },
-          { label: "填空", icon: FileText, tone: "normal" as const },
+          {
+            label: "判断",
+            icon: ListChecks,
+            tone: "normal" as const,
+            onClick: () => {
+              setSelectedQuestionId(null);
+              setActiveEditorType("true_false");
+            }
+          },
+          {
+            label: "填空",
+            icon: FileText,
+            tone: "normal" as const,
+            onClick: () => {
+              setSelectedQuestionId(null);
+              setActiveEditorType("fill_blank");
+            }
+          },
           { label: "综合", icon: Sigma, tone: "normal" as const }
         ]
       : []),
@@ -600,7 +724,9 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
                     "grid min-h-[54px] place-items-center gap-1 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40",
                     item.tone === "danger" ? "text-[#ef3e46]" : "text-[#071b38]",
                     activeEditorType === "single_choice" && item.label === "单选" && "bg-[#eaf7ef] text-[#15803d]",
-                    activeEditorType === "multiple_choice" && item.label === "多选" && "bg-[#eaf2ff] text-[#1d4ed8]"
+                    activeEditorType === "multiple_choice" && item.label === "多选" && "bg-[#eaf2ff] text-[#1d4ed8]",
+                    activeEditorType === "true_false" && item.label === "判断" && "bg-[#fff7e6] text-[#b45309]",
+                    activeEditorType === "fill_blank" && item.label === "填空" && "bg-[#e9fbff] text-[#0e7490]"
                   )}
                   form={item.form}
                   type={item.form ? "submit" : "button"}
@@ -616,10 +742,18 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
         </aside>
 
         <section className="h-full overflow-y-auto border-r border-[#d7dee8] bg-[#eef3f8] px-3 pb-16 pt-0 overscroll-contain">
-          {activeEditorType ? (
+          {activeEditorType && isChoiceQuestionType(activeEditorType) ? (
             <ChoiceQuestionForm key={`create-${activeEditorType}`} paperId={paperId} type={activeEditorType} />
+          ) : activeEditorType === "true_false" ? (
+            <TrueFalseQuestionForm key="create-true_false" paperId={paperId} />
+          ) : activeEditorType === "fill_blank" ? (
+            <FillBlankQuestionForm key="create-fill_blank" paperId={paperId} />
           ) : selectedQuestion && selectedChoiceType ? (
             <ChoiceQuestionForm key={`edit-${selectedQuestion.id}`} paperId={paperId} question={selectedQuestion} type={selectedChoiceType} />
+          ) : selectedQuestion && selectedEditableType === "true_false" ? (
+            <TrueFalseQuestionForm key={`edit-${selectedQuestion.id}`} paperId={paperId} question={selectedQuestion} />
+          ) : selectedQuestion && selectedEditableType === "fill_blank" ? (
+            <FillBlankQuestionForm key={`edit-${selectedQuestion.id}`} paperId={paperId} question={selectedQuestion} />
           ) : selectedQuestion ? (
             <ReadonlyQuestionPreview question={selectedQuestion} />
           ) : (

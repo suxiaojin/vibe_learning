@@ -7,7 +7,7 @@ import { CheckCircle2, Heart, Loader2, X, XCircle } from "lucide-react";
 
 type Question = {
   id: string;
-  type: "single_choice" | "multiple_choice" | "true_false";
+  type: "single_choice" | "multiple_choice" | "true_false" | "fill_blank";
   stem: string;
   options: unknown;
   answer: unknown;
@@ -28,6 +28,7 @@ const text = {
   singleChoice: "\u5355\u9009",
   multipleChoice: "\u591a\u9009",
   trueFalse: "\u5224\u65ad",
+  fillBlank: "\u586b\u7a7a",
   skip: "\u8df3\u8fc7",
   check: "\u68c0\u67e5",
   done: "\u5b8c\u6210",
@@ -97,6 +98,13 @@ export function QuizRunner({ pointId, questions }: { pointId: string; questions:
       }
       return { ...currentAnswers, [question.id]: [key] };
     });
+  }
+
+  function updateFillBlankAnswer(question: Question, value: string) {
+    if (checkState !== "idle") {
+      return;
+    }
+    setAnswers((currentAnswers) => ({ ...currentAnswers, [question.id]: value.trim() ? [value] : [] }));
   }
 
   function checkAnswer() {
@@ -172,30 +180,47 @@ export function QuizRunner({ pointId, questions }: { pointId: string; questions:
         </p>
         <h3 className="mt-3 text-2xl font-black leading-snug text-ink">{current.stem}</h3>
 
-        <div className="mt-6 grid gap-3">
-          {options.map((option) => {
-            const active = selected.includes(option.key);
-            const correctOption = normalizeAnswer(current.answer).includes(option.key);
-            return (
-              <button
-                key={option.key}
-                className={`min-h-14 rounded-2xl border-2 px-5 py-3 text-left text-base font-bold transition ${
-                  checkState !== "idle" && correctOption
-                    ? "border-[#58cc02] bg-[#58cc02]/10 text-ink"
-                    : checkState === "wrong" && active
-                      ? "border-coral bg-coral/10 text-coral"
-                      : active
-                        ? "border-sky-400 bg-sky-50 text-ink"
-                        : "border-slate-200 bg-white hover:border-slate-300"
-                }`}
-                type="button"
-                onClick={() => toggleAnswer(current, option.key)}
-              >
-                <span className="mr-2 text-slate-400">{option.key}.</span> {option.text}
-              </button>
-            );
-          })}
-        </div>
+        {current.type === "fill_blank" ? (
+          <div className="mt-6">
+            <input
+              className={`min-h-14 w-full rounded-2xl border-2 px-5 py-3 text-base font-bold outline-none transition ${
+                checkState === "correct"
+                  ? "border-[#58cc02] bg-[#58cc02]/10"
+                  : checkState === "wrong"
+                    ? "border-coral bg-coral/10"
+                    : "border-slate-200 bg-white focus:border-sky-400"
+              }`}
+              disabled={checkState !== "idle"}
+              value={selected[0] || ""}
+              onChange={(event) => updateFillBlankAnswer(current, event.target.value)}
+            />
+          </div>
+        ) : (
+          <div className="mt-6 grid gap-3">
+            {options.map((option) => {
+              const active = selected.includes(option.key);
+              const correctOption = normalizeAnswer(current.answer).includes(option.key);
+              return (
+                <button
+                  key={option.key}
+                  className={`min-h-14 rounded-2xl border-2 px-5 py-3 text-left text-base font-bold transition ${
+                    checkState !== "idle" && correctOption
+                      ? "border-[#58cc02] bg-[#58cc02]/10 text-ink"
+                      : checkState === "wrong" && active
+                        ? "border-coral bg-coral/10 text-coral"
+                        : active
+                          ? "border-sky-400 bg-sky-50 text-ink"
+                          : "border-slate-200 bg-white hover:border-slate-300"
+                  }`}
+                  type="button"
+                  onClick={() => toggleAnswer(current, option.key)}
+                >
+                  <span className="mr-2 text-slate-400">{option.key}.</span> {option.text}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </article>
 
       <div
@@ -252,6 +277,9 @@ function questionTypeText(type: Question["type"]) {
   }
   if (type === "true_false") {
     return text.trueFalse;
+  }
+  if (type === "fill_blank") {
+    return text.fillBlank;
   }
   return text.singleChoice;
 }

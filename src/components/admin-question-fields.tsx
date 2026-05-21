@@ -4,7 +4,7 @@ import { useState } from "react";
 
 const optionKeys = ["A", "B", "C", "D"] as const;
 
-type QuestionType = "single_choice" | "multiple_choice" | "true_false";
+type QuestionType = "single_choice" | "multiple_choice" | "true_false" | "fill_blank";
 
 type OptionValue = {
   key: string;
@@ -64,7 +64,7 @@ export function AdminQuestionFields({
   const [type, setType] = useState<QuestionType>(defaultType);
   const [optionValues, setOptionValues] = useState(() => getInitialOptions(options, defaultType));
   const [answers, setAnswers] = useState(() => normalizeAnswer(answer, defaultType));
-  const visibleOptionKeys = type === "true_false" ? optionKeys.slice(0, 2) : optionKeys;
+  const visibleOptionKeys = type === "fill_blank" ? [] : type === "true_false" ? optionKeys.slice(0, 2) : optionKeys;
 
   function changeType(nextType: QuestionType) {
     setType(nextType);
@@ -78,6 +78,9 @@ export function AdminQuestionFields({
     }
     if (nextType === "single_choice") {
       setAnswers((current) => [current[0] || "A"]);
+    }
+    if (nextType === "fill_blank") {
+      setAnswers((current) => (current[0] && !optionKeys.some((key) => key === current[0]) ? current : [""]));
     }
   }
 
@@ -98,6 +101,7 @@ export function AdminQuestionFields({
             <option value="single_choice">单选</option>
             <option value="multiple_choice">多选</option>
             <option value="true_false">判断</option>
+            <option value="fill_blank">填空</option>
           </select>
         </div>
         <div>
@@ -113,43 +117,56 @@ export function AdminQuestionFields({
       <label className="label mt-4">题干</label>
       <textarea className="input min-h-24" name="stem" defaultValue={defaultStem} required />
 
-      <div className="mt-4 rounded-2xl bg-mist p-4">
-        <div className="flex items-center justify-between gap-3">
-          <label className="text-sm font-semibold text-slate-700">选项与答案</label>
-          <p className="text-xs text-slate-500">{type === "multiple_choice" ? "多选可勾多个" : "单选/判断只选一个"}</p>
+      {type === "fill_blank" ? (
+        <div className="mt-4 rounded-2xl bg-mist p-4">
+          <label className="text-sm font-semibold text-slate-700">答案</label>
+          <textarea
+            className="input mt-3 min-h-20"
+            name="answer"
+            value={answers[0] || ""}
+            onChange={(event) => setAnswers([event.target.value])}
+            required
+          />
         </div>
-        <div className="mt-3 grid gap-3">
-          {visibleOptionKeys.map((key) => (
-            <div key={key} className="grid grid-cols-[48px_1fr_72px] items-center gap-2">
-              <span className="font-semibold text-slate-700">{key}</span>
-              <input
-                className="input"
-                name={`option${key}`}
-                value={optionValues[key]}
-                placeholder={type === "true_false" && key === "A" ? "正确" : type === "true_false" && key === "B" ? "错误" : `选项 ${key}`}
-                readOnly={type === "true_false"}
-                onChange={(event) => setOptionValues((current) => ({ ...current, [key]: event.target.value }))}
-              />
-              <label className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-sm">
+      ) : (
+        <div className="mt-4 rounded-2xl bg-mist p-4">
+          <div className="flex items-center justify-between gap-3">
+            <label className="text-sm font-semibold text-slate-700">选项与答案</label>
+            <p className="text-xs text-slate-500">{type === "multiple_choice" ? "多选可勾多个" : "单选/判断只选一个"}</p>
+          </div>
+          <div className="mt-3 grid gap-3">
+            {visibleOptionKeys.map((key) => (
+              <div key={key} className="grid grid-cols-[48px_1fr_72px] items-center gap-2">
+                <span className="font-semibold text-slate-700">{key}</span>
                 <input
-                  name="answer"
-                  type={type === "multiple_choice" ? "checkbox" : "radio"}
-                  value={key}
-                  checked={answers.includes(key)}
-                  onChange={() => toggleAnswer(key)}
+                  className="input"
+                  name={`option${key}`}
+                  value={optionValues[key]}
+                  placeholder={type === "true_false" && key === "A" ? "正确" : type === "true_false" && key === "B" ? "错误" : `选项 ${key}`}
+                  readOnly={type === "true_false"}
+                  onChange={(event) => setOptionValues((current) => ({ ...current, [key]: event.target.value }))}
                 />
-                答案
-              </label>
-            </div>
-          ))}
-          {type === "true_false" ? (
-            <>
-              <input type="hidden" name="optionC" value="" />
-              <input type="hidden" name="optionD" value="" />
-            </>
-          ) : null}
+                <label className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-sm">
+                  <input
+                    name="answer"
+                    type={type === "multiple_choice" ? "checkbox" : "radio"}
+                    value={key}
+                    checked={answers.includes(key)}
+                    onChange={() => toggleAnswer(key)}
+                  />
+                  答案
+                </label>
+              </div>
+            ))}
+            {type === "true_false" ? (
+              <>
+                <input type="hidden" name="optionC" value="" />
+                <input type="hidden" name="optionD" value="" />
+              </>
+            ) : null}
+          </div>
         </div>
-      </div>
+      )}
 
       <label className="label mt-4">解析</label>
       <textarea className="input min-h-24" name="analysis" defaultValue={defaultAnalysis} required />
