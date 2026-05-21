@@ -6,6 +6,7 @@ const iconOptions = [
   { value: "dashboard", label: "仪表盘" },
   { value: "map", label: "区域" },
   { value: "book", label: "课程/题库" },
+  { value: "database", label: "题库数据" },
   { value: "graduation", label: "专业" },
   { value: "settings", label: "设置" }
 ];

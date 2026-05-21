@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import {
   BookOpenCheck,
+  Database,
   GraduationCap,
   LayoutDashboard,
   LifeBuoy,
@@ -17,6 +18,7 @@ import { cn } from "@/lib/utils";
 
 const iconMap = {
   book: BookOpenCheck,
+  database: Database,
   dashboard: LayoutDashboard,
   graduation: GraduationCap,
   map: MapPinned,
@@ -25,6 +27,7 @@ const iconMap = {
 
 export function AdminShell({ children, modules }: { children: React.ReactNode; modules: AdminModuleNavItem[] }) {
   const pathname = usePathname();
+  const isQuestionBankWorkspace = pathname.startsWith("/admin/question-banks");
 
   useEffect(() => {
     function closeOpenDetails(event: PointerEvent) {
@@ -41,6 +44,10 @@ export function AdminShell({ children, modules }: { children: React.ReactNode; m
     document.addEventListener("pointerdown", closeOpenDetails);
     return () => document.removeEventListener("pointerdown", closeOpenDetails);
   }, []);
+
+  if (isQuestionBankWorkspace) {
+    return <>{children}</>;
+  }
 
   return (
     <div className="min-h-screen bg-[#f5f6fa] text-[#20242a] lg:pl-64">

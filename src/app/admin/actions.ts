@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { ContentStatus, Difficulty, QuestionType, RegionStatus, SyllabusRequirement } from "@prisma/client";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 
 type QuestionOption = {
   key: string;
@@ -12,6 +13,7 @@ type QuestionOption = {
 };
 
 const optionKeys = ["A", "B", "C", "D"] as const;
+const alphabetOptionKeys = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
 function getStatus(formData: FormData) {
   return String(formData.get("status") || "draft") as ContentStatus;
@@ -63,6 +65,20 @@ async function nextAdminModuleSortOrder() {
     select: { sortOrder: true }
   });
   return (latest?.sortOrder ?? 0) + 1;
+}
+
+async function nextQuestionBankOwnerSortOrder() {
+  const [latestSubject, latestMajor] = await Promise.all([
+    prisma.publicSubject.findFirst({
+      orderBy: { sortOrder: "desc" },
+      select: { sortOrder: true }
+    }),
+    prisma.major.findFirst({
+      orderBy: { sortOrder: "desc" },
+      select: { sortOrder: true }
+    })
+  ]);
+  return Math.max(latestSubject?.sortOrder ?? 0, latestMajor?.sortOrder ?? 0) + 1;
 }
 
 async function nextMajorCourseSortOrder(regionId: string, majorId: string) {
@@ -130,6 +146,29 @@ async function nextKnowledgePointSortOrder(chapterId: string, syllabusItemId?: s
     select: { sortOrder: true }
   });
   return (latest?.sortOrder ?? 0) + 1;
+}
+
+async function nextExamPaperQuestionSortOrder(paperId: string) {
+  const latest = await prisma.examPaperQuestion.findFirst({
+    where: { paperId },
+    orderBy: { sortOrder: "desc" },
+    select: { sortOrder: true }
+  });
+  return (latest?.sortOrder ?? 0) + 1;
+}
+
+async function deleteMajorWithContent(majorId: string) {
+  await prisma.$transaction(async (tx) => {
+    await tx.learningCourse.deleteMany({
+      where: {
+        majorId,
+        courseType: "major"
+      }
+    });
+    await tx.major.delete({
+      where: { id: majorId }
+    });
+  });
 }
 
 function buildRegionName(province: string, studySystem: string) {
@@ -438,6 +477,14 @@ export async function updateMajorStatus(formData: FormData) {
   revalidatePath("/admin/majors");
 }
 
+export async function deleteMajor(formData: FormData) {
+  await requireAdmin();
+  await deleteMajorWithContent(String(formData.get("id") || ""));
+  revalidatePath("/admin/majors");
+  revalidatePath("/admin/question-banks");
+  redirect("/admin/majors");
+}
+
 export async function createMajorCourse(formData: FormData) {
   await requireAdmin();
   const majorId = String(formData.get("majorId") || "");
@@ -520,6 +567,308 @@ function courseDetailPath(formData: FormData) {
     return `/admin/public-subjects/${ownerId}/courses/${courseId}`;
   }
   return `/admin/majors/${ownerId}/courses/${courseId}`;
+}
+
+function getQuestionBankOwner(formData: FormData) {
+  const ownerType = String(formData.get("ownerType") || "") as QuestionBankOwnerType;
+  const ownerId = String(formData.get("ownerId") || "");
+
+  if (ownerType !== "public_subject" && ownerType !== "major") {
+    throw new Error("Invalid question bank owner type");
+  }
+
+  return { ownerType, ownerId };
+}
+
+function questionBankPath(ownerType: QuestionBankOwnerType, ownerId: string) {
+  return `/admin/question-banks?type=${ownerType}&id=${encodeURIComponent(ownerId)}`;
+}
+
+function getPaperYear(formData: FormData) {
+  const raw = String(formData.get("year") || "").trim();
+  if (!raw) {
+    return null;
+  }
+  const year = Number(raw);
+  return Number.isFinite(year) ? year : null;
+}
+
+function ownerCourseWhere(ownerType: QuestionBankOwnerType, ownerId: string, regionId?: string) {
+  return {
+    courseType: ownerType,
+    ...(ownerType === "public_subject" ? { publicSubjectId: ownerId } : { majorId: ownerId }),
+    ...(regionId ? { regionId } : {})
+  };
+}
+
+async function ensureQuestionBankCourse(ownerType: QuestionBankOwnerType, ownerId: string, regionId: string) {
+  const existing = await prisma.learningCourse.findFirst({
+    where: ownerCourseWhere(ownerType, ownerId, regionId),
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    select: { id: true }
+  });
+
+  if (existing) {
+    return existing;
+  }
+
+  const region = await prisma.region.findUniqueOrThrow({
+    where: { id: regionId },
+    select: { id: true }
+  });
+
+  if (ownerType === "public_subject") {
+    const subject = await prisma.publicSubject.findUniqueOrThrow({
+      where: { id: ownerId },
+      select: { id: true, name: true }
+    });
+    await prisma.regionPublicSubject.upsert({
+      where: {
+        regionId_publicSubjectId: {
+          regionId: region.id,
+          publicSubjectId: subject.id
+        }
+      },
+      update: {},
+      create: {
+        regionId: region.id,
+        publicSubjectId: subject.id
+      }
+    });
+    return prisma.learningCourse.create({
+      data: {
+        regionId: region.id,
+        publicSubjectId: subject.id,
+        name: subject.name,
+        courseType: "public_subject",
+        status: "published",
+        sortOrder: await nextPublicSubjectCourseSortOrder(region.id, subject.id)
+      },
+      select: { id: true }
+    });
+  }
+
+  const major = await prisma.major.findUniqueOrThrow({
+    where: { id: ownerId },
+    select: { id: true, name: true }
+  });
+  await prisma.regionMajor.upsert({
+    where: {
+      regionId_majorId: {
+        regionId: region.id,
+        majorId: major.id
+      }
+    },
+    update: {},
+    create: {
+      regionId: region.id,
+      majorId: major.id
+    }
+  });
+  return prisma.learningCourse.create({
+    data: {
+      regionId: region.id,
+      majorId: major.id,
+      name: major.name,
+      courseType: "major",
+      status: "published",
+      sortOrder: await nextMajorCourseSortOrder(region.id, major.id)
+    },
+    select: { id: true }
+  });
+}
+
+async function touchQuestionBankPaper(paperId: string) {
+  await prisma.examPaper.update({
+    where: { id: paperId },
+    data: { updatedAt: new Date() }
+  });
+}
+
+export async function createQuestionBankPaper(formData: FormData) {
+  await requireAdmin();
+  const { ownerType, ownerId } = getQuestionBankOwner(formData);
+  const regionId = String(formData.get("regionId") || "");
+  const course = await ensureQuestionBankCourse(ownerType, ownerId, regionId);
+
+  await prisma.examPaper.create({
+    data: {
+      courseId: course.id,
+      title: String(formData.get("title") || "").trim(),
+      year: getPaperYear(formData),
+      paperType: "real_exam",
+      status: "published"
+    }
+  });
+
+  revalidatePath("/admin/question-banks");
+  redirect(questionBankPath(ownerType, ownerId));
+}
+
+export async function createQuestionBankOwner(formData: FormData) {
+  await requireAdmin();
+  const name = String(formData.get("name") || "").trim();
+  const regionId = String(formData.get("regionId") || "");
+
+  if (!name) {
+    throw new Error("Question bank owner name is required");
+  }
+
+  const region = await prisma.region.findUniqueOrThrow({
+    where: { id: regionId },
+    select: { id: true }
+  });
+  const major = await prisma.major.create({
+    data: {
+      name,
+      status: "published",
+      sortOrder: await nextQuestionBankOwnerSortOrder(),
+      regions: {
+        create: {
+          regionId: region.id
+        }
+      }
+    }
+  });
+
+  await ensureQuestionBankCourse("major", major.id, region.id);
+  revalidatePath("/admin/question-banks");
+  redirect(questionBankPath("major", major.id));
+}
+
+export async function renameQuestionBankOwner(formData: FormData) {
+  await requireAdmin();
+  const { ownerType, ownerId } = getQuestionBankOwner(formData);
+  const name = String(formData.get("name") || "").trim();
+
+  if (!name) {
+    throw new Error("Question bank owner name is required");
+  }
+
+  if (ownerType === "public_subject") {
+    await prisma.publicSubject.update({
+      where: { id: ownerId },
+      data: { name }
+    });
+  } else {
+    await prisma.major.update({
+      where: { id: ownerId },
+      data: { name }
+    });
+  }
+
+  revalidatePath("/admin/question-banks");
+  redirect(questionBankPath(ownerType, ownerId));
+}
+
+export async function deleteQuestionBankOwner(formData: FormData) {
+  await requireAdmin();
+  const { ownerType, ownerId } = getQuestionBankOwner(formData);
+
+  if (ownerType !== "major") {
+    throw new Error("Only major question bank owners can be deleted here");
+  }
+
+  await deleteMajorWithContent(ownerId);
+  revalidatePath("/admin/majors");
+  revalidatePath("/admin/question-banks");
+  redirect("/admin/question-banks");
+}
+
+export async function reorderQuestionBankOwners(formData: FormData) {
+  await requireAdmin();
+  const order = String(formData.get("order") || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  await prisma.$transaction(
+    order.map((item, index) => {
+      const [ownerType, ownerId] = item.split(":");
+      if ((ownerType !== "public_subject" && ownerType !== "major") || !ownerId) {
+        throw new Error("Invalid question bank owner order");
+      }
+      if (ownerType === "public_subject") {
+        return prisma.publicSubject.update({
+          where: { id: ownerId },
+          data: { sortOrder: index }
+        });
+      }
+      return prisma.major.update({
+        where: { id: ownerId },
+        data: { sortOrder: index }
+      });
+    })
+  );
+
+  revalidatePath("/admin/question-banks");
+}
+
+export async function updateQuestionBankPaper(formData: FormData) {
+  await requireAdmin();
+  const { ownerType, ownerId } = getQuestionBankOwner(formData);
+  const id = String(formData.get("id") || "");
+  const paper = await prisma.examPaper.findFirstOrThrow({
+    where: {
+      id,
+      course: ownerCourseWhere(ownerType, ownerId)
+    },
+    include: { course: true }
+  });
+  const regionId = String(formData.get("regionId") || paper.course.regionId);
+  const course = await ensureQuestionBankCourse(ownerType, ownerId, regionId);
+
+  await prisma.examPaper.update({
+    where: { id },
+    data: {
+      courseId: course.id,
+      title: String(formData.get("title") || "").trim(),
+      year: getPaperYear(formData),
+      updatedAt: paper.updatedAt
+    }
+  });
+
+  revalidatePath("/admin/question-banks");
+  redirect(questionBankPath(ownerType, ownerId));
+}
+
+export async function deleteQuestionBankPaper(formData: FormData) {
+  await requireAdmin();
+  const { ownerType, ownerId } = getQuestionBankOwner(formData);
+  const id = String(formData.get("id") || "");
+  await prisma.examPaper.findFirstOrThrow({
+    where: {
+      id,
+      course: ownerCourseWhere(ownerType, ownerId)
+    },
+    select: { id: true }
+  });
+  await prisma.examPaper.delete({ where: { id } });
+  revalidatePath("/admin/question-banks");
+  redirect(questionBankPath(ownerType, ownerId));
+}
+
+export async function toggleQuestionBankPaperStatus(formData: FormData) {
+  await requireAdmin();
+  const { ownerType, ownerId } = getQuestionBankOwner(formData);
+  const id = String(formData.get("id") || "");
+  const paper = await prisma.examPaper.findFirstOrThrow({
+    where: {
+      id,
+      course: ownerCourseWhere(ownerType, ownerId)
+    },
+    select: { status: true, updatedAt: true }
+  });
+
+  await prisma.examPaper.update({
+    where: { id },
+    data: {
+      status: paper.status === "published" ? "archived" : "published",
+      updatedAt: paper.updatedAt
+    }
+  });
+
+  revalidatePath("/admin/question-banks");
 }
 
 export async function createSyllabusItem(formData: FormData) {
@@ -631,6 +980,218 @@ async function ensureCourseChapter(courseId: string, title: string) {
     },
     select: { id: true }
   });
+}
+
+async function ensureQuestionBankKnowledgePoint(courseId: string) {
+  const chapter = await ensureCourseChapter(courseId, "未归类题目");
+  const existing = await prisma.knowledgePoint.findFirst({
+    where: {
+      chapterId: chapter.id,
+      title: "未归类题目"
+    },
+    select: { id: true, syllabusItemId: true }
+  });
+
+  if (existing) {
+    return existing;
+  }
+
+  return prisma.knowledgePoint.create({
+    data: {
+      chapterId: chapter.id,
+      title: "未归类题目",
+      summary: "题库详情页手动录入题目的默认归类。",
+      content: "题库详情页手动录入题目的默认归类。",
+      sortOrder: await nextKnowledgePointSortOrder(chapter.id),
+      estimatedMinutes: 8,
+      status: "published"
+    },
+    select: { id: true, syllabusItemId: true }
+  });
+}
+
+function getQuestionBankOptionKeys(formData: FormData) {
+  const submittedKeys = formData
+    .getAll("optionKey")
+    .map((item) => String(item).trim().toUpperCase())
+    .filter((item, index, array) => alphabetOptionKeys.includes(item) && array.indexOf(item) === index)
+    .sort((left, right) => alphabetOptionKeys.indexOf(left) - alphabetOptionKeys.indexOf(right));
+
+  return submittedKeys.length > 0 ? submittedKeys : [...optionKeys];
+}
+
+function getQuestionBankChoiceOptions(formData: FormData) {
+  return getQuestionBankOptionKeys(formData).map((key) => ({
+    key,
+    text: String(formData.get(`option${key}`) || "").trim()
+  }));
+}
+
+function getQuestionBankChoiceAnswers(formData: FormData, options: QuestionOption[]) {
+  const optionKeySet = new Set(options.map((option) => option.key));
+  return formData
+    .getAll("answer")
+    .map((item) => String(item).trim())
+    .filter((item, index, array) => optionKeySet.has(item) && array.indexOf(item) === index)
+    .sort((left, right) => alphabetOptionKeys.indexOf(left) - alphabetOptionKeys.indexOf(right));
+}
+
+function validateQuestionBankChoiceQuestion({
+  stem,
+  options,
+  answers,
+  type
+}: {
+  stem: string;
+  options: QuestionOption[];
+  answers: string[];
+  type: "single_choice" | "multiple_choice";
+}) {
+  if (!stem) {
+    throw new Error("Question stem is required");
+  }
+  if (options.some((option) => !option.text)) {
+    throw new Error("Choice options are required");
+  }
+  if (type === "single_choice" && answers.length !== 1) {
+    throw new Error("Single choice answer is required");
+  }
+  if (type === "multiple_choice" && answers.length < 2) {
+    throw new Error("Multiple choice answers are required");
+  }
+}
+
+async function createQuestionBankChoiceQuestion(formData: FormData, type: "single_choice" | "multiple_choice") {
+  await requireAdmin();
+  const paperId = String(formData.get("paperId") || "");
+  const stem = String(formData.get("stem") || "").trim();
+  const options = getQuestionBankChoiceOptions(formData);
+  const answers = getQuestionBankChoiceAnswers(formData, options);
+
+  validateQuestionBankChoiceQuestion({ stem, options, answers, type });
+
+  const paper = await prisma.examPaper.findUniqueOrThrow({
+    where: { id: paperId },
+    select: {
+      id: true,
+      courseId: true,
+      title: true,
+      year: true
+    }
+  });
+  const point = await ensureQuestionBankKnowledgePoint(paper.courseId);
+  const question = await prisma.question.create({
+    data: {
+      knowledgePointId: point.id,
+      syllabusItemId: point.syllabusItemId,
+      type,
+      stem,
+      options,
+      answer: answers,
+      analysis: String(formData.get("analysis") || "").trim(),
+      source: paper.title,
+      sourceType: "manual",
+      sourceYear: paper.year,
+      difficulty: "medium",
+      status: "published"
+    },
+    select: { id: true }
+  });
+
+  await prisma.examPaperQuestion.create({
+    data: {
+      paperId: paper.id,
+      questionId: question.id,
+      sortOrder: await nextExamPaperQuestionSortOrder(paper.id)
+    }
+  });
+  await touchQuestionBankPaper(paper.id);
+
+  revalidatePath(`/admin/question-banks/${paper.id}`);
+  redirect(`/admin/question-banks/${paper.id}`);
+}
+
+export async function createQuestionBankSingleChoiceQuestion(formData: FormData) {
+  await createQuestionBankChoiceQuestion(formData, "single_choice");
+}
+
+export async function createQuestionBankMultipleChoiceQuestion(formData: FormData) {
+  await createQuestionBankChoiceQuestion(formData, "multiple_choice");
+}
+
+export async function updateQuestionBankChoiceQuestion(formData: FormData) {
+  await requireAdmin();
+  const paperId = String(formData.get("paperId") || "");
+  const paperQuestionId = String(formData.get("paperQuestionId") || "");
+  const type = String(formData.get("questionType") || "") as "single_choice" | "multiple_choice";
+  const stem = String(formData.get("stem") || "").trim();
+  const options = getQuestionBankChoiceOptions(formData);
+  const answers = getQuestionBankChoiceAnswers(formData, options);
+
+  if (type !== "single_choice" && type !== "multiple_choice") {
+    throw new Error("Unsupported question type");
+  }
+  validateQuestionBankChoiceQuestion({ stem, options, answers, type });
+
+  const paperQuestion = await prisma.examPaperQuestion.findFirstOrThrow({
+    where: {
+      id: paperQuestionId,
+      paperId
+    },
+    select: {
+      questionId: true,
+      paperId: true
+    }
+  });
+
+  await prisma.question.update({
+    where: { id: paperQuestion.questionId },
+    data: {
+      type,
+      stem,
+      options,
+      answer: answers,
+      analysis: String(formData.get("analysis") || "").trim()
+    }
+  });
+  await touchQuestionBankPaper(paperQuestion.paperId);
+
+  revalidatePath(`/admin/question-banks/${paperQuestion.paperId}`);
+  redirect(`/admin/question-banks/${paperQuestion.paperId}`);
+}
+
+export async function deleteQuestionBankPaperQuestion(formData: FormData) {
+  await requireAdmin();
+  const paperId = String(formData.get("paperId") || "");
+  const paperQuestionId = String(formData.get("paperQuestionId") || "");
+  const paperQuestion = await prisma.examPaperQuestion.findFirstOrThrow({
+    where: {
+      id: paperQuestionId,
+      paperId
+    },
+    select: {
+      questionId: true,
+      paperId: true
+    }
+  });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.examPaperQuestion.delete({
+      where: { id: paperQuestionId }
+    });
+    const remainingLinks = await tx.examPaperQuestion.count({
+      where: { questionId: paperQuestion.questionId }
+    });
+    if (remainingLinks === 0) {
+      await tx.question.delete({
+        where: { id: paperQuestion.questionId }
+      });
+    }
+  });
+  await touchQuestionBankPaper(paperQuestion.paperId);
+
+  revalidatePath(`/admin/question-banks/${paperQuestion.paperId}`);
+  redirect(`/admin/question-banks/${paperQuestion.paperId}`);
 }
 
 export async function createCourseKnowledgePoint(formData: FormData) {

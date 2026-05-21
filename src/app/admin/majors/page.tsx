@@ -1,7 +1,8 @@
 import { ContentStatus, type Prisma } from "@prisma/client";
 import { Filter, Plus } from "lucide-react";
 import Link from "next/link";
-import { createMajor, updateMajor, updateMajorStatus } from "@/app/admin/actions";
+import { createMajor, deleteMajor, updateMajor, updateMajorStatus } from "@/app/admin/actions";
+import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -158,14 +159,24 @@ export default async function MajorsPage({
                             ))}
                           </select>
                           <input className="input rounded-none" name="description" defaultValue={major.description || ""} />
-                          <div className="grid grid-cols-[1fr_auto] gap-3">
+                          <div className="grid grid-cols-[1fr_auto_auto] gap-3">
                             <select className="input rounded-none" name="status" defaultValue={major.status}>
                               <option value="draft">草稿</option>
                               <option value="published">已发布</option>
                               <option value="archived">停用</option>
                             </select>
                             <button className="primary-button rounded-none" type="submit">保存</button>
+                            <ConfirmSubmitButton
+                              className="danger-button rounded-none"
+                              form={`delete-major-${major.id}`}
+                              message="确认删除该专业及其课程、题库？此操作不可恢复。"
+                            >
+                              删除
+                            </ConfirmSubmitButton>
                           </div>
+                        </form>
+                        <form id={`delete-major-${major.id}`} action={deleteMajor}>
+                          <input type="hidden" name="id" value={major.id} />
                         </form>
                       </details>
                     </td>

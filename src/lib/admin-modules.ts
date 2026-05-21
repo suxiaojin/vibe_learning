@@ -17,6 +17,7 @@ const defaultAdminModules: AdminModuleNavItem[] = [
   { key: "regions", label: "区域管理", href: "/admin/regions", icon: "map", status: "published", sortOrder: 2, builtIn: true },
   { key: "public-subjects", label: "公共课管理", href: "/admin/public-subjects", icon: "book", status: "published", sortOrder: 3, builtIn: true },
   { key: "majors", label: "专业课管理", href: "/admin/majors", icon: "graduation", status: "published", sortOrder: 4, builtIn: true },
+  { key: "question-banks", label: "题库管理", href: "/admin/question-banks", icon: "database", status: "published", sortOrder: 5, builtIn: true },
   { key: "settings", label: "系统设置", href: "/admin/regions", icon: "settings", status: "published", sortOrder: 99, builtIn: true }
 ];
 
