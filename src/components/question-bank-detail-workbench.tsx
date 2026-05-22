@@ -16,6 +16,7 @@ import {
   Search,
   Sigma,
   Trash2,
+  X,
   Zap,
   type LucideIcon
 } from "lucide-react";
@@ -32,6 +33,11 @@ import {
 import { cn } from "@/lib/utils";
 
 type QuestionOption = {
+  key: string;
+  text: string;
+};
+
+type ChoiceOptionDraft = {
   key: string;
   text: string;
 };
@@ -215,17 +221,28 @@ function stripHtml(value: string) {
   return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function initialChoiceOptionKeys(question?: QuestionRow) {
+function questionSearchText(question: QuestionRow) {
+  return [
+    stripHtml(question.title),
+    stripHtml(question.analysis),
+    question.options.map((option) => `${option.key} ${option.text}`).join(" ")
+  ].join(" ").toLowerCase();
+}
+
+function initialChoiceOptions(question?: QuestionRow): ChoiceOptionDraft[] {
   if (!question?.options.length) {
-    return [...optionKeys];
+    return optionKeys.map((key) => ({ key, text: "" }));
   }
 
-  const keys = question.options
-    .map((option) => option.key.toUpperCase())
-    .filter((key, index, array) => alphabetOptionKeys.includes(key) && array.indexOf(key) === index)
-    .sort((left, right) => alphabetOptionKeys.indexOf(left) - alphabetOptionKeys.indexOf(right));
+  const options = question.options
+    .map((option) => ({
+      key: option.key.toUpperCase(),
+      text: option.text
+    }))
+    .filter((option, index, array) => alphabetOptionKeys.includes(option.key) && array.findIndex((item) => item.key === option.key) === index)
+    .sort((left, right) => alphabetOptionKeys.indexOf(left.key) - alphabetOptionKeys.indexOf(right.key));
 
-  return keys.length > 0 ? keys : [...optionKeys];
+  return options.length > 0 ? options : optionKeys.map((key) => ({ key, text: "" }));
 }
 
 function nextOptionKey(keys: string[]) {
@@ -440,12 +457,19 @@ function ChoiceQuestionForm({
   const inputType = type === "single_choice" ? "radio" : "checkbox";
   const focusColor = type === "single_choice" ? "focus:border-[#22c55e]" : "focus:border-[#3b82f6]";
   const accentColor = type === "single_choice" ? "accent-[#22c55e]" : "accent-[#3b82f6]";
-  const [choiceOptionKeys, setChoiceOptionKeys] = useState(() => initialChoiceOptionKeys(question));
+  const [choiceOptions, setChoiceOptions] = useState(() => initialChoiceOptions(question));
   const addOption = () => {
-    const nextKey = nextOptionKey(choiceOptionKeys);
+    const nextKey = nextOptionKey(choiceOptions.map((option) => option.key));
     if (nextKey) {
-      setChoiceOptionKeys([...choiceOptionKeys, nextKey]);
+      setChoiceOptions([...choiceOptions, { key: nextKey, text: "" }]);
     }
+  };
+  const updateOptionKey = (index: number, value: string) => {
+    const key = value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 1);
+    setChoiceOptions((current) => current.map((option, optionIndex) => (optionIndex === index ? { ...option, key } : option)));
+  };
+  const updateOptionText = (index: number, text: string) => {
+    setChoiceOptions((current) => current.map((option, optionIndex) => (optionIndex === index ? { ...option, text } : option)));
   };
 
   return (
@@ -464,37 +488,41 @@ function ChoiceQuestionForm({
       <section>
         <div className="flex h-10 items-center justify-between border-b border-[#d4dae4] bg-[#eef3f9] px-3">
           <h2 className="text-sm font-black text-[#111827]">选择题选项</h2>
-          {type === "multiple_choice" ? (
-            <button className="text-xs font-bold text-[#1d4ed8] hover:text-[#0f3aa8]" type="button" onClick={addOption}>
-              增加选项
-            </button>
-          ) : (
-            <span className="text-xs font-medium text-[#60718a]">勾选正确选项</span>
-          )}
+          <button className="text-xs font-bold text-[#1d4ed8] hover:text-[#0f3aa8]" type="button" onClick={addOption}>
+            增加选项
+          </button>
         </div>
         <div className="grid gap-3 bg-[#eef3f8] p-4">
-          {choiceOptionKeys.map((key) => {
-            const option = question?.options.find((item) => item.key === key);
-            const checked = question?.answer.includes(key) || false;
+          {choiceOptions.map((option, index) => {
+            const checked = question?.answer.includes(option.key) || false;
             return (
-              <label key={key} className="grid min-h-[64px] grid-cols-[40px_1fr_52px] items-center gap-2">
-                <input type="hidden" name="optionKey" value={key} />
-                <span className="text-center text-sm font-black">({key})</span>
+              <label key={index} className="grid min-h-[64px] grid-cols-[48px_1fr_52px] items-center gap-2">
+                <input
+                  className={cn("h-10 border border-[#c6d3e6] bg-white text-center text-sm font-black uppercase outline-none", focusColor)}
+                  name="optionKey"
+                  value={option.key}
+                  maxLength={1}
+                  pattern="[A-Za-z]"
+                  required
+                  aria-label="选项字母"
+                  onChange={(event) => updateOptionKey(index, event.target.value)}
+                />
                 <input
                   className={cn("h-12 border border-[#c6d3e6] bg-[#d9e5fb] px-3 text-sm outline-none", focusColor)}
-                  name={`option${key}`}
-                  defaultValue={option?.text || ""}
+                  name="optionText"
+                  value={option.text}
                   required
+                  onChange={(event) => updateOptionText(index, event.target.value)}
                 />
                 <span className="grid place-items-center">
                   <input
                     className={cn("size-4", accentColor)}
                     name="answer"
                     type={inputType}
-                    value={key}
+                    value={option.key}
                     defaultChecked={checked}
                     required={type === "single_choice"}
-                    aria-label={`${key}选项为正确答案`}
+                    aria-label={`${option.key || "该"}选项为正确答案`}
                   />
                 </span>
               </label>
@@ -664,9 +692,12 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [orderedQuestions, setOrderedQuestions] = useState(questions);
   const [columnLayout, setColumnLayout] = useState(readColumnLayout);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const draggedQuestionIdRef = useRef("");
   const orderInputRef = useRef<HTMLInputElement | null>(null);
   const reorderFormRef = useRef<HTMLFormElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const selectedQuestion = orderedQuestions.find((question) => question.id === selectedQuestionId) || null;
   const selectedChoiceType = isChoiceQuestionType(selectedQuestion?.type) ? selectedQuestion.type : null;
   const selectedEditableType = isEditableQuestionType(selectedQuestion?.type) ? selectedQuestion.type : null;
@@ -683,10 +714,20 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
     counts[question.type] = (counts[question.type] || 0) + 1;
     return counts;
   }, {});
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const listedQuestions = normalizedSearchQuery
+    ? orderedQuestions.filter((question) => questionSearchText(question).includes(normalizedSearchQuery))
+    : orderedQuestions;
 
   useEffect(() => {
     setOrderedQuestions(questions);
   }, [questions]);
+
+  useEffect(() => {
+    if (searchOpen) {
+      window.requestAnimationFrame(() => searchInputRef.current?.focus());
+    }
+  }, [searchOpen]);
 
   function submitQuestionOrder(nextQuestions: QuestionRow[]) {
     if (!orderInputRef.current || !reorderFormRef.current) {
@@ -727,6 +768,11 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
     window.requestAnimationFrame(() => {
       document.getElementById(`paper-question-${question.id}`)?.scrollIntoView({ block: "center" });
     });
+  }
+
+  function closeSearch() {
+    setSearchOpen(false);
+    setSearchQuery("");
   }
 
   const resizeColumns = (left: "editor" | "list", right: "list" | "attributes", startX: number, startLayout: typeof defaultColumnLayout, clientX: number) => {
@@ -902,22 +948,65 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
         <section className="min-w-0 border-r border-[#d7dee8] bg-[#f7fafc]">
           <div className="flex h-8 items-center justify-between border-b border-[#d7dee8] bg-[#eef3f8] px-3">
             <h2 className="text-sm font-black">题目列表</h2>
-            <Search size={17} className="text-[#071b38]" />
+            <button
+              className={cn("grid size-7 place-items-center rounded text-[#071b38] hover:bg-white", searchOpen && "bg-white text-[#1d4ed8]")}
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              aria-label="搜索题目"
+            >
+              <Search size={17} />
+            </button>
           </div>
-          <div className="h-[calc(100vh-70px)] overflow-auto px-2 py-1">
+          {searchOpen ? (
+            <div className="border-b border-[#d7dee8] bg-white px-2 py-2">
+              <div className="flex h-10 items-center gap-2 rounded-lg border border-[#5d80ff] bg-white px-2 shadow-sm shadow-[#5d80ff]/10">
+                <Search size={15} className="shrink-0 text-slate-400" />
+                <input
+                  ref={searchInputRef}
+                  className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="搜索题干、选项、解析"
+                />
+                {searchQuery ? (
+                  <button className="grid size-6 place-items-center rounded-full text-slate-400 hover:bg-slate-100" type="button" onClick={() => setSearchQuery("")} aria-label="清空搜索">
+                    <X size={14} />
+                  </button>
+                ) : null}
+                <button className="grid size-6 place-items-center rounded-full text-slate-400 hover:bg-slate-100" type="button" onClick={closeSearch} aria-label="关闭搜索">
+                  <X size={15} />
+                </button>
+              </div>
+              <div className="mt-2 flex h-7 items-center justify-between text-xs text-[#071b38]">
+                <button className="inline-flex items-center gap-1 font-semibold hover:text-[#1d4ed8]" type="button" onClick={closeSearch}>
+                  <X size={14} />
+                  取消
+                </button>
+                <span className="text-slate-600">{normalizedSearchQuery ? `找到 ${listedQuestions.length} 个结果` : "输入关键词搜索"}</span>
+              </div>
+            </div>
+          ) : null}
+          <div className={cn("overflow-auto px-2 py-1", searchOpen ? "h-[calc(100vh-149px)]" : "h-[calc(100vh-70px)]")}>
             {orderedQuestions.length === 0 ? (
               <div className="grid h-40 place-items-center text-sm text-slate-400">暂无题目</div>
+            ) : listedQuestions.length === 0 ? (
+              <div className="grid h-40 place-items-center text-sm text-slate-400">没有匹配的题目</div>
             ) : (
-              orderedQuestions.map((question, index) => {
+              listedQuestions.map((question) => {
                 const selected = selectedQuestionId === question.id && !activeEditorType;
                 const meta = getQuestionTypeMeta(question.type);
+                const displayIndex = orderedQuestions.findIndex((item) => item.id === question.id) + 1;
                 return (
                   <div
                     key={question.id}
                     id={`paper-question-${question.id}`}
                     className="grid grid-cols-[24px_1fr] items-stretch gap-1"
-                    draggable
+                    draggable={!searchOpen}
                     onDragStart={(event) => {
+                      if (searchOpen) {
+                        event.preventDefault();
+                        return;
+                      }
                       draggedQuestionIdRef.current = question.id;
                       event.dataTransfer.effectAllowed = "move";
                     }}
@@ -925,18 +1014,25 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
                       draggedQuestionIdRef.current = "";
                     }}
                     onDragOver={(event) => {
+                      if (searchOpen) {
+                        return;
+                      }
                       event.preventDefault();
                       event.dataTransfer.dropEffect = "move";
                     }}
                     onDrop={(event) => {
+                      if (searchOpen) {
+                        return;
+                      }
                       event.preventDefault();
                       moveQuestionAfter(question.id);
                     }}
                   >
-                    <div className="grid place-items-center text-sm font-bold text-[#071b38]">{index + 1}</div>
+                    <div className="grid place-items-center text-sm font-bold text-[#071b38]">{displayIndex}</div>
                     <button
                       className={cn(
-                        "mb-1 flex min-h-[48px] min-w-0 cursor-grab items-center rounded-md border px-3 text-left text-xs font-medium leading-5 transition hover:brightness-[0.98] active:cursor-grabbing",
+                        "mb-1 flex min-h-[48px] min-w-0 items-center rounded-md border px-3 text-left text-xs font-medium leading-5 transition hover:brightness-[0.98]",
+                        searchOpen ? "cursor-pointer" : "cursor-grab active:cursor-grabbing",
                         selected ? meta.selectedRow : meta.row
                       )}
                       type="button"

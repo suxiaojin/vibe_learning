@@ -1010,10 +1010,14 @@ async function ensureQuestionBankKnowledgePoint(courseId: string) {
   });
 }
 
+function normalizeQuestionBankOptionKey(value: FormDataEntryValue | string) {
+  return String(value).trim().toUpperCase().replace(/[^A-Z]/g, "").slice(0, 1);
+}
+
 function getQuestionBankOptionKeys(formData: FormData) {
   const submittedKeys = formData
     .getAll("optionKey")
-    .map((item) => String(item).trim().toUpperCase())
+    .map(normalizeQuestionBankOptionKey)
     .filter((item, index, array) => alphabetOptionKeys.includes(item) && array.indexOf(item) === index)
     .sort((left, right) => alphabetOptionKeys.indexOf(left) - alphabetOptionKeys.indexOf(right));
 
@@ -1021,6 +1025,26 @@ function getQuestionBankOptionKeys(formData: FormData) {
 }
 
 function getQuestionBankChoiceOptions(formData: FormData) {
+  const submittedKeys = formData.getAll("optionKey").map(normalizeQuestionBankOptionKey);
+  const submittedTexts = formData.getAll("optionText").map((item) => String(item).trim());
+
+  if (submittedTexts.length > 0) {
+    const seen = new Set<string>();
+    return submittedKeys
+      .map((key, index) => ({
+        key,
+        text: submittedTexts[index] || ""
+      }))
+      .filter((option) => {
+        if (!alphabetOptionKeys.includes(option.key) || seen.has(option.key)) {
+          return false;
+        }
+        seen.add(option.key);
+        return true;
+      })
+      .sort((left, right) => alphabetOptionKeys.indexOf(left.key) - alphabetOptionKeys.indexOf(right.key));
+  }
+
   return getQuestionBankOptionKeys(formData).map((key) => ({
     key,
     text: String(formData.get(`option${key}`) || "").trim()
