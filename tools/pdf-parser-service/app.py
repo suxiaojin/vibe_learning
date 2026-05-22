@@ -38,6 +38,14 @@ TASK_LOCK = threading.Lock()
 QUESTION_START = re.compile(r"^\s*(\d{1,3})[\.．、]\s*(.*)$")
 OPTION_START = re.compile(r"([A-D])[\.\．、,，]\s*")
 
+QUESTION_TYPE_LABELS = {
+    "single_choice": "单选",
+    "multiple_choice": "多选",
+    "true_false": "判断",
+    "fill_blank": "填空",
+    "comprehensive": "综合",
+}
+
 
 def question_type_from_section(section: str) -> str:
     if section == "multiple_choice":
@@ -126,6 +134,75 @@ def public_task(task: dict[str, Any], include_payload: bool = True) -> dict[str,
     if include_payload and task.get("payload") is not None:
         result["payload"] = task["payload"]
     return result
+
+
+def format_local_time(timestamp: float | None = None) -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp or time.time()))
+
+
+def write_import_issue_report(
+    *,
+    task_id: str,
+    task_path: Path,
+    meta: dict[str, Any],
+    result: dict[str, Any] | None = None,
+    status: str = "succeeded",
+    error: str = "",
+) -> dict[str, str]:
+    task_path.mkdir(parents=True, exist_ok=True)
+    payload = result.get("payload", {}) if result else {}
+    stats = result.get("stats", {}) if result else {}
+    warnings = result.get("warnings", []) if result else []
+    debug = result.get("debug", {}) if result else {}
+    report = {
+        "taskId": task_id,
+        "status": status,
+        "createdAtText": format_local_time(),
+        "title": meta.get("title", ""),
+        "year": meta.get("year", ""),
+        "ownerName": meta.get("owner_name", ""),
+        "ownerType": meta.get("owner_type", ""),
+        "regionName": meta.get("region_name", ""),
+        "questionCount": debug.get("questionCount", len(payload.get("questions", [])) if isinstance(payload, dict) else 0),
+        "answerCount": debug.get("answerCount"),
+        "pageCount": debug.get("pageCount"),
+        "stats": stats,
+        "warnings": warnings,
+        "debug": debug,
+        "error": error,
+    }
+
+    txt_lines = [
+        "题库 PDF 导入问题报告",
+        f"任务ID：{task_id}",
+        f"生成时间：{report['createdAtText']}",
+        f"题库名称：{report['title']}",
+        f"导入专业课：{report['ownerName']}",
+        f"区域信息：{report['regionName']}",
+        f"年份：{report['year']}",
+        f"状态：{status}",
+        "",
+        "统计：",
+        f"- 题目数：{report['questionCount']}",
+        f"- 答案数：{report['answerCount'] if report['answerCount'] is not None else '-'}",
+        f"- 页数：{report['pageCount'] if report['pageCount'] is not None else '-'}",
+    ]
+    for question_type, count in stats.items():
+        txt_lines.append(f"- {QUESTION_TYPE_LABELS.get(question_type, question_type)}：{count}")
+    if error:
+        txt_lines.extend(["", "错误：", error])
+    txt_lines.append("")
+    txt_lines.append("导入问题：")
+    if warnings:
+        txt_lines.extend(f"{index}. {warning}" for index, warning in enumerate(warnings, start=1))
+    else:
+        txt_lines.append("暂无导入问题。")
+
+    txt_path = task_path / "import_issues.txt"
+    json_path = task_path / "import_issues.json"
+    txt_path.write_text("\n".join(txt_lines) + "\n", encoding="utf-8")
+    json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"text": str(txt_path), "json": str(json_path)}
 
 
 def run_ocr(image_paths: list[Path], request_id: str, progress_callback: Any = None) -> list[list[dict[str, Any]]]:
@@ -750,6 +827,18 @@ def run_parse_task(task_id: str, question_path: Path, answer_path: Path, meta: d
             ai_api_key=str(meta.get("ai_api_key") or ""),
             ai_model=str(meta.get("ai_model") or ""),
         )
+        issue_report_paths: dict[str, str] = {}
+        try:
+            issue_report_paths = write_import_issue_report(
+                task_id=task_id,
+                task_path=question_path.parent,
+                meta=meta,
+                result=result,
+                status="succeeded",
+            )
+            result["debug"]["issueReport"] = issue_report_paths
+        except Exception:
+            logger.exception("[%s] failed to write import issue report", task_id)
         set_task(
             task_id,
             status="succeeded",
@@ -762,10 +851,23 @@ def run_parse_task(task_id: str, question_path: Path, answer_path: Path, meta: d
             debug=result["debug"],
             finishedAt=time.time(),
         )
+        if issue_report_paths:
+            add_task_event(task_id, f"导入问题报告已写入：{issue_report_paths['text']}")
         add_task_event(task_id, f"解析完成：{result['debug']['questionCount']} 题，耗时 {time.time() - started_at:.2f}s")
         logger.info("[%s] async parse finished in %.2fs stats=%s warnings=%s", task_id, time.time() - started_at, result["stats"], len(result["warnings"]))
     except Exception as exc:
         logger.exception("[%s] async parse failed", task_id)
+        try:
+            write_import_issue_report(
+                task_id=task_id,
+                task_path=question_path.parent,
+                meta=meta,
+                result=None,
+                status="failed",
+                error=str(exc),
+            )
+        except Exception:
+            logger.exception("[%s] failed to write failed import issue report", task_id)
         set_task(
             task_id,
             status="failed",
