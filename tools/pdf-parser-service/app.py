@@ -185,6 +185,29 @@ def parse_options(row: str) -> list[dict[str, str]]:
     return options
 
 
+def looks_like_exam_instruction(row: str) -> bool:
+    instruction_tokens = (
+        "注意事项",
+        "考试",
+        "试卷",
+        "答题",
+        "答题卡",
+        "满分",
+        "时间",
+        "姓名",
+        "准考证",
+        "不得",
+        "考生",
+        "本卷",
+        "本试题",
+    )
+    return any(token in row for token in instruction_tokens)
+
+
+def question_range_label(start: int, end: int) -> str:
+    return f"第 {start} 题" if start == end else f"第 {start}-{end} 题"
+
+
 def parse_questions_from_ocr(pages: list[list[dict[str, Any]]]) -> tuple[list[dict[str, Any]], list[str]]:
     questions: list[dict[str, Any]] = []
     warnings: list[str] = []
@@ -219,7 +242,10 @@ def parse_questions_from_ocr(pages: list[list[dict[str, Any]]]) -> tuple[list[di
                 started = True
                 section = "single_choice"
                 continue
-            if not started and QUESTION_START.match(row):
+            start_match = QUESTION_START.match(row)
+            if not started and start_match and looks_like_exam_instruction(row):
+                continue
+            if not started and start_match:
                 started = True
             if not started:
                 continue
@@ -246,6 +272,27 @@ def parse_questions_from_ocr(pages: list[list[dict[str, Any]]]) -> tuple[list[di
             if match:
                 number = int(match.group(1))
                 if number != expected:
+                    if number < expected:
+                        skipping_out_of_sequence = False
+                        warnings.append(f"跳过重复或噪声题号：第 {number} 题，当前期望第 {expected} 题。")
+                        continue
+
+                    missing_count = number - expected
+                    if missing_count <= 5:
+                        warnings.append(
+                            f"疑似漏识 {question_range_label(expected, number - 1)}，已从第 {number} 题继续解析，请预览确认。"
+                        )
+                        skipping_out_of_sequence = False
+                        finish_current()
+                        current = {
+                            "number": number,
+                            "type": question_type_from_section(section),
+                            "stem_parts": [match.group(2).strip()],
+                            "options": [],
+                        }
+                        expected = number + 1
+                        continue
+
                     skipping_out_of_sequence = True
                     warnings.append(f"跳过疑似乱序题号：第 {number} 题，当前期望第 {expected} 题。")
                     continue
@@ -626,6 +673,10 @@ def parse_question_files(
         questions=questions,
         answers=answers,
     )
+    if len(questions) != len(answers):
+        merge_warnings.append(
+            f"题目数量 {len(questions)}，答案数量 {len(answers)}，请检查 OCR 是否漏题，或真题 PDF 与答案解析 PDF 是否对应。"
+        )
     stats = Counter(question["type"] for question in payload["questions"])
     ai_warnings: list[str] = []
     ai_debug: dict[str, Any] = {"enabled": False}
