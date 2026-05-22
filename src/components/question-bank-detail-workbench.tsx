@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { PointerEventHandler, ReactNode } from "react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   CheckSquare,
@@ -26,6 +26,7 @@ import {
   createQuestionBankSingleChoiceQuestion,
   createQuestionBankTrueFalseQuestion,
   deleteQuestionBankPaperQuestion,
+  reorderQuestionBankPaperQuestions,
   updateQuestionBankQuestion
 } from "@/app/admin/actions";
 import { cn } from "@/lib/utils";
@@ -352,19 +353,34 @@ function RichTextDisplay({ value }: { value: string }) {
   return <div className="min-h-[150px] bg-[#d9e5fb] px-4 py-4 text-base leading-8 text-[#071b38] [&_td]:min-w-24 [&_td]:border [&_td]:border-[#8ea3c2] [&_td]:bg-white/35 [&_td]:px-2 [&_td]:py-1 [&_table]:my-2 [&_table]:border-collapse" dangerouslySetInnerHTML={{ __html: toRichTextHtml(value) }} />;
 }
 
-function QuestionTypeChip({ type, active }: { type: string; active: boolean }) {
+function QuestionTypeChip({
+  type,
+  active,
+  count,
+  onClick
+}: {
+  type: string;
+  active: boolean;
+  count: number;
+  onClick: () => void;
+}) {
   const meta = getQuestionTypeMeta(type);
 
   return (
-    <span
+    <button
       className={cn(
         "inline-flex h-8 min-w-16 items-center justify-center rounded border px-3 text-sm font-semibold transition",
         meta.chip,
-        active ? meta.activeChip : "opacity-70"
+        active ? meta.activeChip : "opacity-70 hover:opacity-100",
+        count === 0 && "cursor-not-allowed opacity-35 hover:opacity-35"
       )}
+      type="button"
+      disabled={count === 0}
+      onClick={onClick}
+      title={count > 0 ? `跳转到${meta.label}` : `暂无${meta.label}`}
     >
       {meta.label}
-    </span>
+    </button>
   );
 }
 
@@ -646,8 +662,12 @@ function ReadonlyQuestionPreview({ question }: { question: QuestionRow }) {
 export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, isComputerMajor, questions }: QuestionBankDetailWorkbenchProps) {
   const [activeEditorType, setActiveEditorType] = useState<ActiveEditorType>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
+  const [orderedQuestions, setOrderedQuestions] = useState(questions);
   const [columnLayout, setColumnLayout] = useState(readColumnLayout);
-  const selectedQuestion = questions.find((question) => question.id === selectedQuestionId) || null;
+  const draggedQuestionIdRef = useRef("");
+  const orderInputRef = useRef<HTMLInputElement | null>(null);
+  const reorderFormRef = useRef<HTMLFormElement | null>(null);
+  const selectedQuestion = orderedQuestions.find((question) => question.id === selectedQuestionId) || null;
   const selectedChoiceType = isChoiceQuestionType(selectedQuestion?.type) ? selectedQuestion.type : null;
   const selectedEditableType = isEditableQuestionType(selectedQuestion?.type) ? selectedQuestion.type : null;
   const activeType = activeEditorType || selectedQuestion?.type || "";
@@ -659,6 +679,56 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
       ? editQuestionFormId(selectedQuestion.id)
       : undefined;
   const visibleTypeOrder = questionTypeOrder.filter((type) => isComputerMajor || !["true_false", "fill_blank", "comprehensive"].includes(type));
+  const typeCounts = orderedQuestions.reduce<Record<string, number>>((counts, question) => {
+    counts[question.type] = (counts[question.type] || 0) + 1;
+    return counts;
+  }, {});
+
+  useEffect(() => {
+    setOrderedQuestions(questions);
+  }, [questions]);
+
+  function submitQuestionOrder(nextQuestions: QuestionRow[]) {
+    if (!orderInputRef.current || !reorderFormRef.current) {
+      return;
+    }
+    orderInputRef.current.value = nextQuestions.map((question) => question.id).join(",");
+    reorderFormRef.current.requestSubmit();
+  }
+
+  function moveQuestionAfter(targetQuestionId: string) {
+    const draggedQuestionId = draggedQuestionIdRef.current;
+    if (!draggedQuestionId || draggedQuestionId === targetQuestionId) {
+      return;
+    }
+
+    const nextQuestions = [...orderedQuestions];
+    const from = nextQuestions.findIndex((question) => question.id === draggedQuestionId);
+    if (from < 0) {
+      return;
+    }
+    const [movedQuestion] = nextQuestions.splice(from, 1);
+    const targetIndex = nextQuestions.findIndex((question) => question.id === targetQuestionId);
+    if (targetIndex < 0) {
+      return;
+    }
+    nextQuestions.splice(targetIndex + 1, 0, movedQuestion);
+    setOrderedQuestions(nextQuestions);
+    submitQuestionOrder(nextQuestions);
+  }
+
+  function jumpToQuestionType(type: string) {
+    const question = orderedQuestions.find((item) => item.type === type);
+    if (!question) {
+      return;
+    }
+    setActiveEditorType(null);
+    setSelectedQuestionId(question.id);
+    window.requestAnimationFrame(() => {
+      document.getElementById(`paper-question-${question.id}`)?.scrollIntoView({ block: "center" });
+    });
+  }
+
   const resizeColumns = (left: "editor" | "list", right: "list" | "attributes", startX: number, startLayout: typeof defaultColumnLayout, clientX: number) => {
     const dx = clientX - startX;
     const safeDx = clamp(dx, minColumnLayout[left] - startLayout[left], startLayout[right] - minColumnLayout[right]);
@@ -758,6 +828,10 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
         <h1 className="truncate text-center text-sm font-black">{paperTitle}</h1>
         <div />
       </header>
+      <form ref={reorderFormRef} action={reorderQuestionBankPaperQuestions} className="hidden">
+        <input type="hidden" name="paperId" value={paperId} />
+        <input ref={orderInputRef} type="hidden" name="order" />
+      </form>
       {selectedQuestion ? (
         <form id="delete-question-form" action={deleteQuestionBankPaperQuestion} className="hidden">
           <input type="hidden" name="paperId" value={paperId} />
@@ -831,18 +905,38 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
             <Search size={17} className="text-[#071b38]" />
           </div>
           <div className="h-[calc(100vh-70px)] overflow-auto px-2 py-1">
-            {questions.length === 0 ? (
+            {orderedQuestions.length === 0 ? (
               <div className="grid h-40 place-items-center text-sm text-slate-400">暂无题目</div>
             ) : (
-              questions.map((question, index) => {
+              orderedQuestions.map((question, index) => {
                 const selected = selectedQuestionId === question.id && !activeEditorType;
                 const meta = getQuestionTypeMeta(question.type);
                 return (
-                  <div key={question.id} className="grid grid-cols-[24px_1fr] items-stretch gap-1">
+                  <div
+                    key={question.id}
+                    id={`paper-question-${question.id}`}
+                    className="grid grid-cols-[24px_1fr] items-stretch gap-1"
+                    draggable
+                    onDragStart={(event) => {
+                      draggedQuestionIdRef.current = question.id;
+                      event.dataTransfer.effectAllowed = "move";
+                    }}
+                    onDragEnd={() => {
+                      draggedQuestionIdRef.current = "";
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      moveQuestionAfter(question.id);
+                    }}
+                  >
                     <div className="grid place-items-center text-sm font-bold text-[#071b38]">{index + 1}</div>
                     <button
                       className={cn(
-                        "mb-1 flex min-h-[48px] min-w-0 items-center justify-between gap-2 rounded-md border px-3 text-left text-xs font-medium leading-5 transition hover:brightness-[0.98]",
+                        "mb-1 flex min-h-[48px] min-w-0 cursor-grab items-center rounded-md border px-3 text-left text-xs font-medium leading-5 transition hover:brightness-[0.98] active:cursor-grabbing",
                         selected ? meta.selectedRow : meta.row
                       )}
                       type="button"
@@ -852,7 +946,6 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
                       }}
                     >
                       <span className={cn("min-w-0 truncate", selected && "font-black")}>{stripHtml(question.title) || questionTypeText(question.type)}</span>
-                      <span className="shrink-0 rounded border border-current bg-white/55 px-1.5 py-0.5 text-[10px] font-black">{meta.label}</span>
                     </button>
                   </div>
                 );
@@ -880,7 +973,13 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
                 <span className="text-sm font-bold">题型</span>
                 <div className="flex flex-wrap gap-2">
                   {visibleTypeOrder.map((type) => (
-                    <QuestionTypeChip key={type} type={type} active={questionTypeText(type) === activeTypeText} />
+                    <QuestionTypeChip
+                      key={type}
+                      type={type}
+                      active={questionTypeText(type) === activeTypeText}
+                      count={typeCounts[type] || 0}
+                      onClick={() => jumpToQuestionType(type)}
+                    />
                   ))}
                 </div>
               </div>

@@ -1276,6 +1276,37 @@ export async function deleteQuestionBankPaperQuestion(formData: FormData) {
   redirect(`/admin/question-banks/${paperQuestion.paperId}`);
 }
 
+export async function reorderQuestionBankPaperQuestions(formData: FormData) {
+  await requireAdmin();
+  const paperId = String(formData.get("paperId") || "");
+  const submittedOrder = String(formData.get("order") || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const currentLinks = await prisma.examPaperQuestion.findMany({
+    where: { paperId },
+    select: { id: true },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+  });
+  const currentIds = new Set(currentLinks.map((item) => item.id));
+  const nextOrder = [
+    ...submittedOrder.filter((id, index, array) => currentIds.has(id) && array.indexOf(id) === index),
+    ...currentLinks.map((item) => item.id).filter((id) => !submittedOrder.includes(id))
+  ];
+
+  await prisma.$transaction(
+    nextOrder.map((id, index) =>
+      prisma.examPaperQuestion.update({
+        where: { id },
+        data: { sortOrder: index + 1 }
+      })
+    )
+  );
+
+  revalidatePath(`/admin/question-banks/${paperId}`);
+}
+
 export async function createCourseKnowledgePoint(formData: FormData) {
   await requireAdmin();
   const courseId = String(formData.get("courseId") || "");

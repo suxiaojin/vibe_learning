@@ -345,7 +345,7 @@ export async function importQuestionPaperPayload(payload: ImportQuestionPaperPay
           title: payload.title,
           year: payload.year,
           paperType: payload.paperType,
-          status: "published"
+          status: "archived"
         },
         select: { id: true }
       });
@@ -353,8 +353,7 @@ export async function importQuestionPaperPayload(payload: ImportQuestionPaperPay
       await tx.examPaper.update({
         where: { id: paper.id },
         data: {
-          paperType: payload.paperType,
-          status: "published"
+          paperType: payload.paperType
         }
       });
     }

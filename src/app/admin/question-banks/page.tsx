@@ -267,7 +267,6 @@ export default async function QuestionBanksPage({
 
               <QuestionBankImportDialog
                 selectedOwner={{ type: selectedOwner.type, id: selectedOwner.id, name: selectedOwner.name, regions: selectedOwner.regions }}
-                owners={owners.map((owner) => ({ type: owner.type, id: owner.id, name: owner.name, regions: owner.regions }))}
                 regions={regions}
               />
 
@@ -279,7 +278,7 @@ export default async function QuestionBanksPage({
               </button>
             </div>
 
-            <section className="overflow-hidden rounded-t-lg bg-white">
+            <section className="overflow-visible rounded-t-lg bg-white">
               <table className="w-full min-w-[980px] border-collapse text-left text-sm">
                 <thead className="bg-[#f0f1f4] text-[#030712]">
                   <tr className="h-11">
@@ -315,7 +314,7 @@ export default async function QuestionBanksPage({
                           <div className="flex items-center justify-end gap-4">
                             <details className="relative">
                               <summary className="cursor-pointer list-none text-[#006aff] hover:underline [&::-webkit-details-marker]:hidden">修改</summary>
-                              <form action={updateQuestionBankPaper} className="absolute right-0 z-20 mt-3 grid w-[360px] gap-3 border border-[#cdd4df] bg-white p-4 text-left shadow-xl">
+                              <form action={updateQuestionBankPaper} className="absolute right-0 z-50 mt-3 grid max-h-[430px] w-[430px] gap-3 overflow-auto border border-[#cdd4df] bg-white p-4 text-left shadow-xl">
                                 {ownerInputs(selectedOwner)}
                                 <input type="hidden" name="id" value={paper.id} />
                                 <div>

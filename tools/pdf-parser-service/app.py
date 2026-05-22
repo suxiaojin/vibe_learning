@@ -25,7 +25,7 @@ ocr = RapidOCR()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
 logger = logging.getLogger("vibe_pdf_parser")
 
-TASK_DIR = Path(os.getenv("VIBE_PDF_TASK_DIR", "/tmp/vibe_pdf_parser_tasks"))
+TASK_DIR = Path(os.getenv("VIBE_PDF_TASK_DIR", "/data/vibe_pdf_parser_tasks"))
 TASK_LIMIT = int(os.getenv("VIBE_PDF_TASK_LIMIT", "80"))
 AI_REVIEW_ENABLED = os.getenv("VIBE_AI_REVIEW_ENABLED", "true").lower() != "false"
 AI_REVIEW_CHUNK_SIZE = int(os.getenv("VIBE_AI_REVIEW_CHUNK_SIZE", "12"))

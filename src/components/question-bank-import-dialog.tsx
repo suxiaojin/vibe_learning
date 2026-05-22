@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type PointerEvent as ReactPointerEvent } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, FileInput, Loader2, UploadCloud, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileInput, Loader2, Maximize2, Minimize2, Move, UploadCloud, X } from "lucide-react";
 import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 import type { ImportQuestion, ImportQuestionPaperPayload } from "@/lib/question-paper-import";
 import { cn } from "@/lib/utils";
@@ -43,7 +43,6 @@ type CommitResponse = {
 
 type Props = {
   selectedOwner: OwnerOption;
-  owners: OwnerOption[];
   regions: RegionOption[];
 };
 
@@ -55,10 +54,6 @@ const typeLabels: Record<string, string> = {
   fill_blank: "填空",
   comprehensive: "综合"
 };
-
-function ownerKey(owner: OwnerOption) {
-  return `${owner.type}:${owner.id}`;
-}
 
 function answerToText(answer: string[]) {
   return answer.join("、");
@@ -109,10 +104,23 @@ async function readJson<T>(response: Response): Promise<T> {
   return data as T;
 }
 
-export function QuestionBankImportDialog({ selectedOwner, owners, regions }: Props) {
+const defaultDialogSize = {
+  width: 1280,
+  height: 760
+};
+
+const minDialogSize = {
+  width: 900,
+  height: 560
+};
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [selectedOwnerKey, setSelectedOwnerKey] = useState(ownerKey(selectedOwner));
   const [title, setTitle] = useState("");
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [regionId, setRegionId] = useState((selectedOwner.regions[0] || regions[0])?.id || "");
@@ -126,10 +134,14 @@ export function QuestionBankImportDialog({ selectedOwner, owners, regions }: Pro
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState("");
+  const [dialogSize, setDialogSize] = useState(defaultDialogSize);
+  const [dialogPosition, setDialogPosition] = useState({ x: 0, y: 0 });
+  const [fullscreen, setFullscreen] = useState(false);
+  const dialogRef = useRef<HTMLElement | null>(null);
   const [isParsing, startParsing] = useTransition();
   const [isCommitting, startCommitting] = useTransition();
 
-  const activeOwner = useMemo(() => owners.find((owner) => ownerKey(owner) === selectedOwnerKey) || selectedOwner, [owners, selectedOwner, selectedOwnerKey]);
+  const activeOwner = selectedOwner;
   const ownerRegions = activeOwner.regions.length > 0 ? activeOwner.regions : regions;
   const selectedRegionName = useMemo(() => ownerRegions.find((region) => region.id === regionId)?.name || ownerRegions[0]?.name || "江苏三年制", [ownerRegions, regionId]);
   const filteredQuestions = useMemo(() => {
@@ -142,6 +154,25 @@ export function QuestionBankImportDialog({ selectedOwner, owners, regions }: Pro
   }, [filteredQuestions, parsed, selectedQuestionNumber]);
   const activeTask = Boolean(taskId || task?.status === "queued" || task?.status === "running" || isParsing);
   const issueCount = useMemo(() => (parsed?.payload.questions || []).reduce((count, question) => count + (questionIssues(question).length > 0 ? 1 : 0), 0), [parsed]);
+
+  useEffect(() => {
+    setRegionId((selectedOwner.regions[0] || regions[0])?.id || "");
+    resetState();
+  }, [regions, selectedOwner.id, selectedOwner.regions, selectedOwner.type]);
+
+  useEffect(() => {
+    if (!open || typeof window === "undefined") {
+      return;
+    }
+
+    const width = Math.min(defaultDialogSize.width, window.innerWidth - 40);
+    const height = Math.min(defaultDialogSize.height, window.innerHeight - 40);
+    setDialogSize({ width, height });
+    setDialogPosition({
+      x: Math.max(20, Math.floor((window.innerWidth - width) / 2)),
+      y: Math.max(20, Math.floor((window.innerHeight - height) / 2))
+    });
+  }, [open]);
 
   useEffect(() => {
     const firstRegion = ownerRegions[0]?.id || regions[0]?.id || "";
@@ -215,6 +246,55 @@ export function QuestionBankImportDialog({ selectedOwner, owners, regions }: Pro
     setSelectedQuestionNumber(null);
     setSelectedType("all");
     setError("");
+  }
+
+  function openDialog() {
+    setFullscreen(false);
+    setOpen(true);
+  }
+
+  function startDialogDrag(event: ReactPointerEvent<HTMLElement>) {
+    if (fullscreen) {
+      return;
+    }
+    event.preventDefault();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startPosition = { ...dialogPosition };
+    const handleMove = (moveEvent: PointerEvent) => {
+      const nextX = clamp(startPosition.x + moveEvent.clientX - startX, 0, Math.max(0, window.innerWidth - dialogSize.width));
+      const nextY = clamp(startPosition.y + moveEvent.clientY - startY, 0, Math.max(0, window.innerHeight - dialogSize.height));
+      setDialogPosition({ x: nextX, y: nextY });
+    };
+    const handleUp = () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+  }
+
+  function startDialogResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (fullscreen) {
+      return;
+    }
+    event.preventDefault();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startSize = { ...dialogSize };
+    const startPosition = { ...dialogPosition };
+    const handleMove = (moveEvent: PointerEvent) => {
+      setDialogSize({
+        width: clamp(startSize.width + moveEvent.clientX - startX, minDialogSize.width, window.innerWidth - startPosition.x - 12),
+        height: clamp(startSize.height + moveEvent.clientY - startY, minDialogSize.height, window.innerHeight - startPosition.y - 12)
+      });
+    };
+    const handleUp = () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
   }
 
   function updateQuestion(number: number, updater: (question: ImportQuestion) => ImportQuestion) {
@@ -321,7 +401,7 @@ export function QuestionBankImportDialog({ selectedOwner, owners, regions }: Pro
 
   return (
     <>
-      <button className="grid justify-items-center gap-1 text-xs font-medium text-[#071b38]" type="button" onClick={() => setOpen(true)}>
+      <button className="grid justify-items-center gap-1 text-xs font-medium text-[#071b38]" type="button" onClick={openDialog}>
         <span className="grid size-8 place-items-center text-[#f0a000]">
           <FileInput size={29} strokeWidth={2.4} />
         </span>
@@ -329,16 +409,43 @@ export function QuestionBankImportDialog({ selectedOwner, owners, regions }: Pro
       </button>
 
       {open ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-[#07142b]/35 px-5 py-8">
-          <section className="grid max-h-[92vh] w-full max-w-[1280px] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg border border-[#cbd3df] bg-white shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-[#07142b]/35">
+          <section
+            ref={dialogRef}
+            className={cn(
+              "fixed grid grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden border border-[#cbd3df] bg-white shadow-2xl",
+              fullscreen ? "inset-0 rounded-none" : "rounded-lg"
+            )}
+            style={fullscreen ? undefined : { left: dialogPosition.x, top: dialogPosition.y, width: dialogSize.width, height: dialogSize.height }}
+          >
             <header className="flex items-center justify-between border-b border-[#e2e6ee] px-5 py-4">
-              <div>
+              <div className={cn("min-w-0 flex-1", !fullscreen && "cursor-move")} onPointerDown={startDialogDrag}>
                 <h2 className="text-base font-bold text-[#071b38]">题库 PDF 导入</h2>
-                <p className="mt-1 text-xs text-slate-500">{activeOwner.name} / {selectedRegionName}</p>
+                <p className="mt-1 inline-flex items-center gap-1 text-xs text-slate-500">
+                  <Move size={13} />
+                  {activeOwner.name} / {selectedRegionName}
+                </p>
               </div>
-              <button className="grid size-8 place-items-center rounded-md text-slate-500 hover:bg-slate-100" type="button" onClick={() => setOpen(false)} aria-label="关闭">
-                <X size={18} />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  className="grid size-8 place-items-center rounded-md text-slate-500 hover:bg-slate-100"
+                  type="button"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={() => setFullscreen((value) => !value)}
+                  aria-label={fullscreen ? "退出全屏" : "全屏"}
+                >
+                  {fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+                </button>
+                <button
+                  className="grid size-8 place-items-center rounded-md text-slate-500 hover:bg-slate-100"
+                  type="button"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={() => setOpen(false)}
+                  aria-label="关闭"
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </header>
 
             <div className="min-h-0 overflow-auto bg-[#f7f8fb] p-5">
@@ -346,13 +453,9 @@ export function QuestionBankImportDialog({ selectedOwner, owners, regions }: Pro
                 <section className="grid content-start gap-4 rounded-md border border-[#d8dee8] bg-white p-4">
                   <div>
                     <label className="label">导入到专业课</label>
-                    <select className="input rounded-none" value={selectedOwnerKey} onChange={(event) => { setSelectedOwnerKey(event.target.value); resetState(); }}>
-                      {owners.map((item) => (
-                        <option key={ownerKey(item)} value={ownerKey(item)}>
-                          {item.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex h-11 items-center border border-[#d6dce7] bg-[#f8fafc] px-3 text-sm font-semibold text-[#071b38]">
+                      {activeOwner.name}
+                    </div>
                   </div>
                   <div>
                     <label className="label">题库名称</label>
@@ -570,6 +673,15 @@ export function QuestionBankImportDialog({ selectedOwner, owners, regions }: Pro
                 确认导入
               </button>
             </footer>
+            {!fullscreen ? (
+              <div
+                className="absolute bottom-0 right-0 size-6 cursor-nwse-resize"
+                onPointerDown={startDialogResize}
+                aria-hidden="true"
+              >
+                <span className="absolute bottom-1 right-1 h-3 w-3 border-b-2 border-r-2 border-[#91a0b5]" />
+              </div>
+            ) : null}
           </section>
         </div>
       ) : null}
