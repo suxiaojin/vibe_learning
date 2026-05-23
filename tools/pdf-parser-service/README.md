@@ -62,9 +62,26 @@ export VIBE_AI_REVIEW_ENABLED=true
 export VIBE_AI_REVIEW_CHUNK_SIZE=12
 export VIBE_AI_REVIEW_TIMEOUT=90
 export VIBE_AI_REVIEW_MIN_CONFIDENCE=0.74
+export VIBE_AI_PROMPT_DIR=/opt/vibe_pdf_parser/prompts
 ```
 
 Set `VIBE_AI_REVIEW_ENABLED=false` to disable AI review without changing Web code.
+
+AI prompts are loaded from text files so they can be adjusted without editing `app.py`:
+
+```text
+prompts/ai_review_system_prompt.txt
+prompts/ai_review_user_prompt.txt
+```
+
+The user prompt should keep the `{{QUESTIONS_JSON}}` placeholder. The parser replaces it with the current batch of parsed questions. It also replaces `{{MIN_CONFIDENCE}}` with `VIBE_AI_REVIEW_MIN_CONFIDENCE`.
+
+You can override the default file paths:
+
+```bash
+export VIBE_AI_REVIEW_SYSTEM_PROMPT_PATH=/opt/vibe_pdf_parser/prompts/ai_review_system_prompt.txt
+export VIBE_AI_REVIEW_USER_PROMPT_PATH=/opt/vibe_pdf_parser/prompts/ai_review_user_prompt.txt
+```
 
 ## Run
 

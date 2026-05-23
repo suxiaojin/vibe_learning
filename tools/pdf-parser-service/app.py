@@ -31,6 +31,10 @@ AI_REVIEW_ENABLED = os.getenv("VIBE_AI_REVIEW_ENABLED", "true").lower() != "fals
 AI_REVIEW_CHUNK_SIZE = int(os.getenv("VIBE_AI_REVIEW_CHUNK_SIZE", "12"))
 AI_REVIEW_TIMEOUT = float(os.getenv("VIBE_AI_REVIEW_TIMEOUT", "90"))
 AI_REVIEW_MIN_CONFIDENCE = float(os.getenv("VIBE_AI_REVIEW_MIN_CONFIDENCE", "0.74"))
+BASE_DIR = Path(__file__).resolve().parent
+PROMPT_DIR = Path(os.getenv("VIBE_AI_PROMPT_DIR", str(BASE_DIR / "prompts")))
+AI_REVIEW_SYSTEM_PROMPT_PATH = Path(os.getenv("VIBE_AI_REVIEW_SYSTEM_PROMPT_PATH", str(PROMPT_DIR / "ai_review_system_prompt.txt")))
+AI_REVIEW_USER_PROMPT_PATH = Path(os.getenv("VIBE_AI_REVIEW_USER_PROMPT_PATH", str(PROMPT_DIR / "ai_review_user_prompt.txt")))
 TASKS: dict[str, dict[str, Any]] = {}
 TASK_LOCK = threading.Lock()
 
@@ -45,6 +49,23 @@ QUESTION_TYPE_LABELS = {
     "fill_blank": "填空",
     "comprehensive": "综合",
 }
+
+DEFAULT_AI_REVIEW_SYSTEM_PROMPT = "你是严谨的考试题库质检助手，只输出 JSON。"
+
+DEFAULT_AI_REVIEW_USER_PROMPT_TEMPLATE = (
+    "你是江苏专转本题库导入质检助手。下面是 OCR 和规则解析后的题目 JSON 片段。"
+    "请只做保守复核：1) 修正明显 OCR 错字、断行和标点问题；2) 复核题型是否合理；"
+    "3) 复核答案是否存在于选项中、是否与解析最后结论一致；4) 标出无法确定的问题。"
+    "不要凭空新增题目，不要改写题意，不确定时只给 warning。"
+    "只输出 JSON，不要 Markdown。JSON 格式："
+    "{\"corrections\":[{\"number\":1,\"confidence\":0.9,\"reason\":\"原因\","
+    "\"type\":\"single_choice\",\"stem\":\"可选\",\"options\":[{\"key\":\"A\",\"text\":\"...\"}],"
+    "\"answer\":[\"A\"],\"analysis\":\"可选\"}],"
+    "\"warnings\":[{\"number\":2,\"message\":\"问题描述\"}]}"
+    "允许的 type：single_choice,multiple_choice,true_false,fill_blank,comprehensive。"
+    "只有 confidence >= {{MIN_CONFIDENCE}} 且非常确定时才放 corrections。题目如下：\n"
+    "{{QUESTIONS_JSON}}"
+)
 
 
 def question_type_from_section(section: str) -> str:
@@ -466,20 +487,28 @@ def compact_question_for_ai(question: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def read_prompt_template(path: Path, fallback: str) -> str:
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return fallback
+    if not text:
+        return fallback
+    return text
+
+
+def build_ai_system_prompt() -> str:
+    return read_prompt_template(AI_REVIEW_SYSTEM_PROMPT_PATH, DEFAULT_AI_REVIEW_SYSTEM_PROMPT)
+
+
 def build_ai_review_prompt(questions: list[dict[str, Any]]) -> str:
+    questions_json = json.dumps(questions, ensure_ascii=False)
+    template = read_prompt_template(AI_REVIEW_USER_PROMPT_PATH, DEFAULT_AI_REVIEW_USER_PROMPT_TEMPLATE)
+    if "{{QUESTIONS_JSON}}" not in template:
+        template = f"{template.rstrip()}\n\n题目如下：\n{{{{QUESTIONS_JSON}}}}"
     return (
-        "你是江苏专转本题库导入质检助手。下面是 OCR 和规则解析后的题目 JSON 片段。"
-        "请只做保守复核：1) 修正明显 OCR 错字、断行和标点问题；2) 复核题型是否合理；"
-        "3) 复核答案是否存在于选项中、是否与解析最后结论一致；4) 标出无法确定的问题。"
-        "不要凭空新增题目，不要改写题意，不确定时只给 warning。"
-        "只输出 JSON，不要 Markdown。JSON 格式："
-        "{\"corrections\":[{\"number\":1,\"confidence\":0.9,\"reason\":\"原因\","
-        "\"type\":\"single_choice\",\"stem\":\"可选\",\"options\":[{\"key\":\"A\",\"text\":\"...\"}],"
-        "\"answer\":[\"A\"],\"analysis\":\"可选\"}],"
-        "\"warnings\":[{\"number\":2,\"message\":\"问题描述\"}]}"
-        "允许的 type：single_choice,multiple_choice,true_false,fill_blank,comprehensive。"
-        "只有 confidence >= 0.74 且非常确定时才放 corrections。题目如下：\n"
-        f"{json.dumps(questions, ensure_ascii=False)}"
+        template.replace("{{QUESTIONS_JSON}}", questions_json)
+        .replace("{{MIN_CONFIDENCE}}", f"{AI_REVIEW_MIN_CONFIDENCE:.2f}")
     )
 
 
@@ -582,7 +611,7 @@ def review_payload_with_ai(
         messages = [
             {
                 "role": "system",
-                "content": "你是严谨的考试题库质检助手，只输出 JSON。"
+                "content": build_ai_system_prompt()
             },
             {
                 "role": "user",
@@ -635,7 +664,17 @@ def review_payload_with_ai(
             progress_callback(index, len(chunks), "ai_done")
 
     logger.info("[%s] AI review finished: applied=%s warnings=%s", request_id, len(applied), len(warnings))
-    return payload, warnings, {"enabled": True, "model": model, "chunks": len(chunks), "applied": applied, "issueCount": ai_issue_count}
+    return payload, warnings, {
+        "enabled": True,
+        "model": model,
+        "chunks": len(chunks),
+        "applied": applied,
+        "issueCount": ai_issue_count,
+        "promptPaths": {
+            "system": str(AI_REVIEW_SYSTEM_PROMPT_PATH),
+            "user": str(AI_REVIEW_USER_PROMPT_PATH),
+        },
+    }
 
 
 def merge_payload(
