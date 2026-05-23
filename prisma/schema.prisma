@@ -71,6 +71,7 @@ enum QuestionSourceType {
   real_exam
   outline
   import
+  ai_generated
 }
 
 model User {

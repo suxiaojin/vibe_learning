@@ -5,11 +5,11 @@ import {
   ChevronRight,
   FilePlus2,
   ListFilter,
-  Shuffle,
   Trash2
 } from "lucide-react";
 import { createQuestionBankPaper, deleteQuestionBankPaper, toggleQuestionBankPaperStatus, updateQuestionBankPaper } from "@/app/admin/actions";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
+import { QuestionBankAiGenerationDialog } from "@/components/question-bank-ai-generation-dialog";
 import { QuestionBankImportDialog } from "@/components/question-bank-import-dialog";
 import { QuestionBankSidebar } from "@/components/question-bank-sidebar";
 import { requireAdmin } from "@/lib/auth";
@@ -189,7 +189,10 @@ export default async function QuestionBanksPage({
       where: paperWhere,
       select: {
         id: true,
-        title: true
+        title: true,
+        _count: {
+          select: { questions: true }
+        }
       },
       orderBy: [{ year: "desc" }, { updatedAt: "desc" }]
     })
@@ -270,12 +273,11 @@ export default async function QuestionBanksPage({
                 regions={regions}
               />
 
-              <button className="grid justify-items-center gap-1 text-xs font-medium text-[#071b38]" type="button">
-                <span className="grid size-8 place-items-center text-[#168bd4]">
-                  <Shuffle size={29} strokeWidth={2.4} />
-                </span>
-                一键切题
-              </button>
+              <QuestionBankAiGenerationDialog
+                selectedOwner={{ type: selectedOwner.type, id: selectedOwner.id, name: selectedOwner.name, regions: selectedOwner.regions }}
+                regions={regions}
+                referencePapers={selectedPaperNames.map((paper) => ({ id: paper.id, title: paper.title, questionCount: paper._count.questions }))}
+              />
             </div>
 
             <section className="overflow-visible rounded-t-lg bg-white">

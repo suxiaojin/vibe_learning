@@ -12,6 +12,8 @@ type Question = {
   options: unknown;
   answer: unknown;
   source: string;
+  sourceType?: "manual" | "real_exam" | "outline" | "import" | "ai_generated";
+  sourceYear?: number | null;
 };
 
 type Option = {
@@ -37,6 +39,14 @@ const text = {
   correct: "\u7b54\u5bf9\u4e86\uff01",
   wrong: "\u8fd9\u9898\u7b54\u9519\u4e86",
   rightAnswer: "\u6b63\u786e\u7b54\u6848\uff1a"
+};
+
+const sourceTypeText: Record<NonNullable<Question["sourceType"]>, string> = {
+  manual: "人工题",
+  real_exam: "真题",
+  outline: "大纲题",
+  import: "导入题",
+  ai_generated: "AI模拟"
 };
 
 function coerceOptions(options: unknown): Option[] {
@@ -179,6 +189,14 @@ export function QuizRunner({ pointId, questions }: { pointId: string; questions:
         <p className="text-sm font-black text-[#b76cff]">
           {text.question} {currentIndex + 1} / {questions.length} · {questionTypeLabel}
         </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-black text-slate-500">
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-600">
+            {sourceTypeText[current.sourceType || "manual"]}
+          </span>
+          <span className="min-w-0 truncate rounded-full border border-slate-200 bg-white px-2.5 py-1">
+            来源：{current.source || (current.sourceType === "ai_generated" ? "AI模拟真题" : "题库练习")}
+          </span>
+        </div>
         <h3 className="mt-3 text-2xl font-black leading-snug text-ink">{current.stem}</h3>
 
         {current.type === "fill_blank" || current.type === "comprehensive" ? (

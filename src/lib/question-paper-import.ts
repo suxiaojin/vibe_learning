@@ -3,6 +3,7 @@ import { prisma } from "./prisma";
 import type { QuestionBankOwnerType } from "./question-bank-catalog";
 
 export type ImportQuestionType = "single_choice" | "multiple_choice" | "true_false" | "fill_blank" | "comprehensive";
+export type ImportQuestionSourceType = "manual" | "real_exam" | "outline" | "import" | "ai_generated";
 
 export type ImportQuestion = {
   number: number;
@@ -12,6 +13,7 @@ export type ImportQuestion = {
   answer: string[];
   analysis: string;
   source?: string;
+  sourceType?: ImportQuestionSourceType;
   sourceYear?: number;
   difficulty?: "easy" | "medium" | "hard";
 };
@@ -40,6 +42,10 @@ export type ImportQuestionPaperResult = {
   paperId: string;
   courseId: string;
   importedQuestions: number;
+};
+
+export type ImportQuestionPaperOptions = {
+  defaultSourceType?: ImportQuestionSourceType;
 };
 
 type ImportOwner = {
@@ -266,7 +272,11 @@ async function ensureLearningCourse(tx: Prisma.TransactionClient, regionId: stri
   });
 }
 
-export async function importQuestionPaperPayload(payload: ImportQuestionPaperPayload, target: ImportQuestionPaperTarget = {}): Promise<ImportQuestionPaperResult> {
+export async function importQuestionPaperPayload(
+  payload: ImportQuestionPaperPayload,
+  target: ImportQuestionPaperTarget = {},
+  options: ImportQuestionPaperOptions = {}
+): Promise<ImportQuestionPaperResult> {
   assertImportQuestionPaperPayload(payload);
 
   return prisma.$transaction(async (tx) => {
@@ -387,7 +397,7 @@ export async function importQuestionPaperPayload(payload: ImportQuestionPaperPay
           answer: question.answer,
           analysis: question.analysis,
           source: question.source || payload.title,
-          sourceType: "import",
+          sourceType: question.sourceType || options.defaultSourceType || "import",
           sourceYear: question.sourceYear || payload.year,
           difficulty: question.difficulty || "medium",
           status: "published"

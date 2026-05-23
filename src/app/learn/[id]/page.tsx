@@ -23,7 +23,7 @@ export default async function PointPage({
       questions: {
         where: { status: "published" },
         orderBy: { createdAt: "asc" },
-        select: { id: true, type: true, stem: true, options: true, answer: true, source: true }
+        select: { id: true, type: true, stem: true, options: true, answer: true, source: true, sourceType: true, sourceYear: true }
       }
     }
   });
