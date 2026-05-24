@@ -18,6 +18,10 @@ export async function POST(request: Request) {
     return redirectTo(request, "/login?error=Invalid%20username%20or%20password");
   }
 
+  if (user.status === "disabled") {
+    return redirectTo(request, "/login?error=Account%20disabled");
+  }
+
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
   await createSession(user);
 

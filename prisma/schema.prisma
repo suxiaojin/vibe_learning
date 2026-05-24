@@ -12,6 +12,11 @@ enum UserRole {
   admin
 }
 
+enum UserStatus {
+  active
+  disabled
+}
+
 enum ContentStatus {
   draft
   published
@@ -79,8 +84,11 @@ model User {
   username        String            @unique
   passwordHash    String
   role            UserRole          @default(student)
+  status          UserStatus        @default(active)
   createdAt       DateTime          @default(now())
   lastLoginAt     DateTime?
+  disabledAt      DateTime?
+  disabledReason  String?
   studentProfile  StudentProfile?
   progress        UserProgress[]
   attempts        QuestionAttempt[]
@@ -88,6 +96,7 @@ model User {
   aiConversations AiConversation[]
   studyStats      StudyStat[]
 
+  @@index([role, status, createdAt])
   @@map("users")
 }
 

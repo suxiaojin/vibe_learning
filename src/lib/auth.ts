@@ -53,16 +53,23 @@ export async function getCurrentUser() {
       return null;
     }
 
-    return prisma.user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { id: payload.sub },
       select: {
         id: true,
         username: true,
         role: true,
+        status: true,
         createdAt: true,
         lastLoginAt: true
       }
     });
+
+    if (user?.status === "disabled") {
+      return null;
+    }
+
+    return user;
   } catch {
     return null;
   }

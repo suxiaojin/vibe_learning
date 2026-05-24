@@ -11,7 +11,8 @@ import {
   LifeBuoy,
   LogOut,
   MapPinned,
-  Settings
+  Settings,
+  UsersRound
 } from "lucide-react";
 import type { AdminModuleNavItem } from "@/lib/admin-modules";
 import { cn } from "@/lib/utils";
@@ -22,7 +23,8 @@ const iconMap = {
   dashboard: LayoutDashboard,
   graduation: GraduationCap,
   map: MapPinned,
-  settings: Settings
+  settings: Settings,
+  users: UsersRound
 };
 
 export function AdminShell({ children, modules }: { children: React.ReactNode; modules: AdminModuleNavItem[] }) {

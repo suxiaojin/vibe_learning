@@ -1,5 +1,6 @@
 "use server";
 
+import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ContentStatus, Difficulty, QuestionType, RegionStatus, SyllabusRequirement } from "@prisma/client";
@@ -180,6 +181,18 @@ function buildModuleKey(label: string) {
   return `${base || "module"}-${Date.now().toString(36)}`;
 }
 
+function getAdminStudentsReturnTo(formData: FormData) {
+  const returnTo = String(formData.get("returnTo") || "/admin/students");
+  return returnTo.startsWith("/admin/students") ? returnTo : "/admin/students";
+}
+
+function appendAdminStudentsMessage(path: string, key: "notice" | "error", message: string) {
+  const [base, query = ""] = path.split("?");
+  const params = new URLSearchParams(query);
+  params.set(key, message);
+  return `${base}?${params.toString()}`;
+}
+
 function getQuestionType(formData: FormData) {
   return String(formData.get("type") || "single_choice") as QuestionType;
 }
@@ -288,6 +301,55 @@ export async function updateAdminModule(formData: FormData) {
   });
   revalidatePath("/admin/module-config");
   revalidatePath("/admin", "layout");
+}
+
+export async function toggleStudentAccountStatus(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") || "");
+  const returnTo = getAdminStudentsReturnTo(formData);
+  const student = await prisma.user.findFirstOrThrow({
+    where: { id, role: "student" },
+    select: { status: true }
+  });
+  const disabledReason = String(formData.get("disabledReason") || "").trim() || "后台手动禁用";
+  const nextStatus = student.status === "disabled" ? "active" : "disabled";
+
+  await prisma.user.update({
+    where: { id },
+    data: {
+      status: nextStatus,
+      disabledAt: nextStatus === "disabled" ? new Date() : null,
+      disabledReason: nextStatus === "disabled" ? disabledReason : null
+    }
+  });
+
+  revalidatePath("/admin/students");
+  revalidatePath(`/admin/students/${id}`);
+  redirect(appendAdminStudentsMessage(returnTo, "notice", nextStatus === "disabled" ? "学生账号已禁用" : "学生账号已启用"));
+}
+
+export async function resetStudentPassword(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") || "");
+  const returnTo = getAdminStudentsReturnTo(formData);
+  const password = String(formData.get("password") || "");
+
+  if (password.length < 6) {
+    redirect(appendAdminStudentsMessage(returnTo, "error", "新密码至少需要 6 位"));
+  }
+
+  await prisma.user.findFirstOrThrow({
+    where: { id, role: "student" },
+    select: { id: true }
+  });
+  await prisma.user.update({
+    where: { id },
+    data: { passwordHash: await bcrypt.hash(password, 12) }
+  });
+
+  revalidatePath("/admin/students");
+  revalidatePath(`/admin/students/${id}`);
+  redirect(appendAdminStudentsMessage(returnTo, "notice", "学生密码已重置"));
 }
 
 export async function createPublicSubject(formData: FormData) {

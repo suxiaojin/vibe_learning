@@ -8,6 +8,7 @@ const iconOptions = [
   { value: "book", label: "课程/题库" },
   { value: "database", label: "题库数据" },
   { value: "graduation", label: "专业" },
+  { value: "users", label: "学生" },
   { value: "settings", label: "设置" }
 ];
 
