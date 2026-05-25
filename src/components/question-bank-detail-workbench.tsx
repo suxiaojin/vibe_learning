@@ -21,9 +21,11 @@ import {
   type LucideIcon
 } from "lucide-react";
 import {
+  createQuestionBankCalculationQuestion,
   createQuestionBankComprehensiveQuestion,
   createQuestionBankFillBlankQuestion,
   createQuestionBankMultipleChoiceQuestion,
+  createQuestionBankProofQuestion,
   createQuestionBankSingleChoiceQuestion,
   createQuestionBankTrueFalseQuestion,
   deleteQuestionBankPaperQuestion,
@@ -60,12 +62,14 @@ type QuestionBankDetailWorkbenchProps = {
   paperTitle: string;
   ownerHref: string;
   isComputerMajor: boolean;
+  isAdvancedMathMajor: boolean;
   questions: QuestionRow[];
 };
 
-type ActiveEditorType = "single_choice" | "multiple_choice" | "true_false" | "fill_blank" | "comprehensive" | null;
+type ActiveEditorType = "single_choice" | "multiple_choice" | "true_false" | "fill_blank" | "calculation" | "proof" | "comprehensive" | null;
 type EditableQuestionType = Exclude<ActiveEditorType, null>;
 type ChoiceQuestionType = "single_choice" | "multiple_choice";
+type RichAnswerQuestionType = "calculation" | "proof" | "comprehensive";
 
 type ToolItem = {
   label: string;
@@ -98,7 +102,9 @@ const minColumnLayout = {
   attributes: 380
 };
 
-const questionTypeOrder = ["single_choice", "multiple_choice", "true_false", "fill_blank", "comprehensive"] as const;
+const defaultQuestionTypeOrder = ["single_choice", "multiple_choice"] as const;
+const computerQuestionTypeOrder = ["single_choice", "multiple_choice", "true_false", "fill_blank", "comprehensive"] as const;
+const advancedMathQuestionTypeOrder = ["single_choice", "fill_blank", "calculation", "proof", "comprehensive"] as const;
 
 const questionTypeStyles: Record<string, QuestionTypeMeta> = {
   single_choice: {
@@ -128,6 +134,20 @@ const questionTypeStyles: Record<string, QuestionTypeMeta> = {
     selectedRow: "border-[#06b6d4] bg-[#a5f3fc] text-[#164e63] ring-2 ring-[#06b6d4]/30",
     chip: "border-[#67e8f9] bg-[#cffafe] text-[#0e7490]",
     activeChip: "border-[#06b6d4] bg-[#06b6d4] text-white shadow-sm shadow-[#06b6d4]/30"
+  },
+  calculation: {
+    label: "计算题",
+    row: "border-[#c4b5fd] bg-[#ede9fe] text-[#5b21b6]",
+    selectedRow: "border-[#8b5cf6] bg-[#ddd6fe] text-[#4c1d95] ring-2 ring-[#8b5cf6]/30",
+    chip: "border-[#c4b5fd] bg-[#ede9fe] text-[#5b21b6]",
+    activeChip: "border-[#8b5cf6] bg-[#8b5cf6] text-white shadow-sm shadow-[#8b5cf6]/30"
+  },
+  proof: {
+    label: "证明题",
+    row: "border-[#f9a8d4] bg-[#fce7f3] text-[#9d174d]",
+    selectedRow: "border-[#ec4899] bg-[#fbcfe8] text-[#831843] ring-2 ring-[#ec4899]/30",
+    chip: "border-[#f9a8d4] bg-[#fce7f3] text-[#9d174d]",
+    activeChip: "border-[#ec4899] bg-[#ec4899] text-white shadow-sm shadow-[#ec4899]/30"
   },
   comprehensive: {
     label: "综合题",
@@ -427,7 +447,11 @@ function isChoiceQuestionType(type?: string): type is ChoiceQuestionType {
 }
 
 function isEditableQuestionType(type?: string): type is EditableQuestionType {
-  return type === "single_choice" || type === "multiple_choice" || type === "true_false" || type === "fill_blank" || type === "comprehensive";
+  return type === "single_choice" || type === "multiple_choice" || type === "true_false" || type === "fill_blank" || type === "calculation" || type === "proof" || type === "comprehensive";
+}
+
+function isRichAnswerQuestionType(type?: string): type is RichAnswerQuestionType {
+  return type === "calculation" || type === "proof" || type === "comprehensive";
 }
 
 function createQuestionFormId(type: EditableQuestionType) {
@@ -629,14 +653,21 @@ function FillBlankQuestionForm({ paperId, question }: { paperId: string; questio
   );
 }
 
-function ComprehensiveQuestionForm({ paperId, question }: { paperId: string; question?: QuestionRow }) {
+function RichAnswerQuestionForm({ paperId, question, type }: { paperId: string; question?: QuestionRow; type: RichAnswerQuestionType }) {
   const editing = Boolean(question);
-  const formId = editing && question ? editQuestionFormId(question.id) : createQuestionFormId("comprehensive");
+  const formId = editing && question ? editQuestionFormId(question.id) : createQuestionFormId(type);
+  const action = editing
+    ? updateQuestionBankQuestion
+    : type === "calculation"
+      ? createQuestionBankCalculationQuestion
+      : type === "proof"
+        ? createQuestionBankProofQuestion
+        : createQuestionBankComprehensiveQuestion;
 
   return (
-    <form id={formId} action={editing ? updateQuestionBankQuestion : createQuestionBankComprehensiveQuestion} key={question?.id || "comprehensive"}>
+    <form id={formId} action={action} key={question?.id || type}>
       <input type="hidden" name="paperId" value={paperId} />
-      <input type="hidden" name="questionType" value="comprehensive" />
+      <input type="hidden" name="questionType" value={type} />
       {question ? <input type="hidden" name="paperQuestionId" value={question.id} /> : null}
       <EditorShell title="题干">
         <RichTextEditor name="stem" defaultValue={question?.title || ""} />
@@ -687,7 +718,7 @@ function ReadonlyQuestionPreview({ question }: { question: QuestionRow }) {
   );
 }
 
-export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, isComputerMajor, questions }: QuestionBankDetailWorkbenchProps) {
+export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, isComputerMajor, isAdvancedMathMajor, questions }: QuestionBankDetailWorkbenchProps) {
   const [activeEditorType, setActiveEditorType] = useState<ActiveEditorType>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [orderedQuestions, setOrderedQuestions] = useState(questions);
@@ -709,7 +740,11 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
     : selectedQuestion && selectedEditableType
       ? editQuestionFormId(selectedQuestion.id)
       : undefined;
-  const visibleTypeOrder = questionTypeOrder.filter((type) => isComputerMajor || !["true_false", "fill_blank", "comprehensive"].includes(type));
+  const visibleTypeOrder = isAdvancedMathMajor
+    ? advancedMathQuestionTypeOrder
+    : isComputerMajor
+      ? computerQuestionTypeOrder
+      : defaultQuestionTypeOrder;
   const typeCounts = orderedQuestions.reduce<Record<string, number>>((counts, question) => {
     counts[question.type] = (counts[question.type] || 0) + 1;
     return counts;
@@ -798,7 +833,55 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
   };
-  const toolTypes: ToolItem[] = [
+  const questionToolTypes: ToolItem[] = isAdvancedMathMajor
+    ? [
+        {
+          label: "单选",
+          icon: CircleDot,
+          tone: "normal" as const,
+          onClick: () => {
+            setSelectedQuestionId(null);
+            setActiveEditorType("single_choice");
+          }
+        },
+        {
+          label: "填空",
+          icon: FileText,
+          tone: "normal" as const,
+          onClick: () => {
+            setSelectedQuestionId(null);
+            setActiveEditorType("fill_blank");
+          }
+        },
+        {
+          label: "计算",
+          icon: Sigma,
+          tone: "normal" as const,
+          onClick: () => {
+            setSelectedQuestionId(null);
+            setActiveEditorType("calculation");
+          }
+        },
+        {
+          label: "证明",
+          icon: ListChecks,
+          tone: "normal" as const,
+          onClick: () => {
+            setSelectedQuestionId(null);
+            setActiveEditorType("proof");
+          }
+        },
+        {
+          label: "综合",
+          icon: FileText,
+          tone: "normal" as const,
+          onClick: () => {
+            setSelectedQuestionId(null);
+            setActiveEditorType("comprehensive");
+          }
+        }
+      ]
+    : [
     {
       label: "单选",
       icon: CircleDot,
@@ -847,7 +930,10 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
             }
           }
         ]
-      : []),
+      : [])
+    ];
+  const toolTypes: ToolItem[] = [
+    ...questionToolTypes,
     {
       label: "添加",
       icon: CopyPlus,
@@ -905,6 +991,8 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
                     activeEditorType === "multiple_choice" && item.label === "多选" && "bg-[#eaf2ff] text-[#1d4ed8]",
                     activeEditorType === "true_false" && item.label === "判断" && "bg-[#fff7e6] text-[#b45309]",
                     activeEditorType === "fill_blank" && item.label === "填空" && "bg-[#e9fbff] text-[#0e7490]",
+                    activeEditorType === "calculation" && item.label === "计算" && "bg-[#f1edff] text-[#6d28d9]",
+                    activeEditorType === "proof" && item.label === "证明" && "bg-[#fff0f8] text-[#be185d]",
                     activeEditorType === "comprehensive" && item.label === "综合" && "bg-[#fff0f3] text-[#be123c]"
                   )}
                   form={item.form}
@@ -927,16 +1015,16 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
             <TrueFalseQuestionForm key="create-true_false" paperId={paperId} />
           ) : activeEditorType === "fill_blank" ? (
             <FillBlankQuestionForm key="create-fill_blank" paperId={paperId} />
-          ) : activeEditorType === "comprehensive" ? (
-            <ComprehensiveQuestionForm key="create-comprehensive" paperId={paperId} />
+          ) : activeEditorType && isRichAnswerQuestionType(activeEditorType) ? (
+            <RichAnswerQuestionForm key={`create-${activeEditorType}`} paperId={paperId} type={activeEditorType} />
           ) : selectedQuestion && selectedChoiceType ? (
             <ChoiceQuestionForm key={`edit-${selectedQuestion.id}`} paperId={paperId} question={selectedQuestion} type={selectedChoiceType} />
           ) : selectedQuestion && selectedEditableType === "true_false" ? (
             <TrueFalseQuestionForm key={`edit-${selectedQuestion.id}`} paperId={paperId} question={selectedQuestion} />
           ) : selectedQuestion && selectedEditableType === "fill_blank" ? (
             <FillBlankQuestionForm key={`edit-${selectedQuestion.id}`} paperId={paperId} question={selectedQuestion} />
-          ) : selectedQuestion && selectedEditableType === "comprehensive" ? (
-            <ComprehensiveQuestionForm key={`edit-${selectedQuestion.id}`} paperId={paperId} question={selectedQuestion} />
+          ) : selectedQuestion && selectedEditableType && isRichAnswerQuestionType(selectedEditableType) ? (
+            <RichAnswerQuestionForm key={`edit-${selectedQuestion.id}`} paperId={paperId} question={selectedQuestion} type={selectedEditableType} />
           ) : selectedQuestion ? (
             <ReadonlyQuestionPreview question={selectedQuestion} />
           ) : (

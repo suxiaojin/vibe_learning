@@ -44,6 +44,10 @@ function ownerHref(paper: {
   return `/admin/question-banks?type=major&id=${encodeURIComponent(paper.course.majorId || "")}`;
 }
 
+function matchesAnyKeyword(value: string | null | undefined, keywords: string[]) {
+  return keywords.some((keyword) => value?.includes(keyword));
+}
+
 export default async function QuestionBankDetailPage({
   params
 }: {
@@ -83,6 +87,10 @@ export default async function QuestionBankDetailPage({
       paperTitle={paper.title}
       ownerHref={ownerHref(paper)}
       isComputerMajor={Boolean(paper.course.major?.name.includes("计算机") || paper.title.includes("计算机"))}
+      isAdvancedMathMajor={Boolean(
+        matchesAnyKeyword(paper.course.major?.name, ["高等数学", "大学数学"]) ||
+          matchesAnyKeyword(paper.title, ["高等数学", "大学数学"])
+      )}
       questions={paper.questions.map((item) => ({
         id: item.id,
         title: item.question.stem,

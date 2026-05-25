@@ -7,13 +7,11 @@ import { CheckCircle2, Heart, Loader2, X, XCircle } from "lucide-react";
 
 type Question = {
   id: string;
-  type: "single_choice" | "multiple_choice" | "true_false" | "fill_blank" | "comprehensive";
+  type: "single_choice" | "multiple_choice" | "true_false" | "fill_blank" | "calculation" | "proof" | "comprehensive";
   stem: string;
   options: unknown;
   answer: unknown;
   source: string;
-  sourceType?: "manual" | "real_exam" | "outline" | "import" | "ai_generated";
-  sourceYear?: number | null;
 };
 
 type Option = {
@@ -31,6 +29,8 @@ const text = {
   multipleChoice: "\u591a\u9009",
   trueFalse: "\u5224\u65ad",
   fillBlank: "\u586b\u7a7a",
+  calculation: "\u8ba1\u7b97",
+  proof: "\u8bc1\u660e",
   comprehensive: "\u7efc\u5408",
   skip: "\u8df3\u8fc7",
   check: "\u68c0\u67e5",
@@ -39,14 +39,6 @@ const text = {
   correct: "\u7b54\u5bf9\u4e86\uff01",
   wrong: "\u8fd9\u9898\u7b54\u9519\u4e86",
   rightAnswer: "\u6b63\u786e\u7b54\u6848\uff1a"
-};
-
-const sourceTypeText: Record<NonNullable<Question["sourceType"]>, string> = {
-  manual: "人工题",
-  real_exam: "真题",
-  outline: "大纲题",
-  import: "导入题",
-  ai_generated: "AI模拟"
 };
 
 function coerceOptions(options: unknown): Option[] {
@@ -189,17 +181,9 @@ export function QuizRunner({ pointId, questions }: { pointId: string; questions:
         <p className="text-sm font-black text-[#b76cff]">
           {text.question} {currentIndex + 1} / {questions.length} · {questionTypeLabel}
         </p>
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-black text-slate-500">
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-600">
-            {sourceTypeText[current.sourceType || "manual"]}
-          </span>
-          <span className="min-w-0 truncate rounded-full border border-slate-200 bg-white px-2.5 py-1">
-            来源：{current.source || (current.sourceType === "ai_generated" ? "AI模拟真题" : "题库练习")}
-          </span>
-        </div>
         <h3 className="mt-3 text-2xl font-black leading-snug text-ink">{current.stem}</h3>
 
-        {current.type === "fill_blank" || current.type === "comprehensive" ? (
+        {current.type === "fill_blank" || current.type === "calculation" || current.type === "proof" || current.type === "comprehensive" ? (
           <div className="mt-6">
             <input
               className={`min-h-14 w-full rounded-2xl border-2 px-5 py-3 text-base font-bold outline-none transition ${
@@ -299,6 +283,12 @@ function questionTypeText(type: Question["type"]) {
   }
   if (type === "fill_blank") {
     return text.fillBlank;
+  }
+  if (type === "calculation") {
+    return text.calculation;
+  }
+  if (type === "proof") {
+    return text.proof;
   }
   if (type === "comprehensive") {
     return text.comprehensive;

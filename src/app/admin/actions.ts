@@ -1123,7 +1123,7 @@ function getQuestionBankChoiceAnswers(formData: FormData, options: QuestionOptio
 }
 
 type QuestionBankChoiceQuestionType = "single_choice" | "multiple_choice";
-type QuestionBankEditableQuestionType = QuestionBankChoiceQuestionType | "true_false" | "fill_blank" | "comprehensive";
+type QuestionBankEditableQuestionType = QuestionBankChoiceQuestionType | "true_false" | "fill_blank" | "calculation" | "proof" | "comprehensive";
 
 const trueFalseOptions: QuestionOption[] = [
   { key: "A", text: "正确" },
@@ -1162,7 +1162,7 @@ function getQuestionBankQuestionPayload(formData: FormData, type: QuestionBankEd
     };
   }
 
-  if (type === "comprehensive") {
+  if (type === "calculation" || type === "proof" || type === "comprehensive") {
     return {
       stem,
       options: [],
@@ -1207,8 +1207,8 @@ function validateQuestionBankQuestion({
   if (type === "fill_blank" && answers.length < 1) {
     throw new Error("Fill blank answer is required");
   }
-  if (type === "comprehensive" && answers.length < 1) {
-    throw new Error("Comprehensive answer is required");
+  if ((type === "calculation" || type === "proof" || type === "comprehensive") && answers.length < 1) {
+    throw new Error("Rich answer question answer is required");
   }
 }
 
@@ -1276,12 +1276,28 @@ export async function createQuestionBankFillBlankQuestion(formData: FormData) {
   await createQuestionBankQuestion(formData, "fill_blank");
 }
 
+export async function createQuestionBankCalculationQuestion(formData: FormData) {
+  await createQuestionBankQuestion(formData, "calculation");
+}
+
+export async function createQuestionBankProofQuestion(formData: FormData) {
+  await createQuestionBankQuestion(formData, "proof");
+}
+
 export async function createQuestionBankComprehensiveQuestion(formData: FormData) {
   await createQuestionBankQuestion(formData, "comprehensive");
 }
 
 function isQuestionBankEditableQuestionType(type: string): type is QuestionBankEditableQuestionType {
-  return type === "single_choice" || type === "multiple_choice" || type === "true_false" || type === "fill_blank" || type === "comprehensive";
+  return (
+    type === "single_choice" ||
+    type === "multiple_choice" ||
+    type === "true_false" ||
+    type === "fill_blank" ||
+    type === "calculation" ||
+    type === "proof" ||
+    type === "comprehensive"
+  );
 }
 
 export async function updateQuestionBankQuestion(formData: FormData) {

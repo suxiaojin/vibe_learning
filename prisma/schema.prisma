@@ -33,6 +33,8 @@ enum QuestionType {
   multiple_choice
   true_false
   fill_blank
+  calculation
+  proof
   comprehensive
 }
 
