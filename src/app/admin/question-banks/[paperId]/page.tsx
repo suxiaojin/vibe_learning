@@ -48,6 +48,25 @@ function matchesAnyKeyword(value: string | null | undefined, keywords: string[])
   return keywords.some((keyword) => value?.includes(keyword));
 }
 
+function paperMatchesCourseKeywords(
+  paper: {
+    title: string;
+    course: {
+      name: string;
+      major: { name: string } | null;
+      publicSubject: { name: string } | null;
+    };
+  },
+  keywords: string[]
+) {
+  return (
+    matchesAnyKeyword(paper.title, keywords) ||
+    matchesAnyKeyword(paper.course.name, keywords) ||
+    matchesAnyKeyword(paper.course.major?.name, keywords) ||
+    matchesAnyKeyword(paper.course.publicSubject?.name, keywords)
+  );
+}
+
 export default async function QuestionBankDetailPage({
   params
 }: {
@@ -86,11 +105,8 @@ export default async function QuestionBankDetailPage({
       paperId={paper.id}
       paperTitle={paper.title}
       ownerHref={ownerHref(paper)}
-      isComputerMajor={Boolean(paper.course.major?.name.includes("计算机") || paper.title.includes("计算机"))}
-      isAdvancedMathMajor={Boolean(
-        matchesAnyKeyword(paper.course.major?.name, ["高等数学", "大学数学"]) ||
-          matchesAnyKeyword(paper.title, ["高等数学", "大学数学"])
-      )}
+      isComputerMajor={paperMatchesCourseKeywords(paper, ["计算机"])}
+      isAdvancedMathMajor={paperMatchesCourseKeywords(paper, ["高等数学", "大学数学"])}
       questions={paper.questions.map((item) => ({
         id: item.id,
         title: item.question.stem,
