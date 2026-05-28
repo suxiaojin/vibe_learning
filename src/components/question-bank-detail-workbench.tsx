@@ -21,17 +21,21 @@ import {
   type LucideIcon
 } from "lucide-react";
 import {
-  createQuestionBankCalculationQuestion,
-  createQuestionBankComprehensiveQuestion,
-  createQuestionBankFillBlankQuestion,
-  createQuestionBankMultipleChoiceQuestion,
-  createQuestionBankProofQuestion,
-  createQuestionBankSingleChoiceQuestion,
-  createQuestionBankTrueFalseQuestion,
+  createQuestionBankTypedQuestion,
   deleteQuestionBankPaperQuestion,
   reorderQuestionBankPaperQuestions,
   updateQuestionBankQuestion
 } from "@/app/admin/actions";
+import {
+  getQuestionBankTypeLabel,
+  isQuestionBankChoiceQuestionType,
+  isQuestionBankEditableQuestionType,
+  isQuestionBankRichAnswerQuestionType,
+  type QuestionBankChoiceQuestionType,
+  type QuestionBankEditableQuestionType,
+  type QuestionBankQuestionTypeConfig,
+  type QuestionBankRichAnswerQuestionType
+} from "@/lib/question-bank-types";
 import { cn } from "@/lib/utils";
 
 type QuestionOption = {
@@ -61,15 +65,14 @@ type QuestionBankDetailWorkbenchProps = {
   paperId: string;
   paperTitle: string;
   ownerHref: string;
-  isComputerMajor: boolean;
-  isAdvancedMathMajor: boolean;
+  questionTypes: QuestionBankQuestionTypeConfig[];
   questions: QuestionRow[];
 };
 
-type ActiveEditorType = "single_choice" | "multiple_choice" | "true_false" | "fill_blank" | "calculation" | "proof" | "comprehensive" | null;
-type EditableQuestionType = Exclude<ActiveEditorType, null>;
-type ChoiceQuestionType = "single_choice" | "multiple_choice";
-type RichAnswerQuestionType = "calculation" | "proof" | "comprehensive";
+type ActiveEditorType = QuestionBankEditableQuestionType | null;
+type EditableQuestionType = QuestionBankEditableQuestionType;
+type ChoiceQuestionType = QuestionBankChoiceQuestionType;
+type RichAnswerQuestionType = QuestionBankRichAnswerQuestionType;
 
 type ToolItem = {
   label: string;
@@ -78,6 +81,7 @@ type ToolItem = {
   onClick?: () => void;
   form?: string;
   disabled?: boolean;
+  questionType?: EditableQuestionType;
 };
 
 type QuestionTypeMeta = {
@@ -101,10 +105,6 @@ const minColumnLayout = {
   list: 280,
   attributes: 380
 };
-
-const defaultQuestionTypeOrder = ["single_choice", "multiple_choice"] as const;
-const computerQuestionTypeOrder = ["single_choice", "multiple_choice", "true_false", "fill_blank", "comprehensive"] as const;
-const advancedMathQuestionTypeOrder = ["single_choice", "fill_blank", "calculation", "proof", "comprehensive"] as const;
 
 const questionTypeStyles: Record<string, QuestionTypeMeta> = {
   single_choice: {
@@ -158,6 +158,29 @@ const questionTypeStyles: Record<string, QuestionTypeMeta> = {
   }
 };
 
+const questionTypeStyleAliases: Record<string, string> = {
+  term_explanation: "proof",
+  calculation_analysis: "calculation",
+  practical_writing: "comprehensive",
+  short_answer: "fill_blank",
+  essay: "comprehensive",
+  comprehensive_analysis: "comprehensive",
+  material_analysis: "proof",
+  operation_record: "fill_blank",
+  practical_operation: "calculation",
+  application: "calculation",
+  question_answer: "fill_blank",
+  handwriting: "fill_blank",
+  reading_comprehension: "comprehensive",
+  classical_chinese_translation: "proof",
+  writing: "comprehensive",
+  legal_document: "proof",
+  chinese_character_writing: "fill_blank",
+  language_expression: "comprehensive",
+  teaching_design: "calculation",
+  comprehensive_essay: "comprehensive"
+};
+
 const defaultQuestionTypeStyle: QuestionTypeMeta = {
   label: "题目",
   row: "border-[#d5e9f4] bg-[#d8edf7] text-[#071b38]",
@@ -166,15 +189,35 @@ const defaultQuestionTypeStyle: QuestionTypeMeta = {
   activeChip: "border-[#667085] bg-[#667085] text-white"
 };
 
-function getQuestionTypeMeta(type?: string) {
+function questionTypeIcon(type: string): LucideIcon {
+  if (type === "single_choice") {
+    return CircleDot;
+  }
+  if (type === "multiple_choice") {
+    return CheckSquare;
+  }
+  if (type === "calculation" || type === "calculation_analysis" || type === "application" || type === "practical_operation" || type === "teaching_design") {
+    return Sigma;
+  }
+  if (type === "true_false" || type === "comprehensive" || type === "comprehensive_analysis" || type === "comprehensive_essay") {
+    return ListChecks;
+  }
+  return FileText;
+}
+
+function getQuestionTypeMeta(type?: string, questionTypes: QuestionBankQuestionTypeConfig[] = []) {
   if (!type) {
     return defaultQuestionTypeStyle;
   }
-  return questionTypeStyles[type] || defaultQuestionTypeStyle;
+  const style = questionTypeStyles[type] || questionTypeStyles[questionTypeStyleAliases[type]] || defaultQuestionTypeStyle;
+  return {
+    ...style,
+    label: getQuestionBankTypeLabel(type, questionTypes)
+  };
 }
 
-function questionTypeText(type?: string) {
-  return type ? getQuestionTypeMeta(type).label : "";
+function questionTypeText(type?: string, questionTypes: QuestionBankQuestionTypeConfig[] = []) {
+  return type ? getQuestionTypeMeta(type, questionTypes).label : "";
 }
 
 function difficultyText(difficulty?: string) {
@@ -394,14 +437,16 @@ function QuestionTypeChip({
   type,
   active,
   count,
-  onClick
+  onClick,
+  questionTypes
 }: {
   type: string;
   active: boolean;
   count: number;
   onClick: () => void;
+  questionTypes: QuestionBankQuestionTypeConfig[];
 }) {
-  const meta = getQuestionTypeMeta(type);
+  const meta = getQuestionTypeMeta(type, questionTypes);
 
   return (
     <button
@@ -443,15 +488,15 @@ function EmptyQuestionCanvas() {
 }
 
 function isChoiceQuestionType(type?: string): type is ChoiceQuestionType {
-  return type === "single_choice" || type === "multiple_choice";
+  return isQuestionBankChoiceQuestionType(type);
 }
 
 function isEditableQuestionType(type?: string): type is EditableQuestionType {
-  return type === "single_choice" || type === "multiple_choice" || type === "true_false" || type === "fill_blank" || type === "calculation" || type === "proof" || type === "comprehensive";
+  return isQuestionBankEditableQuestionType(type);
 }
 
 function isRichAnswerQuestionType(type?: string): type is RichAnswerQuestionType {
-  return type === "calculation" || type === "proof" || type === "comprehensive";
+  return isQuestionBankRichAnswerQuestionType(type);
 }
 
 function createQuestionFormId(type: EditableQuestionType) {
@@ -473,11 +518,7 @@ function ChoiceQuestionForm({
 }) {
   const editing = Boolean(question);
   const formId = editing && question ? editQuestionFormId(question.id) : createQuestionFormId(type);
-  const action = editing
-    ? updateQuestionBankQuestion
-    : type === "single_choice"
-      ? createQuestionBankSingleChoiceQuestion
-      : createQuestionBankMultipleChoiceQuestion;
+  const action = editing ? updateQuestionBankQuestion : createQuestionBankTypedQuestion;
   const inputType = type === "single_choice" ? "radio" : "checkbox";
   const focusColor = type === "single_choice" ? "focus:border-[#22c55e]" : "focus:border-[#3b82f6]";
   const accentColor = type === "single_choice" ? "accent-[#22c55e]" : "accent-[#3b82f6]";
@@ -567,7 +608,7 @@ function TrueFalseQuestionForm({ paperId, question }: { paperId: string; questio
   const answer = question?.answer[0] || "";
 
   return (
-    <form id={formId} action={editing ? updateQuestionBankQuestion : createQuestionBankTrueFalseQuestion} key={question?.id || "true_false"}>
+    <form id={formId} action={editing ? updateQuestionBankQuestion : createQuestionBankTypedQuestion} key={question?.id || "true_false"}>
       <input type="hidden" name="paperId" value={paperId} />
       <input type="hidden" name="questionType" value="true_false" />
       {question ? <input type="hidden" name="paperQuestionId" value={question.id} /> : null}
@@ -621,7 +662,7 @@ function FillBlankQuestionForm({ paperId, question }: { paperId: string; questio
   const formId = editing && question ? editQuestionFormId(question.id) : createQuestionFormId("fill_blank");
 
   return (
-    <form id={formId} action={editing ? updateQuestionBankQuestion : createQuestionBankFillBlankQuestion} key={question?.id || "fill_blank"}>
+    <form id={formId} action={editing ? updateQuestionBankQuestion : createQuestionBankTypedQuestion} key={question?.id || "fill_blank"}>
       <input type="hidden" name="paperId" value={paperId} />
       <input type="hidden" name="questionType" value="fill_blank" />
       {question ? <input type="hidden" name="paperQuestionId" value={question.id} /> : null}
@@ -656,13 +697,7 @@ function FillBlankQuestionForm({ paperId, question }: { paperId: string; questio
 function RichAnswerQuestionForm({ paperId, question, type }: { paperId: string; question?: QuestionRow; type: RichAnswerQuestionType }) {
   const editing = Boolean(question);
   const formId = editing && question ? editQuestionFormId(question.id) : createQuestionFormId(type);
-  const action = editing
-    ? updateQuestionBankQuestion
-    : type === "calculation"
-      ? createQuestionBankCalculationQuestion
-      : type === "proof"
-        ? createQuestionBankProofQuestion
-        : createQuestionBankComprehensiveQuestion;
+  const action = editing ? updateQuestionBankQuestion : createQuestionBankTypedQuestion;
 
   return (
     <form id={formId} action={action} key={question?.id || type}>
@@ -718,7 +753,7 @@ function ReadonlyQuestionPreview({ question }: { question: QuestionRow }) {
   );
 }
 
-export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, isComputerMajor, isAdvancedMathMajor, questions }: QuestionBankDetailWorkbenchProps) {
+export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, questionTypes, questions }: QuestionBankDetailWorkbenchProps) {
   const [activeEditorType, setActiveEditorType] = useState<ActiveEditorType>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [orderedQuestions, setOrderedQuestions] = useState(questions);
@@ -733,18 +768,13 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
   const selectedChoiceType = isChoiceQuestionType(selectedQuestion?.type) ? selectedQuestion.type : null;
   const selectedEditableType = isEditableQuestionType(selectedQuestion?.type) ? selectedQuestion.type : null;
   const activeType = activeEditorType || selectedQuestion?.type || "";
-  const activeTypeText = questionTypeText(activeType);
   const activeDifficulty = activeEditorType ? "3星" : difficultyText(selectedQuestion?.difficulty);
   const activeFormId = activeEditorType
     ? createQuestionFormId(activeEditorType)
     : selectedQuestion && selectedEditableType
       ? editQuestionFormId(selectedQuestion.id)
       : undefined;
-  const visibleTypeOrder = isAdvancedMathMajor
-    ? advancedMathQuestionTypeOrder
-    : isComputerMajor
-      ? computerQuestionTypeOrder
-      : defaultQuestionTypeOrder;
+  const visibleTypeOrder = questionTypes;
   const typeCounts = orderedQuestions.reduce<Record<string, number>>((counts, question) => {
     counts[question.type] = (counts[question.type] || 0) + 1;
     return counts;
@@ -833,105 +863,16 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
     window.addEventListener("pointermove", handleMove);
     window.addEventListener("pointerup", handleUp);
   };
-  const questionToolTypes: ToolItem[] = isAdvancedMathMajor
-    ? [
-        {
-          label: "单选",
-          icon: CircleDot,
-          tone: "normal" as const,
-          onClick: () => {
-            setSelectedQuestionId(null);
-            setActiveEditorType("single_choice");
-          }
-        },
-        {
-          label: "填空",
-          icon: FileText,
-          tone: "normal" as const,
-          onClick: () => {
-            setSelectedQuestionId(null);
-            setActiveEditorType("fill_blank");
-          }
-        },
-        {
-          label: "计算",
-          icon: Sigma,
-          tone: "normal" as const,
-          onClick: () => {
-            setSelectedQuestionId(null);
-            setActiveEditorType("calculation");
-          }
-        },
-        {
-          label: "证明",
-          icon: ListChecks,
-          tone: "normal" as const,
-          onClick: () => {
-            setSelectedQuestionId(null);
-            setActiveEditorType("proof");
-          }
-        },
-        {
-          label: "综合",
-          icon: FileText,
-          tone: "normal" as const,
-          onClick: () => {
-            setSelectedQuestionId(null);
-            setActiveEditorType("comprehensive");
-          }
-        }
-      ]
-    : [
-    {
-      label: "单选",
-      icon: CircleDot,
-      tone: "normal",
-      onClick: () => {
-        setSelectedQuestionId(null);
-        setActiveEditorType("single_choice");
-      }
-    },
-    {
-      label: "多选",
-      icon: CheckSquare,
-      tone: "normal",
-      onClick: () => {
-        setSelectedQuestionId(null);
-        setActiveEditorType("multiple_choice");
-      }
-    },
-    ...(isComputerMajor
-      ? [
-          {
-            label: "判断",
-            icon: ListChecks,
-            tone: "normal" as const,
-            onClick: () => {
-              setSelectedQuestionId(null);
-              setActiveEditorType("true_false");
-            }
-          },
-          {
-            label: "填空",
-            icon: FileText,
-            tone: "normal" as const,
-            onClick: () => {
-              setSelectedQuestionId(null);
-              setActiveEditorType("fill_blank");
-            }
-          },
-          {
-            label: "综合",
-            icon: Sigma,
-            tone: "normal" as const,
-            onClick: () => {
-              setSelectedQuestionId(null);
-              setActiveEditorType("comprehensive");
-            }
-          }
-        ]
-      : [])
-    ];
+  const questionToolTypes: ToolItem[] = questionTypes.map((item) => ({
+    label: item.label,
+    icon: questionTypeIcon(item.type),
+    tone: "normal",
+    questionType: item.type,
+    onClick: () => {
+      setSelectedQuestionId(null);
+      setActiveEditorType(item.type);
+    }
+  }));
   const toolTypes: ToolItem[] = [
     ...questionToolTypes,
     {
@@ -987,13 +928,7 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
                   className={cn(
                     "grid min-h-[54px] place-items-center gap-1 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40",
                     item.tone === "danger" ? "text-[#ef3e46]" : "text-[#071b38]",
-                    activeEditorType === "single_choice" && item.label === "单选" && "bg-[#eaf7ef] text-[#15803d]",
-                    activeEditorType === "multiple_choice" && item.label === "多选" && "bg-[#eaf2ff] text-[#1d4ed8]",
-                    activeEditorType === "true_false" && item.label === "判断" && "bg-[#fff7e6] text-[#b45309]",
-                    activeEditorType === "fill_blank" && item.label === "填空" && "bg-[#e9fbff] text-[#0e7490]",
-                    activeEditorType === "calculation" && item.label === "计算" && "bg-[#f1edff] text-[#6d28d9]",
-                    activeEditorType === "proof" && item.label === "证明" && "bg-[#fff0f8] text-[#be185d]",
-                    activeEditorType === "comprehensive" && item.label === "综合" && "bg-[#fff0f3] text-[#be123c]"
+                    item.questionType && activeEditorType === item.questionType && getQuestionTypeMeta(item.questionType, questionTypes).activeChip
                   )}
                   form={item.form}
                   type={item.form ? "submit" : "button"}
@@ -1082,7 +1017,7 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
             ) : (
               listedQuestions.map((question) => {
                 const selected = selectedQuestionId === question.id && !activeEditorType;
-                const meta = getQuestionTypeMeta(question.type);
+                const meta = getQuestionTypeMeta(question.type, questionTypes);
                 const displayIndex = orderedQuestions.findIndex((item) => item.id === question.id) + 1;
                 return (
                   <div
@@ -1129,7 +1064,7 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
                         setSelectedQuestionId(question.id);
                       }}
                     >
-                      <span className={cn("min-w-0 truncate", selected && "font-black")}>{stripHtml(question.title) || questionTypeText(question.type)}</span>
+                      <span className={cn("min-w-0 truncate", selected && "font-black")}>{stripHtml(question.title) || questionTypeText(question.type, questionTypes)}</span>
                     </button>
                   </div>
                 );
@@ -1156,13 +1091,14 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, is
               <div className="grid grid-cols-[80px_1fr] items-center gap-2">
                 <span className="text-sm font-bold">题型</span>
                 <div className="flex flex-wrap gap-2">
-                  {visibleTypeOrder.map((type) => (
+                  {visibleTypeOrder.map((item) => (
                     <QuestionTypeChip
-                      key={type}
-                      type={type}
-                      active={questionTypeText(type) === activeTypeText}
-                      count={typeCounts[type] || 0}
-                      onClick={() => jumpToQuestionType(type)}
+                      key={item.type}
+                      type={item.type}
+                      active={item.type === activeType}
+                      count={typeCounts[item.type] || 0}
+                      onClick={() => jumpToQuestionType(item.type)}
+                      questionTypes={questionTypes}
                     />
                   ))}
                 </div>

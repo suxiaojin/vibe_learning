@@ -7,6 +7,12 @@ import { ContentStatus, Difficulty, QuestionType, RegionStatus, SyllabusRequirem
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
+import {
+  isQuestionBankChoiceQuestionType,
+  isQuestionBankEditableQuestionType,
+  isQuestionBankRichAnswerQuestionType,
+  type QuestionBankEditableQuestionType
+} from "@/lib/question-bank-types";
 
 type QuestionOption = {
   key: string;
@@ -1122,9 +1128,6 @@ function getQuestionBankChoiceAnswers(formData: FormData, options: QuestionOptio
     .sort((left, right) => alphabetOptionKeys.indexOf(left) - alphabetOptionKeys.indexOf(right));
 }
 
-type QuestionBankChoiceQuestionType = "single_choice" | "multiple_choice";
-type QuestionBankEditableQuestionType = QuestionBankChoiceQuestionType | "true_false" | "fill_blank" | "calculation" | "proof" | "comprehensive";
-
 const trueFalseOptions: QuestionOption[] = [
   { key: "A", text: "正确" },
   { key: "B", text: "错误" }
@@ -1162,7 +1165,7 @@ function getQuestionBankQuestionPayload(formData: FormData, type: QuestionBankEd
     };
   }
 
-  if (type === "calculation" || type === "proof" || type === "comprehensive") {
+  if (isQuestionBankRichAnswerQuestionType(type)) {
     return {
       stem,
       options: [],
@@ -1192,7 +1195,7 @@ function validateQuestionBankQuestion({
   if (!stem) {
     throw new Error("Question stem is required");
   }
-  if ((type === "single_choice" || type === "multiple_choice") && options.some((option) => !option.text)) {
+  if (isQuestionBankChoiceQuestionType(type) && options.some((option) => !option.text)) {
     throw new Error("Choice options are required");
   }
   if (type === "single_choice" && answers.length !== 1) {
@@ -1207,7 +1210,7 @@ function validateQuestionBankQuestion({
   if (type === "fill_blank" && answers.length < 1) {
     throw new Error("Fill blank answer is required");
   }
-  if ((type === "calculation" || type === "proof" || type === "comprehensive") && answers.length < 1) {
+  if (isQuestionBankRichAnswerQuestionType(type) && answers.length < 1) {
     throw new Error("Rich answer question answer is required");
   }
 }
@@ -1288,16 +1291,13 @@ export async function createQuestionBankComprehensiveQuestion(formData: FormData
   await createQuestionBankQuestion(formData, "comprehensive");
 }
 
-function isQuestionBankEditableQuestionType(type: string): type is QuestionBankEditableQuestionType {
-  return (
-    type === "single_choice" ||
-    type === "multiple_choice" ||
-    type === "true_false" ||
-    type === "fill_blank" ||
-    type === "calculation" ||
-    type === "proof" ||
-    type === "comprehensive"
-  );
+export async function createQuestionBankTypedQuestion(formData: FormData) {
+  const type = String(formData.get("questionType") || "");
+  if (!isQuestionBankEditableQuestionType(type)) {
+    throw new Error("Unsupported question type");
+  }
+
+  await createQuestionBankQuestion(formData, type);
 }
 
 export async function updateQuestionBankQuestion(formData: FormData) {

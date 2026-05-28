@@ -1,6 +1,7 @@
 import { QuestionBankDetailWorkbench } from "@/components/question-bank-detail-workbench";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { resolveQuestionBankQuestionTypes } from "@/lib/question-bank-types";
 
 function toQuestionOptions(value: unknown) {
   if (!Array.isArray(value)) {
@@ -44,11 +45,7 @@ function ownerHref(paper: {
   return `/admin/question-banks?type=major&id=${encodeURIComponent(paper.course.majorId || "")}`;
 }
 
-function matchesAnyKeyword(value: string | null | undefined, keywords: string[]) {
-  return keywords.some((keyword) => value?.includes(keyword));
-}
-
-function paperMatchesCourseKeywords(
+function paperQuestionTypeText(
   paper: {
     title: string;
     course: {
@@ -56,15 +53,9 @@ function paperMatchesCourseKeywords(
       major: { name: string } | null;
       publicSubject: { name: string } | null;
     };
-  },
-  keywords: string[]
+  }
 ) {
-  return (
-    matchesAnyKeyword(paper.title, keywords) ||
-    matchesAnyKeyword(paper.course.name, keywords) ||
-    matchesAnyKeyword(paper.course.major?.name, keywords) ||
-    matchesAnyKeyword(paper.course.publicSubject?.name, keywords)
-  );
+  return [paper.title, paper.course.name, paper.course.major?.name, paper.course.publicSubject?.name].filter(Boolean).join(" ");
 }
 
 export default async function QuestionBankDetailPage({
@@ -105,8 +96,7 @@ export default async function QuestionBankDetailPage({
       paperId={paper.id}
       paperTitle={paper.title}
       ownerHref={ownerHref(paper)}
-      isComputerMajor={paperMatchesCourseKeywords(paper, ["计算机"])}
-      isAdvancedMathMajor={paperMatchesCourseKeywords(paper, ["高等数学", "大学数学"])}
+      questionTypes={resolveQuestionBankQuestionTypes(paperQuestionTypeText(paper))}
       questions={paper.questions.map((item) => ({
         id: item.id,
         title: item.question.stem,

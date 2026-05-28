@@ -36,6 +36,26 @@ enum QuestionType {
   calculation
   proof
   comprehensive
+  term_explanation
+  calculation_analysis
+  practical_writing
+  short_answer
+  essay
+  comprehensive_analysis
+  material_analysis
+  operation_record
+  practical_operation
+  application
+  question_answer
+  handwriting
+  reading_comprehension
+  classical_chinese_translation
+  writing
+  legal_document
+  chinese_character_writing
+  language_expression
+  teaching_design
+  comprehensive_essay
 }
 
 enum Difficulty {

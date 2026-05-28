@@ -4,10 +4,11 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Heart, Loader2, X, XCircle } from "lucide-react";
+import { getQuestionBankTypeLabel, isQuestionBankRichAnswerQuestionType, type QuestionBankEditableQuestionType } from "@/lib/question-bank-types";
 
 type Question = {
   id: string;
-  type: "single_choice" | "multiple_choice" | "true_false" | "fill_blank" | "calculation" | "proof" | "comprehensive";
+  type: QuestionBankEditableQuestionType;
   stem: string;
   options: unknown;
   answer: unknown;
@@ -183,7 +184,7 @@ export function QuizRunner({ pointId, questions }: { pointId: string; questions:
         </p>
         <h3 className="mt-3 text-2xl font-black leading-snug text-ink">{current.stem}</h3>
 
-        {current.type === "fill_blank" || current.type === "calculation" || current.type === "proof" || current.type === "comprehensive" ? (
+        {current.type === "fill_blank" || isQuestionBankRichAnswerQuestionType(current.type) ? (
           <div className="mt-6">
             <input
               className={`min-h-14 w-full rounded-2xl border-2 px-5 py-3 text-base font-bold outline-none transition ${
@@ -275,23 +276,5 @@ export function QuizRunner({ pointId, questions }: { pointId: string; questions:
 }
 
 function questionTypeText(type: Question["type"]) {
-  if (type === "multiple_choice") {
-    return text.multipleChoice;
-  }
-  if (type === "true_false") {
-    return text.trueFalse;
-  }
-  if (type === "fill_blank") {
-    return text.fillBlank;
-  }
-  if (type === "calculation") {
-    return text.calculation;
-  }
-  if (type === "proof") {
-    return text.proof;
-  }
-  if (type === "comprehensive") {
-    return text.comprehensive;
-  }
-  return text.singleChoice;
+  return getQuestionBankTypeLabel(type);
 }

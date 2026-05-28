@@ -4,6 +4,7 @@ import { createQuestion, updateQuestion, updateQuestionStatus } from "@/app/admi
 import { AdminQuestionFields } from "@/components/admin-question-fields";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { questionBankEditableQuestionTypes, questionBankTypeDefaultLabels } from "@/lib/question-bank-types";
 
 const contentStatuses = new Set<string>(Object.values(ContentStatus));
 const questionTypes = new Set<string>(Object.values(QuestionType));
@@ -86,13 +87,9 @@ export default async function QuestionsPage({
             <label className="label">题型</label>
             <select className="input" name="type" defaultValue={selectedType}>
               <option value="">全部题型</option>
-              <option value="single_choice">单选</option>
-              <option value="multiple_choice">多选</option>
-              <option value="true_false">判断</option>
-              <option value="fill_blank">填空</option>
-              <option value="calculation">计算</option>
-              <option value="proof">证明</option>
-              <option value="comprehensive">综合</option>
+              {questionBankEditableQuestionTypes.map((item) => (
+                <option key={item} value={item}>{questionBankTypeDefaultLabels[item]}</option>
+              ))}
             </select>
           </div>
           <div>
