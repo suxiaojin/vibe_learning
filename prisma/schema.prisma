@@ -101,6 +101,11 @@ enum QuestionSourceType {
   ai_generated
 }
 
+enum QuestionKnowledgeTagSource {
+  ai
+  manual
+}
+
 model User {
   id              String            @id @default(cuid())
   username        String            @unique
@@ -278,6 +283,7 @@ model SyllabusItem {
   children        SyllabusItem[]       @relation("SyllabusItemChildren")
   knowledgePoints KnowledgePoint[]
   questions       Question[]
+  questionTags    QuestionKnowledgeTag[]
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
 
@@ -357,6 +363,7 @@ model Question {
   difficulty       Difficulty        @default(medium)
   status           ContentStatus     @default(draft)
   paperQuestions   ExamPaperQuestion[]
+  knowledgeTags    QuestionKnowledgeTag[]
   attempts         QuestionAttempt[]
   wrongQuestions   WrongQuestion[]
   aiConversations  AiConversation[]
@@ -367,6 +374,25 @@ model Question {
   @@index([syllabusItemId])
   @@index([sourceType, sourceYear])
   @@map("questions")
+}
+
+model QuestionKnowledgeTag {
+  id             String                     @id @default(cuid())
+  questionId     String
+  syllabusItemId String
+  source         QuestionKnowledgeTagSource @default(manual)
+  confidence     Float?
+  reason         String?
+  question       Question                   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  syllabusItem   SyllabusItem               @relation(fields: [syllabusItemId], references: [id], onDelete: Cascade)
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+
+  @@unique([questionId, syllabusItemId])
+  @@index([questionId])
+  @@index([syllabusItemId])
+  @@index([source])
+  @@map("question_knowledge_tags")
 }
 
 model ExamPaper {

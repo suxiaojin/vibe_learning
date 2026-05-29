@@ -126,6 +126,42 @@ function toKnowledgeTreeCourse(course: {
   };
 }
 
+function buildKnowledgeDisplayMap(courses: Array<{ name: string; syllabusItems: SyllabusItemRow[] }>) {
+  const labels = new Map<string, { id: string; path: string }>();
+
+  courses.forEach((course) => {
+    const itemById = new Map(course.syllabusItems.map((item) => [item.id, item]));
+
+    function ancestorsFor(item: SyllabusItemRow) {
+      const ancestors = [item];
+      let parentId = item.parentId;
+
+      while (parentId) {
+        const parent = itemById.get(parentId);
+        if (!parent) {
+          break;
+        }
+        ancestors.unshift(parent);
+        parentId = parent.parentId;
+      }
+
+      return ancestors;
+    }
+
+    course.syllabusItems.forEach((item) => {
+      const ancestors = ancestorsFor(item);
+      const displayItems = ancestors.slice(0, 2);
+      const displayTarget = displayItems[displayItems.length - 1] || item;
+      labels.set(item.id, {
+        id: displayTarget.id,
+        path: [course.name, ...displayItems.map((ancestor) => ancestor.title)].join(" - ")
+      });
+    });
+  });
+
+  return labels;
+}
+
 export default async function QuestionBankDetailPage({
   params
 }: {
@@ -150,6 +186,12 @@ export default async function QuestionBankDetailPage({
                 include: {
                   chapter: true
                 }
+              },
+              knowledgeTags: {
+                select: {
+                  syllabusItemId: true
+                },
+                orderBy: [{ createdAt: "asc" }]
               }
             }
           }
@@ -178,6 +220,7 @@ export default async function QuestionBankDetailPage({
     },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
   });
+  const knowledgeDisplayById = buildKnowledgeDisplayMap(knowledgeCourses);
 
   return (
     <QuestionBankDetailWorkbench
@@ -186,18 +229,37 @@ export default async function QuestionBankDetailPage({
       ownerHref={ownerHref(paper)}
       questionTypes={resolveQuestionBankQuestionTypes(paperQuestionTypeText(paper))}
       knowledgeTree={knowledgeCourses.map(toKnowledgeTreeCourse)}
-      questions={paper.questions.map((item) => ({
-        id: item.id,
-        title: item.question.stem,
-        type: item.question.type,
-        status: item.question.status,
-        difficulty: item.question.difficulty,
-        options: toQuestionOptions(item.question.options),
-        answer: toAnswerList(item.question.answer),
-        analysis: item.question.analysis,
-        knowledgePointTitle: item.question.knowledgePoint.title,
-        chapterTitle: item.question.knowledgePoint.chapter.title
-      }))}
+      questions={paper.questions.map((item) => {
+        const rawKnowledgeTagIds = [
+          ...item.question.knowledgeTags.map((tag) => tag.syllabusItemId),
+          ...(item.question.syllabusItemId ? [item.question.syllabusItemId] : [])
+        ];
+        const knowledgeTagLabels = [
+          ...new Map(
+            rawKnowledgeTagIds
+              .map((id) => knowledgeDisplayById.get(id))
+              .filter((item): item is { id: string; path: string } => Boolean(item))
+              .map((item) => [item.id, item])
+          ).values()
+        ];
+        const knowledgeTagIds = knowledgeTagLabels.map((item) => item.id);
+
+        return {
+          id: item.id,
+          questionId: item.question.id,
+          title: item.question.stem,
+          type: item.question.type,
+          status: item.question.status,
+          difficulty: item.question.difficulty,
+          options: toQuestionOptions(item.question.options),
+          answer: toAnswerList(item.question.answer),
+          analysis: item.question.analysis,
+          knowledgePointTitle: item.question.knowledgePoint.title,
+          chapterTitle: item.question.knowledgePoint.chapter.title,
+          knowledgeTagIds,
+          knowledgeTagLabels
+        };
+      })}
     />
   );
 }

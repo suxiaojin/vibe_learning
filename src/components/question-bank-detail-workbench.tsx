@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { PointerEventHandler, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -14,6 +15,7 @@ import {
   ListChecks,
   Search,
   Sigma,
+  Sparkles,
   Trash2,
   X,
   type LucideIcon
@@ -48,6 +50,7 @@ type ChoiceOptionDraft = {
 
 type QuestionRow = {
   id: string;
+  questionId: string;
   title: string;
   type: string;
   status: string;
@@ -57,6 +60,11 @@ type QuestionRow = {
   analysis: string;
   knowledgePointTitle: string;
   chapterTitle: string;
+  knowledgeTagIds: string[];
+  knowledgeTagLabels: Array<{
+    id: string;
+    path: string;
+  }>;
 };
 
 export type KnowledgeTreeSection = {
@@ -369,9 +377,105 @@ function AttributeChip({ label, active = false }: { label: string; active?: bool
   );
 }
 
-function KnowledgeTreeView({ courses }: { courses: KnowledgeTreeCourse[] }) {
+function KnowledgeCheckMark({
+  checked,
+  partial = false,
+  disabled = false,
+  onClick,
+  label
+}: {
+  checked: boolean;
+  partial?: boolean;
+  disabled?: boolean;
+  onClick?: () => void;
+  label?: string;
+}) {
+  const content = checked ? "✓" : partial ? "-" : "";
+  const className = cn(
+    "grid size-5 shrink-0 place-items-center rounded border text-xs font-black",
+    checked && "border-[#1d4ed8] bg-[#1d4ed8] text-white",
+    partial && !checked && "border-[#93c5fd] bg-[#dbeafe] text-[#1d4ed8]",
+    !checked && !partial && "border-[#d4dbe6] bg-white text-transparent",
+    onClick && "transition hover:border-[#1d4ed8] hover:text-[#1d4ed8] disabled:cursor-wait disabled:opacity-60"
+  );
+
+  if (onClick) {
+    return (
+      <button
+        className={className}
+        type="button"
+        disabled={disabled}
+        aria-label={label}
+        onClick={(event) => {
+          event.stopPropagation();
+          onClick();
+        }}
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <span className={className} aria-hidden="true">
+      {content}
+    </span>
+  );
+}
+
+function KnowledgeTreeView({
+  courses,
+  selectedIds,
+  updatingId,
+  onToggleSection
+}: {
+  courses: KnowledgeTreeCourse[];
+  selectedIds: string[];
+  updatingId?: string;
+  onToggleSection?: (sectionId: string, checked: boolean) => void;
+}) {
   const [expandedCourseIds, setExpandedCourseIds] = useState<Set<string>>(() => new Set());
   const [expandedChapterIds, setExpandedChapterIds] = useState<Set<string>>(() => new Set());
+  const selectedSet = new Set(selectedIds);
+
+  function chapterHasSelection(chapter: KnowledgeTreeChapter) {
+    return selectedSet.has(chapter.id) || chapter.sections.some((section) => selectedSet.has(section.id));
+  }
+
+  function courseHasSelection(course: KnowledgeTreeCourse) {
+    return course.chapters.some(chapterHasSelection);
+  }
+
+  useEffect(() => {
+    if (selectedIds.length === 0) {
+      return;
+    }
+
+    setExpandedCourseIds((current) => {
+      const next = new Set(current);
+      courses.forEach((course) => {
+        if (courseHasSelection(course)) {
+          next.add(course.id);
+        }
+      });
+      return next;
+    });
+    setExpandedChapterIds((current) => {
+      const next = new Set(current);
+      courses.forEach((course) => {
+        course.chapters.forEach((chapter) => {
+          if (chapterHasSelection(chapter)) {
+            next.add(chapter.id);
+          }
+        });
+      });
+      return next;
+    });
+
+    window.setTimeout(() => {
+      document.getElementById(`knowledge-tree-node-${selectedIds[0]}`)?.scrollIntoView({ block: "center", inline: "nearest" });
+    }, 0);
+  }, [courses, selectedIds]);
 
   function toggleCourse(courseId: string) {
     setExpandedCourseIds((current) => {
@@ -406,6 +510,7 @@ function KnowledgeTreeView({ courses }: { courses: KnowledgeTreeCourse[] }) {
       <div className="space-y-4">
         {courses.map((course) => {
           const courseExpanded = expandedCourseIds.has(course.id);
+          const coursePartial = courseHasSelection(course);
           return (
           <div key={course.id}>
             <button
@@ -415,7 +520,7 @@ function KnowledgeTreeView({ courses }: { courses: KnowledgeTreeCourse[] }) {
               onClick={() => toggleCourse(course.id)}
             >
               <span className="grid size-4 shrink-0 place-items-center rounded border border-[#9aa9bc] bg-white text-xs leading-none text-[#071b38]">{courseExpanded ? "-" : "+"}</span>
-              <span className="size-5 shrink-0 rounded border border-[#7aa2ff] bg-white" />
+              <KnowledgeCheckMark checked={false} partial={coursePartial} />
               <span className="min-w-0 truncate" title={course.title}>{course.title}</span>
             </button>
 
@@ -423,6 +528,8 @@ function KnowledgeTreeView({ courses }: { courses: KnowledgeTreeCourse[] }) {
               <div className="ml-[26px] mt-1 space-y-1 border-l border-[#d6dbe4] pl-5">
                 {course.chapters.map((chapter) => {
                   const chapterExpanded = expandedChapterIds.has(chapter.id);
+                  const chapterChecked = selectedSet.has(chapter.id);
+                  const chapterPartial = !chapterChecked && chapter.sections.some((section) => selectedSet.has(section.id));
                   return (
                   <div key={chapter.id} className="relative">
                     <span className="absolute -left-5 top-4 h-px w-3 bg-[#d6dbe4]" />
@@ -433,19 +540,31 @@ function KnowledgeTreeView({ courses }: { courses: KnowledgeTreeCourse[] }) {
                       onClick={() => toggleChapter(chapter.id)}
                     >
                       <span className="grid size-4 shrink-0 place-items-center rounded border border-[#d4dbe6] bg-white text-xs leading-none text-[#071b38]">{chapterExpanded ? "-" : "+"}</span>
-                      <span className="size-5 shrink-0 rounded border border-[#d4dbe6] bg-white" />
+                      <KnowledgeCheckMark checked={chapterChecked} partial={chapterPartial} />
                       <span className="min-w-0 truncate" title={chapter.title}>{chapter.title}</span>
                     </button>
 
                     {chapterExpanded && chapter.sections.length > 0 ? (
                       <div className="ml-[10px] space-y-1 border-l border-[#e0e5ec] pl-5">
-                        {chapter.sections.map((section) => (
-                          <div key={section.id} className="relative flex min-h-8 items-center gap-2 text-sm text-[#071b38]">
+                        {chapter.sections.map((section) => {
+                          const sectionChecked = selectedSet.has(section.id);
+                          return (
+                          <div
+                            key={section.id}
+                            id={`knowledge-tree-node-${section.id}`}
+                            className={cn("relative flex min-h-8 items-center gap-2 rounded-sm text-sm text-[#071b38]", sectionChecked && "bg-[#eff6ff]")}
+                          >
                             <span className="absolute -left-5 top-4 h-px w-3 bg-[#e0e5ec]" />
-                            <span className="size-5 shrink-0 rounded border border-[#d4dbe6] bg-white" />
+                            <KnowledgeCheckMark
+                              checked={sectionChecked}
+                              disabled={updatingId === section.id}
+                              label={sectionChecked ? `取消${section.title}` : `选择${section.title}`}
+                              onClick={onToggleSection ? () => onToggleSection(section.id, sectionChecked) : undefined}
+                            />
                             <span className="min-w-0 truncate" title={section.title}>{section.title}</span>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : null}
                   </div>
@@ -862,17 +981,24 @@ function ReadonlyQuestionPreview({ question }: { question: QuestionRow }) {
 }
 
 export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, questionTypes, knowledgeTree, questions }: QuestionBankDetailWorkbenchProps) {
+  const router = useRouter();
   const [activeEditorType, setActiveEditorType] = useState<ActiveEditorType>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [orderedQuestions, setOrderedQuestions] = useState(questions);
   const [columnLayout, setColumnLayout] = useState(readColumnLayout);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [aiTagging, setAiTagging] = useState(false);
+  const [aiTagMessage, setAiTagMessage] = useState("");
+  const [knowledgeTagUpdatingId, setKnowledgeTagUpdatingId] = useState("");
+  const [knowledgeTagMessage, setKnowledgeTagMessage] = useState("");
   const draggedQuestionIdRef = useRef("");
   const orderInputRef = useRef<HTMLInputElement | null>(null);
   const reorderFormRef = useRef<HTMLFormElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const selectedQuestion = orderedQuestions.find((question) => question.id === selectedQuestionId) || null;
+  const selectedKnowledgeTagIds = selectedQuestion?.knowledgeTagIds || [];
+  const selectedKnowledgeLabels = selectedQuestion?.knowledgeTagLabels || [];
   const selectedChoiceType = isChoiceQuestionType(selectedQuestion?.type) ? selectedQuestion.type : null;
   const selectedEditableType = isEditableQuestionType(selectedQuestion?.type) ? selectedQuestion.type : null;
   const activeType = activeEditorType || selectedQuestion?.type || "";
@@ -901,6 +1027,10 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
       window.requestAnimationFrame(() => searchInputRef.current?.focus());
     }
   }, [searchOpen]);
+
+  useEffect(() => {
+    setKnowledgeTagMessage("");
+  }, [selectedQuestionId]);
 
   function submitQuestionOrder(nextQuestions: QuestionRow[]) {
     if (!orderInputRef.current || !reorderFormRef.current) {
@@ -946,6 +1076,89 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
   function closeSearch() {
     setSearchOpen(false);
     setSearchQuery("");
+  }
+
+  async function runAiTagging() {
+    if (aiTagging) {
+      return;
+    }
+    if (orderedQuestions.length === 0) {
+      setAiTagMessage("当前题库还没有题目。");
+      return;
+    }
+
+    const confirmed = window.confirm("AI 将为当前题库的全部题目重新生成 AI 标签，已有人工标签不会被删除。是否继续？");
+    if (!confirmed) {
+      return;
+    }
+
+    setAiTagging(true);
+    setAiTagMessage("AI 正在判断知识点归属，请稍等...");
+
+    try {
+      const response = await fetch(`/api/admin/question-banks/${paperId}/ai-tag`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        }
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        error?: string;
+        total?: number;
+        tagged?: number;
+        failed?: number;
+      } | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.error || "AI 打标失败。");
+      }
+
+      const total = payload?.total ?? orderedQuestions.length;
+      const tagged = payload?.tagged ?? 0;
+      const failed = payload?.failed ?? Math.max(0, total - tagged);
+      setAiTagMessage(`AI 打标完成：${tagged}/${total} 道题已归属${failed > 0 ? `，${failed} 道失败` : ""}。`);
+      router.refresh();
+    } catch (error) {
+      setAiTagMessage(error instanceof Error ? error.message : "AI 打标失败。");
+    } finally {
+      setAiTagging(false);
+    }
+  }
+
+  async function updateKnowledgeTag(action: "add" | "delete", syllabusItemId: string) {
+    if (!selectedQuestion || knowledgeTagUpdatingId) {
+      return;
+    }
+
+    setKnowledgeTagUpdatingId(syllabusItemId);
+    setKnowledgeTagMessage(action === "delete" ? "正在删除知识点标签..." : "正在添加知识点标签...");
+
+    try {
+      const response = await fetch("/api/admin/question-knowledge-tags", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          paperId,
+          questionId: selectedQuestion.questionId,
+          syllabusItemId,
+          action
+        })
+      });
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.error || "知识点标签更新失败。");
+      }
+
+      setKnowledgeTagMessage(action === "delete" ? "已删除知识点标签。" : "已添加知识点标签。");
+      router.refresh();
+    } catch (error) {
+      setKnowledgeTagMessage(error instanceof Error ? error.message : "知识点标签更新失败。");
+    } finally {
+      setKnowledgeTagUpdatingId("");
+    }
   }
 
   const resizeColumns = (left: "editor" | "list", right: "list" | "attributes", startX: number, startLayout: typeof defaultColumnLayout, clientX: number) => {
@@ -996,6 +1209,13 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
       tone: "danger",
       form: selectedQuestion ? "delete-question-form" : undefined,
       disabled: !selectedQuestion
+    },
+    {
+      label: aiTagging ? "打标中" : "AI打标",
+      icon: Sparkles,
+      tone: "normal",
+      onClick: runAiTagging,
+      disabled: aiTagging || orderedQuestions.length === 0 || knowledgeTree.length === 0
     }
   ];
 
@@ -1196,9 +1416,9 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
                   ))}
                 </div>
               </div>
-              <div className="grid grid-cols-[80px_1fr] items-center gap-2">
-                <span className="text-sm font-bold">题型</span>
-                <div className="flex flex-wrap gap-2">
+              <div className="grid grid-cols-[80px_1fr] items-start gap-2">
+                <span className="pt-1.5 text-sm font-bold">题型</span>
+                <div className="flex flex-wrap items-center gap-2">
                   {visibleTypeOrder.map((item) => (
                     <QuestionTypeChip
                       key={item.type}
@@ -1211,9 +1431,41 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
                   ))}
                 </div>
               </div>
+              {aiTagMessage ? (
+                <div className="grid grid-cols-[80px_1fr] items-start gap-2">
+                  <span />
+                  <p className="text-xs font-medium leading-5 text-[#52657f]">{aiTagMessage}</p>
+                </div>
+              ) : null}
               <div className="grid grid-cols-[80px_1fr] items-center gap-2">
                 <span className="text-sm font-bold">知识点标签</span>
-                <div className="h-9 rounded border border-[#d7dee8] bg-[#fbfcfe] px-3 py-2 text-sm text-slate-400">请输入...</div>
+                <div className="min-h-9 rounded border border-[#d7dee8] bg-[#fbfcfe] px-3 py-2 text-sm">
+                  {selectedKnowledgeLabels.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedKnowledgeLabels.map((item) => (
+                        <span
+                          key={item.id}
+                          className="group/tag relative inline-block max-w-full break-words rounded border border-[#93c5fd] bg-[#eff6ff] px-2 py-0.5 text-xs font-bold leading-5 text-[#1d4ed8]"
+                          title={item.path}
+                        >
+                          <button
+                            className="absolute -right-2 -top-2 hidden size-4 place-items-center rounded-full bg-[#ef4444] text-[11px] font-black leading-none text-white shadow-sm hover:bg-[#dc2626] disabled:cursor-wait disabled:bg-[#fca5a5] group-hover/tag:grid"
+                            type="button"
+                            disabled={knowledgeTagUpdatingId === item.id}
+                            aria-label={`删除${item.path}`}
+                            onClick={() => updateKnowledgeTag("delete", item.id)}
+                          >
+                            ×
+                          </button>
+                          {item.path}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-slate-400">{selectedQuestion ? "暂无知识点标签" : "请选择题目"}</span>
+                  )}
+                  {knowledgeTagMessage ? <p className="mt-1 text-xs font-medium text-[#64748b]">{knowledgeTagMessage}</p> : null}
+                </div>
               </div>
             </div>
           </section>
@@ -1223,7 +1475,12 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
               <h2 className="text-sm font-black">知识点</h2>
             </div>
             <div className="min-h-0 flex-1 p-4">
-              <KnowledgeTreeView courses={knowledgeTree} />
+              <KnowledgeTreeView
+                courses={knowledgeTree}
+                selectedIds={selectedKnowledgeTagIds}
+                updatingId={knowledgeTagUpdatingId}
+                onToggleSection={selectedQuestion ? (sectionId, checked) => updateKnowledgeTag(checked ? "delete" : "add", sectionId) : undefined}
+              />
             </div>
           </section>
         </aside>
