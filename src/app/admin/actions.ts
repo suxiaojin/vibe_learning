@@ -656,6 +656,10 @@ function questionBankKnowledgeMapPath(_ownerType: QuestionBankOwnerType, _ownerI
   return "/admin/question-banks/knowledge-points";
 }
 
+function questionBankKnowledgeMapHref(ownerType: QuestionBankOwnerType, ownerId: string) {
+  return `/admin/question-banks/knowledge-points?type=${ownerType}&id=${encodeURIComponent(ownerId)}`;
+}
+
 function getPaperYear(formData: FormData) {
   const raw = String(formData.get("year") || "").trim();
   if (!raw) {
@@ -1070,6 +1074,86 @@ export async function createQuestionBankKnowledgeMapItem(formData: FormData) {
   });
 
   revalidatePath(questionBankKnowledgeMapPath(ownerType, ownerId));
+  redirect(questionBankKnowledgeMapHref(ownerType, ownerId));
+}
+
+export async function createQuestionBankKnowledgeMapOwner(formData: FormData) {
+  await requireAdmin();
+  const name = String(formData.get("name") || "").trim();
+
+  if (!name) {
+    throw new Error("Knowledge point name is required");
+  }
+
+  const region = await prisma.region.findFirstOrThrow({
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    select: { id: true }
+  });
+
+  const major = await prisma.major.create({
+    data: {
+      name,
+      status: "published",
+      sortOrder: await nextQuestionBankOwnerSortOrder(),
+      regions: {
+        create: {
+          regionId: region.id
+        }
+      }
+    }
+  });
+
+  await ensureQuestionBankCourse("major", major.id, region.id);
+  revalidatePath("/admin/question-banks");
+  revalidatePath(questionBankKnowledgeMapPath("major", major.id));
+  redirect(questionBankKnowledgeMapHref("major", major.id));
+}
+
+export async function renameQuestionBankKnowledgeMapOwner(formData: FormData) {
+  await requireAdmin();
+  const { ownerType, ownerId } = getQuestionBankOwner(formData);
+  const name = String(formData.get("name") || "").trim();
+
+  if (!name) {
+    throw new Error("Knowledge point name is required");
+  }
+
+  if (ownerType === "public_subject") {
+    await prisma.publicSubject.update({
+      where: { id: ownerId },
+      data: { name }
+    });
+  } else {
+    await prisma.major.update({
+      where: { id: ownerId },
+      data: { name }
+    });
+  }
+
+  revalidatePath("/admin/question-banks");
+  revalidatePath(questionBankKnowledgeMapPath(ownerType, ownerId));
+  redirect(questionBankKnowledgeMapHref(ownerType, ownerId));
+}
+
+export async function deleteQuestionBankKnowledgeMapOwner(formData: FormData) {
+  await requireAdmin();
+  const { ownerType, ownerId } = getQuestionBankOwner(formData);
+
+  if (ownerType === "public_subject") {
+    await prisma.publicSubject.update({
+      where: { id: ownerId },
+      data: { status: "archived" }
+    });
+  } else {
+    await prisma.major.update({
+      where: { id: ownerId },
+      data: { status: "archived" }
+    });
+  }
+
+  revalidatePath("/admin/question-banks");
+  revalidatePath(questionBankKnowledgeMapPath(ownerType, ownerId));
+  redirect("/admin/question-banks/knowledge-points");
 }
 
 export async function renameQuestionBankKnowledgeMapItem(formData: FormData) {
@@ -1098,6 +1182,27 @@ export async function renameQuestionBankKnowledgeMapItem(formData: FormData) {
   });
 
   revalidatePath(questionBankKnowledgeMapPath(ownerType, ownerId));
+  redirect(questionBankKnowledgeMapHref(ownerType, ownerId));
+}
+
+export async function deleteQuestionBankKnowledgeMapCourse(formData: FormData) {
+  await requireAdmin();
+  const { ownerType, ownerId } = getQuestionBankOwner(formData);
+  const courseId = String(formData.get("courseId") || "");
+
+  await prisma.learningCourse.findFirstOrThrow({
+    where: {
+      id: courseId,
+      courseType: ownerType,
+      ...(ownerType === "public_subject" ? { publicSubjectId: ownerId } : { majorId: ownerId })
+    },
+    select: { id: true }
+  });
+
+  await prisma.learningCourse.delete({ where: { id: courseId } });
+
+  revalidatePath(questionBankKnowledgeMapPath(ownerType, ownerId));
+  redirect(questionBankKnowledgeMapHref(ownerType, ownerId));
 }
 
 export async function deleteQuestionBankKnowledgeMapItem(formData: FormData) {
@@ -1118,6 +1223,7 @@ export async function deleteQuestionBankKnowledgeMapItem(formData: FormData) {
   await prisma.syllabusItem.delete({ where: { id } });
 
   revalidatePath(questionBankKnowledgeMapPath(ownerType, ownerId));
+  redirect(questionBankKnowledgeMapHref(ownerType, ownerId));
 }
 
 function buildSyllabusChapterTitle(syllabusItem: { code: string | null; title: string }) {

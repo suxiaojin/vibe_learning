@@ -95,10 +95,14 @@ export async function ensureDefaultQuestionBankCatalog() {
   const region = await ensureDefaultRegion();
 
   for (const item of defaultPublicSubjects) {
-    const subject = await prisma.publicSubject.upsert({
-      where: { name: item.name },
-      update: {},
-      create: {
+    const existingSubject = await prisma.publicSubject.findFirst({
+      where: {
+        OR: [{ name: item.name }, { sortOrder: item.sortOrder }]
+      },
+      select: { id: true, name: true }
+    });
+    const subject = existingSubject || await prisma.publicSubject.create({
+      data: {
         name: item.name,
         status: "published",
         sortOrder: item.sortOrder
@@ -123,10 +127,14 @@ export async function ensureDefaultQuestionBankCatalog() {
   }
 
   for (const item of defaultMajors) {
-    const major = await prisma.major.upsert({
-      where: { name: item.name },
-      update: {},
-      create: {
+    const existingMajor = await prisma.major.findFirst({
+      where: {
+        OR: [{ name: item.name }, { sortOrder: item.sortOrder }]
+      },
+      select: { id: true, name: true }
+    });
+    const major = existingMajor || await prisma.major.create({
+      data: {
         name: item.name,
         status: "published",
         sortOrder: item.sortOrder

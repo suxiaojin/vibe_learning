@@ -89,9 +89,11 @@ export default async function QuestionBankKnowledgePointsPage({
   const params = await searchParams;
   const [publicSubjects, majors] = await Promise.all([
     prisma.publicSubject.findMany({
+      where: { status: { not: "archived" } },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
     }),
     prisma.major.findMany({
+      where: { status: { not: "archived" } },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
     })
   ]);

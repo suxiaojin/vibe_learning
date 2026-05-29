@@ -3,10 +3,13 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { HelpCircle, MoreVertical, Pencil, Plus, RefreshCw, RotateCcw, Trash2, ZoomIn, ZoomOut } from "lucide-react";
+import { HelpCircle, Plus, RefreshCw, RotateCcw, Trash2, ZoomIn, ZoomOut } from "lucide-react";
 import {
-  createQuestionBankKnowledgeMapItem,
+  createQuestionBankKnowledgeMapOwner,
+  deleteQuestionBankKnowledgeMapOwner,
+  deleteQuestionBankKnowledgeMapCourse,
   deleteQuestionBankKnowledgeMapItem,
+  renameQuestionBankKnowledgeMapOwner,
   renameQuestionBankKnowledgeMapItem
 } from "@/app/admin/actions";
 import { cn } from "@/lib/utils";
@@ -30,15 +33,9 @@ export type KnowledgeMapNode = {
 type FlatMapNode = KnowledgeMapNode & {
   depth: number;
   mutable: boolean;
+  deletable: boolean;
   courseId: string;
   courseTitle: string;
-};
-
-type AddDialogState = {
-  courseId: string;
-  courseTitle: string;
-  parentId: string;
-  parentTitle: string;
 };
 
 type QuestionBankKnowledgeMapProps = {
@@ -73,15 +70,16 @@ function countNodes(node: KnowledgeMapNode): number {
   return 1 + node.children.reduce((sum, child) => sum + countNodes(child), 0);
 }
 
+function clampZoom(value: number) {
+  return Math.min(1.35, Math.max(0.45, Number(value.toFixed(2))));
+}
+
 function isTextInputTarget(target: EventTarget | null) {
   return target instanceof HTMLElement && Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
 }
 
 function collectFlatNodes(root: KnowledgeMapNode) {
   const nodes: FlatMapNode[] = [];
-  const courses = root.children
-    .filter((child) => child.courseId)
-    .map((child) => ({ id: child.courseId || child.id, title: child.title }));
 
   function visit(node: KnowledgeMapNode, depth: number, courseId = "", courseTitle = "") {
     const nextCourseId = depth === 1 ? node.courseId || node.id : courseId;
@@ -92,6 +90,7 @@ function collectFlatNodes(root: KnowledgeMapNode) {
         ...node,
         depth,
         mutable: depth >= 2,
+        deletable: depth >= 1,
         courseId: nextCourseId,
         courseTitle: nextCourseTitle
       });
@@ -101,7 +100,7 @@ function collectFlatNodes(root: KnowledgeMapNode) {
   }
 
   visit(root, 0);
-  return { nodes, courses };
+  return nodes;
 }
 
 function HiddenOwnerInputs({ owner }: { owner: KnowledgeMapOwner }) {
@@ -142,10 +141,7 @@ function MindNode({
   depth,
   colorIndex,
   selectedNodeId,
-  openMenuId,
   onSelect,
-  onOpenMenu,
-  onAddChild,
   onRename,
   onDelete
 }: {
@@ -153,10 +149,7 @@ function MindNode({
   depth: number;
   colorIndex: number;
   selectedNodeId: string;
-  openMenuId: string;
   onSelect: (nodeId: string) => void;
-  onOpenMenu: (nodeId: string) => void;
-  onAddChild: (nodeId: string) => void;
   onRename: (nodeId: string) => void;
   onDelete: (nodeId: string) => void;
 }) {
@@ -207,35 +200,22 @@ function MindNode({
           </span>
         ) : null}
 
-        {isMutable ? (
-          <div className="relative ml-2 shrink-0">
+        {!isRoot ? (
+          <div className="ml-2 shrink-0">
             <button
-              className="grid size-7 place-items-center rounded bg-white/80 text-[#344054] opacity-0 shadow-sm transition hover:bg-white group-hover/node:opacity-100"
+              className={cn(
+                "h-7 rounded px-2 text-xs font-bold opacity-0 shadow-sm transition group-hover/node:opacity-100",
+                isCourse ? "bg-white/15 text-white hover:bg-white/25" : "bg-red-50 text-red-500 hover:bg-red-100"
+              )}
               type="button"
-              aria-label="知识点操作"
+              aria-label={isCourse ? "删除专业课" : "删除知识点"}
               onClick={(event) => {
                 event.stopPropagation();
-                onOpenMenu(openMenuId === node.id ? "" : node.id);
+                onDelete(node.id);
               }}
             >
-              <MoreVertical size={16} />
+              删除
             </button>
-            {openMenuId === node.id ? (
-              <div className="absolute right-0 top-9 z-30 w-32 rounded-md bg-white py-2 text-sm font-semibold text-[#102033] shadow-2xl ring-1 ring-black/5">
-                <button className="flex w-full items-center gap-2 px-4 py-2 text-left hover:bg-slate-50" type="button" onClick={() => onAddChild(node.id)}>
-                  <Plus size={14} />
-                  子节点
-                </button>
-                <button className="flex w-full items-center gap-2 px-4 py-2 text-left hover:bg-slate-50" type="button" onClick={() => onRename(node.id)}>
-                  <Pencil size={14} />
-                  重命名
-                </button>
-                <button className="flex w-full items-center gap-2 px-4 py-2 text-left text-red-500 hover:bg-red-50" type="button" onClick={() => onDelete(node.id)}>
-                  <Trash2 size={14} />
-                  删除
-                </button>
-              </div>
-            ) : null}
           </div>
         ) : null}
       </div>
@@ -253,10 +233,7 @@ function MindNode({
                   depth={depth + 1}
                   colorIndex={isRoot ? index : colorIndex}
                   selectedNodeId={selectedNodeId}
-                  openMenuId={openMenuId}
                   onSelect={onSelect}
-                  onOpenMenu={onOpenMenu}
-                  onAddChild={onAddChild}
                   onRename={onRename}
                   onDelete={onDelete}
                 />
@@ -276,35 +253,26 @@ export function QuestionBankKnowledgeMap({ owners, selectedOwner, selectedOwnerK
   const [zoom, setZoom] = useState(0.72);
   const [isPanning, setIsPanning] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState("");
-  const [openMenuId, setOpenMenuId] = useState("");
-  const [addDialog, setAddDialog] = useState<AddDialogState | null>(null);
+  const [addOwnerDialog, setAddOwnerDialog] = useState(false);
+  const [renameOwner, setRenameOwner] = useState<KnowledgeMapOwner | null>(null);
+  const [deleteOwner, setDeleteOwner] = useState<KnowledgeMapOwner | null>(null);
   const [renameNode, setRenameNode] = useState<FlatMapNode | null>(null);
   const [deleteNode, setDeleteNode] = useState<FlatMapNode | null>(null);
   const [syncing, setSyncing] = useState(false);
   const nodeCount = useMemo(() => countNodes(root), [root]);
-  const { nodes: flatNodes, courses } = useMemo(() => collectFlatNodes(root), [root]);
+  const flatNodes = useMemo(() => collectFlatNodes(root), [root]);
   const selectedNode = flatNodes.find((node) => node.id === selectedNodeId) || null;
 
   function zoomBy(delta: number) {
-    setZoom((current) => Math.min(1.35, Math.max(0.45, Number((current + delta).toFixed(2)))));
+    setZoom((current) => clampZoom(current + delta));
   }
 
-  function openAddForNode(node: FlatMapNode | null = selectedNode) {
-    const fallbackCourse = courses[0];
-    if (!node && !fallbackCourse) {
-      return;
-    }
-
-    const courseId = node?.courseId || fallbackCourse?.id || "";
-    const courseTitle = node?.courseTitle || fallbackCourse?.title || "";
-    const parentId = node?.mutable ? node.id : "";
-    const parentTitle = node?.mutable ? node.title : courseTitle;
-    setOpenMenuId("");
-    setAddDialog({ courseId, courseTitle, parentId, parentTitle });
+  function findMapNode(nodeId: string) {
+    return flatNodes.find((item) => item.id === nodeId) || null;
   }
 
   function findMutableNode(nodeId: string) {
-    const node = flatNodes.find((item) => item.id === nodeId);
+    const node = findMapNode(nodeId);
     return node?.mutable ? node : null;
   }
 
@@ -322,10 +290,10 @@ export function QuestionBankKnowledgeMap({ owners, selectedOwner, selectedOwnerK
 
       if (event.key === "Tab") {
         event.preventDefault();
-        openAddForNode();
+        setAddOwnerDialog(true);
       }
 
-      if ((event.key === "Delete" || event.key === "Backspace") && selectedNode?.mutable) {
+      if ((event.key === "Delete" || event.key === "Backspace") && selectedNode?.deletable) {
         event.preventDefault();
         setDeleteNode(selectedNode);
       }
@@ -333,7 +301,26 @@ export function QuestionBankKnowledgeMap({ owners, selectedOwner, selectedOwnerK
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedNode, courses]);
+  }, [selectedNode]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    function handleWheel(event: WheelEvent) {
+      if (!event.ctrlKey) {
+        return;
+      }
+
+      event.preventDefault();
+      setZoom((current) => clampZoom(current + (event.deltaY > 0 ? -0.08 : 0.08)));
+    }
+
+    viewport.addEventListener("wheel", handleWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", handleWheel);
+  }, []);
 
   function startCanvasPan(event: PointerEvent<HTMLDivElement>) {
     if (event.button !== 0 || (event.target instanceof HTMLElement && event.target.closest("[data-no-pan]"))) {
@@ -355,7 +342,6 @@ export function QuestionBankKnowledgeMap({ owners, selectedOwner, selectedOwnerK
       scrollTop: viewport.scrollTop
     };
     setIsPanning(true);
-    setOpenMenuId("");
   }
 
   function moveCanvasPan(event: PointerEvent<HTMLDivElement>) {
@@ -375,15 +361,19 @@ export function QuestionBankKnowledgeMap({ owners, selectedOwner, selectedOwnerK
     }
   }
 
+  const deleteIsCourse = deleteNode?.depth === 1;
+  const deleteTargetName = deleteIsCourse ? "专业课" : "知识点";
+
   return (
     <section className="grid h-[calc(100vh-51px)] grid-cols-[340px_minmax(0,1fr)] overflow-hidden bg-[#dfe3e9] text-[#102033]">
-      <aside className="border-r border-[#d3d9e3] bg-[#f6f8fc]">
+      <aside className="overflow-y-auto border-r border-[#d3d9e3] bg-[#f6f8fc]">
         <div className="flex h-12 items-center gap-2 px-2 pt-2">
           <button
             className="grid size-8 place-items-center rounded border border-[#dce2eb] bg-white text-[#344054] shadow-sm hover:text-[#0872b9]"
             type="button"
             aria-label="新增知识点"
-            onClick={() => openAddForNode()}
+            title="新增知识点"
+            onClick={() => setAddOwnerDialog(true)}
           >
             <Plus size={18} />
           </button>
@@ -402,21 +392,38 @@ export function QuestionBankKnowledgeMap({ owners, selectedOwner, selectedOwnerK
             <span className="grid size-4 place-items-center rounded-sm bg-[#172033] text-[10px] font-black text-white">知</span>
             新的知识点
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2 pb-6">
             {owners.map((owner) => {
               const active = ownerKey(owner) === selectedOwnerKey;
               return (
-                <Link
+                <div
                   key={ownerKey(owner)}
                   className={cn(
-                    "flex min-h-[54px] items-center gap-3 rounded-md px-3 text-sm font-bold transition",
+                    "group/owner flex min-h-[54px] items-center gap-3 rounded-md px-3 text-sm font-bold transition",
                     active ? "bg-[#5d7df7] text-white shadow-sm" : "text-[#071b38] hover:bg-white"
                   )}
-                  href={ownerMapHref(owner)}
                 >
                   <span className={cn("grid size-4 place-items-center rounded-sm text-[10px] font-black", active ? "bg-white/20 text-white" : "bg-[#e4ebff] text-[#5d7df7]")}>知</span>
-                  <span className="min-w-0 truncate">{owner.name}</span>
-                </Link>
+                  <Link className="min-w-0 flex-1 truncate py-4" href={ownerMapHref(owner)}>
+                    {owner.name}
+                  </Link>
+                  <div className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover/owner:opacity-100">
+                    <button
+                      className={cn("h-7 rounded px-2 text-xs font-bold", active ? "bg-white/15 text-white hover:bg-white/25" : "bg-slate-50 text-[#344054] hover:bg-slate-100")}
+                      type="button"
+                      onClick={() => setRenameOwner(owner)}
+                    >
+                      重命名
+                    </button>
+                    <button
+                      className={cn("h-7 rounded px-2 text-xs font-bold", active ? "bg-white/15 text-white hover:bg-white/25" : "bg-red-50 text-red-500 hover:bg-red-100")}
+                      type="button"
+                      onClick={() => setDeleteOwner(owner)}
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
               );
             })}
           </div>
@@ -430,13 +437,6 @@ export function QuestionBankKnowledgeMap({ owners, selectedOwner, selectedOwnerK
         onPointerMove={moveCanvasPan}
         onPointerUp={stopCanvasPan}
         onPointerCancel={stopCanvasPan}
-        onWheel={(event) => {
-          if (!event.ctrlKey) {
-            return;
-          }
-          event.preventDefault();
-          zoomBy(event.deltaY > 0 ? -0.08 : 0.08);
-        }}
       >
         <div
           className="min-h-full min-w-max px-24 py-20"
@@ -450,26 +450,16 @@ export function QuestionBankKnowledgeMap({ owners, selectedOwner, selectedOwnerK
             depth={0}
             colorIndex={0}
             selectedNodeId={selectedNodeId}
-            openMenuId={openMenuId}
             onSelect={setSelectedNodeId}
-            onOpenMenu={setOpenMenuId}
-            onAddChild={(nodeId) => {
-              const node = findMutableNode(nodeId);
-              if (node) {
-                openAddForNode(node);
-              }
-            }}
             onRename={(nodeId) => {
               const node = findMutableNode(nodeId);
               if (node) {
-                setOpenMenuId("");
                 setRenameNode(node);
               }
             }}
             onDelete={(nodeId) => {
-              const node = findMutableNode(nodeId);
-              if (node) {
-                setOpenMenuId("");
+              const node = findMapNode(nodeId);
+              if (node?.deletable) {
                 setDeleteNode(node);
               }
             }}
@@ -502,7 +492,9 @@ export function QuestionBankKnowledgeMap({ owners, selectedOwner, selectedOwnerK
             <div className="pointer-events-none absolute right-0 top-12 hidden w-64 rounded-lg bg-white px-5 py-5 text-[#102033] shadow-2xl ring-1 ring-black/5 group-hover/help:block">
               <h3 className="mb-3 text-base font-black">操作提示</h3>
               <ul className="grid gap-3 text-sm font-semibold leading-5">
-                <li>• 按 <kbd className="rounded bg-slate-100 px-2 py-1 text-xs">Tab</kbd> 键增加子节点</li>
+                <li>• 按住 <kbd className="rounded bg-slate-100 px-2 py-1 text-xs">Ctrl</kbd> 滑动滚轮缩放导图</li>
+                <li>• 左上角 <kbd className="rounded bg-slate-100 px-2 py-1 text-xs">+</kbd> 新增知识点</li>
+                <li>• 鼠标悬停节点后方可删除</li>
                 <li>• 按 <kbd className="rounded bg-slate-100 px-2 py-1 text-xs">Delete</kbd> 键删除节点</li>
                 <li>• 拖动画布可调整视图</li>
                 <li>• 双击节点可编辑内容</li>
@@ -518,41 +510,50 @@ export function QuestionBankKnowledgeMap({ owners, selectedOwner, selectedOwnerK
         ) : null}
       </div>
 
-      {addDialog ? (
-        <DialogFrame title="添加知识点" onClose={() => setAddDialog(null)}>
-          <form action={createQuestionBankKnowledgeMapItem} className="mt-4 grid gap-3" onSubmit={() => setAddDialog(null)}>
-            <HiddenOwnerInputs owner={selectedOwner} />
-            <input type="hidden" name="parentId" value={addDialog.parentId} />
-            <div>
-              <label className="label">所属课程</label>
-              {addDialog.parentId ? (
-                <>
-                  <input type="hidden" name="courseId" value={addDialog.courseId} />
-                  <div className="h-10 border border-[#d3d9e3] bg-slate-50 px-3 py-2 text-sm font-semibold">{addDialog.courseTitle}</div>
-                </>
-              ) : (
-                <select className="input rounded-none" name="courseId" defaultValue={addDialog.courseId} required>
-                  {courses.map((course) => (
-                    <option key={course.id} value={course.id}>{course.title}</option>
-                  ))}
-                </select>
-              )}
-            </div>
-            <div>
-              <label className="label">添加位置</label>
-              <div className="h-10 border border-[#d3d9e3] bg-slate-50 px-3 py-2 text-sm font-semibold">{addDialog.parentId ? `作为「${addDialog.parentTitle}」的子节点` : "作为课程根节点"}</div>
-            </div>
+      {addOwnerDialog ? (
+        <DialogFrame title="添加知识点" onClose={() => setAddOwnerDialog(false)}>
+          <form action={createQuestionBankKnowledgeMapOwner} className="mt-4 grid gap-3" onSubmit={() => setAddOwnerDialog(false)}>
             <div>
               <label className="label">知识点名称</label>
-              <input className="input rounded-none" name="title" autoFocus required />
-            </div>
-            <div>
-              <label className="label">说明</label>
-              <textarea className="input min-h-20 rounded-none" name="description" />
+              <input className="input rounded-none" name="name" autoFocus required />
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <button className="secondary-button rounded-none" type="button" onClick={() => setAddDialog(null)}>取消</button>
+              <button className="secondary-button rounded-none" type="button" onClick={() => setAddOwnerDialog(false)}>取消</button>
               <button className="primary-button rounded-none" type="submit">保存</button>
+            </div>
+          </form>
+        </DialogFrame>
+      ) : null}
+
+      {renameOwner ? (
+        <DialogFrame title="重命名知识点" onClose={() => setRenameOwner(null)}>
+          <form action={renameQuestionBankKnowledgeMapOwner} className="mt-4 grid gap-3" onSubmit={() => setRenameOwner(null)}>
+            <HiddenOwnerInputs owner={renameOwner} />
+            <div>
+              <label className="label">知识点名称</label>
+              <input className="input rounded-none" name="name" defaultValue={renameOwner.name} autoFocus required />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button className="secondary-button rounded-none" type="button" onClick={() => setRenameOwner(null)}>取消</button>
+              <button className="primary-button rounded-none" type="submit">保存</button>
+            </div>
+          </form>
+        </DialogFrame>
+      ) : null}
+
+      {deleteOwner ? (
+        <DialogFrame title="删除知识点" onClose={() => setDeleteOwner(null)}>
+          <form action={deleteQuestionBankKnowledgeMapOwner} className="mt-4 grid gap-4" onSubmit={() => setDeleteOwner(null)}>
+            <HiddenOwnerInputs owner={deleteOwner} />
+            <p className="text-sm leading-6 text-slate-600">
+              确认删除「<span className="font-bold text-[#102033]">{deleteOwner.name}</span>」？它会从左侧知识点列表中移除。
+            </p>
+            <div className="flex justify-end gap-2">
+              <button className="secondary-button rounded-none" type="button" onClick={() => setDeleteOwner(null)}>取消</button>
+              <button className="danger-button rounded-none" type="submit">
+                <Trash2 size={16} />
+                确认删除
+              </button>
             </div>
           </form>
         </DialogFrame>
@@ -577,13 +578,13 @@ export function QuestionBankKnowledgeMap({ owners, selectedOwner, selectedOwnerK
       ) : null}
 
       {deleteNode ? (
-        <DialogFrame title="删除知识点" onClose={() => setDeleteNode(null)}>
-          <form action={deleteQuestionBankKnowledgeMapItem} className="mt-4 grid gap-4" onSubmit={() => setDeleteNode(null)}>
+        <DialogFrame title={`删除${deleteTargetName}`} onClose={() => setDeleteNode(null)}>
+          <form action={deleteIsCourse ? deleteQuestionBankKnowledgeMapCourse : deleteQuestionBankKnowledgeMapItem} className="mt-4 grid gap-4" onSubmit={() => setDeleteNode(null)}>
             <HiddenOwnerInputs owner={selectedOwner} />
             <input type="hidden" name="id" value={deleteNode.id} />
             <input type="hidden" name="courseId" value={deleteNode.courseId} />
             <p className="text-sm leading-6 text-slate-600">
-              确认删除「<span className="font-bold text-[#102033]">{deleteNode.title}</span>」？它的子节点也会一起删除。
+              确认删除{deleteTargetName}「<span className="font-bold text-[#102033]">{deleteNode.title}</span>」？{deleteIsCourse ? "该专业课下的大纲节点和试卷会一起删除，章节关联会解除。" : "它的子节点也会一起删除。"}
             </p>
             <div className="flex justify-end gap-2">
               <button className="secondary-button rounded-none" type="button" onClick={() => setDeleteNode(null)}>取消</button>
