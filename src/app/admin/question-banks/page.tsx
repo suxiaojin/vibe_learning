@@ -46,6 +46,10 @@ function ownerHref(owner: OwnerOption, page = 1) {
   return `/admin/question-banks?type=${owner.type}&id=${encodeURIComponent(owner.id)}&page=${page}`;
 }
 
+function ownerKnowledgeMapHref(owner: OwnerOption) {
+  return `/admin/question-banks/knowledge-points?type=${owner.type}&id=${encodeURIComponent(owner.id)}`;
+}
+
 function formatDate(date: Date) {
   const parts = new Intl.DateTimeFormat("zh-CN", {
     timeZone: "Asia/Shanghai",
@@ -206,7 +210,7 @@ export default async function QuestionBanksPage({
           {[
             { label: "题库", href: "/admin/question-banks", active: true },
             { label: "课件", href: "/admin/public-subjects", active: false },
-            { label: "知识点", href: "/admin/knowledge-points", active: false }
+            { label: "知识点", href: ownerKnowledgeMapHref(selectedOwner), active: false }
           ].map((tab) => (
             <Link
               key={tab.label}

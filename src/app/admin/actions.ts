@@ -652,6 +652,10 @@ function questionBankPath(ownerType: QuestionBankOwnerType, ownerId: string) {
   return `/admin/question-banks?type=${ownerType}&id=${encodeURIComponent(ownerId)}`;
 }
 
+function questionBankKnowledgeMapPath(_ownerType: QuestionBankOwnerType, _ownerId: string) {
+  return "/admin/question-banks/knowledge-points";
+}
+
 function getPaperYear(formData: FormData) {
   const raw = String(formData.get("year") || "").trim();
   if (!raw) {
@@ -1018,6 +1022,102 @@ export async function deleteSyllabusItem(formData: FormData) {
   const path = courseDetailPath(formData);
   revalidatePath(path);
   redirect(path);
+}
+
+export async function createQuestionBankKnowledgeMapItem(formData: FormData) {
+  await requireAdmin();
+  const { ownerType, ownerId } = getQuestionBankOwner(formData);
+  const courseId = String(formData.get("courseId") || "");
+  const parentId = String(formData.get("parentId") || "") || null;
+  const title = String(formData.get("title") || "").trim();
+
+  if (!title) {
+    throw new Error("Knowledge point title is required");
+  }
+
+  const course = await prisma.learningCourse.findFirstOrThrow({
+    where: {
+      id: courseId,
+      courseType: ownerType,
+      ...(ownerType === "public_subject" ? { publicSubjectId: ownerId } : { majorId: ownerId })
+    },
+    select: { id: true }
+  });
+
+  if (parentId) {
+    await prisma.syllabusItem.findFirstOrThrow({
+      where: { id: parentId, courseId: course.id },
+      select: { id: true }
+    });
+  }
+
+  const [code, sortOrder] = await Promise.all([
+    nextSyllabusItemCode(course.id, parentId),
+    nextSyllabusItemSortOrder(course.id, parentId)
+  ]);
+
+  await prisma.syllabusItem.create({
+    data: {
+      courseId: course.id,
+      parentId,
+      code,
+      title,
+      description: String(formData.get("description") || "").trim() || null,
+      requirement: null,
+      status: "published",
+      sortOrder
+    }
+  });
+
+  revalidatePath(questionBankKnowledgeMapPath(ownerType, ownerId));
+}
+
+export async function renameQuestionBankKnowledgeMapItem(formData: FormData) {
+  await requireAdmin();
+  const { ownerType, ownerId } = getQuestionBankOwner(formData);
+  const id = String(formData.get("id") || "");
+  const courseId = String(formData.get("courseId") || "");
+  const title = String(formData.get("title") || "").trim();
+
+  if (!title) {
+    throw new Error("Knowledge point title is required");
+  }
+
+  await prisma.syllabusItem.findFirstOrThrow({
+    where: {
+      id,
+      courseId,
+      course: ownerCourseWhere(ownerType, ownerId)
+    },
+    select: { id: true }
+  });
+
+  await prisma.syllabusItem.update({
+    where: { id },
+    data: { title }
+  });
+
+  revalidatePath(questionBankKnowledgeMapPath(ownerType, ownerId));
+}
+
+export async function deleteQuestionBankKnowledgeMapItem(formData: FormData) {
+  await requireAdmin();
+  const { ownerType, ownerId } = getQuestionBankOwner(formData);
+  const id = String(formData.get("id") || "");
+  const courseId = String(formData.get("courseId") || "");
+
+  await prisma.syllabusItem.findFirstOrThrow({
+    where: {
+      id,
+      courseId,
+      course: ownerCourseWhere(ownerType, ownerId)
+    },
+    select: { id: true }
+  });
+
+  await prisma.syllabusItem.delete({ where: { id } });
+
+  revalidatePath(questionBankKnowledgeMapPath(ownerType, ownerId));
 }
 
 function buildSyllabusChapterTitle(syllabusItem: { code: string | null; title: string }) {
