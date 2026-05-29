@@ -316,6 +316,20 @@ function questionSearchText(question: QuestionRow) {
   ].join(" ").toLowerCase();
 }
 
+function formatQuestionTaggingIssues(questionNumbers: number[], suffix: string) {
+  return questionNumbers.map((number) => `第${number}题${suffix}`).join("，");
+}
+
+function buildQuestionTaggingStatus(questionNumbers: number[], total: number) {
+  if (total === 0) {
+    return "当前题库还没有题目。";
+  }
+  if (questionNumbers.length === 0) {
+    return "已全部打标成功";
+  }
+  return formatQuestionTaggingIssues(questionNumbers, "未打标");
+}
+
 function initialChoiceOptions(question?: QuestionRow): ChoiceOptionDraft[] {
   if (!question?.options.length) {
     return optionKeys.map((key) => ({ key, text: "" }));
@@ -1017,6 +1031,14 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
   const listedQuestions = normalizedSearchQuery
     ? orderedQuestions.filter((question) => questionSearchText(question).includes(normalizedSearchQuery))
     : orderedQuestions;
+  const untaggedQuestionNumbers = orderedQuestions.reduce<number[]>((numbers, question, index) => {
+    if (question.knowledgeTagLabels.length === 0) {
+      numbers.push(index + 1);
+    }
+    return numbers;
+  }, []);
+  const tagCoverageMessage = aiTagMessage || buildQuestionTaggingStatus(untaggedQuestionNumbers, orderedQuestions.length);
+  const tagCoverageTone = aiTagging ? "progress" : tagCoverageMessage === "已全部打标成功" ? "success" : "warning";
 
   useEffect(() => {
     setOrderedQuestions(questions);
@@ -1107,6 +1129,10 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
         total?: number;
         tagged?: number;
         failed?: number;
+        results?: Array<{
+          paperQuestionId?: string;
+          ok?: boolean;
+        }>;
       } | null;
 
       if (!response.ok) {
@@ -1116,7 +1142,24 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
       const total = payload?.total ?? orderedQuestions.length;
       const tagged = payload?.tagged ?? 0;
       const failed = payload?.failed ?? Math.max(0, total - tagged);
-      setAiTagMessage(`AI 打标完成：${tagged}/${total} 道题已归属${failed > 0 ? `，${failed} 道失败` : ""}。`);
+      const failedPaperQuestionIds = new Set(
+        (payload?.results || [])
+          .filter((item) => !item.ok && item.paperQuestionId)
+          .map((item) => item.paperQuestionId as string)
+      );
+      const failedQuestionNumbers = orderedQuestions.reduce<number[]>((numbers, question, index) => {
+        if (failedPaperQuestionIds.has(question.id)) {
+          numbers.push(index + 1);
+        }
+        return numbers;
+      }, []);
+      if (failedQuestionNumbers.length > 0) {
+        setAiTagMessage(formatQuestionTaggingIssues(failedQuestionNumbers, "打标失败"));
+      } else if (failed > 0) {
+        setAiTagMessage(`AI 打标完成：${tagged}/${total} 道题已归属，${failed} 道失败。`);
+      } else {
+        setAiTagMessage("已全部打标成功");
+      }
       router.refresh();
     } catch (error) {
       setAiTagMessage(error instanceof Error ? error.message : "AI 打标失败。");
@@ -1152,6 +1195,7 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
         throw new Error(payload?.error || "知识点标签更新失败。");
       }
 
+      setAiTagMessage("");
       setKnowledgeTagMessage(action === "delete" ? "已删除知识点标签。" : "已添加知识点标签。");
       router.refresh();
     } catch (error) {
@@ -1431,12 +1475,6 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
                   ))}
                 </div>
               </div>
-              {aiTagMessage ? (
-                <div className="grid grid-cols-[80px_1fr] items-start gap-2">
-                  <span />
-                  <p className="text-xs font-medium leading-5 text-[#52657f]">{aiTagMessage}</p>
-                </div>
-              ) : null}
               <div className="grid grid-cols-[80px_1fr] items-center gap-2">
                 <span className="text-sm font-bold">知识点标签</span>
                 <div className="min-h-9 rounded border border-[#d7dee8] bg-[#fbfcfe] px-3 py-2 text-sm">
@@ -1466,6 +1504,19 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
                   )}
                   {knowledgeTagMessage ? <p className="mt-1 text-xs font-medium text-[#64748b]">{knowledgeTagMessage}</p> : null}
                 </div>
+              </div>
+              <div className="grid grid-cols-[80px_1fr] items-start gap-2">
+                <span />
+                <p
+                  className={cn(
+                    "rounded border px-3 py-2 text-xs font-medium leading-5",
+                    tagCoverageTone === "success" ? "border-[#bbf7d0] bg-[#f0fdf4] text-[#15803d]" : null,
+                    tagCoverageTone === "warning" ? "border-[#fed7aa] bg-[#fff7ed] text-[#c2410c]" : null,
+                    tagCoverageTone === "progress" ? "border-[#bfdbfe] bg-[#eff6ff] text-[#1d4ed8]" : null
+                  )}
+                >
+                  {tagCoverageMessage}
+                </p>
               </div>
             </div>
           </section>
