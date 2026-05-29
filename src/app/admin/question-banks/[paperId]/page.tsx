@@ -1,4 +1,4 @@
-import { QuestionBankDetailWorkbench } from "@/components/question-bank-detail-workbench";
+import { QuestionBankDetailWorkbench, type KnowledgeTreeCourse } from "@/components/question-bank-detail-workbench";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveQuestionBankQuestionTypes } from "@/lib/question-bank-types";
@@ -58,6 +58,74 @@ function paperQuestionTypeText(
   return [paper.title, paper.course.name, paper.course.major?.name, paper.course.publicSubject?.name].filter(Boolean).join(" ");
 }
 
+type SyllabusItemRow = {
+  id: string;
+  parentId: string | null;
+  title: string;
+  sortOrder: number;
+  code: string | null;
+};
+
+type SyllabusTreeNode = SyllabusItemRow & {
+  children: SyllabusTreeNode[];
+};
+
+function sortSyllabusNodes(nodes: SyllabusTreeNode[]) {
+  nodes.sort((left, right) => {
+    if (left.sortOrder !== right.sortOrder) {
+      return left.sortOrder - right.sortOrder;
+    }
+    const codeCompare = (left.code || "").localeCompare(right.code || "", "zh-Hans-CN", { numeric: true });
+    return codeCompare || left.title.localeCompare(right.title, "zh-Hans-CN");
+  });
+  nodes.forEach((node) => sortSyllabusNodes(node.children));
+}
+
+function buildSyllabusTree(items: SyllabusItemRow[]) {
+  const nodes = new Map<string, SyllabusTreeNode>();
+  const roots: SyllabusTreeNode[] = [];
+
+  items.forEach((item) => {
+    nodes.set(item.id, { ...item, children: [] });
+  });
+
+  items.forEach((item) => {
+    const node = nodes.get(item.id);
+    if (!node) {
+      return;
+    }
+    if (item.parentId && nodes.has(item.parentId)) {
+      nodes.get(item.parentId)?.children.push(node);
+      return;
+    }
+    roots.push(node);
+  });
+
+  sortSyllabusNodes(roots);
+  return roots;
+}
+
+function toKnowledgeTreeCourse(course: {
+  id: string;
+  name: string;
+  syllabusItems: SyllabusItemRow[];
+}): KnowledgeTreeCourse {
+  const chapters = buildSyllabusTree(course.syllabusItems).map((chapter) => ({
+    id: chapter.id,
+    title: chapter.title,
+    sections: chapter.children.map((section) => ({
+      id: section.id,
+      title: section.title
+    }))
+  }));
+
+  return {
+    id: course.id,
+    title: course.name,
+    chapters
+  };
+}
+
 export default async function QuestionBankDetailPage({
   params
 }: {
@@ -90,6 +158,26 @@ export default async function QuestionBankDetailPage({
       }
     }
   });
+  const ownerCourseWhere =
+    paper.course.courseType === "public_subject"
+      ? { courseType: "public_subject" as const, publicSubjectId: paper.course.publicSubjectId }
+      : { courseType: "major" as const, majorId: paper.course.majorId };
+  const knowledgeCourses = await prisma.learningCourse.findMany({
+    where: ownerCourseWhere,
+    include: {
+      syllabusItems: {
+        select: {
+          id: true,
+          parentId: true,
+          code: true,
+          title: true,
+          sortOrder: true
+        },
+        orderBy: [{ parentId: "asc" }, { sortOrder: "asc" }, { code: "asc" }]
+      }
+    },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+  });
 
   return (
     <QuestionBankDetailWorkbench
@@ -97,6 +185,7 @@ export default async function QuestionBankDetailPage({
       paperTitle={paper.title}
       ownerHref={ownerHref(paper)}
       questionTypes={resolveQuestionBankQuestionTypes(paperQuestionTypeText(paper))}
+      knowledgeTree={knowledgeCourses.map(toKnowledgeTreeCourse)}
       questions={paper.questions.map((item) => ({
         id: item.id,
         title: item.question.stem,

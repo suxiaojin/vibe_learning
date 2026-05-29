@@ -798,7 +798,7 @@ export async function createQuestionBankOwner(formData: FormData) {
     data: {
       name,
       status: "published",
-      sortOrder: await nextQuestionBankOwnerSortOrder(),
+      sortOrder: Math.max(await nextQuestionBankOwnerSortOrder(), 1000),
       regions: {
         create: {
           regionId: region.id

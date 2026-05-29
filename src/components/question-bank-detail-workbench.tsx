@@ -6,7 +6,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   CheckSquare,
-  ChevronDown,
   CircleDot,
   CopyPlus,
   Eye,
@@ -17,7 +16,6 @@ import {
   Sigma,
   Trash2,
   X,
-  Zap,
   type LucideIcon
 } from "lucide-react";
 import {
@@ -61,11 +59,29 @@ type QuestionRow = {
   chapterTitle: string;
 };
 
+export type KnowledgeTreeSection = {
+  id: string;
+  title: string;
+};
+
+export type KnowledgeTreeChapter = {
+  id: string;
+  title: string;
+  sections: KnowledgeTreeSection[];
+};
+
+export type KnowledgeTreeCourse = {
+  id: string;
+  title: string;
+  chapters: KnowledgeTreeChapter[];
+};
+
 type QuestionBankDetailWorkbenchProps = {
   paperId: string;
   paperTitle: string;
   ownerHref: string;
   questionTypes: QuestionBankQuestionTypeConfig[];
+  knowledgeTree: KnowledgeTreeCourse[];
   questions: QuestionRow[];
 };
 
@@ -350,6 +366,98 @@ function AttributeChip({ label, active = false }: { label: string; active?: bool
     <span className={cn("inline-flex h-8 min-w-14 items-center justify-center rounded bg-[#eef2f7] px-3 text-sm font-medium text-[#344054]", active && "bg-[#1da1f2] text-white")}>
       {label}
     </span>
+  );
+}
+
+function KnowledgeTreeView({ courses }: { courses: KnowledgeTreeCourse[] }) {
+  const [expandedCourseIds, setExpandedCourseIds] = useState<Set<string>>(() => new Set());
+  const [expandedChapterIds, setExpandedChapterIds] = useState<Set<string>>(() => new Set());
+
+  function toggleCourse(courseId: string) {
+    setExpandedCourseIds((current) => {
+      const next = new Set(current);
+      if (next.has(courseId)) {
+        next.delete(courseId);
+      } else {
+        next.add(courseId);
+      }
+      return next;
+    });
+  }
+
+  function toggleChapter(chapterId: string) {
+    setExpandedChapterIds((current) => {
+      const next = new Set(current);
+      if (next.has(chapterId)) {
+        next.delete(chapterId);
+      } else {
+        next.add(chapterId);
+      }
+      return next;
+    });
+  }
+
+  if (courses.length === 0) {
+    return <div className="grid h-full min-h-[260px] place-items-center rounded border border-[#d7dee8] bg-[#fbfcfe] text-sm text-slate-400">暂无知识点</div>;
+  }
+
+  return (
+    <div className="h-full min-h-[260px] overflow-auto rounded border border-[#d7dee8] bg-[#fbfcfe] p-4">
+      <div className="space-y-4">
+        {courses.map((course) => {
+          const courseExpanded = expandedCourseIds.has(course.id);
+          return (
+          <div key={course.id}>
+            <button
+              className="flex min-h-8 w-full items-center gap-2 text-left text-sm font-black text-[#071b38] hover:text-[#1d4ed8]"
+              type="button"
+              aria-expanded={courseExpanded}
+              onClick={() => toggleCourse(course.id)}
+            >
+              <span className="grid size-4 shrink-0 place-items-center rounded border border-[#9aa9bc] bg-white text-xs leading-none text-[#071b38]">{courseExpanded ? "-" : "+"}</span>
+              <span className="size-5 shrink-0 rounded border border-[#7aa2ff] bg-white" />
+              <span className="min-w-0 truncate" title={course.title}>{course.title}</span>
+            </button>
+
+            {courseExpanded && course.chapters.length > 0 ? (
+              <div className="ml-[26px] mt-1 space-y-1 border-l border-[#d6dbe4] pl-5">
+                {course.chapters.map((chapter) => {
+                  const chapterExpanded = expandedChapterIds.has(chapter.id);
+                  return (
+                  <div key={chapter.id} className="relative">
+                    <span className="absolute -left-5 top-4 h-px w-3 bg-[#d6dbe4]" />
+                    <button
+                      className="flex min-h-8 w-full items-center gap-2 text-left text-sm font-semibold text-[#071b38] hover:text-[#1d4ed8]"
+                      type="button"
+                      aria-expanded={chapterExpanded}
+                      onClick={() => toggleChapter(chapter.id)}
+                    >
+                      <span className="grid size-4 shrink-0 place-items-center rounded border border-[#d4dbe6] bg-white text-xs leading-none text-[#071b38]">{chapterExpanded ? "-" : "+"}</span>
+                      <span className="size-5 shrink-0 rounded border border-[#d4dbe6] bg-white" />
+                      <span className="min-w-0 truncate" title={chapter.title}>{chapter.title}</span>
+                    </button>
+
+                    {chapterExpanded && chapter.sections.length > 0 ? (
+                      <div className="ml-[10px] space-y-1 border-l border-[#e0e5ec] pl-5">
+                        {chapter.sections.map((section) => (
+                          <div key={section.id} className="relative flex min-h-8 items-center gap-2 text-sm text-[#071b38]">
+                            <span className="absolute -left-5 top-4 h-px w-3 bg-[#e0e5ec]" />
+                            <span className="size-5 shrink-0 rounded border border-[#d4dbe6] bg-white" />
+                            <span className="min-w-0 truncate" title={section.title}>{section.title}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -753,7 +861,7 @@ function ReadonlyQuestionPreview({ question }: { question: QuestionRow }) {
   );
 }
 
-export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, questionTypes, questions }: QuestionBankDetailWorkbenchProps) {
+export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, questionTypes, knowledgeTree, questions }: QuestionBankDetailWorkbenchProps) {
   const [activeEditorType, setActiveEditorType] = useState<ActiveEditorType>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [orderedQuestions, setOrderedQuestions] = useState(questions);
@@ -1074,8 +1182,8 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
         </section>
         <ResizeHandle onPointerDown={startResize("list", "attributes")} />
 
-        <aside className="min-w-0 overflow-auto bg-white">
-          <section className="border-b border-[#d7dee8]">
+        <aside className="flex min-w-0 min-h-0 flex-col overflow-hidden bg-white">
+          <section className="shrink-0 border-b border-[#d7dee8]">
             <div className="flex h-8 items-center border-b border-[#d7dee8] bg-[#eef3f8] px-3">
               <h2 className="text-sm font-black">属性标签</h2>
             </div>
@@ -1104,47 +1212,18 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
                 </div>
               </div>
               <div className="grid grid-cols-[80px_1fr] items-center gap-2">
-                <span className="text-sm font-bold">错误原因</span>
+                <span className="text-sm font-bold">知识点标签</span>
                 <div className="h-9 rounded border border-[#d7dee8] bg-[#fbfcfe] px-3 py-2 text-sm text-slate-400">请输入...</div>
               </div>
             </div>
           </section>
 
-          <section className="mt-4">
-            <div className="flex h-9 items-center justify-between border-y border-[#d7dee8] bg-[#eef3f8] px-3">
+          <section className="mt-4 flex min-h-0 flex-1 flex-col">
+            <div className="flex h-9 shrink-0 items-center border-y border-[#d7dee8] bg-[#eef3f8] px-3">
               <h2 className="text-sm font-black">知识点</h2>
-              <div className="flex items-center gap-3 text-sm text-[#3a74ff]">
-                <span className="inline-flex items-center gap-1"><Zap size={14} />自动打标</span>
-                <ChevronDown size={15} className="text-[#344054]" />
-                <span className="text-[#071b38]">选择</span>
-              </div>
             </div>
-            <div className="p-4">
-              <div className="mb-3 min-h-10 rounded border border-[#d7dee8] bg-[#fbfcfe] px-3 py-2">
-                {selectedQuestion ? (
-                  <span className="inline-flex items-center rounded border border-[#94c8ff] bg-[#eaf5ff] px-2 py-1 text-xs text-[#2d7de0]">
-                    {selectedQuestion.knowledgePointTitle} ×
-                  </span>
-                ) : null}
-              </div>
-              <div className="rounded border border-[#d7dee8] bg-[#fbfcfe] p-4">
-                {selectedQuestion ? (
-                  <>
-                    <div className="mb-3 flex items-center gap-2 text-sm font-bold">
-                      <ListChecks size={16} className="text-[#667085]" />
-                      {selectedQuestion.chapterTitle}
-                    </div>
-                    <div className="ml-6 space-y-3 border-l border-[#d6dbe4] pl-4 text-sm">
-                      <label className="flex items-center gap-2">
-                        <span className="grid size-4 place-items-center rounded border border-[#5d80ff] bg-[#5d80ff] text-white" />
-                        <span>{selectedQuestion.knowledgePointTitle}</span>
-                      </label>
-                    </div>
-                  </>
-                ) : (
-                  <div className="grid h-36 place-items-center text-sm text-slate-400">暂无知识点</div>
-                )}
-              </div>
+            <div className="min-h-0 flex-1 p-4">
+              <KnowledgeTreeView courses={knowledgeTree} />
             </div>
           </section>
         </aside>
