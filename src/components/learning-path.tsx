@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, BookOpenText, Check, Lock, Sparkles } from "lucide-react";
+import { ArrowLeft, BookOpenText, Check, ChevronDown, Lock, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type PathPoint = {
@@ -10,6 +10,17 @@ type PathPoint = {
   title: string;
   questionCount: number;
   status: "locked" | "unlocked" | "passed";
+};
+
+export type PathCourse = {
+  id: string;
+  name: string;
+  courseType: "public_subject" | "major";
+};
+
+type CourseSwitcherProps = {
+  activeCourseId: string;
+  courses: PathCourse[];
 };
 
 type LearningPathProps = {
@@ -25,12 +36,13 @@ type LearningPathProps = {
 const text = {
   back: "\u8fd4\u56de",
   guide: "\u6307\u5357",
+  myCourses: "\u6211\u7684\u8bfe\u7a0b",
   part: "\u7b2c",
   section: "\u90e8\u5206",
   passed: "\u5df2\u901a\u8fc7",
   start: "\u5f00\u59cb",
   questions: "\u9898"
-};
+} as const;
 
 export function LearningPath({ chapter }: LearningPathProps) {
   const firstActivePoint = useMemo(
@@ -40,6 +52,10 @@ export function LearningPath({ chapter }: LearningPathProps) {
   const [activePointId, setActivePointId] = useState(firstActivePoint?.id || "");
 
   const activePoint = chapter.points.find((point) => point.id === activePointId) || firstActivePoint;
+
+  useEffect(() => {
+    setActivePointId(firstActivePoint?.id || "");
+  }, [firstActivePoint?.id]);
 
   useEffect(() => {
     function updateActivePoint() {
@@ -140,6 +156,59 @@ export function LearningPath({ chapter }: LearningPathProps) {
           })}
         </div>
       </section>
+    </div>
+  );
+}
+
+export function LearningCourseSwitcher({ activeCourseId, courses }: CourseSwitcherProps) {
+  const [open, setOpen] = useState(false);
+  const activeCourse = courses.find((course) => course.id === activeCourseId) || courses[0] || null;
+
+  if (!activeCourse) {
+    return null;
+  }
+
+  return (
+    <div className="relative">
+      <button
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="inline-flex min-h-14 max-w-48 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:text-sky-600"
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className="min-w-0 truncate">{activeCourse.name}</span>
+        <ChevronDown className={cn("shrink-0 transition", open && "rotate-180")} size={18} />
+      </button>
+
+      {open ? (
+        <div className="absolute right-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-2xl border border-slate-200 bg-white text-ink shadow-[0_12px_32px_rgba(15,23,42,0.2)]">
+          <div className="border-b border-slate-200 px-5 py-3">
+            <p className="text-sm font-black text-slate-500">{text.myCourses}</p>
+          </div>
+          <div className="py-2">
+            {courses.map((course) => {
+              const active = course.id === activeCourse.id;
+              return (
+                <Link
+                  key={course.id}
+                  className={cn(
+                    "flex min-h-14 items-center gap-3 px-5 py-3 text-left transition hover:bg-sky-50",
+                    active && "bg-sky-50 text-sky-600"
+                  )}
+                  href={`/learn?course=${encodeURIComponent(course.id)}`}
+                  onClick={() => setOpen(false)}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-black">{course.name}</span>
+                  </span>
+                  {active ? <Check className="shrink-0" size={18} strokeWidth={4} /> : null}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

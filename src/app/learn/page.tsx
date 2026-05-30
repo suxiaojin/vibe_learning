@@ -1,13 +1,22 @@
 import Link from "next/link";
 import { Flame, Gem, Heart, Zap } from "lucide-react";
-import { LearningPath } from "@/components/learning-path";
+import { LearningCourseSwitcher, LearningPath, type PathCourse } from "@/components/learning-path";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { requireUser } from "@/lib/auth";
+import { getAvailableLearningCoursesForStudent } from "@/lib/courses";
+import { getStudentFoundationProfileStatus } from "@/lib/foundation";
 import { ensureInitialProgress, repairUnlockedProgress } from "@/lib/learning";
 import { prisma } from "@/lib/prisma";
 
 type PointWithProgress = Awaited<ReturnType<typeof getLearningPoints>>[number];
 type PointStatus = "locked" | "unlocked" | "passed";
+type LearningCourse = Awaited<ReturnType<typeof getAvailableLearningCoursesForStudent>>[number];
+type LearningCourseKey = "public_subject" | "major";
+type LearningCourseGroup = {
+  key: LearningCourseKey;
+  name: string;
+  courseIds: string[];
+};
 
 const text = {
   dailyTask: "\u6bcf\u65e5\u7279\u522b\u4efb\u52a1",
@@ -20,9 +29,9 @@ const text = {
   empty: "\u5f53\u524d\u6ca1\u6709\u5df2\u53d1\u5e03\u7684\u5b66\u4e60\u5185\u5bb9\u3002"
 };
 
-async function getLearningPoints(userId: string) {
+async function getLearningPoints(userId: string, courseIds: string[]) {
   return prisma.knowledgePoint.findMany({
-    where: { status: "published", chapter: { status: "published" } },
+    where: { status: "published", chapter: { status: "published", courseId: { in: courseIds } } },
     include: {
       chapter: true,
       progress: { where: { userId } },
@@ -56,6 +65,35 @@ function pointStatus(point: PointWithProgress, index: number): PointStatus {
   return point.progress[0]?.status || (index === 0 ? "unlocked" : "locked");
 }
 
+function groupedLearningCourses(courses: LearningCourse[]) {
+  const groups: LearningCourseGroup[] = [];
+  const publicCourses = courses.filter((course) => course.courseType === "public_subject");
+  const majorCourses = courses.filter((course) => course.courseType === "major");
+
+  if (publicCourses.length > 0) {
+    groups.push({
+      key: "public_subject",
+      name: publicCourses[0].publicSubject?.name || publicCourses[0].name,
+      courseIds: publicCourses.map((course) => course.id)
+    });
+  }
+
+  if (majorCourses.length > 0) {
+    groups.push({
+      key: "major",
+      name: majorCourses[0].major?.name || majorCourses[0].name,
+      courseIds: majorCourses.map((course) => course.id)
+    });
+  }
+
+  return groups;
+}
+
+function selectedLearningCourseGroup(groups: LearningCourseGroup[], requestedCourse?: string) {
+  const requestedGroup = groups.find((group) => group.key === requestedCourse);
+  return requestedGroup || groups.find((group) => group.key === "major") || groups[0] || null;
+}
+
 function computeStreak(dates: Date[]) {
   const set = new Set(dates.map((date) => date.toISOString().slice(0, 10)));
   const cursor = new Date();
@@ -73,15 +111,24 @@ function computeStreak(dates: Date[]) {
 export default async function LearnPage({
   searchParams
 }: {
-  searchParams?: Promise<{ chapter?: string }>;
+  searchParams?: Promise<{ chapter?: string; course?: string }>;
 }) {
   const user = await requireUser();
   const params = await searchParams;
-  await ensureInitialProgress(user.id);
-  await repairUnlockedProgress(user.id);
+  const foundationProfile = await getStudentFoundationProfileStatus(user.id);
+  const canShowPath = foundationProfile.completed;
+
+  if (canShowPath) {
+    await ensureInitialProgress(user.id);
+    await repairUnlockedProgress(user.id);
+  }
+
+  const courses = canShowPath ? await getAvailableLearningCoursesForStudent(user.id) : [];
+  const courseGroups = groupedLearningCourses(courses);
+  const currentCourseGroup = selectedLearningCourseGroup(courseGroups, params?.course);
 
   const [points, stats, wrongCount] = await Promise.all([
-    getLearningPoints(user.id),
+    currentCourseGroup ? getLearningPoints(user.id, currentCourseGroup.courseIds) : Promise.resolve([]),
     prisma.studyStat.findMany({ where: { userId: user.id }, orderBy: { date: "desc" }, take: 30 }),
     prisma.wrongQuestion.count({ where: { userId: user.id, status: "active" } })
   ]);
@@ -116,13 +163,40 @@ export default async function LearnPage({
         }))
       }
     : null;
+  const courseSwitcher = currentCourseGroup
+    ? {
+        activeCourseId: currentCourseGroup.key,
+        courses: courseGroups.map(
+          (group): PathCourse => ({
+            id: group.key,
+            name: group.name,
+            courseType: group.key
+          })
+        )
+      }
+    : null;
 
   return (
     <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[240px_minmax(0,1fr)_340px]">
       <StudentSidebar active="learn" />
 
       <section className="min-w-0 px-5 py-8 lg:px-8">
-        {chapterPath ? <LearningPath chapter={chapterPath} /> : <div className="panel text-slate-600">{text.empty}</div>}
+        <div className="mx-auto grid w-full max-w-[880px] gap-4 xl:grid-cols-[minmax(0,42rem)_10rem] xl:items-start xl:justify-center xl:gap-6">
+          <div className="min-w-0">
+            {chapterPath ? (
+              <LearningPath chapter={chapterPath} />
+            ) : canShowPath ? (
+              <div className="mx-auto max-w-2xl pb-24">
+                <div className="panel text-slate-600">{text.empty}</div>
+              </div>
+            ) : null}
+          </div>
+          {courseSwitcher ? (
+            <div className="order-first flex justify-end xl:order-none xl:sticky xl:top-10 xl:z-30">
+              <LearningCourseSwitcher {...courseSwitcher} />
+            </div>
+          ) : null}
+        </div>
       </section>
 
       <aside className="hidden border-l border-slate-100 bg-mist/60 px-5 py-8 xl:block">
