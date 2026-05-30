@@ -39,6 +39,10 @@ function ownerKnowledgeMapHref(owner: KnowledgeMapOwner) {
   return `/admin/question-banks/knowledge-points?type=${owner.type}&id=${encodeURIComponent(owner.id)}`;
 }
 
+function ownerStatisticsHref(owner: KnowledgeMapOwner) {
+  return `/admin/question-banks/statistics?type=${owner.type}&id=${encodeURIComponent(owner.id)}`;
+}
+
 function sortNodes(nodes: KnowledgeMapNode[]) {
   nodes.sort((left, right) => {
     const codeCompare = (left.code || "").localeCompare(right.code || "", "zh-Hans-CN", { numeric: true });
@@ -173,7 +177,7 @@ export default async function QuestionBankKnowledgePointsPage({
         <nav className="flex" aria-label="内容管理">
           {[
             { label: "题库", href: ownerQuestionBankHref(selectedOwner), active: false },
-            { label: "课件", href: "/admin/public-subjects", active: false },
+            { label: "知识点题目统计", href: ownerStatisticsHref(selectedOwner), active: false },
             { label: "知识点", href: ownerKnowledgeMapHref(selectedOwner), active: true }
           ].map((tab) => (
             <Link

@@ -50,6 +50,10 @@ function ownerKnowledgeMapHref(owner: OwnerOption) {
   return `/admin/question-banks/knowledge-points?type=${owner.type}&id=${encodeURIComponent(owner.id)}`;
 }
 
+function ownerStatisticsHref(owner: OwnerOption) {
+  return `/admin/question-banks/statistics?type=${owner.type}&id=${encodeURIComponent(owner.id)}`;
+}
+
 function formatDate(date: Date) {
   const parts = new Intl.DateTimeFormat("zh-CN", {
     timeZone: "Asia/Shanghai",
@@ -209,7 +213,7 @@ export default async function QuestionBanksPage({
         <nav className="flex" aria-label="内容管理">
           {[
             { label: "题库", href: "/admin/question-banks", active: true },
-            { label: "课件", href: "/admin/public-subjects", active: false },
+            { label: "知识点题目统计", href: ownerStatisticsHref(selectedOwner), active: false },
             { label: "知识点", href: ownerKnowledgeMapHref(selectedOwner), active: false }
           ].map((tab) => (
             <Link
