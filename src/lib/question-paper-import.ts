@@ -12,6 +12,8 @@ export type ImportQuestion = {
   options: Array<{ key: string; text: string }>;
   answer: string[];
   analysis: string;
+  syllabusItemId?: string;
+  syllabusItemIds?: string[];
   source?: string;
   sourceType?: ImportQuestionSourceType;
   sourceYear?: number;
@@ -46,6 +48,7 @@ export type ImportQuestionPaperResult = {
 
 export type ImportQuestionPaperOptions = {
   defaultSourceType?: ImportQuestionSourceType;
+  defaultKnowledgeTagSource?: "ai" | "manual";
 };
 
 type ImportOwner = {
@@ -138,6 +141,10 @@ function scoreForQuestion(number: number) {
 
 function ownerNameToSubjectName(ownerName: string) {
   return ownerName.replace(/专业$/, "").replace(/公共课$/, "") || ownerName;
+}
+
+function uniqueValues(values: Array<string | null | undefined>) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
 }
 
 async function ensureRegion(tx: Prisma.TransactionClient, payload: ImportQuestionPaperPayload, target: ImportQuestionPaperTarget) {
@@ -387,10 +394,11 @@ export async function importQuestionPaperPayload(
     }
 
     for (const question of payload.questions) {
+      const tagSyllabusItemIds = uniqueValues([question.syllabusItemId, ...(question.syllabusItemIds || [])]);
       const createdQuestion = await tx.question.create({
         data: {
           knowledgePointId: knowledgePoint.id,
-          syllabusItemId: knowledgePoint.syllabusItemId,
+          syllabusItemId: tagSyllabusItemIds[0] || knowledgePoint.syllabusItemId,
           type: question.type,
           stem: question.stem,
           options: question.options,
@@ -404,6 +412,17 @@ export async function importQuestionPaperPayload(
         },
         select: { id: true }
       });
+
+      if (tagSyllabusItemIds.length > 0) {
+        await tx.questionKnowledgeTag.createMany({
+          data: tagSyllabusItemIds.map((syllabusItemId) => ({
+            questionId: createdQuestion.id,
+            syllabusItemId,
+            source: options.defaultKnowledgeTagSource || "manual"
+          })),
+          skipDuplicates: true
+        });
+      }
 
       await tx.examPaperQuestion.create({
         data: {

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition, type PointerEvent as ReactPointerEvent } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Loader2, Maximize2, Minimize2, Move, Sparkles, X } from "lucide-react";
+import { AlertTriangle, BookOpen, CheckCircle2, ChevronRight, FileText, Folder, Loader2, Maximize2, Minimize2, Move, Search, Sparkles, X } from "lucide-react";
 import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 import type { ImportQuestion, ImportQuestionPaperPayload, ImportQuestionType } from "@/lib/question-paper-import";
 import { cn } from "@/lib/utils";
@@ -19,10 +19,27 @@ type OwnerOption = {
   regions: RegionOption[];
 };
 
-type ReferencePaperOption = {
+type ReferenceSectionNode = {
   id: string;
   title: string;
-  questionCount: number;
+  path: string;
+  count: number;
+};
+
+type ReferenceChapterNode = {
+  id: string;
+  title: string;
+  path: string;
+  count: number;
+  sections: ReferenceSectionNode[];
+};
+
+type ReferenceCourseNode = {
+  id: string;
+  title: string;
+  path: string;
+  count: number;
+  chapters: ReferenceChapterNode[];
 };
 
 type GenerationResponse = {
@@ -50,7 +67,7 @@ type CommitResponse = {
 type Props = {
   selectedOwner: OwnerOption;
   regions: RegionOption[];
-  referencePapers: ReferencePaperOption[];
+  knowledgeTreesByRegion: Record<string, ReferenceCourseNode[]>;
 };
 
 const typeLabels: Record<string, string> = {
@@ -85,6 +102,18 @@ function textToAnswer(value: string) {
     .split(/[、,\n]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function includesQuery(value: string, query: string) {
+  return value.toLowerCase().includes(query);
+}
+
+function CountBadge({ count }: { count: number }) {
+  return (
+    <span className={cn("rounded-full px-2 py-0.5 text-xs font-black", count > 0 ? "bg-[#e0f2fe] text-[#0369a1]" : "bg-[#f1f5f9] text-[#94a3b8]")}>
+      {count}题
+    </span>
+  );
 }
 
 function questionIssues(question: ImportQuestion) {
@@ -144,10 +173,13 @@ function defaultTitle(ownerName: string) {
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");
-  return `AI生成题库-${ownerName}-${yyyy}-${mm}-${dd}`;
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mi = String(date.getMinutes()).padStart(2, "0");
+  const ss = String(date.getSeconds()).padStart(2, "0");
+  return `AI生成题库-${ownerName}-${yyyy}-${mm}-${dd}-${hh}-${mi}-${ss}`;
 }
 
-export function QuestionBankAiGenerationDialog({ selectedOwner, regions, referencePapers }: Props) {
+export function QuestionBankAiGenerationDialog({ selectedOwner, regions, knowledgeTreesByRegion }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState(defaultTitle(selectedOwner.name));
@@ -156,7 +188,11 @@ export function QuestionBankAiGenerationDialog({ selectedOwner, regions, referen
   const [count, setCount] = useState("10");
   const [difficulty, setDifficulty] = useState<keyof typeof difficultyLabels>("medium");
   const [questionTypes, setQuestionTypes] = useState<ImportQuestionType[]>([]);
-  const [selectedReferencePaperIds, setSelectedReferencePaperIds] = useState<string[]>(() => referencePapers.map((paper) => paper.id));
+  const [questionTypeCounts, setQuestionTypeCounts] = useState<Partial<Record<ImportQuestionType, string>>>({});
+  const [referenceSearchQuery, setReferenceSearchQuery] = useState("");
+  const [expandedCourseIds, setExpandedCourseIds] = useState<Set<string>>(() => new Set());
+  const [expandedChapterIds, setExpandedChapterIds] = useState<Set<string>>(() => new Set());
+  const [selectedReferenceSectionIds, setSelectedReferenceSectionIds] = useState<string[]>([]);
   const [parsed, setParsed] = useState<GenerationResponse | null>(null);
   const [task, setTask] = useState<GenerationTaskResponse | null>(null);
   const [taskId, setTaskId] = useState("");
@@ -175,6 +211,48 @@ export function QuestionBankAiGenerationDialog({ selectedOwner, regions, referen
   const activeOwner = selectedOwner;
   const ownerRegions = activeOwner.regions.length > 0 ? activeOwner.regions : regions;
   const selectedRegionName = useMemo(() => ownerRegions.find((region) => region.id === regionId)?.name || ownerRegions[0]?.name || "江苏三年制", [ownerRegions, regionId]);
+  const knowledgeTree = useMemo(() => knowledgeTreesByRegion[regionId] || [], [knowledgeTreesByRegion, regionId]);
+  const referenceSections = useMemo(
+    () => knowledgeTree.flatMap((course) => course.chapters.flatMap((chapter) => chapter.sections)),
+    [knowledgeTree]
+  );
+  const selectedReferenceSections = useMemo(
+    () => referenceSections.filter((section) => selectedReferenceSectionIds.includes(section.id)),
+    [referenceSections, selectedReferenceSectionIds]
+  );
+  const normalizedReferenceSearchQuery = referenceSearchQuery.trim().toLowerCase();
+  const visibleKnowledgeTree = useMemo(() => {
+    if (!normalizedReferenceSearchQuery) {
+      return knowledgeTree;
+    }
+
+    return knowledgeTree
+      .map((course) => {
+        const courseMatches = includesQuery(course.path, normalizedReferenceSearchQuery);
+        const chapters = course.chapters
+          .map((chapter) => {
+            const chapterMatches = includesQuery(chapter.path, normalizedReferenceSearchQuery);
+            const sections = chapter.sections.filter((section) => courseMatches || chapterMatches || includesQuery(section.path, normalizedReferenceSearchQuery));
+            if (courseMatches || chapterMatches || sections.length > 0) {
+              return {
+                ...chapter,
+                sections: courseMatches || chapterMatches ? chapter.sections : sections
+              };
+            }
+            return null;
+          })
+          .filter((chapter): chapter is ReferenceChapterNode => Boolean(chapter));
+
+        if (courseMatches || chapters.length > 0) {
+          return {
+            ...course,
+            chapters: courseMatches ? course.chapters : chapters
+          };
+        }
+        return null;
+      })
+      .filter((course): course is ReferenceCourseNode => Boolean(course));
+  }, [knowledgeTree, normalizedReferenceSearchQuery]);
   const filteredQuestions = useMemo(() => {
     const questions = parsed?.payload.questions || [];
     return selectedType === "all" ? questions : questions.filter((question) => question.type === selectedType);
@@ -185,14 +263,37 @@ export function QuestionBankAiGenerationDialog({ selectedOwner, regions, referen
   }, [filteredQuestions, parsed, selectedQuestionNumber]);
   const activeTask = Boolean(taskId || task?.status === "queued" || task?.status === "running" || isGenerating);
   const issueCount = useMemo(() => (parsed?.payload.questions || []).reduce((total, question) => total + (questionIssues(question).length > 0 ? 1 : 0), 0), [parsed]);
-  const selectedReferenceCount = selectedReferencePaperIds.length;
+  const selectedReferenceCount = selectedReferenceSections.length;
+  const availableReferenceCount = referenceSections.filter((section) => section.count > 0).length;
+  const selectedReferenceQuestionCount = selectedReferenceSections.reduce((total, section) => total + section.count, 0);
+  const selectedReferenceSectionTitle = useMemo(() => {
+    if (selectedReferenceSections.length === 0) {
+      return "请先选择参考知识点";
+    }
+    const titles = selectedReferenceSections.map((section) => section.title);
+    if (titles.length <= 3) {
+      return titles.join("、");
+    }
+    return `${titles.slice(0, 3).join("、")} 等 ${titles.length} 个知识点`;
+  }, [selectedReferenceSections]);
+  const selectedReferenceSectionFullTitle = selectedReferenceSections.map((section) => section.path).join("\n");
 
   useEffect(() => {
     setRegionId((selectedOwner.regions[0] || regions[0])?.id || "");
     setTitle(defaultTitle(selectedOwner.name));
-    setSelectedReferencePaperIds(referencePapers.map((paper) => paper.id));
+    setSelectedReferenceSectionIds([]);
+    setReferenceSearchQuery("");
+    setQuestionTypes([]);
+    setQuestionTypeCounts({});
     resetState();
-  }, [referencePapers, regions, selectedOwner.id, selectedOwner.name, selectedOwner.regions, selectedOwner.type]);
+  }, [regions, selectedOwner.id, selectedOwner.name, selectedOwner.regions, selectedOwner.type]);
+
+  useEffect(() => {
+    const referenceSectionIds = new Set(referenceSections.map((section) => section.id));
+    setSelectedReferenceSectionIds((current) => current.filter((id) => referenceSectionIds.has(id)));
+    setExpandedCourseIds(new Set(knowledgeTree.filter((course) => course.count > 0).map((course) => course.id)));
+    setExpandedChapterIds(new Set(knowledgeTree.flatMap((course) => course.chapters.filter((chapter) => chapter.count > 0).map((chapter) => chapter.id))));
+  }, [knowledgeTree, referenceSections]);
 
   useEffect(() => {
     if (!open || typeof window === "undefined") {
@@ -358,22 +459,73 @@ export function QuestionBankAiGenerationDialog({ selectedOwner, regions, referen
 
   function toggleQuestionType(type: ImportQuestionType) {
     resetState();
+    const shouldRemove = questionTypes.includes(type);
     setQuestionTypes((current) => (current.includes(type) ? current.filter((item) => item !== type) : [...current, type]));
+    if (shouldRemove) {
+      setQuestionTypeCounts((counts) => ({ ...counts, [type]: "" }));
+    }
   }
 
-  function toggleReferencePaper(paperId: string) {
+  function updateQuestionTypeCount(type: ImportQuestionType, value: string) {
     resetState();
-    setSelectedReferencePaperIds((current) => (current.includes(paperId) ? current.filter((item) => item !== paperId) : [...current, paperId]));
+    const cleaned = value.replace(/[^\d]/g, "").slice(0, 3);
+    setQuestionTypeCounts((current) => ({ ...current, [type]: cleaned }));
+    if (Number(cleaned) > 0) {
+      setQuestionTypes((current) => (current.includes(type) ? current : [...current, type]));
+    }
   }
 
-  function selectAllReferencePapers() {
+  function toggleReferenceSection(section: ReferenceSectionNode) {
     resetState();
-    setSelectedReferencePaperIds(referencePapers.map((paper) => paper.id));
+    if (section.count <= 0) {
+      setError(`该知识点无参考题目：${section.path}`);
+      return;
+    }
+    setSelectedReferenceSectionIds((current) => (current.includes(section.id) ? current.filter((item) => item !== section.id) : [...current, section.id]));
   }
 
-  function clearReferencePapers() {
+  function selectAllReferenceSections() {
     resetState();
-    setSelectedReferencePaperIds([]);
+    setSelectedReferenceSectionIds(referenceSections.filter((section) => section.count > 0).map((section) => section.id));
+  }
+
+  function clearReferenceSections() {
+    resetState();
+    setSelectedReferenceSectionIds([]);
+  }
+
+  function toggleCourse(courseId: string) {
+    setExpandedCourseIds((current) => {
+      const next = new Set(current);
+      if (next.has(courseId)) {
+        next.delete(courseId);
+      } else {
+        next.add(courseId);
+      }
+      return next;
+    });
+  }
+
+  function toggleChapter(chapterId: string) {
+    setExpandedChapterIds((current) => {
+      const next = new Set(current);
+      if (next.has(chapterId)) {
+        next.delete(chapterId);
+      } else {
+        next.add(chapterId);
+      }
+      return next;
+    });
+  }
+
+  function parsedQuestionTypeCounts() {
+    return questionTypeOptions.reduce<Partial<Record<ImportQuestionType, number>>>((counts, option) => {
+      const value = Number(questionTypeCounts[option.value] || 0);
+      if (Number.isInteger(value) && value > 0) {
+        counts[option.value] = value;
+      }
+      return counts;
+    }, {});
   }
 
   function generateQuestions() {
@@ -384,10 +536,29 @@ export function QuestionBankAiGenerationDialog({ selectedOwner, regions, referen
       setError("请填写 AI 题库名称。");
       return;
     }
-    if (selectedReferencePaperIds.length === 0) {
-      setError("请至少选择一个参考题库。");
+    if (selectedReferenceSectionIds.length === 0) {
+      setError("请至少选择一个参考知识点。");
       return;
     }
+    const emptySection = selectedReferenceSections.find((section) => section.count <= 0);
+    if (emptySection) {
+      setError(`该知识点无参考题目：${emptySection.path}`);
+      return;
+    }
+    const requestedCount = Number(count);
+    if (!Number.isInteger(requestedCount) || requestedCount < 1 || requestedCount > 50) {
+      setError("生成数量请填写 1-50 之间的整数。");
+      return;
+    }
+    const normalizedQuestionTypeCounts = parsedQuestionTypeCounts();
+    const questionTypeCountTotal = Object.values(normalizedQuestionTypeCounts).reduce((total, value) => total + (value || 0), 0);
+    if (questionTypeCountTotal > requestedCount) {
+      setError("题型数量合计不能超过生成总数。");
+      return;
+    }
+    const effectiveQuestionTypes = [
+      ...new Set([...questionTypes, ...(Object.keys(normalizedQuestionTypeCounts) as ImportQuestionType[])])
+    ];
 
     setTask(null);
     setStartedAt(Date.now());
@@ -403,10 +574,11 @@ export function QuestionBankAiGenerationDialog({ selectedOwner, regions, referen
             regionId,
             title: title.trim(),
             year,
-            count: Number(count),
-            questionTypes,
+            count: requestedCount,
+            questionTypes: effectiveQuestionTypes,
+            questionTypeCounts: normalizedQuestionTypeCounts,
             difficulty,
-            referencePaperIds: selectedReferencePaperIds
+            referenceSectionIds: selectedReferenceSectionIds
           })
         });
         const data = await readJson<GenerationTaskResponse>(response);
@@ -435,6 +607,7 @@ export function QuestionBankAiGenerationDialog({ selectedOwner, regions, referen
             ownerType: activeOwner.type,
             ownerId: activeOwner.id,
             regionId,
+            referenceSectionIds: selectedReferenceSectionIds,
             payload: parsed.payload
           })
         });
@@ -510,34 +683,109 @@ export function QuestionBankAiGenerationDialog({ selectedOwner, regions, referen
                   </div>
                   <div>
                     <div className="mb-1 flex items-center justify-between gap-3">
-                      <label className="label mb-0">参考题库</label>
+                      <label className="label mb-0">参考知识点题目</label>
                       <div className="flex items-center gap-2 text-xs font-semibold">
-                        <button className="text-[#006aff] hover:underline" type="button" onClick={selectAllReferencePapers}>全选</button>
-                        <button className="text-slate-500 hover:text-[#006aff]" type="button" onClick={clearReferencePapers}>清空</button>
+                        <button className="text-[#006aff] hover:underline" type="button" onClick={selectAllReferenceSections}>全选</button>
+                        <button className="text-slate-500 hover:text-[#006aff]" type="button" onClick={clearReferenceSections}>清空</button>
                       </div>
                     </div>
-                    {referencePapers.length > 0 ? (
-                      <div className="max-h-36 overflow-auto border border-[#d6dce7] bg-[#fbfcfe] p-2">
-                        <div className="grid gap-2 text-xs">
-                          {referencePapers.map((paper) => (
-                            <label key={paper.id} className="grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border border-[#e2e6ee] bg-white px-2.5 py-2 text-[#071b38] hover:border-[#6f8dff]">
-                              <input
-                                type="checkbox"
-                                checked={selectedReferencePaperIds.includes(paper.id)}
-                                onChange={() => toggleReferencePaper(paper.id)}
-                              />
-                              <span className="truncate font-semibold">{paper.title}</span>
-                              <span className="text-slate-400">{paper.questionCount}题</span>
-                            </label>
-                          ))}
+                    {knowledgeTree.length > 0 ? (
+                      <div className="border border-[#d6dce7] bg-[#fbfcfe]">
+                        <label className="relative block border-b border-[#e2e6ee] bg-white">
+                          <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#94a3b8]" size={15} />
+                          <input
+                            className="h-9 w-full bg-white pl-8 pr-3 text-xs font-medium text-[#071b38] outline-none focus:ring-2 focus:ring-inset focus:ring-[#dbeafe]"
+                            placeholder="搜索课程、章、节"
+                            value={referenceSearchQuery}
+                            onChange={(event) => setReferenceSearchQuery(event.target.value)}
+                          />
+                        </label>
+                        <div className="max-h-52 overflow-auto p-2 text-xs">
+                          {visibleKnowledgeTree.length > 0 ? (
+                            <div className="space-y-1">
+                              {visibleKnowledgeTree.map((course) => {
+                                const courseExpanded = normalizedReferenceSearchQuery.length > 0 || expandedCourseIds.has(course.id);
+                                return (
+                                  <div key={course.id}>
+                                    <div className="grid grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-1 rounded px-1 py-1.5 hover:bg-white">
+                                      <button className="grid size-6 place-items-center rounded text-[#475569] hover:bg-[#e2e8f0]" type="button" onClick={() => toggleCourse(course.id)} aria-label={courseExpanded ? "收缩课程" : "展开课程"}>
+                                        <ChevronRight size={15} className={cn("transition", courseExpanded ? "rotate-90" : "")} />
+                                      </button>
+                                      <span className="flex min-w-0 items-center gap-2 truncate font-black text-[#071b38]" title={course.path}>
+                                        <BookOpen size={15} className="shrink-0 text-[#2563eb]" />
+                                        <span className="truncate">{course.title}</span>
+                                      </span>
+                                      <CountBadge count={course.count} />
+                                    </div>
+                                    {courseExpanded ? (
+                                      <div className="mt-1 space-y-1 pl-7">
+                                        {course.chapters.map((chapter) => {
+                                          const chapterExpanded = normalizedReferenceSearchQuery.length > 0 || expandedChapterIds.has(chapter.id);
+                                          return (
+                                            <div key={chapter.id}>
+                                              <div className="grid grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-1 rounded px-1 py-1.5 hover:bg-white">
+                                                <button className="grid size-6 place-items-center rounded text-[#64748b] hover:bg-[#e2e8f0]" type="button" onClick={() => toggleChapter(chapter.id)} aria-label={chapterExpanded ? "收缩章" : "展开章"}>
+                                                  <ChevronRight size={14} className={cn("transition", chapterExpanded ? "rotate-90" : "")} />
+                                                </button>
+                                                <span className="flex min-w-0 items-center gap-2 truncate font-bold text-[#334155]" title={chapter.path}>
+                                                  <Folder size={14} className="shrink-0 text-[#f59e0b]" />
+                                                  <span className="truncate">{chapter.title}</span>
+                                                </span>
+                                                <CountBadge count={chapter.count} />
+                                              </div>
+                                              {chapterExpanded ? (
+                                                <div className="mt-1 space-y-1 pl-7">
+                                                  {chapter.sections.map((section) => {
+                                                    const selected = selectedReferenceSectionIds.includes(section.id);
+                                                    const disabled = section.count <= 0;
+                                                    return (
+                                                      <label
+                                                        key={section.id}
+                                                        className={cn(
+                                                          "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded px-2 py-2 transition",
+                                                          disabled ? "cursor-not-allowed text-slate-400" : "cursor-pointer text-[#071b38] hover:bg-white",
+                                                          selected && "bg-[#ecfeff] font-black text-[#0e7490] ring-1 ring-[#67e8f9]"
+                                                        )}
+                                                        title={section.path}
+                                                      >
+                                                        <input
+                                                          type="checkbox"
+                                                          disabled={disabled}
+                                                          checked={selected}
+                                                          onChange={() => toggleReferenceSection(section)}
+                                                        />
+                                                        <span className="flex min-w-0 items-center gap-2 truncate">
+                                                          <FileText size={13} className={cn("shrink-0", disabled ? "text-slate-300" : "text-[#0891b2]")} />
+                                                          <span className="truncate">{section.title}</span>
+                                                        </span>
+                                                        <CountBadge count={section.count} />
+                                                      </label>
+                                                    );
+                                                  })}
+                                                </div>
+                                              ) : null}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="grid h-24 place-items-center text-slate-500">没有匹配的知识点。</div>
+                          )}
                         </div>
                       </div>
                     ) : (
                       <div className="border border-dashed border-[#cbd3df] bg-[#f8fafc] px-3 py-4 text-xs text-slate-500">
-                        当前专业还没有可参考的题库。
+                        当前专业还没有可参考的知识点目录。
                       </div>
                     )}
-                    <p className="mt-2 text-xs text-slate-500">已选择 {selectedReferenceCount} 个题库，AI 会优先模仿这些题库内容。</p>
+                    <p className="mt-2 text-xs text-slate-500" title={selectedReferenceSectionFullTitle}>
+                      已选择 {selectedReferenceCount} 个节，合计 {selectedReferenceQuestionCount} 道参考题：{selectedReferenceSectionTitle}
+                    </p>
                   </div>
                   <div>
                     <label className="label">AI 题库名称</label>
@@ -560,11 +808,7 @@ export function QuestionBankAiGenerationDialog({ selectedOwner, regions, referen
                   <div className="grid grid-cols-[1fr_1fr] gap-3">
                     <div>
                       <label className="label">生成数量</label>
-                      <select className="input rounded-none" value={count} onChange={(event) => { setCount(event.target.value); resetState(); }}>
-                        {["5", "10", "20"].map((item) => (
-                          <option key={item} value={item}>{item} 题</option>
-                        ))}
-                      </select>
+                      <input className="input rounded-none" value={count} onChange={(event) => { setCount(event.target.value.replace(/[^\d]/g, "")); resetState(); }} inputMode="numeric" min={1} max={50} placeholder="例如 25" />
                     </div>
                     <div>
                       <label className="label">难度</label>
@@ -577,19 +821,28 @@ export function QuestionBankAiGenerationDialog({ selectedOwner, regions, referen
                   </div>
                   <div>
                     <label className="label">题型</label>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="grid gap-2 text-xs">
                       {questionTypeOptions.map((option) => (
-                        <label key={option.value} className="flex h-9 cursor-pointer items-center gap-2 border border-[#d6dce7] bg-[#f9fafc] px-3 font-semibold text-[#071b38] hover:border-[#6f8dff]">
+                        <div key={option.value} className="grid grid-cols-[minmax(0,1fr)_96px] items-center gap-2 border border-[#d6dce7] bg-[#f9fafc] px-3 py-2 font-semibold text-[#071b38] hover:border-[#6f8dff]">
+                          <label className="flex cursor-pointer items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={questionTypes.includes(option.value)}
+                              onChange={() => toggleQuestionType(option.value)}
+                            />
+                            {option.label}
+                          </label>
                           <input
-                            type="checkbox"
-                            checked={questionTypes.includes(option.value)}
-                            onChange={() => toggleQuestionType(option.value)}
+                            className="h-8 border border-[#d6dce7] bg-white px-2 text-right outline-none focus:border-[#6f8dff]"
+                            value={questionTypeCounts[option.value] || ""}
+                            onChange={(event) => updateQuestionTypeCount(option.value, event.target.value)}
+                            inputMode="numeric"
+                            placeholder="数量"
                           />
-                          {option.label}
-                        </label>
+                        </div>
                       ))}
                     </div>
-                    <p className="mt-2 text-xs text-slate-500">不选题型时默认参考全部题型。</p>
+                    <p className="mt-2 text-xs text-slate-500">题型数量可不填；填写后合计不能超过生成总数，未填的剩余题量由 AI 按所选题型补足。</p>
                   </div>
                   <div className="rounded-md border border-[#d8dee8] bg-[#f9fafc] p-3 text-xs leading-5 text-slate-600">
                     任务会提交到 14 AI 生题服务执行，71 只负责读取样题、转发任务和确认入库。
@@ -597,7 +850,7 @@ export function QuestionBankAiGenerationDialog({ selectedOwner, regions, referen
                   <button
                     className="primary-button inline-flex h-10 items-center justify-center gap-2 rounded-none disabled:cursor-not-allowed disabled:opacity-60"
                     type="button"
-                    disabled={isGenerating || referencePapers.length === 0}
+                    disabled={isGenerating || availableReferenceCount === 0}
                     onClick={generateQuestions}
                   >
                     {isGenerating ? <Loader2 className="animate-spin" size={16} /> : null}

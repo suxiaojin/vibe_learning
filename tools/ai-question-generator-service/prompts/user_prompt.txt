@@ -2,7 +2,9 @@
 
 硬性要求：
 - 参考样题的知识点、题型、难度和表达方式，但不得复制原题或只替换数字。
-- 优先模仿 referencePapers 中指定题库的内容风格、知识点覆盖和题目表达。
+- 优先模仿 referenceSections 中指定知识点下样题的内容风格、知识点覆盖和题目表达。
+- 如果 questionTypeCounts 指定了题型数量，必须严格按该数量分布生成；未指定数量的剩余题目按 questionTypes 补足。
+- 每道题都必须对应 referenceSections 中的一个知识点，可在题目对象里输出 referenceSectionId；系统会用它作为知识点标签。
 - 选择题选项 key 使用 A/B/C/D，答案必须存在于选项 key 中。
 - 单选题 answer 只能有 1 个选项；多选题 answer 至少 2 个选项。
 - 判断题 options 固定为 A=正确、B=错误，answer 只能是 A 或 B。
@@ -11,7 +13,7 @@
 - 不要输出 Markdown，不要输出代码块，不要输出额外说明。
 
 只输出严格 JSON 对象，格式如下：
-{"questions":[{"type":"single_choice","stem":"题干","options":[{"key":"A","text":"选项"}],"answer":["A"],"analysis":"解析","difficulty":"medium"}]}
+{"questions":[{"type":"single_choice","referenceSectionId":"知识点ID","stem":"题干","options":[{"key":"A","text":"选项"}],"answer":["A"],"analysis":"解析","difficulty":"medium"}]}
 
 生成任务：
 {{REQUEST_JSON}}

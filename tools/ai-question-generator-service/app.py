@@ -33,7 +33,8 @@ USER_PROMPT_PATH = Path(os.getenv("VIBE_AI_QUESTION_USER_PROMPT_PATH", str(PROMP
 TASKS: dict[str, dict[str, Any]] = {}
 TASK_LOCK = threading.Lock()
 
-QUESTION_TYPES = {"single_choice", "multiple_choice", "true_false", "fill_blank", "comprehensive"}
+QUESTION_TYPE_ORDER = ["single_choice", "multiple_choice", "true_false", "fill_blank", "comprehensive"]
+QUESTION_TYPES = set(QUESTION_TYPE_ORDER)
 DIFFICULTIES = {"easy", "medium", "hard"}
 QUESTION_TYPE_LABELS = {
     "single_choice": "单选",
@@ -174,7 +175,7 @@ def build_system_prompt() -> str:
 
 
 def build_user_prompt(meta: dict[str, Any], samples: list[dict[str, Any]]) -> str:
-    requested_types = meta.get("questionTypes") or ["single_choice", "multiple_choice", "true_false", "fill_blank", "comprehensive"]
+    requested_types = meta.get("questionTypes") or QUESTION_TYPE_ORDER
     type_text = "、".join(QUESTION_TYPE_LABELS.get(item, item) for item in requested_types)
     difficulty = str(meta.get("difficulty") or "medium")
     request_payload = {
@@ -183,9 +184,10 @@ def build_user_prompt(meta: dict[str, Any], samples: list[dict[str, Any]]) -> st
         "ownerName": meta.get("ownerName"),
         "regionName": meta.get("regionName"),
         "questionBankTitle": meta.get("title"),
-        "referencePapers": meta.get("referencePapers") or [],
+        "referenceSections": meta.get("referenceSections") or [],
         "count": meta.get("count"),
         "questionTypes": requested_types,
+        "questionTypeCounts": meta.get("questionTypeCounts") or {},
         "questionTypeLabels": type_text,
         "difficulty": difficulty,
         "difficultyLabel": DIFFICULTY_LABELS.get(difficulty, difficulty),
@@ -292,19 +294,85 @@ def choose_question_type(value: Any, requested_types: list[str]) -> str:
     return requested_types[0] if requested_types else "single_choice"
 
 
+def parse_question_type_counts(value: Any) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    counts: dict[str, int] = {}
+    for question_type in QUESTION_TYPE_ORDER:
+        try:
+            amount = int(value.get(question_type) or 0)
+        except (TypeError, ValueError):
+            amount = 0
+        if amount > 0:
+            counts[question_type] = amount
+    return counts
+
+
+def build_target_question_types(meta: dict[str, Any], expected_count: int) -> list[str]:
+    requested_types = [item for item in meta.get("questionTypes", []) if item in QUESTION_TYPES] or QUESTION_TYPE_ORDER
+    requested_type_set = set(requested_types)
+    question_type_counts = parse_question_type_counts(meta.get("questionTypeCounts"))
+    target_types: list[str] = []
+
+    for question_type in QUESTION_TYPE_ORDER:
+        amount = question_type_counts.get(question_type, 0)
+        if amount <= 0 or (requested_type_set and question_type not in requested_type_set):
+            continue
+        target_types.extend([question_type] * min(amount, max(0, expected_count - len(target_types))))
+        if len(target_types) >= expected_count:
+            return target_types
+
+    filler_types = requested_types or QUESTION_TYPE_ORDER
+    index = 0
+    while len(target_types) < expected_count:
+        target_types.append(filler_types[index % len(filler_types)])
+        index += 1
+    return target_types
+
+
+def build_target_reference_sections(meta: dict[str, Any], expected_count: int) -> list[dict[str, str]]:
+    raw_sections = meta.get("referenceSections") if isinstance(meta.get("referenceSections"), list) else []
+    sections: list[dict[str, str]] = []
+    for item in raw_sections:
+        if not isinstance(item, dict):
+            continue
+        section_id = normalize_text(item.get("id"))
+        if section_id:
+            sections.append(
+                {
+                    "id": section_id,
+                    "title": normalize_text(item.get("title")),
+                    "path": normalize_text(item.get("path")),
+                }
+            )
+
+    if not sections:
+        raw_ids = meta.get("referenceSectionIds") if isinstance(meta.get("referenceSectionIds"), list) else []
+        sections = [{"id": normalize_text(item), "title": "", "path": ""} for item in raw_ids if normalize_text(item)]
+
+    target_sections: list[dict[str, str]] = []
+    index = 0
+    while sections and len(target_sections) < expected_count:
+        target_sections.append(sections[index % len(sections)])
+        index += 1
+    return target_sections
+
+
 def sanitize_generated_question(
     item: Any,
     *,
     number: int,
     meta: dict[str, Any],
     sample_stems: list[str],
+    expected_type: str | None = None,
+    expected_section: dict[str, str] | None = None,
 ) -> tuple[dict[str, Any] | None, list[str]]:
     warnings: list[str] = []
     if not isinstance(item, dict):
         return None, [f"第 {number} 道生成结果不是对象，已丢弃。"]
 
     requested_types = [item for item in meta.get("questionTypes", []) if item in QUESTION_TYPES]
-    question_type = choose_question_type(item.get("type"), requested_types)
+    question_type = expected_type if expected_type in QUESTION_TYPES else choose_question_type(item.get("type"), requested_types)
     stem = normalize_text(item.get("stem"))
     analysis = normalize_text(item.get("analysis"))
     answer = sanitize_answer(item.get("answer"))
@@ -343,21 +411,24 @@ def sanitize_generated_question(
             warnings.append(f"第 {number} 题疑似照抄样题，请重点检查。")
             break
 
-    return (
-        {
-            "number": number,
-            "type": question_type,
-            "stem": stem,
-            "options": options,
-            "answer": answer,
-            "analysis": analysis,
-            "source": meta.get("sourceLabel") or "AI模拟真题",
-            "sourceType": "ai_generated",
-            "sourceYear": int(meta.get("year") or time.localtime().tm_year),
-            "difficulty": difficulty,
-        },
-        warnings,
-    )
+    question = {
+        "number": number,
+        "type": question_type,
+        "stem": stem,
+        "options": options,
+        "answer": answer,
+        "analysis": analysis,
+        "source": meta.get("sourceLabel") or "AI模拟真题",
+        "sourceType": "ai_generated",
+        "sourceYear": int(meta.get("year") or time.localtime().tm_year),
+        "difficulty": difficulty,
+    }
+    if expected_section and expected_section.get("id"):
+        question["syllabusItemId"] = expected_section["id"]
+        question["syllabusItemIds"] = [expected_section["id"]]
+        question["referenceSectionTitle"] = expected_section.get("title") or expected_section["id"]
+
+    return (question, warnings)
 
 
 def build_payload(meta: dict[str, Any], questions: list[dict[str, Any]]) -> dict[str, Any]:
@@ -422,12 +493,18 @@ def generate_questions(meta: dict[str, Any], task_id: str) -> dict[str, Any]:
     warnings: list[str] = parse_warnings
     questions: list[dict[str, Any]] = []
     expected_count = int(meta.get("count") or 10)
+    target_question_types = build_target_question_types(meta, expected_count)
+    target_reference_sections = build_target_reference_sections(meta, expected_count)
     for index, raw_question in enumerate(raw_questions[: expected_count + 5], start=1):
+        expected_type = target_question_types[len(questions)] if len(questions) < len(target_question_types) else None
+        expected_section = target_reference_sections[len(questions)] if len(questions) < len(target_reference_sections) else None
         question, question_warnings = sanitize_generated_question(
             raw_question,
             number=len(questions) + 1,
             meta=meta,
             sample_stems=sample_stems,
+            expected_type=expected_type,
+            expected_section=expected_section,
         )
         warnings.extend(question_warnings)
         if question:
@@ -451,7 +528,8 @@ def generate_questions(meta: dict[str, Any], task_id: str) -> dict[str, Any]:
             "model": meta.get("aiModel"),
             "sampleCount": len(samples),
             "generatedCount": len(questions),
-            "referencePapers": meta.get("referencePapers") or [],
+            "referenceSections": meta.get("referenceSections") or [],
+            "questionTypeCounts": meta.get("questionTypeCounts") or {},
             "promptPaths": {
                 "system": str(SYSTEM_PROMPT_PATH),
                 "user": str(USER_PROMPT_PATH),
@@ -526,7 +604,11 @@ async def create_generation_task(request: Request, background_tasks: BackgroundT
 
     question_types = body.get("questionTypes") if isinstance(body.get("questionTypes"), list) else []
     question_types = [str(item) for item in question_types if str(item) in QUESTION_TYPES]
-    count = max(1, min(20, int(body.get("count") or 10)))
+    count = max(1, min(50, int(body.get("count") or 10)))
+    question_type_counts = parse_question_type_counts(body.get("questionTypeCounts"))
+    if sum(question_type_counts.values()) > count:
+        raise HTTPException(status_code=400, detail="questionTypeCounts total must not exceed count")
+    question_types = list(dict.fromkeys([*question_types, *question_type_counts.keys()]))
     difficulty = str(body.get("difficulty") or "medium")
     if difficulty not in DIFFICULTIES:
         difficulty = "medium"
@@ -544,9 +626,11 @@ async def create_generation_task(request: Request, background_tasks: BackgroundT
         "year": int(body.get("year") or time.localtime().tm_year),
         "count": count,
         "questionTypes": question_types,
+        "questionTypeCounts": question_type_counts,
         "difficulty": difficulty,
         "sourceLabel": normalize_text(body.get("sourceLabel")) or "AI模拟真题",
-        "referencePapers": body.get("referencePapers") if isinstance(body.get("referencePapers"), list) else [],
+        "referenceSectionIds": body.get("referenceSectionIds") if isinstance(body.get("referenceSectionIds"), list) else [],
+        "referenceSections": body.get("referenceSections") if isinstance(body.get("referenceSections"), list) else [],
         "aiApiBaseUrl": ai_api_base_url,
         "aiApiKey": str(body.get("aiApiKey") or ""),
         "aiModel": ai_model,

@@ -36,6 +36,28 @@ type OwnerOption = {
   regions: RegionOption[];
 };
 
+type AiReferenceSyllabusItemRow = {
+  id: string;
+  parentId: string | null;
+  code: string | null;
+  title: string;
+  sortOrder: number;
+};
+
+type AiReferenceCourseRow = {
+  id: string;
+  name: string;
+  sortOrder: number;
+  syllabusItems: AiReferenceSyllabusItemRow[];
+};
+
+type AiReferencePaperQuestionRow = {
+  id: string;
+  question: {
+    knowledgeTags: Array<{ syllabusItemId: string }>;
+  };
+};
+
 const pageSize = 10;
 
 function isOwnerType(value?: string): value is QuestionBankOwnerType {
@@ -93,6 +115,86 @@ function visiblePages(totalPages: number, currentPage: number) {
   const count = Math.min(totalPages, 4);
   const start = Math.max(1, Math.min(currentPage - 1, totalPages - count + 1));
   return Array.from({ length: count }, (_, index) => start + index);
+}
+
+function sortSyllabusItems(items: AiReferenceSyllabusItemRow[]) {
+  return [...items].sort((left, right) => {
+    const codeCompare = (left.code || "").localeCompare(right.code || "", "zh-Hans-CN", { numeric: true });
+    return codeCompare || left.sortOrder - right.sortOrder || left.title.localeCompare(right.title, "zh-Hans-CN");
+  });
+}
+
+function buildAiReferenceKnowledgeTree(courses: AiReferenceCourseRow[], paperQuestions: AiReferencePaperQuestionRow[]) {
+  return courses.map((course) => {
+    const items = sortSyllabusItems(course.syllabusItems);
+    const childrenByParent = new Map<string | null, AiReferenceSyllabusItemRow[]>();
+    const sectionBySyllabusItem = new Map<string, string>();
+    const paperQuestionIdsBySection = new Map<string, Set<string>>();
+
+    items.forEach((item) => {
+      const children = childrenByParent.get(item.parentId) || [];
+      children.push(item);
+      childrenByParent.set(item.parentId, children);
+    });
+
+    function markDescendants(sectionId: string, itemId: string) {
+      sectionBySyllabusItem.set(itemId, sectionId);
+      (childrenByParent.get(itemId) || []).forEach((child) => markDescendants(sectionId, child.id));
+    }
+
+    (childrenByParent.get(null) || []).forEach((chapter) => {
+      (childrenByParent.get(chapter.id) || []).forEach((section) => markDescendants(section.id, section.id));
+    });
+
+    paperQuestions.forEach((paperQuestion) => {
+      const matchedSectionIds = new Set<string>();
+      paperQuestion.question.knowledgeTags.forEach((tag) => {
+        const sectionId = sectionBySyllabusItem.get(tag.syllabusItemId);
+        if (sectionId) {
+          matchedSectionIds.add(sectionId);
+        }
+      });
+      matchedSectionIds.forEach((sectionId) => {
+        const paperQuestionIds = paperQuestionIdsBySection.get(sectionId) || new Set<string>();
+        paperQuestionIds.add(paperQuestion.id);
+        paperQuestionIdsBySection.set(sectionId, paperQuestionIds);
+      });
+    });
+
+    function countForSections(sectionIds: string[]) {
+      const ids = new Set<string>();
+      sectionIds.forEach((sectionId) => {
+        (paperQuestionIdsBySection.get(sectionId) || new Set<string>()).forEach((id) => ids.add(id));
+      });
+      return ids.size;
+    }
+
+    const chapters = (childrenByParent.get(null) || []).map((chapter) => {
+      const sections = (childrenByParent.get(chapter.id) || []).map((section) => ({
+        id: section.id,
+        title: section.title,
+        path: `${course.name} - ${chapter.title} - ${section.title}`,
+        count: countForSections([section.id])
+      }));
+      const sectionIds = sections.map((section) => section.id);
+      return {
+        id: chapter.id,
+        title: chapter.title,
+        path: `${course.name} - ${chapter.title}`,
+        count: countForSections(sectionIds),
+        sections
+      };
+    });
+    const sectionIds = chapters.flatMap((chapter) => chapter.sections.map((section) => section.id));
+
+    return {
+      id: course.id,
+      title: course.name,
+      path: course.name,
+      count: countForSections(sectionIds),
+      chapters
+    };
+  });
 }
 
 export default async function QuestionBanksPage({
@@ -165,6 +267,70 @@ export default async function QuestionBanksPage({
       </main>
     );
   }
+
+  const aiReferenceKnowledgeTreeEntries = await Promise.all(
+    regionOptions.map(async (region) => {
+      const courseWhere = {
+        courseType: selectedOwner.type,
+        ...(selectedOwner.type === "public_subject" ? { publicSubjectId: selectedOwner.id } : { majorId: selectedOwner.id }),
+        regionId: region.id
+      };
+      const courses = await prisma.learningCourse.findMany({
+        where: courseWhere,
+        select: {
+          id: true,
+          name: true,
+          sortOrder: true,
+          syllabusItems: {
+            select: {
+              id: true,
+              parentId: true,
+              code: true,
+              title: true,
+              sortOrder: true
+            },
+            orderBy: [{ parentId: "asc" }, { sortOrder: "asc" }, { code: "asc" }]
+          }
+        },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+      });
+      const syllabusItemIds = courses.flatMap((course) => course.syllabusItems.map((item) => item.id));
+      const paperQuestions = syllabusItemIds.length
+        ? await prisma.examPaperQuestion.findMany({
+            where: {
+              paper: {
+                course: courseWhere
+              },
+              question: {
+                knowledgeTags: {
+                  some: {
+                    syllabusItemId: { in: syllabusItemIds }
+                  }
+                }
+              }
+            },
+            select: {
+              id: true,
+              question: {
+                select: {
+                  knowledgeTags: {
+                    where: {
+                      syllabusItemId: { in: syllabusItemIds }
+                    },
+                    select: {
+                      syllabusItemId: true
+                    }
+                  }
+                }
+              }
+            }
+          })
+        : [];
+
+      return [region.id, buildAiReferenceKnowledgeTree(courses, paperQuestions)] as const;
+    })
+  );
+  const aiReferenceKnowledgeTreesByRegion = Object.fromEntries(aiReferenceKnowledgeTreeEntries);
 
   const paperWhere = {
     course: {
@@ -284,7 +450,7 @@ export default async function QuestionBanksPage({
               <QuestionBankAiGenerationDialog
                 selectedOwner={{ type: selectedOwner.type, id: selectedOwner.id, name: selectedOwner.name, regions: selectedOwner.regions }}
                 regions={regions}
-                referencePapers={selectedPaperNames.map((paper) => ({ id: paper.id, title: paper.title, questionCount: paper._count.questions }))}
+                knowledgeTreesByRegion={aiReferenceKnowledgeTreesByRegion}
               />
             </div>
 
