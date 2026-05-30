@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { PointerEventHandler, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -996,6 +996,8 @@ function ReadonlyQuestionPreview({ question }: { question: QuestionRow }) {
 
 export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, questionTypes, knowledgeTree, questions }: QuestionBankDetailWorkbenchProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const focusedQuestionId = searchParams.get("question");
   const [activeEditorType, setActiveEditorType] = useState<ActiveEditorType>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [orderedQuestions, setOrderedQuestions] = useState(questions);
@@ -1007,6 +1009,7 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
   const [knowledgeTagUpdatingId, setKnowledgeTagUpdatingId] = useState("");
   const [knowledgeTagMessage, setKnowledgeTagMessage] = useState("");
   const draggedQuestionIdRef = useRef("");
+  const focusedQuestionIdRef = useRef("");
   const orderInputRef = useRef<HTMLInputElement | null>(null);
   const reorderFormRef = useRef<HTMLFormElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -1043,6 +1046,24 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
   useEffect(() => {
     setOrderedQuestions(questions);
   }, [questions]);
+
+  useEffect(() => {
+    const hashQuestionId = typeof window === "undefined" ? "" : window.location.hash.replace(/^#paper-question-/, "");
+    const targetQuestionId = focusedQuestionId || hashQuestionId;
+    if (!targetQuestionId || focusedQuestionIdRef.current === targetQuestionId) {
+      return;
+    }
+    if (!orderedQuestions.some((question) => question.id === targetQuestionId)) {
+      return;
+    }
+
+    focusedQuestionIdRef.current = targetQuestionId;
+    setActiveEditorType(null);
+    setSelectedQuestionId(targetQuestionId);
+    window.requestAnimationFrame(() => {
+      document.getElementById(`paper-question-${targetQuestionId}`)?.scrollIntoView({ block: "center" });
+    });
+  }, [focusedQuestionId, orderedQuestions]);
 
   useEffect(() => {
     if (searchOpen) {
