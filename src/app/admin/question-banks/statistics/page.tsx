@@ -835,7 +835,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
             ownerKey={ownerKey(selectedOwner)}
           />
 
-          <section className="min-h-0 overflow-hidden rounded-lg border border-[#d8e0ec] bg-white shadow-sm">
+          <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-[#d8e0ec] bg-white shadow-sm">
             <div className="flex min-h-16 items-center justify-between border-b border-[#e2e8f0] px-5 py-3">
               <div>
                 <p className="text-xs font-bold text-[#64748b]">{selectedScope?.path || "请选择知识点"}</p>
@@ -844,7 +844,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
               <span className={cn("rounded-full border px-3 py-1 text-xs font-black", selectedStatus.className)}>{selectedStatus.label}</span>
             </div>
 
-            <div className="grid gap-4 p-5">
+            <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
               <div className="grid grid-cols-4 gap-3">
                 <MetricCard label="题库题目数" value={selectedStats.total} icon={<BarChart3 size={15} />} tone="blue" />
                 <MetricCard label="去重题目数" value={selectedStats.uniqueQuestionIds.size} icon={<CheckCircle2 size={15} />} tone="green" />
@@ -908,7 +908,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                 </div>
               ) : null}
 
-              <div className="min-h-0 overflow-auto rounded-lg border border-[#e2e8f0]">
+              <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-[#e2e8f0]">
                 <table className="w-full min-w-[980px] border-collapse text-left text-sm">
                   <thead className="sticky top-0 bg-[#f1f5f9] text-xs text-[#334155]">
                     <tr className="h-10">
