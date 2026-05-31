@@ -11,8 +11,14 @@ type Question = {
   type: QuestionBankEditableQuestionType;
   stem: string;
   options: unknown;
-  answer: unknown;
+  answer?: unknown;
   source: string;
+  questionBank?: {
+    id: string;
+    title: string;
+    year: number | null;
+    paperType: string;
+  } | null;
 };
 
 type Option = {
@@ -39,7 +45,8 @@ const text = {
   continue: "\u7ee7\u7eed",
   correct: "\u7b54\u5bf9\u4e86\uff01",
   wrong: "\u8fd9\u9898\u7b54\u9519\u4e86",
-  rightAnswer: "\u6b63\u786e\u7b54\u6848\uff1a"
+  rightAnswer: "\u6b63\u786e\u7b54\u6848\uff1a",
+  source: "\u9898\u5e93\uff1a"
 };
 
 function coerceOptions(options: unknown): Option[] {
@@ -72,7 +79,7 @@ function answerText(answer: unknown) {
   return normalizeAnswer(answer).join("\u3001");
 }
 
-export function QuizRunner({ pointId, questions }: { pointId: string; questions: Question[] }) {
+export function QuizRunner({ sectionId, questions }: { sectionId: string; questions: Question[] }) {
   const router = useRouter();
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -89,6 +96,7 @@ export function QuizRunner({ pointId, questions }: { pointId: string; questions:
 
   const options = useMemo(() => coerceOptions(current?.options), [current]);
   const questionTypeLabel = current ? questionTypeText(current.type) : "";
+  const sourceTitle = current?.questionBank?.title || current?.source || "";
 
   function toggleAnswer(question: Question, key: string) {
     if (checkState !== "idle") {
@@ -128,7 +136,7 @@ export function QuizRunner({ pointId, questions }: { pointId: string; questions:
     const response = await fetch("/api/progress/submit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pointId, answers })
+      body: JSON.stringify({ sectionId, answers })
     });
     const payload = await response.json();
     const resultPath = payload.data?.resultPath || payload.resultPath;
@@ -179,8 +187,13 @@ export function QuizRunner({ pointId, questions }: { pointId: string; questions:
       </div>
 
       <article className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center overflow-y-auto px-5 py-5">
-        <p className="text-sm font-black text-[#b76cff]">
-          {text.question} {currentIndex + 1} / {questions.length} · {questionTypeLabel}
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-black text-[#b76cff]">
+          <span>{text.question} {currentIndex + 1} / {questions.length} · {questionTypeLabel}</span>
+          {sourceTitle ? (
+            <span className="max-w-full truncate rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-500" title={sourceTitle}>
+              {text.source}{sourceTitle}
+            </span>
+          ) : null}
         </p>
         <h3 className="mt-3 text-2xl font-black leading-snug text-ink">{current.stem}</h3>
 

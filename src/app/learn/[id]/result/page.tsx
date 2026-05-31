@@ -1,9 +1,11 @@
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { CheckCircle2, Flame, Gem, RotateCcw, Trophy, XCircle } from "lucide-react";
+import { redirect } from "next/navigation";
 import { WrongQuestionAi } from "@/components/wrong-question-ai";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getNextSyllabusSectionForStudent, getSyllabusSectionForStudent } from "@/lib/syllabus-learning";
 
 type Option = {
   key: string;
@@ -49,32 +51,27 @@ export default async function QuizResultPage({
 }) {
   const [{ id }, query, user] = await Promise.all([params, searchParams, requireUser()]);
   const wrongAttemptIds = (query?.attemptIds || "").split(",").filter(Boolean);
-  const [point, wrongAttempts, allPoints] = await Promise.all([
-    prisma.knowledgePoint.findUnique({
-      where: { id },
-      include: { chapter: true }
-    }),
+  const [access, wrongAttempts, nextSection] = await Promise.all([
+    getSyllabusSectionForStudent(user.id, id),
     wrongAttemptIds.length
       ? prisma.questionAttempt.findMany({
           where: {
             id: { in: wrongAttemptIds },
             userId: user.id,
-            isCorrect: false,
-            question: { knowledgePointId: id }
+            isCorrect: false
           },
           include: {
             question: true
           },
           orderBy: { createdAt: "asc" }
         })
-      : []
-    ,
-    prisma.knowledgePoint.findMany({
-      where: { status: "published", chapter: { status: "published", subject: { status: "published" } } },
-      include: { chapter: true },
-      orderBy: [{ chapter: { sortOrder: "asc" } }, { sortOrder: "asc" }]
-    })
+      : [],
+    getNextSyllabusSectionForStudent(user.id, id)
   ]);
+
+  if (!access) {
+    redirect("/learn");
+  }
 
   const submittedAt = query?.submittedAt ? new Date(query.submittedAt) : wrongAttempts[0]?.createdAt ?? new Date();
   const score = Number(query?.score || 0);
@@ -83,8 +80,6 @@ export default async function QuizResultPage({
   const scorePercent = total ? Math.round((correct / total) * 100) : score;
   const passed = score >= 80;
   const xp = correct * 10;
-  const currentIndex = allPoints.findIndex((item) => item.id === id);
-  const nextPoint = currentIndex >= 0 ? allPoints[currentIndex + 1] : null;
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
@@ -92,7 +87,7 @@ export default async function QuizResultPage({
         <div className={passed ? "bg-[#58cc02] p-6 text-white" : "bg-coral p-6 text-white"}>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-sm font-black text-white/80">{point?.chapter.title || "章节"} / {point?.title || "知识点"}</p>
+              <p className="text-sm font-black text-white/80">{access.course.title} / {access.chapter.title} / {access.section.title}</p>
               <h1 className="mt-2 text-4xl font-black">{passed ? "闯关成功" : "还差一点"}</h1>
               <p className="mt-2 text-sm font-semibold text-white/90">做题日期：{formatDate(submittedAt)}</p>
             </div>
@@ -116,12 +111,12 @@ export default async function QuizResultPage({
             {passed ? "下一关已经为你准备好了，继续保持节奏。" : "达到 80 分即可解锁下一关，先把错题吃透再挑战。"}
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
-            {passed && nextPoint ? (
-              <Link className="primary-button bg-[#58cc02] hover:bg-[#58cc02]/90" href={`/learn/${nextPoint.id}`}>继续下一关</Link>
+            {passed && nextSection ? (
+              <Link className="primary-button bg-[#58cc02] hover:bg-[#58cc02]/90" href={`/learn/${nextSection.section.id}`}>继续下一关</Link>
             ) : (
               <Link className="primary-button bg-[#58cc02] hover:bg-[#58cc02]/90" href={`/learn/${id}`}>再练一次</Link>
             )}
-            <Link className="secondary-button" href="/learn">返回学习路线</Link>
+            <Link className="secondary-button" href={`/learn?course=${access.group.key}&chapter=${access.chapter.id}`}>返回学习路线</Link>
             {wrongAttempts.length > 0 ? <Link className="secondary-button" href="/wrong-book">查看错题本</Link> : null}
           </div>
         </div>

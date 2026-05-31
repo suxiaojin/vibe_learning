@@ -1,40 +1,24 @@
 import { redirect } from "next/navigation";
 import { QuizRunner } from "@/components/quiz-runner";
 import { requireUser } from "@/lib/auth";
-import { canAccessKnowledgePoint } from "@/lib/learning";
-import { prisma } from "@/lib/prisma";
+import { getSyllabusSectionQuestionsForStudent } from "@/lib/syllabus-learning";
 
-export default async function PointPage({
+export default async function SectionQuizPage({
   params
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
   const user = await requireUser();
-  const canAccess = await canAccessKnowledgePoint(user.id, id);
-  if (!canAccess) {
-    redirect("/learn");
-  }
+  const result = await getSyllabusSectionQuestionsForStudent(user.id, id, true);
 
-  const point = await prisma.knowledgePoint.findUnique({
-    where: { id: id },
-    include: {
-      chapter: true,
-      questions: {
-        where: { status: "published" },
-        orderBy: { createdAt: "asc" },
-        select: { id: true, type: true, stem: true, options: true, answer: true, source: true, sourceType: true, sourceYear: true }
-      }
-    }
-  });
-
-  if (!point) {
+  if (!result) {
     redirect("/learn");
   }
 
   return (
     <main className="h-dvh overflow-hidden bg-white">
-      <QuizRunner pointId={point.id} questions={point.questions} />
+      <QuizRunner sectionId={result.section.id} questions={result.questions} />
     </main>
   );
 }

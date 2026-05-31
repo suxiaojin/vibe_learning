@@ -24,6 +24,11 @@ type CourseSwitcherProps = {
 };
 
 type LearningPathProps = {
+  course: {
+    id: string;
+    title: string;
+    courseType: "public_subject" | "major";
+  };
   chapter: {
     id: string;
     title: string;
@@ -37,14 +42,12 @@ const text = {
   back: "\u8fd4\u56de",
   guide: "\u6307\u5357",
   myCourses: "\u6211\u7684\u8bfe\u7a0b",
-  part: "\u7b2c",
-  section: "\u90e8\u5206",
   passed: "\u5df2\u901a\u8fc7",
   start: "\u5f00\u59cb",
   questions: "\u9898"
 } as const;
 
-export function LearningPath({ chapter }: LearningPathProps) {
+export function LearningPath({ course, chapter }: LearningPathProps) {
   const firstActivePoint = useMemo(
     () => chapter.points.find((point) => point.status !== "locked") || chapter.points[0],
     [chapter.points]
@@ -87,15 +90,15 @@ export function LearningPath({ chapter }: LearningPathProps) {
 
   return (
     <div className="mx-auto max-w-2xl pb-24">
-      <section className="sticky top-6 z-20">
+      <section className="sticky top-0 z-30 -mx-5 bg-mist/95 px-5 pb-4 pt-6 backdrop-blur">
         <div className="rounded-2xl bg-[#58cc02] p-4 text-white shadow-[0_8px_0_rgba(69,160,0,0.22)]">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <Link className="mb-1 inline-flex items-center gap-2 text-sm font-black text-white/80 hover:text-white" href="/learn/stages">
+              <Link className="mb-1 inline-flex max-w-full items-center gap-2 text-sm font-black text-white/80 hover:text-white" href={`/learn/stages?course=${course.courseType}`}>
                 <ArrowLeft size={18} />
-                {text.part} {chapter.sortOrder} {text.section} / {chapter.title}
+                <span className="min-w-0 truncate">{course.title} / {chapter.title}</span>
               </Link>
-              <h1 className="truncate text-2xl font-black">{activePoint?.title || chapter.title}</h1>
+              <h1 className="max-w-full break-words text-2xl font-black leading-tight">{activePoint?.title || chapter.title}</h1>
             </div>
             {activePoint ? (
               <Link
@@ -114,7 +117,7 @@ export function LearningPath({ chapter }: LearningPathProps) {
         <div className="mb-8 flex items-center gap-4 text-slate-400">
           <div className="h-px flex-1 bg-slate-200" />
           <div className="text-center">
-            <p className="text-xs font-black uppercase tracking-wide">{text.part} {chapter.sortOrder} {text.section}</p>
+            <p className="text-xs font-black uppercase text-slate-400">{course.title}</p>
             <h2 className="mt-1 text-lg font-black text-slate-500">{chapter.title}</h2>
             <p className="mt-1 text-xs font-semibold">{chapter.passedCount}/{chapter.points.length} {text.passed}</p>
           </div>
@@ -161,7 +164,6 @@ export function LearningPath({ chapter }: LearningPathProps) {
 }
 
 export function LearningCourseSwitcher({ activeCourseId, courses }: CourseSwitcherProps) {
-  const [open, setOpen] = useState(false);
   const activeCourse = courses.find((course) => course.id === activeCourseId) || courses[0] || null;
 
   if (!activeCourse) {
@@ -169,20 +171,19 @@ export function LearningCourseSwitcher({ activeCourseId, courses }: CourseSwitch
   }
 
   return (
-    <div className="relative">
+    <div className="group relative">
       <button
-        aria-expanded={open}
         aria-haspopup="menu"
-        className="inline-flex min-h-14 max-w-48 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:text-sky-600"
+        className="inline-flex min-h-14 w-44 max-w-full items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:text-sky-600"
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        title={activeCourse.name}
       >
         <span className="min-w-0 truncate">{activeCourse.name}</span>
-        <ChevronDown className={cn("shrink-0 transition", open && "rotate-180")} size={18} />
+        <ChevronDown className="shrink-0 transition group-hover:rotate-180 group-focus-within:rotate-180" size={18} />
       </button>
 
-      {open ? (
-        <div className="absolute right-0 top-full z-50 mt-2 w-72 overflow-hidden rounded-2xl border border-slate-200 bg-white text-ink shadow-[0_12px_32px_rgba(15,23,42,0.2)]">
+      <div className="invisible absolute left-0 top-full z-50 w-64 pt-2 opacity-0 transition duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white text-ink shadow-[0_12px_32px_rgba(15,23,42,0.2)]">
           <div className="border-b border-slate-200 px-5 py-3">
             <p className="text-sm font-black text-slate-500">{text.myCourses}</p>
           </div>
@@ -197,7 +198,6 @@ export function LearningCourseSwitcher({ activeCourseId, courses }: CourseSwitch
                     active && "bg-sky-50 text-sky-600"
                   )}
                   href={`/learn?course=${encodeURIComponent(course.id)}`}
-                  onClick={() => setOpen(false)}
                 >
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-black">{course.name}</span>
@@ -208,7 +208,7 @@ export function LearningCourseSwitcher({ activeCourseId, courses }: CourseSwitch
             })}
           </div>
         </div>
-      ) : null}
+      </div>
     </div>
   );
 }

@@ -122,6 +122,7 @@ model User {
   wrongQuestions  WrongQuestion[]
   aiConversations AiConversation[]
   studyStats      StudyStat[]
+  syllabusProgress UserSyllabusProgress[]
 
   @@index([role, status, createdAt])
   @@map("users")
@@ -282,6 +283,7 @@ model SyllabusItem {
   parent          SyllabusItem?        @relation("SyllabusItemChildren", fields: [parentId], references: [id], onDelete: Cascade)
   children        SyllabusItem[]       @relation("SyllabusItemChildren")
   knowledgePoints KnowledgePoint[]
+  progress        UserSyllabusProgress[]
   questions       Question[]
   questionTags    QuestionKnowledgeTag[]
   createdAt       DateTime             @default(now())
@@ -444,6 +446,23 @@ model UserProgress {
 
   @@unique([userId, knowledgePointId])
   @@map("user_progress")
+}
+
+model UserSyllabusProgress {
+  id             String         @id @default(cuid())
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  syllabusItemId String
+  syllabusItem   SyllabusItem   @relation(fields: [syllabusItemId], references: [id], onDelete: Cascade)
+  status         ProgressStatus @default(locked)
+  bestScore      Int            @default(0)
+  passedAt       DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([userId, syllabusItemId])
+  @@index([syllabusItemId])
+  @@map("user_syllabus_progress")
 }
 
 model QuestionAttempt {

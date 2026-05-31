@@ -450,7 +450,13 @@ Query 参数：
         "source": "2024年江苏专转本《计算机理论》",
         "sourceType": "ai_generated",
         "sourceYear": 2024,
-        "difficulty": "medium"
+        "difficulty": "medium",
+        "questionBank": {
+          "id": "paper_id",
+          "title": "2024年江苏专转本《计算机理论》真题",
+          "year": 2024,
+          "paperType": "real_exam"
+        }
       }
     ]
   }
@@ -463,6 +469,10 @@ Query 参数：
 | --- | --- | --- |
 | 401 | `UNAUTHORIZED` | 未登录 |
 | 404 | `SYLLABUS_SECTION_NOT_FOUND` | 节不存在、未发布、不属于当前学生画像或尚未解锁 |
+
+说明：
+
+- `questionBank` 来自题目和题库/试卷的关联记录；如果题目尚未关联题库，则为 `null`。
 
 ### GET `/api/learning/courses/{courseId}`
 
