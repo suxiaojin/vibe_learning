@@ -17,6 +17,20 @@ enum UserStatus {
   disabled
 }
 
+enum StudentGender {
+  male
+  female
+}
+
+enum DiamondTransactionType {
+  register_bonus
+  daily_active_bonus
+  daily_answer_bonus
+  purchase
+  admin_adjust
+  ai_consumption
+}
+
 enum ContentStatus {
   draft
   published
@@ -123,6 +137,8 @@ model User {
   aiConversations AiConversation[]
   studyStats      StudyStat[]
   syllabusProgress UserSyllabusProgress[]
+  diamondAccount  DiamondAccount?
+  diamondTransactions DiamondTransaction[]
 
   @@index([role, status, createdAt])
   @@map("users")
@@ -231,6 +247,11 @@ model StudentProfile {
   regionId        String?
   publicSubjectId String?
   majorId         String?
+  nickname        String?
+  avatarColor     String         @default("green")
+  avatarImage     String?
+  gender          StudentGender?
+  school          String?
   user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   region          Region?        @relation(fields: [regionId], references: [id], onDelete: SetNull)
   publicSubject   PublicSubject? @relation(fields: [publicSubjectId], references: [id], onDelete: SetNull)
@@ -520,4 +541,37 @@ model StudyStat {
 
   @@unique([userId, date])
   @@map("study_stats")
+}
+
+model DiamondAccount {
+  id           String               @id @default(cuid())
+  userId       String               @unique
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance      Int                  @default(0)
+  transactions DiamondTransaction[]
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  @@map("diamond_accounts")
+}
+
+model DiamondTransaction {
+  id           String                 @id @default(cuid())
+  userId       String
+  accountId    String
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account      DiamondAccount         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  type         DiamondTransactionType
+  amount       Int
+  balanceAfter Int
+  occurredOn   DateTime               @db.Date
+  dedupeKey    String?                @unique
+  note         String?
+  metadata     Json?
+  createdAt    DateTime               @default(now())
+
+  @@index([userId, createdAt])
+  @@index([accountId, createdAt])
+  @@index([type, occurredOn])
+  @@map("diamond_transactions")
 }

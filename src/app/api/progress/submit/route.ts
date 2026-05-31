@@ -56,12 +56,12 @@ export async function POST(request: Request) {
   const passed = score >= 80;
 
   const newlyPassed = await recordSyllabusSectionProgress(user.id, body.sectionId, score, passed);
-  await bumpStudyStat(user.id, {
+  const diamondRewards = await bumpStudyStat(user.id, {
     questionsAnswered: total,
     pointsPassed: newlyPassed ? 1 : 0,
     studySeconds: 60
   });
 
   const resultPath = `/learn/${body.sectionId}/result?attemptIds=${wrongAttemptIds.join(",")}&score=${score}&correct=${correct}&total=${total}&submittedAt=${encodeURIComponent(submittedAt.toISOString())}`;
-  return apiOk({ score, passed, correct, total, wrongAttemptIds, resultPath });
+  return apiOk({ score, passed, correct, total, wrongAttemptIds, diamondRewards, resultPath });
 }

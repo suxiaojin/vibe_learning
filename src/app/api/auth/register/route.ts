@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { createSession } from "@/lib/auth";
+import { grantRegisterDiamondBonus } from "@/lib/rewards";
 
 function redirectTo(request: Request, path: string) {
   const origin = request.headers.get("origin") || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
@@ -22,12 +23,22 @@ export async function POST(request: Request) {
     return redirectTo(request, "/register?error=Username%20already%20exists");
   }
 
-  const user = await prisma.user.create({
-    data: {
-      username,
-      passwordHash: await bcrypt.hash(password, 12),
-      role: "student"
-    }
+  const user = await prisma.$transaction(async (tx) => {
+    const created = await tx.user.create({
+      data: {
+        username,
+        passwordHash: await bcrypt.hash(password, 12),
+        role: "student",
+        studentProfile: {
+          create: {
+            nickname: username
+          }
+        }
+      }
+    });
+
+    await grantRegisterDiamondBonus(tx, created.id);
+    return created;
   });
   await createSession(user);
 

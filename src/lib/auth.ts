@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { SignJWT, jwtVerify } from "jose";
 import type { UserRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { recordDailyActiveDiamondBonus } from "@/lib/rewards";
 
 const cookieName = "vl_session";
 
@@ -67,6 +68,14 @@ export async function getCurrentUser() {
 
     if (user?.status === "disabled") {
       return null;
+    }
+
+    if (user?.role === "student") {
+      try {
+        await recordDailyActiveDiamondBonus(user.id);
+      } catch (error) {
+        console.error("Failed to record daily active diamond bonus", error);
+      }
     }
 
     return user;

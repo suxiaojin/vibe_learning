@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { getStudentFoundationProfileStatus } from "@/lib/foundation";
 import { prisma } from "@/lib/prisma";
+import { getBeijingDate, grantDailyAnswerDiamondBonuses } from "@/lib/rewards";
 
 export function normalizeAnswer(value: unknown) {
   const array = Array.isArray(value) ? value : [value];
@@ -167,13 +168,13 @@ export async function bumpStudyStat(
   userId: string,
   data: { questionsAnswered?: number; pointsPassed?: number; studySeconds?: number }
 ) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = getBeijingDate();
+  const questionsAnswered = data.questionsAnswered ?? 0;
 
-  await prisma.studyStat.upsert({
+  const stat = await prisma.studyStat.upsert({
     where: { userId_date: { userId, date: today } },
     update: {
-      questionsAnswered: { increment: data.questionsAnswered ?? 0 },
+      questionsAnswered: { increment: questionsAnswered },
       pointsPassed: { increment: data.pointsPassed ?? 0 },
       studySeconds: { increment: data.studySeconds ?? 0 }
     },
@@ -185,6 +186,20 @@ export async function bumpStudyStat(
       studySeconds: data.studySeconds ?? 0
     }
   });
+
+  if (questionsAnswered <= 0) {
+    return [];
+  }
+
+  const previousQuestions = Math.max(0, stat.questionsAnswered - questionsAnswered);
+  const previousStep = Math.floor(previousQuestions / 10);
+  const currentStep = Math.floor(stat.questionsAnswered / 10);
+
+  if (currentStep <= previousStep) {
+    return [];
+  }
+
+  return grantDailyAnswerDiamondBonuses(userId, today, previousStep + 1, currentStep);
 }
 
 export function parseJsonField(value: FormDataEntryValue | null, fallback: Prisma.InputJsonValue) {
