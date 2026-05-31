@@ -411,9 +411,15 @@ Query 参数：
 
 ### GET `/api/learning/sections/{sectionId}/questions`
 
-获取当前登录学生可访问的某个节下的已发布题目。该接口不返回答案和解析。
+按序号获取当前登录学生可访问的某个节下的一道题。该接口不返回答案和解析，也不会一次性返回后续题目，避免学生通过页面源码提前看到整关题目。
 
 认证：需要登录。
+
+Query 参数：
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `index` | number | 否 | 从 0 开始的题目序号；不传时默认为 0 |
 
 成功返回：
 
@@ -436,29 +442,29 @@ Query 参数：
       "questionCount": 11,
       "status": "unlocked"
     },
-    "questions": [
-      {
-        "id": "question_id",
-        "type": "single_choice",
-        "stem": "题干",
-        "options": [
-          {
-            "key": "A",
-            "text": "选项 A"
-          }
-        ],
-        "source": "2024年江苏专转本《计算机理论》",
-        "sourceType": "ai_generated",
-        "sourceYear": 2024,
-        "difficulty": "medium",
-        "questionBank": {
-          "id": "paper_id",
-          "title": "2024年江苏专转本《计算机理论》真题",
-          "year": 2024,
-          "paperType": "real_exam"
+    "index": 0,
+    "total": 11,
+    "question": {
+      "id": "question_id",
+      "type": "single_choice",
+      "stem": "题干",
+      "options": [
+        {
+          "key": "A",
+          "text": "选项 A"
         }
+      ],
+      "source": "2024年江苏专转本《计算机理论》",
+      "sourceType": "ai_generated",
+      "sourceYear": 2024,
+      "difficulty": "medium",
+      "questionBank": {
+        "id": "paper_id",
+        "title": "2024年江苏专转本《计算机理论》真题",
+        "year": 2024,
+        "paperType": "real_exam"
       }
-    ]
+    }
   }
 }
 ```
@@ -469,10 +475,47 @@ Query 参数：
 | --- | --- | --- |
 | 401 | `UNAUTHORIZED` | 未登录 |
 | 404 | `SYLLABUS_SECTION_NOT_FOUND` | 节不存在、未发布、不属于当前学生画像或尚未解锁 |
+| 404 | `SYLLABUS_SECTION_QUESTION_NOT_FOUND` | 指定序号的题目不存在 |
 
 说明：
 
 - `questionBank` 来自题目和题库/试卷的关联记录；如果题目尚未关联题库，则为 `null`。
+
+### POST `/api/learning/sections/{sectionId}/questions/check`
+
+校验当前题目的作答结果，用于答题页即时反馈。该接口只校验请求里的单道题，不创建答题记录；整关正式记录仍由 `POST /api/progress/submit` 完成。
+
+认证：需要登录。
+
+请求体：
+
+```json
+{
+  "questionId": "question_id",
+  "answer": ["A"]
+}
+```
+
+成功返回：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "questionId": "question_id",
+    "correct": false,
+    "correctAnswer": ["B"]
+  }
+}
+```
+
+错误返回：
+
+| HTTP 状态 | code | 说明 |
+| --- | --- | --- |
+| 401 | `UNAUTHORIZED` | 未登录 |
+| 400 | `INVALID_QUESTION_CHECK` | 请求体缺少 `questionId` 或 `answer` |
+| 404 | `SYLLABUS_SECTION_QUESTION_NOT_FOUND` | 题目不存在、不属于该节或该节不可访问 |
 
 ### GET `/api/learning/courses/{courseId}`
 

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { QuizRunner } from "@/components/quiz-runner";
 import { requireUser } from "@/lib/auth";
-import { getSyllabusSectionQuestionsForStudent } from "@/lib/syllabus-learning";
+import { getSyllabusSectionForStudent } from "@/lib/syllabus-learning";
 
 export default async function SectionQuizPage({
   params
@@ -10,15 +10,15 @@ export default async function SectionQuizPage({
 }) {
   const { id } = await params;
   const user = await requireUser();
-  const result = await getSyllabusSectionQuestionsForStudent(user.id, id, true);
+  const access = await getSyllabusSectionForStudent(user.id, id);
 
-  if (!result) {
+  if (!access || access.locked) {
     redirect("/learn");
   }
 
   return (
     <main className="h-dvh overflow-hidden bg-white">
-      <QuizRunner sectionId={result.section.id} questions={result.questions} />
+      <QuizRunner sectionId={access.section.id} initialTotal={access.section.questionCount} />
     </main>
   );
 }

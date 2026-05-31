@@ -55,10 +55,10 @@ export async function POST(request: Request) {
   const score = total === 0 ? 0 : Math.round((correct / total) * 100);
   const passed = score >= 80;
 
-  await recordSyllabusSectionProgress(user.id, body.sectionId, score, passed);
+  const newlyPassed = await recordSyllabusSectionProgress(user.id, body.sectionId, score, passed);
   await bumpStudyStat(user.id, {
     questionsAnswered: total,
-    pointsPassed: passed ? 1 : 0,
+    pointsPassed: newlyPassed ? 1 : 0,
     studySeconds: 60
   });
 

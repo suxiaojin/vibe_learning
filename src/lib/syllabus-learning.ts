@@ -232,6 +232,19 @@ function buildGroups(
 
     const sectionIds: string[] = [];
     let groupSectionIndex = 0;
+    let previousSectionStatus: SyllabusPathStatus | null = null;
+
+    function resolvedSectionStatus(sectionId: string) {
+      const progress = progressBySectionId.get(sectionId);
+      if (progress?.status === "passed" || progress?.status === "unlocked") {
+        return progress.status;
+      }
+      if (groupSectionIndex === 0 || previousSectionStatus === "passed") {
+        return "unlocked";
+      }
+      return "locked";
+    }
+
     const pathCourses = courseList.map((course) => {
       const roots = (shape.childrenByParentId.get(null) || []).filter((item) => item.courseId === course.id);
       const chapters = roots
@@ -241,18 +254,20 @@ function buildGroups(
 
           if (rootQuestionCount > 0) {
             const progress = progressBySectionId.get(root.id);
+            const status = resolvedSectionStatus(root.id);
             sections.push({
               id: root.id,
               title: root.title,
               description: root.description,
               sortOrder: root.sortOrder,
               questionCount: rootQuestionCount,
-              status: progress?.status || (groupSectionIndex === 0 ? "unlocked" : "locked"),
+              status,
               bestScore: progress?.bestScore || 0,
               passedAt: progress?.passedAt || null,
               questionSyllabusItemIds: questionScopeForSection(root, shape)
             });
             sectionIds.push(root.id);
+            previousSectionStatus = status;
             groupSectionIndex += 1;
           }
 
@@ -262,18 +277,20 @@ function buildGroups(
               continue;
             }
             const progress = progressBySectionId.get(child.id);
+            const status = resolvedSectionStatus(child.id);
             sections.push({
               id: child.id,
               title: child.title,
               description: child.description,
               sortOrder: child.sortOrder,
               questionCount,
-              status: progress?.status || (groupSectionIndex === 0 ? "unlocked" : "locked"),
+              status,
               bestScore: progress?.bestScore || 0,
               passedAt: progress?.passedAt || null,
               questionSyllabusItemIds: questionScopeForSection(child, shape)
             });
             sectionIds.push(child.id);
+            previousSectionStatus = status;
             groupSectionIndex += 1;
           }
 
@@ -308,61 +325,6 @@ function buildGroups(
   }
 
   return groups;
-}
-
-async function syncSyllabusProgress(userId: string, sectionIds: string[]) {
-  const uniqueSectionIds = Array.from(new Set(sectionIds));
-  if (uniqueSectionIds.length === 0) {
-    return;
-  }
-
-  const existing = await prisma.userSyllabusProgress.findMany({
-    where: { userId, syllabusItemId: { in: uniqueSectionIds } },
-    select: { syllabusItemId: true, status: true }
-  });
-  const existingBySectionId = new Map(existing.map((item) => [item.syllabusItemId, item.status as SyllabusPathStatus]));
-  const idsToUnlock = new Set<string>();
-
-  const firstSectionId = uniqueSectionIds[0];
-  if (existingBySectionId.get(firstSectionId) !== "passed") {
-    idsToUnlock.add(firstSectionId);
-  }
-
-  for (const [index, sectionId] of uniqueSectionIds.entries()) {
-    if (existingBySectionId.get(sectionId) !== "passed") {
-      continue;
-    }
-    const nextSectionId = uniqueSectionIds[index + 1];
-    if (nextSectionId && existingBySectionId.get(nextSectionId) !== "passed") {
-      idsToUnlock.add(nextSectionId);
-    }
-  }
-
-  await Promise.all(
-    uniqueSectionIds.map((sectionId) => {
-      const currentStatus = existingBySectionId.get(sectionId);
-      const shouldUnlock = idsToUnlock.has(sectionId);
-
-      if (!currentStatus) {
-        return prisma.userSyllabusProgress.create({
-          data: {
-            userId,
-            syllabusItemId: sectionId,
-            status: shouldUnlock ? "unlocked" : "locked"
-          }
-        });
-      }
-
-      if (shouldUnlock && currentStatus === "locked") {
-        return prisma.userSyllabusProgress.update({
-          where: { userId_syllabusItemId: { userId, syllabusItemId: sectionId } },
-          data: { status: "unlocked" }
-        });
-      }
-
-      return Promise.resolve(null);
-    })
-  );
 }
 
 export async function getStudentLearningPath(userId: string, requestedCourseType?: string | null) {
@@ -414,8 +376,6 @@ export async function getStudentLearningPath(userId: string, requestedCourseType
   const shape = buildSyllabusShape(typedCourses);
   const questionIdsBySectionId = await getQuestionCountsByDisplaySection(shape);
   const groupsBeforeSync = buildGroups(typedCourses, profile, shape, questionIdsBySectionId, new Map());
-
-  await Promise.all(groupsBeforeSync.map((group) => syncSyllabusProgress(userId, group.sectionIds)));
 
   const allSectionIds = Array.from(new Set(groupsBeforeSync.flatMap((group) => group.sectionIds)));
   const progress = allSectionIds.length
@@ -560,6 +520,54 @@ export async function getSyllabusSectionQuestionsForStudent(userId: string, sect
   };
 }
 
+export async function getSyllabusSectionQuestionForStudent(userId: string, sectionId: string, index: number) {
+  const result = await getSyllabusSectionQuestionsForStudent(userId, sectionId);
+  if (!result) {
+    return null;
+  }
+
+  const safeIndex = Number.isInteger(index) && index >= 0 ? index : 0;
+  return {
+    course: result.course,
+    chapter: result.chapter,
+    section: result.section,
+    index: safeIndex,
+    total: result.questions.length,
+    question: result.questions[safeIndex] || null
+  };
+}
+
+export async function checkSyllabusSectionQuestionAnswer(
+  userId: string,
+  sectionId: string,
+  questionId: string,
+  selectedAnswer: unknown
+) {
+  const result = await getSyllabusSectionQuestionsForStudent(userId, sectionId, true);
+  if (!result) {
+    return null;
+  }
+
+  const question = result.questions.find((item) => item.id === questionId);
+  if (!question || !("answer" in question)) {
+    return null;
+  }
+
+  return {
+    questionId: question.id,
+    correct: JSON.stringify(normalizeAnswerForCheck(selectedAnswer)) === JSON.stringify(normalizeAnswerForCheck(question.answer)),
+    correctAnswer: question.answer
+  };
+}
+
+function normalizeAnswerForCheck(value: unknown) {
+  const array = Array.isArray(value) ? value : [value];
+  return array
+    .map((item) => String(item).trim())
+    .filter(Boolean)
+    .sort();
+}
+
 export async function recordSyllabusSectionProgress(userId: string, sectionId: string, score: number, passed: boolean) {
   const current = await prisma.userSyllabusProgress.findUnique({
     where: { userId_syllabusItemId: { userId, syllabusItemId: sectionId } },
@@ -585,6 +593,8 @@ export async function recordSyllabusSectionProgress(userId: string, sectionId: s
   if (passed) {
     await unlockNextSyllabusSection(userId, sectionId);
   }
+
+  return passed && current?.status !== "passed";
 }
 
 export async function unlockNextSyllabusSection(userId: string, currentSectionId: string) {

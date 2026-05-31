@@ -49,7 +49,10 @@ const text = {
 
 export function LearningPath({ course, chapter }: LearningPathProps) {
   const firstActivePoint = useMemo(
-    () => chapter.points.find((point) => point.status !== "locked") || chapter.points[0],
+    () =>
+      chapter.points.find((point) => point.status === "unlocked") ||
+      chapter.points.find((point) => point.status !== "locked") ||
+      chapter.points[0],
     [chapter.points]
   );
   const [activePointId, setActivePointId] = useState(firstActivePoint?.id || "");
