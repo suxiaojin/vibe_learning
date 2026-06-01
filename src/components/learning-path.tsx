@@ -139,7 +139,12 @@ export function LearningPath({ course, chapter }: LearningPathProps) {
                   className={cn("group relative flex flex-col items-center text-center", locked && "cursor-not-allowed")}
                 >
                   {point.status === "unlocked" ? (
-                    <span className="mb-2 rounded-xl border-2 border-slate-200 bg-white px-4 py-1 text-sm font-black text-[#58cc02] shadow-sm">{text.start}</span>
+                    <span
+                      className="mb-3 animate-bounce rounded-2xl border-2 border-slate-200 bg-white px-5 py-2 text-base font-black text-[#ff9600] shadow-[0_4px_0_rgba(148,163,184,0.28)]"
+                      style={{ animationDuration: "1.8s" }}
+                    >
+                      {text.start}
+                    </span>
                   ) : null}
                   <span
                     className={cn(

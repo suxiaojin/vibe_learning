@@ -33,11 +33,7 @@ export default async function CourseCenterPage() {
         <div className="mx-auto w-full max-w-5xl">
           <div className="mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-6">
             <div>
-              <p className="text-sm font-black text-sky-500">Vibe Learning</p>
-              <h1 className="mt-2 text-3xl font-black text-ink">课程中心</h1>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-500 shadow-sm">
-              {user.username}
+              <h1 className="text-3xl font-black text-ink">课程中心</h1>
             </div>
           </div>
 

@@ -1,7 +1,8 @@
 import bcrypt from "bcryptjs";
-import { CalendarDays, CheckCircle2, Gem, KeyRound, Medal, Pencil, School, Upload, UserRound } from "lucide-react";
+import { CheckCircle2, Crown, Gem, KeyRound, Medal, Pencil, School, Trophy, UserRound } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { AvatarUploadForm } from "@/components/avatar-upload-form";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -35,6 +36,7 @@ export default async function MePage({
 }) {
   const user = await requireUser();
   const query = await searchParams;
+  const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const [fullUser, account, transactions, totalAttempts] = await Promise.all([
     prisma.user.findUnique({
       where: { id: user.id },
@@ -42,9 +44,9 @@ export default async function MePage({
     }),
     ensureDiamondAccount(user.id),
     prisma.diamondTransaction.findMany({
-      where: { userId: user.id },
+      where: { userId: user.id, createdAt: { gte: oneWeekAgo } },
       orderBy: { createdAt: "desc" },
-      take: 20
+      take: 100
     }),
     prisma.questionAttempt.count({ where: { userId: user.id } })
   ]);
@@ -72,27 +74,24 @@ export default async function MePage({
 
       <section className="min-w-0 px-5 py-8 lg:px-8">
         <div className="mx-auto max-w-6xl space-y-6">
-          <header className="flex flex-wrap items-center justify-between gap-6 border-b border-slate-200 bg-white px-6 py-6">
-            <div>
-              <p className="text-sm font-black text-teal">个人档案</p>
-              <h1 className="mt-2 text-3xl font-black text-ink">{nickname}</h1>
-              <p className="mt-2 text-sm font-semibold text-slate-500">用户名：{fullUser.username}</p>
-              <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-slate-500">
-                <CalendarDays size={18} />
-                {joinedAt} 加入
-              </p>
+          <header className="border-b border-slate-200 bg-white px-6 py-6">
+            <div className="flex items-center gap-5">
+              <Avatar name={nickname} color={avatarColor} image={avatarImage} size="header" />
+              <div className="min-w-0">
+                <div className="flex min-w-0 items-center gap-3">
+                  <h1 className="truncate text-3xl font-black text-ink">{nickname}</h1>
+                  <CurrentMedalBadge gender={fullUser.studentProfile?.gender || ""} level={currentMedal.level} label={currentMedal.label} />
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-semibold text-slate-500">
+                  <span className="whitespace-nowrap">用户名：{fullUser.username}</span>
+                  <span className="text-slate-300">|</span>
+                  <span className="whitespace-nowrap">{joinedAt} 加入</span>
+                </div>
+              </div>
             </div>
-            <Avatar name={nickname} color={avatarColor} image={avatarImage} size="lg" />
           </header>
 
-          <Message
-            type={query?.profile}
-            successText="资料已保存"
-            errors={{
-              avatar_size: "头像文件不能超过 800KB",
-              avatar_type: "头像只支持 JPG、PNG 或 WebP"
-            }}
-          />
+          <Message type={query?.profile} successText="资料已保存" />
           <Message type={query?.password} successText="密码已更新" />
 
           <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
@@ -101,6 +100,7 @@ export default async function MePage({
               nickname={nickname}
               avatarColor={avatarColor}
               avatarImage={avatarImage}
+              profileStatus={query?.profile}
               gender={fullUser.studentProfile?.gender || ""}
               school={fullUser.studentProfile?.school || ""}
             />
@@ -112,7 +112,7 @@ export default async function MePage({
             <DiamondRulesPanel />
           </section>
 
-          <MedalTrack currentMedal={currentMedal.label} totalAttempts={totalAttempts} />
+          <MedalTrack currentMedal={currentMedal.label} gender={fullUser.studentProfile?.gender || ""} totalAttempts={totalAttempts} />
         </div>
       </section>
     </main>
@@ -124,6 +124,7 @@ function ProfilePanel({
   nickname,
   avatarColor,
   avatarImage,
+  profileStatus,
   gender,
   school
 }: {
@@ -131,9 +132,17 @@ function ProfilePanel({
   nickname: string;
   avatarColor: string;
   avatarImage: string;
+  profileStatus?: string;
   gender: string;
   school: string;
 }) {
+  const avatarError =
+    profileStatus === "avatar_size"
+      ? "上传失败，大小不超过 800KB"
+      : profileStatus === "avatar_type"
+        ? "上传失败，仅支持 JPG、PNG、WebP"
+        : null;
+
   return (
     <section className="panel">
       <div className="flex items-center gap-3">
@@ -141,36 +150,14 @@ function ProfilePanel({
         <h2 className="text-xl font-black text-ink">我的信息</h2>
       </div>
 
-      <form action={updateProfile} className="mt-5 space-y-5" encType="multipart/form-data">
-        <div className="grid gap-5 md:grid-cols-[140px_minmax(0,1fr)]">
-          <div>
-            <span className="label">头像</span>
-            <Avatar name={nickname} color={avatarColor} image={avatarImage} size="md" />
-          </div>
-          <div>
-            <label>
-              <span className="label">上传头像</span>
-              <span className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 text-sm font-bold text-slate-600 transition hover:border-teal hover:text-teal">
-                <Upload size={18} />
-                选择图片
-                <input className="sr-only" name="avatarImage" type="file" accept="image/png,image/jpeg,image/webp" />
-              </span>
-            </label>
-            <p className="mt-2 text-xs font-semibold leading-5 text-slate-400">支持 JPG、PNG、WebP，大小不超过 800KB。</p>
-            <div className="mt-3">
-              <span className="label">默认头像颜色</span>
-              <div className="flex flex-wrap gap-3">
-                {avatarColors.map((color) => (
-                  <label key={color.key} className="cursor-pointer">
-                    <input className="peer sr-only" name="avatarColor" type="radio" value={color.key} defaultChecked={avatarColor === color.key} />
-                    <span className={cn("block size-10 rounded-full border-4 border-white shadow ring-1 ring-slate-200 peer-checked:ring-2 peer-checked:ring-teal", color.className)} />
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
+      <div className="mt-5">
+        <span className="label">头像</span>
+        <AvatarUploadForm action={updateAvatar} errorText={avatarError}>
+          <Avatar name={nickname} color={avatarColor} image={avatarImage} size="md" />
+        </AvatarUploadForm>
+      </div>
 
+      <form action={updateProfile} className="mt-5 space-y-5">
         <div className="grid gap-4 md:grid-cols-2">
           <label>
             <span className="label">昵称</span>
@@ -340,7 +327,7 @@ function DiamondRulesPanel() {
   );
 }
 
-function MedalTrack({ currentMedal, totalAttempts }: { currentMedal: string; totalAttempts: number }) {
+function MedalTrack({ currentMedal, gender, totalAttempts }: { currentMedal: string; gender: string; totalAttempts: number }) {
   const expertTarget = medalRules.find((rule) => rule.level === "expert")?.minAttempts || 400;
   const scholarTarget = medalRules.find((rule) => rule.level === "scholar")?.minAttempts || 600;
   const nextRule = medalRules.find((rule) => rule.minAttempts > totalAttempts);
@@ -353,10 +340,11 @@ function MedalTrack({ currentMedal, totalAttempts }: { currentMedal: string; tot
         : (totalAttempts / expertTarget) * 50;
   const progressPercent = Math.max(0, Math.min(100, progress));
   const nodes = [
-    { label: "小白", threshold: 0, position: 0 },
-    { label: "达人", threshold: expertTarget, position: 50 },
-    { label: "学霸", threshold: scholarTarget, position: 100 }
+    { label: "小白", threshold: 0, position: 0, icon: Medal },
+    { label: "达人", threshold: expertTarget, position: 50, icon: Trophy },
+    { label: "学霸", threshold: scholarTarget, position: 100, icon: Crown }
   ];
+  const medalColor = gender === "female" ? "bg-pink-500" : "bg-sky-500";
 
   return (
     <section className="panel">
@@ -376,11 +364,12 @@ function MedalTrack({ currentMedal, totalAttempts }: { currentMedal: string; tot
 
           {nodes.map((node) => {
             const reached = totalAttempts >= node.threshold;
+            const Icon = node.icon;
             return (
               <div key={node.label} className="absolute top-0 z-10 w-28" style={{ left: `calc(12px + (100% - 24px) * ${node.position / 100})`, transform: nodeTransform(node.position) }}>
                 <p className="mb-5 text-center text-sm font-black text-ink">{node.label}</p>
-                <span className={cn("mx-auto grid size-11 place-items-center rounded-full border-4 border-white shadow-soft", reached ? "bg-teal text-white" : "bg-slate-200 text-slate-400")}>
-                  <Medal size={22} />
+                <span className={cn("mx-auto grid size-11 place-items-center rounded-full border-4 border-white shadow-soft", reached ? `${medalColor} text-white` : "bg-slate-200 text-slate-400")}>
+                  <Icon size={22} />
                 </span>
                 <p className="mt-3 text-center text-xs font-black text-slate-400">{node.threshold === 0 ? "默认" : `${node.threshold} 道`}</p>
               </div>
@@ -407,6 +396,21 @@ function nodeTransform(position: number) {
   return "translateX(-50%)";
 }
 
+function CurrentMedalBadge({ gender, level, label }: { gender: string; level: string; label: string }) {
+  const Icon = level === "scholar" ? Crown : level === "expert" ? Trophy : Medal;
+  const colorClass = gender === "female" ? "bg-pink-500 text-white ring-pink-100" : "bg-sky-500 text-white ring-sky-100";
+
+  return (
+    <span
+      aria-label={`${label}勋章`}
+      className={cn("inline-grid size-8 shrink-0 place-items-center rounded-full ring-4 shadow-sm", colorClass)}
+      title={`${label}勋章`}
+    >
+      <Icon size={17} />
+    </span>
+  );
+}
+
 function Message({ type, successText, errors = {} }: { type?: string; successText: string; errors?: Record<string, string> }) {
   if (type !== "updated") {
     const errorText = type ? errors[type] : null;
@@ -421,9 +425,14 @@ function Message({ type, successText, errors = {} }: { type?: string; successTex
   );
 }
 
-function Avatar({ name, color, image, size }: { name: string; color: string; image?: string; size: "md" | "lg" }) {
+function Avatar({ name, color, image, size }: { name: string; color: string; image?: string; size: "header" | "md" | "lg" }) {
   const colorClass = avatarColors.find((item) => item.key === color)?.className || avatarColors[0].className;
-  const sizeClass = size === "lg" ? "size-28 text-5xl font-black" : "size-24 text-4xl font-black";
+  const sizeClass =
+    size === "lg"
+      ? "size-28 text-5xl font-black"
+      : size === "header"
+        ? "size-20 text-3xl font-black"
+        : "size-24 text-4xl font-black";
 
   if (image) {
     return (
@@ -465,31 +474,47 @@ async function updateProfile(formData: FormData) {
   const user = await requireUser();
   const nicknameInput = String(formData.get("nickname") || "").trim();
   const nickname = nicknameInput.slice(0, 30) || user.username;
-  const avatarColorInput = String(formData.get("avatarColor") || "green");
-  const avatarColor = avatarColors.some((item) => item.key === avatarColorInput) ? avatarColorInput : "green";
   const genderInput = String(formData.get("gender") || "");
   const gender = genderInput === "male" || genderInput === "female" ? genderInput : null;
   const schoolInput = String(formData.get("school") || "").trim();
   const school = schoolInput ? schoolInput.slice(0, 80) : null;
-  const avatarFile = formData.get("avatarImage");
-  const avatarImage = await readAvatarImage(avatarFile);
 
   await prisma.studentProfile.upsert({
     where: { userId: user.id },
     update: {
       nickname,
-      avatarColor,
-      ...(avatarImage ? { avatarImage } : {}),
       gender,
       school
     },
     create: {
       userId: user.id,
       nickname,
-      avatarColor,
-      avatarImage,
       gender,
       school
+    }
+  });
+
+  revalidatePath("/me");
+  redirect("/me?profile=updated");
+}
+
+async function updateAvatar(formData: FormData) {
+  "use server";
+
+  const user = await requireUser();
+  const avatarImage = await readAvatarImage(formData.get("avatarImage"));
+
+  if (!avatarImage) {
+    redirect("/me");
+  }
+
+  await prisma.studentProfile.upsert({
+    where: { userId: user.id },
+    update: { avatarImage },
+    create: {
+      userId: user.id,
+      nickname: user.username,
+      avatarImage
     }
   });
 
