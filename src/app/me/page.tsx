@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import bcrypt from "bcryptjs";
 import { CheckCircle2, Crown, Gem, KeyRound, Medal, Pencil, School, Trophy, UserRound } from "lucide-react";
 import { revalidatePath } from "next/cache";
@@ -19,6 +20,22 @@ const avatarColors = [
 
 const avatarMaxBytes = 800 * 1024;
 const allowedAvatarTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+const meSectionClass = "rounded-2xl border border-slate-200/70 bg-transparent shadow-none";
+const dayMs = 24 * 60 * 60 * 1000;
+const heatmapWeekCount = 26;
+const chinaDateFormatter = new Intl.DateTimeFormat("en-US", {
+  day: "2-digit",
+  month: "2-digit",
+  timeZone: "Asia/Shanghai",
+  year: "numeric"
+});
+const heatmapLevelClasses = [
+  "border-slate-200 bg-slate-100",
+  "border-emerald-100 bg-emerald-100",
+  "border-emerald-200 bg-emerald-300",
+  "border-emerald-500 bg-emerald-500",
+  "border-emerald-700 bg-emerald-700"
+];
 
 const transactionLabels: Record<string, string> = {
   register_bonus: "注册赠送",
@@ -37,7 +54,8 @@ export default async function MePage({
   const user = await requireUser();
   const query = await searchParams;
   const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  const [fullUser, account, transactions, totalAttempts] = await Promise.all([
+  const heatmapStart = new Date(Date.now() - (heatmapWeekCount * 7 + 7) * dayMs);
+  const [fullUser, account, transactions, totalAttempts, recentAttempts] = await Promise.all([
     prisma.user.findUnique({
       where: { id: user.id },
       include: { studentProfile: true }
@@ -48,7 +66,11 @@ export default async function MePage({
       orderBy: { createdAt: "desc" },
       take: 100
     }),
-    prisma.questionAttempt.count({ where: { userId: user.id } })
+    prisma.questionAttempt.count({ where: { userId: user.id } }),
+    prisma.questionAttempt.findMany({
+      where: { userId: user.id, createdAt: { gte: heatmapStart } },
+      select: { createdAt: true }
+    })
   ]);
 
   if (!fullUser) {
@@ -62,6 +84,7 @@ export default async function MePage({
   const avatarImage = fullUser.studentProfile?.avatarImage || "";
   const medalLevel = getMedalLevel(totalAttempts);
   const currentMedal = getMedalRule(medalLevel);
+  const dailyAttempts = summarizeDailyAttempts(recentAttempts);
   const joinedAt = fullUser.createdAt.toLocaleDateString("zh-CN", {
     year: "numeric",
     month: "long",
@@ -107,15 +130,39 @@ export default async function MePage({
             <PasswordPanel status={query?.password} />
           </section>
 
-          <section className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_320px]">
-            <DiamondPanel balance={account.balance} transactions={transactions} />
-            <DiamondRulesPanel />
-          </section>
+          <DiamondPanel balance={account.balance} transactions={transactions} />
 
-          <MedalTrack currentMedal={currentMedal.label} gender={fullUser.studentProfile?.gender || ""} totalAttempts={totalAttempts} />
+          <MedalTrack
+            currentMedal={currentMedal.label}
+            dailyAttempts={dailyAttempts}
+            gender={fullUser.studentProfile?.gender || ""}
+            totalAttempts={totalAttempts}
+          />
         </div>
       </section>
     </main>
+  );
+}
+
+function SectionFrame({
+  bodyClassName,
+  children,
+  icon,
+  title
+}: {
+  bodyClassName?: string;
+  children: ReactNode;
+  icon: ReactNode;
+  title: string;
+}) {
+  return (
+    <section className={meSectionClass}>
+      <div className="flex items-center gap-3 border-b border-slate-200/80 px-5 py-4">
+        {icon}
+        <h2 className="text-lg font-black text-ink">{title}</h2>
+      </div>
+      <div className={cn("p-5", bodyClassName)}>{children}</div>
+    </section>
   );
 }
 
@@ -144,13 +191,8 @@ function ProfilePanel({
         : null;
 
   return (
-    <section className="panel">
-      <div className="flex items-center gap-3">
-        <UserRound className="text-teal" size={24} />
-        <h2 className="text-xl font-black text-ink">我的信息</h2>
-      </div>
-
-      <div className="mt-5">
+    <SectionFrame icon={<UserRound className="text-teal" size={22} />} title="我的信息">
+      <div>
         <span className="label">头像</span>
         <AvatarUploadForm action={updateAvatar} errorText={avatarError}>
           <Avatar name={nickname} color={avatarColor} image={avatarImage} size="md" />
@@ -202,7 +244,7 @@ function ProfilePanel({
           保存资料
         </button>
       </form>
-    </section>
+    </SectionFrame>
   );
 }
 
@@ -217,11 +259,7 @@ function PasswordPanel({ status }: { status?: string }) {
           : null;
 
   return (
-    <section className="panel">
-      <div className="flex items-center gap-3">
-        <KeyRound className="text-teal" size={24} />
-        <h2 className="text-xl font-black text-ink">修改密码</h2>
-      </div>
+    <SectionFrame icon={<KeyRound className="text-teal" size={22} />} title="修改密码">
       {errorText ? <p className="mt-4 rounded-xl bg-coral/10 px-4 py-3 text-sm font-semibold text-coral">{errorText}</p> : null}
       <form action={changePassword} className="mt-5 space-y-4">
         <label>
@@ -240,7 +278,7 @@ function PasswordPanel({ status }: { status?: string }) {
           更新密码
         </button>
       </form>
-    </section>
+    </SectionFrame>
   );
 }
 
@@ -259,12 +297,8 @@ function DiamondPanel({
   }>;
 }) {
   return (
-    <section className="panel">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Gem className="text-sky-500" size={26} />
-          <h2 className="text-xl font-black text-ink">我的钻石</h2>
-        </div>
+    <SectionFrame icon={<Gem className="text-sky-500" size={22} />} title="我的钻石">
+      <div className="flex flex-wrap items-center justify-end gap-4">
         <div className="rounded-2xl bg-sky-50 px-5 py-3 text-right">
           <p className="text-xs font-black text-sky-500">钻石余额</p>
           <p className="mt-1 text-3xl font-black text-sky-600">{balance}</p>
@@ -306,28 +340,21 @@ function DiamondPanel({
           </tbody>
         </table>
       </div>
-    </section>
+    </SectionFrame>
   );
 }
 
-function DiamondRulesPanel() {
-  return (
-    <aside className="panel">
-      <h2 className="text-xl font-black text-ink">钻石有什么用</h2>
-      <p className="mt-3 text-sm font-semibold leading-6 text-slate-600">钻石可用于站内 AI 提问、AI 解答等功能。</p>
-
-      <h3 className="mt-6 text-lg font-black text-ink">钻石如何获得</h3>
-      <ul className="mt-3 space-y-3 text-sm font-semibold leading-6 text-slate-600">
-        <li>注册获得 100 钻石。</li>
-        <li>每日首次访问按勋章发放：小白 +10、达人 +15、学霸 +20。</li>
-        <li>每日答题每达到 10 道发放 5 钻石，可重复触发阶梯奖励。</li>
-        <li>购买功能暂未开放，后续按 1 钻石 = 1 元人民币。</li>
-      </ul>
-    </aside>
-  );
-}
-
-function MedalTrack({ currentMedal, gender, totalAttempts }: { currentMedal: string; gender: string; totalAttempts: number }) {
+function MedalTrack({
+  currentMedal,
+  dailyAttempts,
+  gender,
+  totalAttempts
+}: {
+  currentMedal: string;
+  dailyAttempts: Record<string, number>;
+  gender: string;
+  totalAttempts: number;
+}) {
   const expertTarget = medalRules.find((rule) => rule.level === "expert")?.minAttempts || 400;
   const scholarTarget = medalRules.find((rule) => rule.level === "scholar")?.minAttempts || 600;
   const nextRule = medalRules.find((rule) => rule.minAttempts > totalAttempts);
@@ -347,42 +374,51 @@ function MedalTrack({ currentMedal, gender, totalAttempts }: { currentMedal: str
   const medalColor = gender === "female" ? "bg-pink-500" : "bg-sky-500";
 
   return (
-    <section className="panel">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="text-sm font-black text-teal">我的勋章</p>
-          <h2 className="mt-1 text-2xl font-black text-ink">{currentMedal}</h2>
+    <SectionFrame icon={<Medal className="text-teal" size={22} />} title="我的勋章">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,520px)_minmax(320px,1fr)] xl:items-start">
+        <div className="min-w-0">
+          <h3 className="text-xl font-black text-ink">{currentMedal}</h3>
+          <div className="mt-4 rounded-2xl border border-slate-200/70 bg-transparent px-4 py-5">
+            <div className="relative w-full max-w-[520px] px-2 pb-14 pt-8 text-xs">
+              <div className="absolute left-2 right-2 top-[62px] h-1.5 rounded-full bg-slate-200" />
+              <div className="absolute left-2 top-[62px] h-1.5 rounded-full bg-honey" style={{ width: `calc((100% - 16px) * ${progressPercent / 100})` }} />
+              <div className="absolute top-[57px] z-20 size-4 rounded-full border-2 border-white bg-teal shadow-soft" style={{ left: `calc(8px + (100% - 16px) * ${progressPercent / 100})`, transform: "translateX(-50%)" }} />
+
+              {nodes.map((node) => {
+                const reached = totalAttempts >= node.threshold;
+                const Icon = node.icon;
+                return (
+                  <div key={node.label} className="absolute top-0 z-10 w-20" style={{ left: `calc(8px + (100% - 16px) * ${node.position / 100})`, transform: nodeTransform(node.position) }}>
+                    <p className="mb-4 text-center text-xs font-black text-ink">{node.label}</p>
+                    <span className={cn("mx-auto grid size-9 place-items-center rounded-full border-2 border-white shadow-soft", reached ? `${medalColor} text-white` : "bg-slate-200 text-slate-400")}>
+                      <Icon size={18} />
+                    </span>
+                    <p className="mt-2 text-center text-[11px] font-black text-slate-400">{node.threshold === 0 ? "默认" : `${node.threshold} 道`}</p>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-200/70 pt-3 text-xs font-semibold">
+              <span className="text-slate-500">
+                当前进度：<strong className="text-sky-600">{totalAttempts}</strong> 道
+              </span>
+              <span className="text-slate-500">
+                {nextRule ? (
+                  <>
+                    距离{nextRule.label}还差 <strong className="text-coral">{remaining}</strong> 道题
+                  </>
+                ) : (
+                  <strong className="text-teal">已获得最高勋章</strong>
+                )}
+              </span>
+            </div>
+          </div>
         </div>
-        <span className="badge bg-sky-50 text-sky-600">累计答题 {totalAttempts} 次</span>
+
+        <AnswerHeatmap dailyAttempts={dailyAttempts} />
       </div>
-
-      <div className="mt-6 rounded-2xl border border-slate-200 bg-white px-5 py-6">
-        <div className="relative mx-auto max-w-3xl px-3 pb-16 pt-10">
-          <div className="absolute left-3 right-3 top-[78px] h-2 rounded-full bg-slate-200" />
-          <div className="absolute left-3 top-[78px] h-2 rounded-full bg-honey" style={{ width: `calc((100% - 24px) * ${progressPercent / 100})` }} />
-          <div className="absolute top-[70px] z-20 size-6 rounded-full border-4 border-white bg-teal shadow-soft" style={{ left: `calc(12px + (100% - 24px) * ${progressPercent / 100})`, transform: "translateX(-50%)" }} />
-
-          {nodes.map((node) => {
-            const reached = totalAttempts >= node.threshold;
-            const Icon = node.icon;
-            return (
-              <div key={node.label} className="absolute top-0 z-10 w-28" style={{ left: `calc(12px + (100% - 24px) * ${node.position / 100})`, transform: nodeTransform(node.position) }}>
-                <p className="mb-5 text-center text-sm font-black text-ink">{node.label}</p>
-                <span className={cn("mx-auto grid size-11 place-items-center rounded-full border-4 border-white shadow-soft", reached ? `${medalColor} text-white` : "bg-slate-200 text-slate-400")}>
-                  <Icon size={22} />
-                </span>
-                <p className="mt-3 text-center text-xs font-black text-slate-400">{node.threshold === 0 ? "默认" : `${node.threshold} 道`}</p>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4 text-sm font-semibold">
-          <span className="text-slate-500">当前进度：{totalAttempts} 道</span>
-          <span className="text-teal">{nextRule ? `距离${nextRule.label}还差 ${remaining} 道题` : "已获得最高勋章"}</span>
-        </div>
-      </div>
-    </section>
+    </SectionFrame>
   );
 }
 
@@ -394,6 +430,122 @@ function nodeTransform(position: number) {
     return "translateX(-100%)";
   }
   return "translateX(-50%)";
+}
+
+function AnswerHeatmap({ dailyAttempts }: { dailyAttempts: Record<string, number> }) {
+  const weeks = buildHeatmapWeeks(dailyAttempts);
+  const todayCount = dailyAttempts[getChinaDateKey(new Date())] || 0;
+
+  return (
+    <div className="min-w-0 rounded-2xl border border-slate-200/70 bg-transparent px-4 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-black text-ink">答题活跃度</h3>
+        <span className="text-xs font-semibold text-slate-500">今天 {todayCount} 道</span>
+      </div>
+
+      <div className="mt-4 overflow-x-auto pb-1">
+        <div className="grid min-w-max grid-cols-[1.5rem_auto] gap-2">
+          <div className="grid grid-rows-7 gap-1 text-right text-[10px] font-semibold leading-3 text-slate-400">
+            {["", "一", "", "三", "", "五", ""].map((label, index) => (
+              <span key={`${label}-${index}`} className="h-3">
+                {label}
+              </span>
+            ))}
+          </div>
+          <div className="flex gap-1">
+            {weeks.map((week, weekIndex) => (
+              <div key={weekIndex} className="grid grid-rows-7 gap-1">
+                {week.map((day) => (
+                  <span
+                    key={day.key}
+                    aria-label={`${day.key} 答题 ${day.count} 道`}
+                    className={cn(
+                      "block size-3 rounded-[3px] border",
+                      day.future ? "border-transparent bg-transparent" : heatmapLevelClasses[day.level]
+                    )}
+                    title={`${day.key}：${day.count} 道`}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-center justify-end gap-1 text-[11px] font-semibold text-slate-400">
+        <span>少</span>
+        {heatmapLevelClasses.map((levelClass) => (
+          <span key={levelClass} className={cn("size-3 rounded-[3px] border", levelClass)} />
+        ))}
+        <span>多</span>
+      </div>
+    </div>
+  );
+}
+
+function summarizeDailyAttempts(attempts: Array<{ createdAt: Date }>) {
+  return attempts.reduce<Record<string, number>>((result, attempt) => {
+    const key = getChinaDateKey(attempt.createdAt);
+    result[key] = (result[key] || 0) + 1;
+    return result;
+  }, {});
+}
+
+function buildHeatmapWeeks(dailyAttempts: Record<string, number>) {
+  const today = parseDateKey(getChinaDateKey(new Date()));
+  const gridEnd = new Date(today.getTime() + (6 - today.getUTCDay()) * dayMs);
+  const gridStart = new Date(gridEnd.getTime() - (heatmapWeekCount * 7 - 1) * dayMs);
+
+  return Array.from({ length: heatmapWeekCount }, (_, weekIndex) =>
+    Array.from({ length: 7 }, (_, dayIndex) => {
+      const date = new Date(gridStart.getTime() + (weekIndex * 7 + dayIndex) * dayMs);
+      const key = formatDateKey(date);
+      const future = date.getTime() > today.getTime();
+      const count = future ? 0 : dailyAttempts[key] || 0;
+      return {
+        count,
+        future,
+        key,
+        level: getHeatmapLevel(count)
+      };
+    })
+  );
+}
+
+function getHeatmapLevel(count: number) {
+  if (count >= 30) {
+    return 4;
+  }
+  if (count >= 20) {
+    return 3;
+  }
+  if (count >= 10) {
+    return 2;
+  }
+  if (count >= 1) {
+    return 1;
+  }
+  return 0;
+}
+
+function getChinaDateKey(date: Date) {
+  const parts = chinaDateFormatter.formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value || "1970";
+  const month = parts.find((part) => part.type === "month")?.value || "01";
+  const day = parts.find((part) => part.type === "day")?.value || "01";
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateKey(key: string) {
+  const [year, month, day] = key.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function formatDateKey(date: Date) {
+  const year = date.getUTCFullYear();
+  const month = `${date.getUTCMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getUTCDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function CurrentMedalBadge({ gender, level, label }: { gender: string; level: string; label: string }) {
