@@ -77,6 +77,7 @@ export function QuizRunner({ sectionId, initialTotal }: { sectionId: string; ini
   const [totalQuestions, setTotalQuestions] = useState(initialTotal);
   const [correctCount, setCorrectCount] = useState(0);
   const [checkedQuestionIds, setCheckedQuestionIds] = useState<Set<string>>(() => new Set());
+  const [recordedAttempts, setRecordedAttempts] = useState<Record<string, string>>({});
   const [correctAnswer, setCorrectAnswer] = useState<unknown>(null);
   const [checkState, setCheckState] = useState<CheckState>("idle");
   const [questionLoading, setQuestionLoading] = useState(false);
@@ -174,6 +175,9 @@ export function QuizRunner({ sectionId, initialTotal }: { sectionId: string; ini
       const correct = Boolean(payload.data.correct);
       setCorrectAnswer(payload.data.correctAnswer);
       setCheckState(correct ? "correct" : "wrong");
+      if (typeof payload.data.attemptId === "string") {
+        setRecordedAttempts((value) => ({ ...value, [current.id]: payload.data.attemptId }));
+      }
       if (correct && !checkedQuestionIds.has(current.id)) {
         setCorrectCount((value) => value + 1);
       }
@@ -190,7 +194,7 @@ export function QuizRunner({ sectionId, initialTotal }: { sectionId: string; ini
     const response = await fetch("/api/progress/submit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sectionId, answers })
+      body: JSON.stringify({ sectionId, answers, recordedAttempts })
     });
     const payload = await response.json();
     const resultPath = payload.data?.resultPath || payload.resultPath;

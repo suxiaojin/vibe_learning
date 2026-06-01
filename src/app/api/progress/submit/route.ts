@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { apiError, apiOk } from "@/lib/api-response";
 import { getCurrentUser } from "@/lib/auth";
 import { answersEqual, bumpStudyStat } from "@/lib/learning";
@@ -10,7 +11,11 @@ export async function POST(request: Request) {
     return apiError("Authentication required.", 401, "UNAUTHORIZED");
   }
 
-  const body = (await request.json().catch(() => null)) as { sectionId?: string; answers?: Record<string, string[]> } | null;
+  const body = (await request.json().catch(() => null)) as {
+    sectionId?: string;
+    answers?: Record<string, string[]>;
+    recordedAttempts?: Record<string, string>;
+  } | null;
   if (!body?.sectionId || !body.answers) {
     return apiError("Invalid payload", 400, "INVALID_PROGRESS_SUBMISSION");
   }
@@ -22,14 +27,24 @@ export async function POST(request: Request) {
 
   const submittedAt = new Date();
   let correct = 0;
+  let newlyRecordedQuestions = 0;
   const wrongAttemptIds: string[] = [];
   const questions = result.questions as Array<(typeof result.questions)[number] & { answer: unknown }>;
+  const recordedAttempts = body.recordedAttempts || {};
 
   for (const question of questions) {
     const selected = body.answers[question.id] || [];
     const isCorrect = answersEqual(selected, question.answer);
     if (isCorrect) {
       correct += 1;
+    }
+
+    const existingAttemptId = recordedAttempts[question.id];
+    if (typeof existingAttemptId === "string" && existingAttemptId) {
+      if (!isCorrect) {
+        wrongAttemptIds.push(existingAttemptId);
+      }
+      continue;
     }
 
     const attempt = await prisma.questionAttempt.create({
@@ -40,6 +55,7 @@ export async function POST(request: Request) {
         isCorrect
       }
     });
+    newlyRecordedQuestions += 1;
 
     if (!isCorrect) {
       wrongAttemptIds.push(attempt.id);
@@ -57,10 +73,11 @@ export async function POST(request: Request) {
 
   const newlyPassed = await recordSyllabusSectionProgress(user.id, body.sectionId, score, passed);
   const diamondRewards = await bumpStudyStat(user.id, {
-    questionsAnswered: total,
+    questionsAnswered: newlyRecordedQuestions,
     pointsPassed: newlyPassed ? 1 : 0,
     studySeconds: 60
   });
+  revalidatePath("/me");
 
   const resultPath = `/learn/${body.sectionId}/result?attemptIds=${wrongAttemptIds.join(",")}&score=${score}&correct=${correct}&total=${total}&submittedAt=${encodeURIComponent(submittedAt.toISOString())}`;
   return apiOk({ score, passed, correct, total, wrongAttemptIds, diamondRewards, resultPath });

@@ -7,8 +7,11 @@ import { AvatarUploadForm } from "@/components/avatar-upload-form";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { ensureDiamondAccount, getMedalLevel, getMedalRule, medalRules } from "@/lib/rewards";
+import { getMedalLevel, getMedalRule, medalRules } from "@/lib/rewards";
 import { cn } from "@/lib/utils";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const avatarColors = [
   { key: "green", className: "bg-[#58cc02]" },
@@ -36,6 +39,7 @@ const heatmapLevelClasses = [
   "border-emerald-500 bg-emerald-500",
   "border-emerald-700 bg-emerald-700"
 ];
+const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const transactionLabels: Record<string, string> = {
   register_bonus: "注册赠送",
@@ -55,12 +59,11 @@ export default async function MePage({
   const query = await searchParams;
   const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const heatmapStart = new Date(Date.now() - (heatmapWeekCount * 7 + 7) * dayMs);
-  const [fullUser, account, transactions, totalAttempts, recentAttempts] = await Promise.all([
+  const [fullUser, transactions, totalAttempts, recentAttempts] = await Promise.all([
     prisma.user.findUnique({
       where: { id: user.id },
       include: { studentProfile: true }
     }),
-    ensureDiamondAccount(user.id),
     prisma.diamondTransaction.findMany({
       where: { userId: user.id, createdAt: { gte: oneWeekAgo } },
       orderBy: { createdAt: "desc" },
@@ -130,14 +133,13 @@ export default async function MePage({
             <PasswordPanel status={query?.password} />
           </section>
 
-          <DiamondPanel balance={account.balance} transactions={transactions} />
-
           <MedalTrack
-            currentMedal={currentMedal.label}
             dailyAttempts={dailyAttempts}
             gender={fullUser.studentProfile?.gender || ""}
             totalAttempts={totalAttempts}
           />
+
+          <DiamondPanel transactions={transactions} />
         </div>
       </section>
     </main>
@@ -283,10 +285,8 @@ function PasswordPanel({ status }: { status?: string }) {
 }
 
 function DiamondPanel({
-  balance,
   transactions
 }: {
-  balance: number;
   transactions: Array<{
     id: string;
     type: string;
@@ -298,59 +298,56 @@ function DiamondPanel({
 }) {
   return (
     <SectionFrame icon={<Gem className="text-sky-500" size={22} />} title="我的钻石">
-      <div className="flex flex-wrap items-center justify-end gap-4">
-        <div className="rounded-2xl bg-sky-50 px-5 py-3 text-right">
-          <p className="text-xs font-black text-sky-500">钻石余额</p>
-          <p className="mt-1 text-3xl font-black text-sky-600">{balance}</p>
-        </div>
-      </div>
-
-      <div className="mt-5 overflow-x-auto">
-        <table className="w-full min-w-[640px] text-left text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-xs font-black text-slate-400">
-              <th className="py-3 pr-4">时间</th>
-              <th className="py-3 pr-4">类型</th>
-              <th className="py-3 pr-4">数量</th>
-              <th className="py-3 pr-4">余额</th>
-              <th className="py-3">说明</th>
-            </tr>
-          </thead>
-          <tbody>
-            {transactions.length === 0 ? (
-              <tr>
-                <td className="py-6 text-center text-sm font-semibold text-slate-400" colSpan={5}>
-                  暂无钻石记录
-                </td>
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.72fr)_280px] xl:items-start">
+        <div className="min-w-0 overflow-x-auto">
+          <table className="w-full min-w-[520px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-xs font-black text-slate-400">
+                <th className="py-3 pr-4">时间</th>
+                <th className="py-3 pr-4">类型</th>
+                <th className="py-3 pr-4">数量</th>
+                <th className="py-3 pr-4">余额</th>
+                <th className="py-3">说明</th>
               </tr>
-            ) : (
-              transactions.map((item) => (
-                <tr key={item.id} className="border-b border-slate-100 last:border-0">
-                  <td className="py-3 pr-4 font-semibold text-slate-500">{formatDateTime(item.createdAt)}</td>
-                  <td className="py-3 pr-4 font-bold text-ink">{transactionLabels[item.type] || item.type}</td>
-                  <td className={cn("py-3 pr-4 font-black", item.amount >= 0 ? "text-[#58cc02]" : "text-coral")}>
-                    {item.amount >= 0 ? "+" : ""}
-                    {item.amount}
+            </thead>
+            <tbody>
+              {transactions.length === 0 ? (
+                <tr>
+                  <td className="py-6 text-center text-sm font-semibold text-slate-400" colSpan={5}>
+                    暂无钻石记录
                   </td>
-                  <td className="py-3 pr-4 font-semibold text-slate-600">{item.balanceAfter}</td>
-                  <td className="py-3 text-slate-500">{item.note || "-"}</td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                transactions.map((item) => (
+                  <tr key={item.id} className="border-b border-slate-100 last:border-0">
+                    <td className="py-3 pr-4 font-semibold text-slate-500">{formatDateTime(item.createdAt)}</td>
+                    <td className="py-3 pr-4 font-bold text-ink">{transactionLabels[item.type] || item.type}</td>
+                    <td className={cn("py-3 pr-4 font-black", item.amount >= 0 ? "text-[#58cc02]" : "text-coral")}>
+                      {item.amount >= 0 ? "+" : ""}
+                      {item.amount}
+                    </td>
+                    <td className="py-3 pr-4 font-semibold text-slate-600">{item.balanceAfter}</td>
+                    <td className="py-3 text-slate-500">{item.note || "-"}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        <aside className="rounded-2xl border border-slate-200/70 bg-sky-50/50 p-5">
+          <h3 className="text-lg font-black text-ink">钻石充值</h3>
+          <p className="mt-3 text-sm font-semibold leading-6 text-slate-500">充值功能即将上线，敬请关注~</p>
+        </aside>
       </div>
     </SectionFrame>
   );
 }
 
 function MedalTrack({
-  currentMedal,
   dailyAttempts,
   gender,
   totalAttempts
 }: {
-  currentMedal: string;
   dailyAttempts: Record<string, number>;
   gender: string;
   totalAttempts: number;
@@ -377,8 +374,7 @@ function MedalTrack({
     <SectionFrame icon={<Medal className="text-teal" size={22} />} title="我的勋章">
       <div className="grid gap-6 xl:grid-cols-[minmax(0,520px)_minmax(320px,1fr)] xl:items-start">
         <div className="min-w-0">
-          <h3 className="text-xl font-black text-ink">{currentMedal}</h3>
-          <div className="mt-4 rounded-2xl border border-slate-200/70 bg-transparent px-4 py-5">
+          <div className="rounded-2xl border border-slate-200/70 bg-transparent px-4 py-5">
             <div className="relative w-full max-w-[520px] px-2 pb-14 pt-8 text-xs">
               <div className="absolute left-2 right-2 top-[62px] h-1.5 rounded-full bg-slate-200" />
               <div className="absolute left-2 top-[62px] h-1.5 rounded-full bg-honey" style={{ width: `calc((100% - 16px) * ${progressPercent / 100})` }} />
@@ -434,19 +430,28 @@ function nodeTransform(position: number) {
 
 function AnswerHeatmap({ dailyAttempts }: { dailyAttempts: Record<string, number> }) {
   const weeks = buildHeatmapWeeks(dailyAttempts);
-  const todayCount = dailyAttempts[getChinaDateKey(new Date())] || 0;
+  const monthAttemptCount = getCurrentMonthAttemptCount(dailyAttempts);
+  const monthHeaders = weeks.map((week, weekIndex) => getWeekMonthLabel(week, weekIndex));
 
   return (
     <div className="min-w-0 rounded-2xl border border-slate-200/70 bg-transparent px-4 py-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-black text-ink">答题活跃度</h3>
-        <span className="text-xs font-semibold text-slate-500">今天 {todayCount} 道</span>
+        <h3 className="text-sm font-black text-ink">Active Learning</h3>
+        <span className="text-xs font-semibold text-slate-500">本月 {monthAttemptCount} 题</span>
       </div>
 
       <div className="mt-4 overflow-x-auto pb-1">
-        <div className="grid min-w-max grid-cols-[1.5rem_auto] gap-2">
+        <div className="grid min-w-max grid-cols-[2rem_auto] gap-x-2 gap-y-1">
+          <div />
+          <div className="flex gap-1 text-[10px] font-semibold leading-3 text-slate-400">
+            {monthHeaders.map((label, index) => (
+              <span key={`${label}-${index}`} className="h-3 w-3 shrink-0 overflow-visible whitespace-nowrap">
+                {label}
+              </span>
+            ))}
+          </div>
           <div className="grid grid-rows-7 gap-1 text-right text-[10px] font-semibold leading-3 text-slate-400">
-            {["", "一", "", "三", "", "五", ""].map((label, index) => (
+            {["", "Mon", "", "Wed", "", "Fri", ""].map((label, index) => (
               <span key={`${label}-${index}`} className="h-3">
                 {label}
               </span>
@@ -473,11 +478,11 @@ function AnswerHeatmap({ dailyAttempts }: { dailyAttempts: Record<string, number
       </div>
 
       <div className="mt-3 flex items-center justify-end gap-1 text-[11px] font-semibold text-slate-400">
-        <span>少</span>
+        <span>Less</span>
         {heatmapLevelClasses.map((levelClass) => (
           <span key={levelClass} className={cn("size-3 rounded-[3px] border", levelClass)} />
         ))}
-        <span>多</span>
+        <span>More</span>
       </div>
     </div>
   );
@@ -489,6 +494,22 @@ function summarizeDailyAttempts(attempts: Array<{ createdAt: Date }>) {
     result[key] = (result[key] || 0) + 1;
     return result;
   }, {});
+}
+
+function getCurrentMonthAttemptCount(dailyAttempts: Record<string, number>) {
+  const currentMonth = getChinaDateKey(new Date()).slice(0, 7);
+  return Object.entries(dailyAttempts).reduce((total, [key, count]) => (key.startsWith(currentMonth) ? total + count : total), 0);
+}
+
+function getWeekMonthLabel(week: Array<{ key: string }>, weekIndex: number) {
+  const firstOfMonth = week.find((day) => parseDateKey(day.key).getUTCDate() === 1);
+  if (firstOfMonth) {
+    return monthLabels[parseDateKey(firstOfMonth.key).getUTCMonth()];
+  }
+  if (weekIndex === 0 && week[0]) {
+    return monthLabels[parseDateKey(week[0].key).getUTCMonth()];
+  }
+  return "";
 }
 
 function buildHeatmapWeeks(dailyAttempts: Record<string, number>) {
