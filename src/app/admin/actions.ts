@@ -7,6 +7,7 @@ import { ContentStatus, Difficulty, QuestionType, RegionStatus, SyllabusRequirem
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
+import { getBeijingDate } from "@/lib/rewards";
 import {
   isQuestionBankChoiceQuestionType,
   isQuestionBankEditableQuestionType,
@@ -335,7 +336,7 @@ export async function toggleStudentAccountStatus(formData: FormData) {
 }
 
 export async function resetStudentPassword(formData: FormData) {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const id = String(formData.get("id") || "");
   const returnTo = getAdminStudentsReturnTo(formData);
   const password = String(formData.get("password") || "");
@@ -348,14 +349,75 @@ export async function resetStudentPassword(formData: FormData) {
     where: { id, role: "student" },
     select: { id: true }
   });
-  await prisma.user.update({
-    where: { id },
-    data: { passwordHash: await bcrypt.hash(password, 12) }
-  });
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id },
+      data: { passwordHash: await bcrypt.hash(password, 12) }
+    }),
+    prisma.passwordChangeLog.create({
+      data: {
+        userId: id,
+        actorUserId: admin.id,
+        source: "admin_reset",
+        note: "后台重置密码"
+      }
+    })
+  ]);
 
   revalidatePath("/admin/students");
   revalidatePath(`/admin/students/${id}`);
   redirect(appendAdminStudentsMessage(returnTo, "notice", "学生密码已重置"));
+}
+
+export async function addStudentDiamonds(formData: FormData) {
+  const admin = await requireAdmin();
+  const id = String(formData.get("id") || "");
+  const returnTo = getAdminStudentsReturnTo(formData);
+  const amount = Number(formData.get("amount") || 0);
+  const note = String(formData.get("note") || "").trim() || "后台手动添加钻石";
+
+  if (!Number.isInteger(amount) || amount <= 0) {
+    redirect(appendAdminStudentsMessage(returnTo, "error", "钻石数量必须是大于 0 的整数"));
+  }
+
+  await prisma.user.findFirstOrThrow({
+    where: { id, role: "student" },
+    select: { id: true }
+  });
+
+  await prisma.$transaction(async (tx) => {
+    const account = await tx.diamondAccount.upsert({
+      where: { userId: id },
+      update: {},
+      create: { userId: id, balance: 0 }
+    });
+    const updatedAccount = await tx.diamondAccount.update({
+      where: { userId: id },
+      data: { balance: { increment: amount } },
+      select: { balance: true }
+    });
+    await tx.diamondTransaction.create({
+      data: {
+        userId: id,
+        accountId: account.id,
+        type: "admin_adjust",
+        amount,
+        balanceAfter: updatedAccount.balance,
+        occurredOn: getBeijingDate(),
+        note,
+        metadata: {
+          actorUserId: admin.id,
+          actorUsername: admin.username,
+          source: "admin_student_detail"
+        }
+      }
+    });
+  });
+
+  revalidatePath("/admin/students");
+  revalidatePath(`/admin/students/${id}`);
+  revalidatePath("/me");
+  redirect(appendAdminStudentsMessage(returnTo, "notice", "钻石已添加"));
 }
 
 export async function createPublicSubject(formData: FormData) {

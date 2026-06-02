@@ -127,7 +127,11 @@ export default async function StudentsPage({
               const totalSeconds = student.studyStats.reduce((sum, item) => sum + item.studySeconds, 0);
               return (
                 <tr key={student.id} className="align-top text-slate-700">
-                  <td className="border-b border-slate-100 py-4 pr-4 font-semibold text-ink">{student.username}</td>
+                  <td className="border-b border-slate-100 py-4 pr-4 font-semibold text-ink">
+                    <Link className="text-ink hover:text-teal hover:underline" href={`/admin/students/${student.id}`}>
+                      {student.username}
+                    </Link>
+                  </td>
                   <td className="border-b border-slate-100 py-4 pr-4">
                     <StatusBadge status={student.status} />
                   </td>

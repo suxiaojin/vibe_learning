@@ -17,6 +17,11 @@ enum UserStatus {
   disabled
 }
 
+enum PasswordChangeSource {
+  student_self
+  admin_reset
+}
+
 enum StudentGender {
   male
   female
@@ -145,6 +150,8 @@ model User {
   syllabusProgress UserSyllabusProgress[]
   diamondAccount  DiamondAccount?
   diamondTransactions DiamondTransaction[]
+  passwordChangeLogs PasswordChangeLog[] @relation("PasswordChangeTarget")
+  passwordChangesMade PasswordChangeLog[] @relation("PasswordChangeActor")
 
   @@index([role, status, createdAt])
   @@map("users")
@@ -607,4 +614,19 @@ model DiamondTransaction {
   @@index([accountId, createdAt])
   @@index([type, occurredOn])
   @@map("diamond_transactions")
+}
+
+model PasswordChangeLog {
+  id          String               @id @default(cuid())
+  userId      String
+  actorUserId String?
+  source      PasswordChangeSource
+  note        String?
+  createdAt   DateTime             @default(now())
+  user        User                 @relation("PasswordChangeTarget", fields: [userId], references: [id], onDelete: Cascade)
+  actor       User?                @relation("PasswordChangeActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@map("password_change_logs")
 }

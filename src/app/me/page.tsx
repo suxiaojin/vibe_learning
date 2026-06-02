@@ -736,10 +736,20 @@ async function changePassword(formData: FormData) {
     redirect("/me?password=invalid");
   }
 
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { passwordHash: await bcrypt.hash(newPassword, 12) }
-  });
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: await bcrypt.hash(newPassword, 12) }
+    }),
+    prisma.passwordChangeLog.create({
+      data: {
+        userId: user.id,
+        actorUserId: user.id,
+        source: "student_self",
+        note: "学生自行修改密码"
+      }
+    })
+  ]);
 
   revalidatePath("/me");
   redirect("/me?password=updated");

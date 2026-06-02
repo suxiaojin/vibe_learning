@@ -1,34 +1,82 @@
 import Link from "next/link";
+import {
+  ArrowLeft,
+  BookOpenCheck,
+  Crown,
+  Gem,
+  Info,
+  KeyRound,
+  Medal,
+  Plus,
+  ShieldCheck,
+  Trophy
+} from "lucide-react";
 import { notFound } from "next/navigation";
-import { resetStudentPassword, toggleStudentAccountStatus } from "@/app/admin/actions";
+import { addStudentDiamonds, resetStudentPassword, toggleStudentAccountStatus } from "@/app/admin/actions";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { formatSeconds } from "@/lib/utils";
+import { getMedalLevel, getMedalRule } from "@/lib/rewards";
+import { getStudentLearningPath } from "@/lib/syllabus-learning";
+import { cn } from "@/lib/utils";
+
+type DetailTab = "basic" | "learning" | "portrait";
 
 type PageProps = {
   params: Promise<{ studentId: string }>;
-  searchParams?: Promise<{ notice?: string; error?: string }>;
+  searchParams?: Promise<{ error?: string; notice?: string; tab?: string }>;
 };
 
-const progressLabels = {
-  locked: "锁定",
-  unlocked: "可学习",
-  passed: "已通过"
+type LearningPath = Awaited<ReturnType<typeof getStudentLearningPath>>;
+
+const avatarColors = [
+  { key: "green", className: "bg-[#58cc02]" },
+  { key: "sky", className: "bg-sky-500" },
+  { key: "coral", className: "bg-coral" },
+  { key: "honey", className: "bg-honey" },
+  { key: "violet", className: "bg-violet-500" }
+];
+
+const genderLabels: Record<string, string> = {
+  male: "男",
+  female: "女"
 };
+
+const passwordChangeLabels = {
+  student_self: "学生自行修改",
+  admin_reset: "后台重置"
+};
+
+const tabs: Array<{ key: DetailTab; label: string }> = [
+  { key: "basic", label: "基本信息" },
+  { key: "learning", label: "学习画像" },
+  { key: "portrait", label: "用户画像" }
+];
 
 export default async function StudentDetailPage({ params, searchParams }: PageProps) {
   await requireAdmin();
-  const [{ studentId }, messages] = await Promise.all([params, searchParams]);
+  const [{ studentId }, query] = await Promise.all([params, searchParams]);
+  const activeTab = resolveTab(query?.tab);
   const student = await prisma.user.findFirst({
     where: { id: studentId, role: "student" },
-    select: {
-      id: true,
-      username: true,
-      status: true,
-      createdAt: true,
-      lastLoginAt: true,
-      disabledAt: true,
-      disabledReason: true
+    include: {
+      studentProfile: {
+        include: {
+          region: true
+        }
+      },
+      diamondAccount: true,
+      passwordChangeLogs: {
+        include: {
+          actor: {
+            select: {
+              username: true,
+              role: true
+            }
+          }
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10
+      }
     }
   });
 
@@ -36,163 +84,261 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
     notFound();
   }
 
-  const [progress, wrongQuestions, activeWrongCount, totalAttempts, correctAttempts, studySeconds] = await Promise.all([
-    prisma.userProgress.findMany({
-      where: { userId: student.id },
-      include: {
-        knowledgePoint: {
-          include: { chapter: true }
-        }
-      },
-      orderBy: [
-        { knowledgePoint: { chapter: { sortOrder: "asc" } } },
-        { knowledgePoint: { sortOrder: "asc" } },
-        { updatedAt: "desc" }
-      ]
-    }),
-    prisma.wrongQuestion.findMany({
-      where: { userId: student.id, status: "active" },
-      include: {
-        question: {
-          include: {
-            knowledgePoint: {
-              include: { chapter: true }
-            }
-          }
-        }
-      },
-      orderBy: [{ lastWrongAt: "desc" }, { wrongCount: "desc" }],
-      take: 20
-    }),
-    prisma.wrongQuestion.count({ where: { userId: student.id, status: "active" } }),
+  const [totalAttempts, learningPath] = await Promise.all([
     prisma.questionAttempt.count({ where: { userId: student.id } }),
-    prisma.questionAttempt.count({ where: { userId: student.id, isCorrect: true } }),
-    prisma.studyStat.aggregate({
-      where: { userId: student.id },
-      _sum: { studySeconds: true }
-    })
+    getStudentLearningPath(student.id)
   ]);
 
-  const passed = progress.filter((item) => item.status === "passed").length;
-  const correctRate = totalAttempts ? Math.round((correctAttempts / totalAttempts) * 100) : 0;
-  const returnTo = `/admin/students/${student.id}`;
+  const profile = student.studentProfile;
+  const nickname = profile?.nickname || student.username;
+  const avatarColor = avatarColors.some((item) => item.key === profile?.avatarColor) ? profile?.avatarColor || "green" : "green";
+  const medal = getMedalRule(getMedalLevel(totalAttempts));
+  const returnTo = `/admin/students/${student.id}?tab=${activeTab}`;
+  const currentStages = getUnlockedStages(learningPath);
 
   return (
-    <main className="space-y-6">
-      <section className="panel">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <Link className="text-sm font-semibold text-teal" href="/admin/students">返回学生列表</Link>
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <h1 className="text-2xl font-bold text-ink">{student.username}</h1>
+    <main className="space-y-4">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <Link className="grid size-9 shrink-0 place-items-center text-slate-600 hover:text-teal" href="/admin/students" aria-label="返回学生列表">
+            <ArrowLeft size={22} />
+          </Link>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="truncate text-xl font-black text-ink">用户：{nickname}</h1>
               <StatusBadge status={student.status} />
             </div>
-            <p className="mt-2 text-sm text-slate-600">注册于 {formatDateTime(student.createdAt)}，最后登录：{student.lastLoginAt ? formatDateTime(student.lastLoginAt) : "暂无"}</p>
-            {student.status === "disabled" ? (
-              <p className="mt-2 text-sm text-coral">
-                禁用时间：{student.disabledAt ? formatDateTime(student.disabledAt) : "暂无"}；原因：{student.disabledReason || "后台手动禁用"}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <form action={toggleStudentAccountStatus}>
-              <input type="hidden" name="id" value={student.id} />
-              <input type="hidden" name="returnTo" value={returnTo} />
-              <button className="secondary-button" type="submit">{student.status === "disabled" ? "启用账号" : "禁用账号"}</button>
-            </form>
-            <details className="relative">
-              <summary className="secondary-button cursor-pointer list-none [&::-webkit-details-marker]:hidden">重置密码</summary>
-              <form action={resetStudentPassword} className="absolute right-0 z-10 mt-2 grid w-72 gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-xl">
-                <input type="hidden" name="id" value={student.id} />
-                <input type="hidden" name="returnTo" value={returnTo} />
-                <label className="label">新密码</label>
-                <input className="input" name="password" type="password" minLength={6} required />
-                <button className="primary-button w-full" type="submit">确认重置</button>
-              </form>
-            </details>
+            <p className="mt-1 text-xs font-semibold text-slate-500">{student.username}</p>
           </div>
         </div>
 
-        {messages?.notice ? <div className="mt-4 rounded-2xl bg-teal/10 p-3 text-sm font-semibold text-teal">{messages.notice}</div> : null}
-        {messages?.error ? <div className="mt-4 rounded-2xl bg-red-50 p-3 text-sm font-semibold text-red-700">{messages.error}</div> : null}
-      </section>
+        <form action={toggleStudentAccountStatus}>
+          <input type="hidden" name="id" value={student.id} />
+          <input type="hidden" name="returnTo" value={returnTo} />
+          <button className="secondary-button" type="submit">{student.status === "disabled" ? "启用账号" : "禁用账号"}</button>
+        </form>
+      </header>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <StatCard label="已通过关卡" value={`${passed}`} />
-        <StatCard label="累计答题" value={`${totalAttempts}`} />
-        <StatCard label="正确率" value={`${correctRate}%`} />
-        <StatCard label="待掌握错题" value={`${activeWrongCount}`} />
-        <StatCard label="累计学习" value={formatSeconds(studySeconds._sum.studySeconds || 0)} />
-      </section>
+      <nav className="flex gap-8 border-b border-slate-200 text-sm font-bold text-slate-600" aria-label="学生详情导航">
+        {tabs.map((tab) => (
+          <Link
+            key={tab.key}
+            className={cn(
+              "border-b-2 px-0 py-3 transition hover:border-teal hover:text-teal",
+              activeTab === tab.key ? "border-teal text-ink" : "border-transparent"
+            )}
+            href={`/admin/students/${student.id}?tab=${tab.key}`}
+          >
+            {tab.label}
+          </Link>
+        ))}
+      </nav>
 
-      <section className="panel">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-bold">进度明细</h2>
-            <p className="mt-1 text-sm text-slate-600">按知识点查看闯关状态、最高分和通过时间。</p>
+      {query?.notice ? <div className="rounded border border-teal/20 bg-teal/10 p-3 text-sm font-semibold text-teal">{query.notice}</div> : null}
+      {query?.error ? <div className="rounded border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">{query.error}</div> : null}
+
+      {activeTab === "basic" ? (
+        <DetailSection icon={<Info size={17} />} title="基本信息">
+          <div className="grid justify-items-center px-6 py-6">
+            <Avatar name={nickname} color={avatarColor} image={profile?.avatarImage || ""} />
           </div>
-          <span className="badge bg-slate-100 text-slate-600">{progress.length} 条进度</span>
-        </div>
-        <div className="mt-5 overflow-x-auto">
-          <table className="w-full min-w-[760px] border-separate border-spacing-0 text-left text-sm">
-            <thead>
-              <tr className="text-slate-500">
-                <th className="border-b border-slate-200 py-3 pr-4 font-semibold">知识点</th>
-                <th className="border-b border-slate-200 py-3 pr-4 font-semibold">状态</th>
-                <th className="border-b border-slate-200 py-3 pr-4 font-semibold">最高分</th>
-                <th className="border-b border-slate-200 py-3 font-semibold">通过时间</th>
-              </tr>
-            </thead>
-            <tbody>
-              {progress.length === 0 ? (
-                <tr>
-                  <td className="py-8 text-center text-slate-500" colSpan={4}>暂无学习进度。</td>
-                </tr>
-              ) : progress.map((item) => (
-                <tr key={item.id} className="text-slate-700">
-                  <td className="border-b border-slate-100 py-4 pr-4">
-                    <p className="font-semibold text-ink">{item.knowledgePoint.title}</p>
-                    <p className="mt-1 text-xs text-slate-500">{item.knowledgePoint.chapter.title}</p>
-                  </td>
-                  <td className="border-b border-slate-100 py-4 pr-4">{progressLabels[item.status]}</td>
-                  <td className="border-b border-slate-100 py-4 pr-4">{item.bestScore} 分</td>
-                  <td className="border-b border-slate-100 py-4">{item.passedAt ? formatDateTime(item.passedAt) : "未通过"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-bold">错题概况</h2>
-            <p className="mt-1 text-sm text-slate-600">展示最近 20 道待掌握错题。</p>
+          <div className="px-8 pb-6">
+            <DetailRow label="用户ID" value={student.id} />
+            <DetailRow label="昵称" value={nickname} />
+            <DetailRow label="用户名" value={student.username} />
+            <DetailRow label="性别" value={genderLabels[profile?.gender || ""] || "未选择"} />
+            <DetailRow label="学校" value={profile?.school || "未填写"} />
+            <DetailRow label="地区" value={profile?.region?.province || profile?.region?.name || "未选择"} />
+            <DetailRow label="学制" value={profile?.region?.studySystem || "未选择"} />
+            <DetailRow label="注册日期" value={formatDateTime(student.createdAt)} />
+            <DetailRow label="最后登录日期" value={student.lastLoginAt ? formatDateTime(student.lastLoginAt) : "暂无"} />
+            <PasswordRow studentId={student.id} returnTo={`/admin/students/${student.id}?tab=basic`} />
+            <PasswordChangeLogRow logs={student.passwordChangeLogs} />
           </div>
-          <span className="badge bg-coral/10 text-coral">{activeWrongCount} 道待掌握</span>
-        </div>
-        <div className="mt-5 space-y-3">
-          {wrongQuestions.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">暂无待掌握错题。</div>
-          ) : wrongQuestions.map((item) => (
-            <article key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-teal">
-                    {item.question.knowledgePoint.chapter.title} / {item.question.knowledgePoint.title}
-                  </p>
-                  <h3 className="mt-2 line-clamp-2 font-semibold text-ink">{item.question.stem}</h3>
-                </div>
-                <span className="badge bg-slate-100 text-slate-600">错 {item.wrongCount} 次</span>
+        </DetailSection>
+      ) : null}
+
+      {activeTab === "learning" ? (
+        <DetailSection icon={<BookOpenCheck size={17} />} title="学习画像">
+          <div className="px-8 pb-6 pt-2">
+            <DetailRow label="总答题数" value={`${totalAttempts} 道`} />
+            <DetailRow label="AI 使用次数" value="暂不实现" />
+            <div className="grid grid-cols-[180px_minmax(0,1fr)] border-b border-dashed border-slate-200 py-4">
+              <div className="font-bold text-slate-700">当前关卡</div>
+              <div className="min-w-0">
+                {!learningPath.completed ? (
+                  <p className="text-sm font-semibold text-slate-500">学生尚未完成地区、公共课、专业课选择。</p>
+                ) : currentStages.length === 0 ? (
+                  <p className="text-sm font-semibold text-slate-500">暂无正在闯关的关卡。</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {currentStages.map((stage) => (
+                      <span key={stage.id} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-bold text-[#1f3b57]">
+                        {stage.courseTitle}：{stage.chapterTitle} / {stage.sectionTitle}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-              <p className="mt-3 text-sm text-slate-500">最近答错：{formatDateTime(item.lastWrongAt)}</p>
-            </article>
-          ))}
-        </div>
-      </section>
+            </div>
+          </div>
+        </DetailSection>
+      ) : null}
+
+      {activeTab === "portrait" ? (
+        <DetailSection icon={<ShieldCheck size={17} />} title="用户画像">
+          <div className="px-8 pb-6 pt-2">
+            <div className="grid grid-cols-[180px_minmax(0,1fr)] border-b border-dashed border-slate-200 py-4">
+              <div className="font-bold text-slate-700">当前勋章等级</div>
+              <div className="flex items-center gap-3 font-semibold text-slate-700">
+                <MedalIcon gender={profile?.gender || ""} level={medal.level} />
+                {medal.label}
+              </div>
+            </div>
+            <div className="grid grid-cols-[180px_minmax(0,1fr)] border-b border-dashed border-slate-200 py-4">
+              <div className="font-bold text-slate-700">钻石数</div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 font-semibold text-slate-700">
+                  <Gem className="text-sky-500" size={17} />
+                  {student.diamondAccount?.balance || 0} 颗
+                </div>
+                <form action={addStudentDiamonds} className="mt-3 flex max-w-2xl flex-wrap items-end gap-3">
+                  <input type="hidden" name="id" value={student.id} />
+                  <input type="hidden" name="returnTo" value={`/admin/students/${student.id}?tab=portrait`} />
+                  <label className="w-40">
+                    <span className="label">添加数量</span>
+                    <input className="input rounded-none" name="amount" type="number" min={1} step={1} required />
+                  </label>
+                  <label className="min-w-64 flex-1">
+                    <span className="label">说明</span>
+                    <input className="input rounded-none" name="note" placeholder="例如 后台活动奖励" />
+                  </label>
+                  <button className="primary-button rounded-none" type="submit">
+                    <Plus size={17} />
+                    添加钻石
+                  </button>
+                </form>
+              </div>
+            </div>
+            <DetailRow label="钻石充值记录" value="暂不实现" />
+          </div>
+        </DetailSection>
+      ) : null}
     </main>
+  );
+}
+
+function resolveTab(value?: string): DetailTab {
+  return value === "learning" || value === "portrait" ? value : "basic";
+}
+
+function PasswordRow({ returnTo, studentId }: { returnTo: string; studentId: string }) {
+  return (
+    <div className="grid grid-cols-[180px_minmax(0,1fr)] border-b border-dashed border-slate-200 py-4">
+      <div className="flex items-center gap-2 font-bold text-slate-700">
+        <KeyRound size={16} />
+        用户密码
+      </div>
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-slate-500">不可查看，仅支持后台重置。</p>
+        <form action={resetStudentPassword} className="mt-3 flex max-w-xl flex-wrap items-end gap-3">
+          <input type="hidden" name="id" value={studentId} />
+          <input type="hidden" name="returnTo" value={returnTo} />
+          <label className="min-w-64 flex-1">
+            <span className="label">新密码</span>
+            <input className="input rounded-none" name="password" type="password" minLength={6} autoComplete="new-password" required />
+          </label>
+          <button className="primary-button rounded-none" type="submit">确定重置</button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function PasswordChangeLogRow({
+  logs
+}: {
+  logs: Array<{
+    id: string;
+    source: "student_self" | "admin_reset";
+    note: string | null;
+    createdAt: Date;
+    actor: { username: string; role: string } | null;
+  }>;
+}) {
+  return (
+    <div className="grid grid-cols-[180px_minmax(0,1fr)] border-b border-dashed border-slate-200 py-4">
+      <div className="font-bold text-slate-700">修改记录</div>
+      <div className="min-w-0">
+        {logs.length === 0 ? (
+          <p className="text-sm font-semibold text-slate-500">暂无密码修改记录。</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[520px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-xs font-black text-slate-400">
+                  <th className="py-2 pr-4">时间</th>
+                  <th className="py-2 pr-4">方式</th>
+                  <th className="py-2 pr-4">操作者</th>
+                  <th className="py-2">备注</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map((log) => (
+                  <tr key={log.id} className="border-b border-slate-100 last:border-0">
+                    <td className="py-2 pr-4 font-semibold text-slate-600">{formatDateTime(log.createdAt)}</td>
+                    <td className="py-2 pr-4 font-bold text-ink">{passwordChangeLabels[log.source]}</td>
+                    <td className="py-2 pr-4 text-slate-600">{log.actor ? `${log.actor.username}（${log.actor.role === "admin" ? "管理员" : "学生"}）` : "-"}</td>
+                    <td className="py-2 text-slate-500">{log.note || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function getUnlockedStages(path: LearningPath) {
+  return path.groups.flatMap((group) =>
+    group.courses.flatMap((course) =>
+      course.chapters.flatMap((chapter) =>
+        chapter.sections
+          .filter((section) => section.status === "unlocked")
+          .map((section) => ({
+            id: section.id,
+            courseTitle: course.title,
+            chapterTitle: chapter.title,
+            sectionTitle: section.title
+          }))
+      )
+    )
+  );
+}
+
+function DetailSection({ children, icon, title }: { children: React.ReactNode; icon: React.ReactNode; title: string }) {
+  return (
+    <section className="overflow-hidden rounded border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3 text-sm font-black text-ink">
+        {icon}
+        {title}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function DetailRow({ icon, label, value }: { icon?: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[180px_minmax(0,1fr)] border-b border-dashed border-slate-200 py-4">
+      <div className="font-bold text-slate-700">{label}</div>
+      <div className="flex min-w-0 items-center gap-2 break-words font-semibold text-slate-700">
+        {icon}
+        {value}
+      </div>
+    </div>
   );
 }
 
@@ -204,12 +350,27 @@ function StatusBadge({ status }: { status: "active" | "disabled" }) {
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function MedalIcon({ gender, level }: { gender: string; level: string }) {
+  const Icon = level === "scholar" ? Crown : level === "expert" ? Trophy : Medal;
+  const colorClass = gender === "female" ? "bg-pink-500 text-white ring-pink-100" : "bg-sky-500 text-white ring-sky-100";
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-sm font-semibold text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-black text-ink">{value}</p>
-    </div>
+    <span className={cn("grid size-8 shrink-0 place-items-center rounded-full ring-2 shadow-sm", colorClass)}>
+      <Icon size={17} />
+    </span>
+  );
+}
+
+function Avatar({ color, image, name }: { color: string; image: string; name: string }) {
+  const colorClass = avatarColors.find((item) => item.key === color)?.className || avatarColors[0].className;
+
+  if (image) {
+    return <img alt={`${name} 的头像`} className="size-16 rounded-full object-cover shadow-sm" src={image} />;
+  }
+
+  return (
+    <span className={cn("grid size-16 place-items-center rounded-full text-2xl font-black text-white shadow-sm", colorClass)}>
+      {name.slice(0, 1).toUpperCase()}
+    </span>
   );
 }
 
