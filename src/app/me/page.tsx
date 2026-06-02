@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import bcrypt from "bcryptjs";
-import { CheckCircle2, Crown, Gem, KeyRound, Medal, Pencil, School, Trophy, UserRound } from "lucide-react";
+import { CheckCircle2, Crown, Gem, KeyRound, Mail, Medal, Pencil, Phone, School, Trophy, UserRound } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AvatarUploadForm } from "@/components/avatar-upload-form";
@@ -129,6 +129,8 @@ export default async function MePage({
               profileStatus={query?.profile}
               gender={fullUser.studentProfile?.gender || ""}
               school={fullUser.studentProfile?.school || ""}
+              phoneNumber={fullUser.phoneNumber || ""}
+              email={fullUser.email || ""}
             />
             <PasswordPanel status={query?.password} />
           </section>
@@ -175,7 +177,9 @@ function ProfilePanel({
   avatarImage,
   profileStatus,
   gender,
-  school
+  school,
+  phoneNumber,
+  email
 }: {
   username: string;
   nickname: string;
@@ -184,6 +188,8 @@ function ProfilePanel({
   profileStatus?: string;
   gender: string;
   school: string;
+  phoneNumber: string;
+  email: string;
 }) {
   const avatarError =
     profileStatus === "avatar_size"
@@ -240,6 +246,23 @@ function ProfilePanel({
             <input className="input pl-10" name="school" defaultValue={school} maxLength={80} placeholder="填写学校名称" />
           </div>
         </label>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <label>
+            <span className="label">手机号</span>
+            <div className="relative">
+              <Phone className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input className="input pl-10" name="phoneNumber" defaultValue={phoneNumber} maxLength={30} placeholder="填写手机号" />
+            </div>
+          </label>
+          <label>
+            <span className="label">邮箱地址</span>
+            <div className="relative">
+              <Mail className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input className="input pl-10" name="email" defaultValue={email} maxLength={120} placeholder="填写邮箱地址" />
+            </div>
+          </label>
+        </div>
 
         <button className="primary-button" type="submit">
           <Pencil size={18} />
@@ -651,21 +674,34 @@ async function updateProfile(formData: FormData) {
   const gender = genderInput === "male" || genderInput === "female" ? genderInput : null;
   const schoolInput = String(formData.get("school") || "").trim();
   const school = schoolInput ? schoolInput.slice(0, 80) : null;
+  const phoneInput = String(formData.get("phoneNumber") || "").trim();
+  const phoneNumber = phoneInput ? phoneInput.slice(0, 30) : null;
+  const emailInput = String(formData.get("email") || "").trim();
+  const email = emailInput ? emailInput.toLowerCase().slice(0, 120) : null;
 
-  await prisma.studentProfile.upsert({
-    where: { userId: user.id },
-    update: {
-      nickname,
-      gender,
-      school
-    },
-    create: {
-      userId: user.id,
-      nickname,
-      gender,
-      school
-    }
-  });
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: user.id },
+      data: {
+        phoneNumber,
+        email
+      }
+    }),
+    prisma.studentProfile.upsert({
+      where: { userId: user.id },
+      update: {
+        nickname,
+        gender,
+        school
+      },
+      create: {
+        userId: user.id,
+        nickname,
+        gender,
+        school
+      }
+    })
+  ]);
 
   revalidatePath("/me");
   redirect("/me?profile=updated");

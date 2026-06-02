@@ -420,6 +420,26 @@ export async function addStudentDiamonds(formData: FormData) {
   redirect(appendAdminStudentsMessage(returnTo, "notice", "钻石已添加"));
 }
 
+export async function updateStudentAdminRemark(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") || "");
+  const returnTo = getAdminStudentsReturnTo(formData);
+  const adminRemark = String(formData.get("adminRemark") || "").trim().slice(0, 1000) || null;
+
+  await prisma.user.findFirstOrThrow({
+    where: { id, role: "student" },
+    select: { id: true }
+  });
+  await prisma.user.update({
+    where: { id },
+    data: { adminRemark }
+  });
+
+  revalidatePath("/admin/students");
+  revalidatePath(`/admin/students/${id}`);
+  redirect(appendAdminStudentsMessage(returnTo, "notice", "后台备注已保存"));
+}
+
 export async function createPublicSubject(formData: FormData) {
   await requireAdmin();
   const regionIds = getRegionIds(formData);

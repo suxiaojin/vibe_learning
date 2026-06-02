@@ -136,6 +136,9 @@ model User {
   passwordHash    String
   role            UserRole          @default(student)
   status          UserStatus        @default(active)
+  phoneNumber     String?
+  email           String?
+  adminRemark     String?
   createdAt       DateTime          @default(now())
   lastLoginAt     DateTime?
   disabledAt      DateTime?

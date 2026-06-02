@@ -1,18 +1,27 @@
 import Link from "next/link";
 import {
+  Activity,
+  AlertTriangle,
   ArrowLeft,
   BookOpenCheck,
+  CheckCircle2,
+  Clock,
   Crown,
   Gem,
   Info,
   KeyRound,
+  ListChecks,
+  Mail,
   Medal,
+  MessageSquare,
+  Percent,
+  Phone,
   Plus,
   ShieldCheck,
   Trophy
 } from "lucide-react";
 import { notFound } from "next/navigation";
-import { addStudentDiamonds, resetStudentPassword, toggleStudentAccountStatus } from "@/app/admin/actions";
+import { addStudentDiamonds, resetStudentPassword, toggleStudentAccountStatus, updateStudentAdminRemark } from "@/app/admin/actions";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getMedalLevel, getMedalRule } from "@/lib/rewards";
@@ -27,6 +36,54 @@ type PageProps = {
 };
 
 type LearningPath = Awaited<ReturnType<typeof getStudentLearningPath>>;
+
+type StudentDetailProfile = {
+  publicSubject?: { name: string } | null;
+  major?: { name: string } | null;
+} | null;
+
+type RecentQuizSession = {
+  id: string;
+  score: number | null;
+  correctCount: number;
+  totalCount: number;
+  completedAt: Date | null;
+  syllabusItem: {
+    title: string;
+    parent: { title: string } | null;
+    course: { name: string };
+  };
+};
+
+type WeakSyllabusItem = {
+  id: string;
+  title: string;
+  parent: { title: string } | null;
+  course: { name: string };
+};
+
+type WeakQuestionSource = Array<{
+  wrongCount: number;
+  lastWrongAt: Date;
+  question: {
+    knowledgePoint: {
+      id: string;
+      title: string;
+      chapter: { title: string };
+    };
+    syllabusItem: WeakSyllabusItem | null;
+    knowledgeTags: Array<{ syllabusItem: WeakSyllabusItem }>;
+  };
+}>;
+
+type WeakArea = {
+  key: string;
+  title: string;
+  scope: string;
+  wrongCount: number;
+  questionCount: number;
+  lastWrongAt: Date;
+};
 
 const avatarColors = [
   { key: "green", className: "bg-[#58cc02]" },
@@ -52,16 +109,30 @@ const tabs: Array<{ key: DetailTab; label: string }> = [
   { key: "portrait", label: "用户画像" }
 ];
 
+const dayMs = 24 * 60 * 60 * 1000;
+
+const transactionLabels: Record<string, string> = {
+  register_bonus: "注册赠送",
+  daily_active_bonus: "每日登录",
+  daily_answer_bonus: "每日答题",
+  purchase: "购买充值",
+  admin_adjust: "后台调整",
+  ai_consumption: "AI 消耗"
+};
+
 export default async function StudentDetailPage({ params, searchParams }: PageProps) {
   await requireAdmin();
   const [{ studentId }, query] = await Promise.all([params, searchParams]);
   const activeTab = resolveTab(query?.tab);
+  const sevenDaysAgo = new Date(Date.now() - 7 * dayMs);
   const student = await prisma.user.findFirst({
     where: { id: studentId, role: "student" },
     include: {
       studentProfile: {
         include: {
-          region: true
+          region: true,
+          publicSubject: true,
+          major: true
         }
       },
       diamondAccount: true,
@@ -84,8 +155,80 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
     notFound();
   }
 
-  const [totalAttempts, learningPath] = await Promise.all([
+  const [totalAttempts, correctAttempts, latestAttempt, sevenDayAttempts, recentSessions, wrongQuestions, diamondTransactions, learningPath] = await Promise.all([
     prisma.questionAttempt.count({ where: { userId: student.id } }),
+    prisma.questionAttempt.count({ where: { userId: student.id, isCorrect: true } }),
+    prisma.questionAttempt.findFirst({
+      where: { userId: student.id },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true }
+    }),
+    prisma.questionAttempt.count({ where: { userId: student.id, createdAt: { gte: sevenDaysAgo } } }),
+    prisma.quizSession.findMany({
+      where: { userId: student.id, status: "completed" },
+      orderBy: [{ completedAt: "desc" }, { updatedAt: "desc" }],
+      take: 5,
+      select: {
+        id: true,
+        score: true,
+        correctCount: true,
+        totalCount: true,
+        completedAt: true,
+        syllabusItem: {
+          select: {
+            title: true,
+            parent: { select: { title: true } },
+            course: { select: { name: true } }
+          }
+        }
+      }
+    }),
+    prisma.wrongQuestion.findMany({
+      where: { userId: student.id, status: "active" },
+      orderBy: [{ wrongCount: "desc" }, { lastWrongAt: "desc" }],
+      take: 100,
+      select: {
+        id: true,
+        wrongCount: true,
+        lastWrongAt: true,
+        question: {
+          select: {
+            knowledgePoint: {
+              select: {
+                id: true,
+                title: true,
+                chapter: { select: { title: true } }
+              }
+            },
+            syllabusItem: {
+              select: {
+                id: true,
+                title: true,
+                parent: { select: { title: true } },
+                course: { select: { name: true } }
+              }
+            },
+            knowledgeTags: {
+              select: {
+                syllabusItem: {
+                  select: {
+                    id: true,
+                    title: true,
+                    parent: { select: { title: true } },
+                    course: { select: { name: true } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }),
+    prisma.diamondTransaction.findMany({
+      where: { userId: student.id },
+      orderBy: { createdAt: "desc" },
+      take: 20
+    }),
     getStudentLearningPath(student.id)
   ]);
 
@@ -95,6 +238,10 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
   const medal = getMedalRule(getMedalLevel(totalAttempts));
   const returnTo = `/admin/students/${student.id}?tab=${activeTab}`;
   const currentStages = getUnlockedStages(learningPath);
+  const selectedSpecialty = getSelectedSpecialty(profile);
+  const correctRate = totalAttempts > 0 ? Math.round((correctAttempts / totalAttempts) * 100) : 0;
+  const passedStageCount = getPassedStageCount(learningPath);
+  const weakAreas = buildWeakAreas(wrongQuestions);
 
   return (
     <main className="space-y-4">
@@ -146,6 +293,9 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
             <DetailRow label="用户ID" value={student.id} />
             <DetailRow label="昵称" value={nickname} />
             <DetailRow label="用户名" value={student.username} />
+            <DetailRow label="已选专业" value={selectedSpecialty} />
+            <DetailRow icon={<Phone size={15} />} label="手机号" value={student.phoneNumber || "未填写"} />
+            <DetailRow icon={<Mail size={15} />} label="邮箱地址" value={student.email || "未填写"} />
             <DetailRow label="性别" value={genderLabels[profile?.gender || ""] || "未选择"} />
             <DetailRow label="学校" value={profile?.school || "未填写"} />
             <DetailRow label="地区" value={profile?.region?.province || profile?.region?.name || "未选择"} />
@@ -160,27 +310,38 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
 
       {activeTab === "learning" ? (
         <DetailSection icon={<BookOpenCheck size={17} />} title="学习画像">
-          <div className="px-8 pb-6 pt-2">
-            <DetailRow label="总答题数" value={`${totalAttempts} 道`} />
-            <DetailRow label="AI 使用次数" value="暂不实现" />
-            <div className="grid grid-cols-[180px_minmax(0,1fr)] border-b border-dashed border-slate-200 py-4">
-              <div className="font-bold text-slate-700">当前关卡</div>
-              <div className="min-w-0">
-                {!learningPath.completed ? (
-                  <p className="text-sm font-semibold text-slate-500">学生尚未完成地区、公共课、专业课选择。</p>
-                ) : currentStages.length === 0 ? (
-                  <p className="text-sm font-semibold text-slate-500">暂无正在闯关的关卡。</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {currentStages.map((stage) => (
-                      <span key={stage.id} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-bold text-[#1f3b57]">
-                        {stage.courseTitle}：{stage.chapterTitle} / {stage.sectionTitle}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
+          <div className="space-y-6 px-8 py-6">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+              <MetricCard icon={<ListChecks size={18} />} label="累计答题数" value={`${totalAttempts} 道`} />
+              <MetricCard icon={<Percent size={18} />} label="正确率" value={`${correctRate}%`} />
+              <MetricCard icon={<CheckCircle2 size={18} />} label="通过关卡数" value={`${passedStageCount} 个`} />
+              <MetricCard icon={<Clock size={18} />} label="最近一次做题" value={latestAttempt ? formatDateTime(latestAttempt.createdAt) : "暂无"} />
+              <MetricCard icon={<Activity size={18} />} label="近 7 天答题量" value={`${sevenDayAttempts} 道`} />
             </div>
+
+            <DetailSubsection title="当前关卡">
+              {!learningPath.completed ? (
+                <p className="text-sm font-semibold text-slate-500">学生尚未完成地区、公共课、专业课选择。</p>
+              ) : currentStages.length === 0 ? (
+                <p className="text-sm font-semibold text-slate-500">暂无正在闯关的关卡。</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {currentStages.map((stage) => (
+                    <span key={stage.id} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-bold text-[#1f3b57]">
+                      {stage.courseTitle}：{stage.chapterTitle} / {stage.sectionTitle}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </DetailSubsection>
+
+            <DetailSubsection title="最近答题记录">
+              <RecentQuizSessionsTable sessions={recentSessions} />
+            </DetailSubsection>
+
+            <DetailSubsection title="薄弱知识点/章节">
+              <WeakAreasList areas={weakAreas} />
+            </DetailSubsection>
           </div>
         </DetailSection>
       ) : null}
@@ -220,7 +381,28 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
                 </form>
               </div>
             </div>
-            <DetailRow label="钻石充值记录" value="暂不实现" />
+            <div className="grid grid-cols-[180px_minmax(0,1fr)] border-b border-dashed border-slate-200 py-4">
+              <div className="font-bold text-slate-700">钻石流水</div>
+              <DiamondTransactionsTable transactions={diamondTransactions} />
+            </div>
+            <div className="grid grid-cols-[180px_minmax(0,1fr)] border-b border-dashed border-slate-200 py-4">
+              <div className="flex items-center gap-2 font-bold text-slate-700">
+                <MessageSquare size={16} />
+                后台备注
+              </div>
+              <form action={updateStudentAdminRemark} className="min-w-0 space-y-3">
+                <input type="hidden" name="id" value={student.id} />
+                <input type="hidden" name="returnTo" value={`/admin/students/${student.id}?tab=portrait`} />
+                <textarea
+                  className="input min-h-28 rounded-none py-3"
+                  maxLength={1000}
+                  name="adminRemark"
+                  defaultValue={student.adminRemark || ""}
+                  placeholder="记录运营跟进、特殊情况或学习服务备注"
+                />
+                <button className="secondary-button rounded-none" type="submit">保存备注</button>
+              </form>
+            </div>
           </div>
         </DetailSection>
       ) : null}
@@ -301,6 +483,143 @@ function PasswordChangeLogRow({
   );
 }
 
+function DetailSubsection({ children, title }: { children: React.ReactNode; title: string }) {
+  return (
+    <section className="border-t border-slate-200 pt-4">
+      <h2 className="mb-3 text-sm font-black text-ink">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3">
+      <div className="flex items-center gap-2 text-xs font-black text-slate-500">
+        {icon}
+        {label}
+      </div>
+      <p className="mt-2 text-xl font-black text-ink">{value}</p>
+    </div>
+  );
+}
+
+function RecentQuizSessionsTable({ sessions }: { sessions: RecentQuizSession[] }) {
+  if (sessions.length === 0) {
+    return <p className="text-sm font-semibold text-slate-500">暂无已完成的答题记录。</p>;
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[720px] text-left text-sm">
+        <thead>
+          <tr className="border-b border-slate-200 text-xs font-black text-slate-400">
+            <th className="py-2 pr-4">关卡</th>
+            <th className="py-2 pr-4">分数</th>
+            <th className="py-2 pr-4">正确题数</th>
+            <th className="py-2 pr-4">是否通过</th>
+            <th className="py-2">完成时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sessions.map((session) => {
+            const passed = (session.score || 0) >= 80;
+            return (
+              <tr key={session.id} className="border-b border-slate-100 last:border-0">
+                <td className="py-2 pr-4 font-semibold text-slate-600">
+                  {session.syllabusItem.course.name}：{session.syllabusItem.parent?.title ? `${session.syllabusItem.parent.title} / ` : ""}
+                  {session.syllabusItem.title}
+                </td>
+                <td className="py-2 pr-4 font-bold text-ink">{session.score ?? "-"}</td>
+                <td className="py-2 pr-4 text-slate-600">
+                  {session.correctCount}/{session.totalCount}
+                </td>
+                <td className={cn("py-2 pr-4 font-bold", passed ? "text-teal" : "text-coral")}>{passed ? "通过" : "未通过"}</td>
+                <td className="py-2 text-slate-500">{session.completedAt ? formatDateTime(session.completedAt) : "-"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function WeakAreasList({ areas }: { areas: WeakArea[] }) {
+  if (areas.length === 0) {
+    return <p className="text-sm font-semibold text-slate-500">暂无活跃错题，暂未形成薄弱点。</p>;
+  }
+
+  return (
+    <div className="grid gap-2">
+      {areas.slice(0, 5).map((area) => (
+        <div key={area.key} className="grid gap-2 rounded border border-slate-200 bg-white px-4 py-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 font-black text-ink">
+              <AlertTriangle className="text-honey" size={16} />
+              <span className="truncate">{area.title}</span>
+            </div>
+            <p className="mt-1 text-xs font-semibold text-slate-500">{area.scope}</p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs font-bold text-slate-500">
+            <span className="rounded-full bg-coral/10 px-2 py-1 text-coral">错 {area.wrongCount} 次</span>
+            <span className="rounded-full bg-slate-100 px-2 py-1">{area.questionCount} 道题</span>
+            <span className="rounded-full bg-slate-100 px-2 py-1">
+              最近 {formatDateTime(area.lastWrongAt)}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DiamondTransactionsTable({
+  transactions
+}: {
+  transactions: Array<{
+    id: string;
+    type: string;
+    amount: number;
+    balanceAfter: number;
+    note: string | null;
+    createdAt: Date;
+  }>;
+}) {
+  if (transactions.length === 0) {
+    return <p className="text-sm font-semibold text-slate-500">暂无钻石流水。</p>;
+  }
+
+  return (
+    <div className="min-w-0 overflow-x-auto">
+      <table className="w-full min-w-[620px] text-left text-sm">
+        <thead>
+          <tr className="border-b border-slate-200 text-xs font-black text-slate-400">
+            <th className="py-2 pr-4">时间</th>
+            <th className="py-2 pr-4">类型</th>
+            <th className="py-2 pr-4">数量</th>
+            <th className="py-2 pr-4">余额</th>
+            <th className="py-2">说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          {transactions.map((item) => (
+            <tr key={item.id} className="border-b border-slate-100 last:border-0">
+              <td className="py-2 pr-4 font-semibold text-slate-500">{formatDateTime(item.createdAt)}</td>
+              <td className="py-2 pr-4 font-bold text-ink">{transactionLabels[item.type] || item.type}</td>
+              <td className={cn("py-2 pr-4 font-black", item.amount >= 0 ? "text-[#58cc02]" : "text-coral")}>
+                {formatSignedNumber(item.amount)}
+              </td>
+              <td className="py-2 pr-4 font-semibold text-slate-600">{item.balanceAfter}</td>
+              <td className="py-2 text-slate-500">{item.note || "-"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function getUnlockedStages(path: LearningPath) {
   return path.groups.flatMap((group) =>
     group.courses.flatMap((course) =>
@@ -316,6 +635,74 @@ function getUnlockedStages(path: LearningPath) {
       )
     )
   );
+}
+
+function getPassedStageCount(path: LearningPath) {
+  return path.groups.reduce(
+    (total, group) =>
+      total +
+      group.courses.reduce(
+        (courseTotal, course) =>
+          courseTotal +
+          course.chapters.reduce((chapterTotal, chapter) => chapterTotal + chapter.sections.filter((section) => section.status === "passed").length, 0),
+        0
+      ),
+    0
+  );
+}
+
+function getSelectedSpecialty(profile: StudentDetailProfile) {
+  const names = [profile?.publicSubject?.name, profile?.major?.name].filter(Boolean);
+  return names.length > 0 ? names.join(" / ") : "未选择";
+}
+
+function buildWeakAreas(wrongQuestions: WeakQuestionSource): WeakArea[] {
+  const areaByKey = new Map<string, WeakArea>();
+
+  for (const item of wrongQuestions) {
+    const target = getWeakAreaTarget(item);
+    const current = areaByKey.get(target.key);
+    if (current) {
+      current.wrongCount += item.wrongCount;
+      current.questionCount += 1;
+      current.lastWrongAt = current.lastWrongAt > item.lastWrongAt ? current.lastWrongAt : item.lastWrongAt;
+      continue;
+    }
+    areaByKey.set(target.key, {
+      ...target,
+      wrongCount: item.wrongCount,
+      questionCount: 1,
+      lastWrongAt: item.lastWrongAt
+    });
+  }
+
+  return Array.from(areaByKey.values()).sort(
+    (left, right) =>
+      right.wrongCount - left.wrongCount ||
+      right.questionCount - left.questionCount ||
+      right.lastWrongAt.getTime() - left.lastWrongAt.getTime()
+  );
+}
+
+function getWeakAreaTarget(item: WeakQuestionSource[number]) {
+  const taggedItem = item.question.knowledgeTags[0]?.syllabusItem || item.question.syllabusItem;
+  if (taggedItem) {
+    return {
+      key: `syllabus:${taggedItem.id}`,
+      title: taggedItem.title,
+      scope: `${taggedItem.course.name}${taggedItem.parent?.title ? ` / ${taggedItem.parent.title}` : ""}`
+    };
+  }
+
+  return {
+    key: `point:${item.question.knowledgePoint.id}`,
+    title: item.question.knowledgePoint.title,
+    scope: item.question.knowledgePoint.chapter.title
+  };
+}
+
+function formatSignedNumber(value: number) {
+  return value >= 0 ? `+${value}` : String(value);
 }
 
 function DetailSection({ children, icon, title }: { children: React.ReactNode; icon: React.ReactNode; title: string }) {
