@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { CheckCircle2, Flame, Gem, RotateCcw, Trophy, XCircle } from "lucide-react";
@@ -6,11 +7,24 @@ import { WrongQuestionAi } from "@/components/wrong-question-ai";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getNextSyllabusSectionForStudent, getSyllabusSectionForStudent } from "@/lib/syllabus-learning";
+import { cn } from "@/lib/utils";
 
 type Option = {
   key: string;
   text: string;
 };
+
+type SessionWithAttempts = Prisma.QuizSessionGetPayload<{
+  include: {
+    attempts: {
+      include: {
+        question: true;
+      };
+    };
+  };
+}>;
+
+type AttemptWithQuestion = SessionWithAttempts["attempts"][number];
 
 function coerceOptions(options: Prisma.JsonValue): Option[] {
   if (!Array.isArray(options)) {
@@ -31,13 +45,15 @@ function answerText(answer: Prisma.JsonValue) {
   return Array.isArray(answer) ? answer.map(String).join("、") : String(answer || "");
 }
 
-function formatDate(date: Date) {
-  return date.toLocaleDateString("zh-CN", {
+function formatDateTime(date: Date) {
+  return date.toLocaleString("zh-CN", {
     year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
+    month: "numeric",
+    day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
     timeZone: "Asia/Shanghai"
   });
 }
@@ -47,25 +63,26 @@ export default async function QuizResultPage({
   searchParams
 }: {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ attemptIds?: string; score?: string; correct?: string; total?: string; submittedAt?: string }>;
+  searchParams?: Promise<{ sessionId?: string }>;
 }) {
   const [{ id }, query, user] = await Promise.all([params, searchParams, requireUser()]);
-  const wrongAttemptIds = (query?.attemptIds || "").split(",").filter(Boolean);
-  const [access, wrongAttempts, nextSection] = await Promise.all([
+  const [access, sessions, nextSection] = await Promise.all([
     getSyllabusSectionForStudent(user.id, id),
-    wrongAttemptIds.length
-      ? prisma.questionAttempt.findMany({
-          where: {
-            id: { in: wrongAttemptIds },
-            userId: user.id,
-            isCorrect: false
-          },
-          include: {
-            question: true
-          },
+    prisma.quizSession.findMany({
+      where: {
+        userId: user.id,
+        syllabusItemId: id,
+        status: "completed"
+      },
+      include: {
+        attempts: {
+          include: { question: true },
           orderBy: { createdAt: "asc" }
-        })
-      : [],
+        }
+      },
+      orderBy: [{ completedAt: "desc" }, { updatedAt: "desc" }],
+      take: 20
+    }),
     getNextSyllabusSectionForStudent(user.id, id)
   ]);
 
@@ -73,13 +90,32 @@ export default async function QuizResultPage({
     redirect("/learn");
   }
 
-  const submittedAt = query?.submittedAt ? new Date(query.submittedAt) : wrongAttempts[0]?.createdAt ?? new Date();
-  const score = Number(query?.score || 0);
-  const correct = Number(query?.correct || 0);
-  const total = Number(query?.total || 0);
+  const currentSession = query?.sessionId
+    ? sessions.find((session) => session.id === query.sessionId) || sessions[0]
+    : sessions[0];
+
+  if (!currentSession) {
+    return (
+      <main className="mx-auto max-w-5xl px-4 py-8">
+        <section className="panel">
+          <h1 className="text-2xl font-black text-ink">暂无答题记录</h1>
+          <p className="mt-2 text-sm font-semibold text-slate-500">完成一次答题后，这里会展示每次作答的对题和错题。</p>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <Link className="primary-button bg-[#58cc02] hover:bg-[#58cc02]/90" href={`/learn/${id}?restart=1`}>开始答题</Link>
+            <Link className="secondary-button" href={`/learn?course=${access.group.key}&chapter=${access.chapter.id}`}>返回学习路线</Link>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  const total = currentSession.totalCount || currentSession.attempts.length || access.section.questionCount;
+  const correct = currentSession.correctCount || currentSession.attempts.filter((attempt) => attempt.isCorrect).length;
+  const score = currentSession.score ?? (total ? Math.round((correct / total) * 100) : 0);
   const scorePercent = total ? Math.round((correct / total) * 100) : score;
   const passed = score >= 80;
-  const xp = correct * 10;
+  const submittedAt = currentSession.completedAt || currentSession.updatedAt;
+  const currentWrongAttempts = currentSession.attempts.filter((attempt) => !attempt.isCorrect);
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
@@ -89,7 +125,7 @@ export default async function QuizResultPage({
             <div>
               <p className="text-sm font-black text-white/80">{access.course.title} / {access.chapter.title} / {access.section.title}</p>
               <h1 className="mt-2 text-4xl font-black">{passed ? "闯关成功" : "还差一点"}</h1>
-              <p className="mt-2 text-sm font-semibold text-white/90">做题日期：{formatDate(submittedAt)}</p>
+              <p className="mt-2 text-sm font-semibold text-white/90">做题日期：{formatDateTime(submittedAt)}</p>
             </div>
             <span className="grid size-16 place-items-center rounded-2xl border-2 border-white/20 bg-white/15">
               {passed ? <Trophy size={34} /> : <RotateCcw size={34} />}
@@ -99,7 +135,7 @@ export default async function QuizResultPage({
 
         <div className="grid gap-4 p-5 sm:grid-cols-3">
           <ResultMetric icon={<CheckCircle2 size={22} />} label="正确题数" value={`${correct}/${total}`} tone={passed ? "success" : "danger"} />
-          <ResultMetric icon={<Gem size={22} />} label="获得经验" value={`+${xp} XP`} tone="sky" />
+          <ResultMetric icon={<Gem size={22} />} label="获得钻石" value={`+${currentSession.diamondRewardAmount} 钻石`} tone="sky" />
           <ResultMetric icon={<Flame size={22} />} label="本关得分" value={`${score} 分`} tone={passed ? "success" : "danger"} />
         </div>
 
@@ -114,63 +150,100 @@ export default async function QuizResultPage({
             {passed && nextSection ? (
               <Link className="primary-button bg-[#58cc02] hover:bg-[#58cc02]/90" href={`/learn/${nextSection.section.id}`}>继续下一关</Link>
             ) : (
-              <Link className="primary-button bg-[#58cc02] hover:bg-[#58cc02]/90" href={`/learn/${id}`}>再练一次</Link>
+              <Link className="primary-button bg-[#58cc02] hover:bg-[#58cc02]/90" href={`/learn/${id}?restart=1`}>再练一次</Link>
             )}
             <Link className="secondary-button" href={`/learn?course=${access.group.key}&chapter=${access.chapter.id}`}>返回学习路线</Link>
-            {wrongAttempts.length > 0 ? <Link className="secondary-button" href="/wrong-book">查看错题本</Link> : null}
+            {currentWrongAttempts.length > 0 ? <Link className="secondary-button" href="/wrong-book">查看错题本</Link> : null}
           </div>
         </div>
       </section>
 
-      {wrongAttempts.length === 0 ? (
-        <section className="panel mt-6">
-          <div className="flex items-start gap-3">
-            <CheckCircle2 className="mt-1 text-teal" />
-            <div>
-              <h2 className="text-xl font-bold">本次没有错题</h2>
-              <p className="mt-2 text-slate-600">这一关答得很稳，可以继续推进下一关。</p>
-            </div>
-          </div>
-        </section>
-      ) : (
-        <section className="mt-6 space-y-4">
-          <div className="flex items-center gap-2 text-coral">
-            <XCircle size={20} />
-            <h2 className="text-xl font-bold">本次做错的题目</h2>
-          </div>
-          {wrongAttempts.map((attempt, index) => {
-            const options = coerceOptions(attempt.question.options);
-            return (
-              <article key={attempt.id} className="panel">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-coral">错题 {index + 1}</p>
-                    <h3 className="mt-2 text-lg font-bold leading-relaxed">{attempt.question.stem}</h3>
-                  </div>
-                  <span className="badge bg-coral/10 text-coral">需要复习</span>
+      <section className="mt-6 space-y-5">
+        <div className="flex items-center gap-2 text-ink">
+          <CheckCircle2 className="text-teal" size={20} />
+          <h2 className="text-xl font-black">历史答题记录</h2>
+        </div>
+        {sessions.map((session) => {
+          const correctAttempts = session.attempts.filter((attempt) => attempt.isCorrect);
+          const wrongAttempts = session.attempts.filter((attempt) => !attempt.isCorrect);
+          return (
+            <article key={session.id} className="panel">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                <div>
+                  <h3 className="text-lg font-black text-ink">{formatDateTime(session.completedAt || session.updatedAt)}</h3>
+                  <p className="mt-1 text-sm font-semibold text-slate-500">正确 {correctAttempts.length} 题，错误 {wrongAttempts.length} 题</p>
                 </div>
-                <div className="mt-4 grid gap-2">
-                  {options.map((option) => (
-                    <div key={option.key} className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6">
-                      <span className="font-semibold">{option.key}.</span> {option.text}
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-                  <p className="rounded-2xl bg-coral/10 p-4 text-coral"><span className="font-semibold">你的答案：</span>{answerText(attempt.selectedAnswer)}</p>
-                  <p className="rounded-2xl bg-teal/10 p-4 text-teal"><span className="font-semibold">正确答案：</span>{answerText(attempt.question.answer)}</p>
-                </div>
-                <div className="mt-3 rounded-2xl bg-mist p-4">
-                  <p className="text-xs font-semibold text-slate-500">解析</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-700">{attempt.question.analysis}</p>
-                </div>
-                <WrongQuestionAi questionId={attempt.questionId} />
-              </article>
-            );
-          })}
-        </section>
-      )}
+                <span className={cn("badge", (session.score || 0) >= 80 ? "bg-[#58cc02]/10 text-[#45a000]" : "bg-coral/10 text-coral")}>
+                  {session.score ?? 0} 分
+                </span>
+              </div>
+
+              <AttemptGroup attempts={correctAttempts} title="做对的题" tone="correct" />
+              <AttemptGroup attempts={wrongAttempts} title="做错的题" tone="wrong" />
+            </article>
+          );
+        })}
+      </section>
     </main>
+  );
+}
+
+function AttemptGroup({ attempts, title, tone }: { attempts: AttemptWithQuestion[]; title: string; tone: "correct" | "wrong" }) {
+  return (
+    <section className="mt-5">
+      <div className={cn("flex items-center gap-2", tone === "correct" ? "text-[#45a000]" : "text-coral")}>
+        {tone === "correct" ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
+        <h4 className="font-black">{title}</h4>
+      </div>
+      {attempts.length === 0 ? (
+        <p className="mt-3 rounded-2xl bg-mist px-4 py-3 text-sm font-semibold text-slate-500">暂无</p>
+      ) : (
+        <div className="mt-3 space-y-4">
+          {attempts.map((attempt, index) => (
+            <AttemptCard key={attempt.id} attempt={attempt} index={index} tone={tone} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AttemptCard({ attempt, index, tone }: { attempt: AttemptWithQuestion; index: number; tone: "correct" | "wrong" }) {
+  const options = coerceOptions(attempt.question.options);
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className={cn("text-sm font-semibold", tone === "correct" ? "text-[#45a000]" : "text-coral")}>{tone === "correct" ? "对题" : "错题"} {index + 1}</p>
+          <h3 className="mt-2 text-lg font-bold leading-relaxed">{attempt.question.stem}</h3>
+        </div>
+        <span className={cn("badge", tone === "correct" ? "bg-[#58cc02]/10 text-[#45a000]" : "bg-coral/10 text-coral")}>
+          {tone === "correct" ? "已掌握" : "需要复习"}
+        </span>
+      </div>
+      <div className="mt-4 grid gap-2">
+        {options.map((option) => (
+          <div key={option.key} className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6">
+            <span className="font-semibold">{option.key}.</span> {option.text}
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+        <p className={cn("rounded-2xl p-4", tone === "correct" ? "bg-[#58cc02]/10 text-[#45a000]" : "bg-coral/10 text-coral")}>
+          <span className="font-semibold">你的答案：</span>{answerText(attempt.selectedAnswer)}
+        </p>
+        <p className="rounded-2xl bg-teal/10 p-4 text-teal">
+          <span className="font-semibold">正确答案：</span>{answerText(attempt.question.answer)}
+        </p>
+      </div>
+      {attempt.question.analysis ? (
+        <div className="mt-3 rounded-2xl bg-mist p-4">
+          <p className="text-xs font-semibold text-slate-500">解析</p>
+          <p className="mt-2 text-sm leading-6 text-slate-700">{attempt.question.analysis}</p>
+        </div>
+      ) : null}
+      {tone === "wrong" ? <WrongQuestionAi questionId={attempt.questionId} /> : null}
+    </article>
   );
 }
 
@@ -180,7 +253,7 @@ function ResultMetric({
   value,
   tone
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   value: string;
   tone: "success" | "danger" | "sky";

@@ -69,15 +69,29 @@ function answerText(answer: unknown) {
   return normalizeAnswer(answer).join("\u3001");
 }
 
-export function QuizRunner({ sectionId, initialTotal }: { sectionId: string; initialTotal: number }) {
+export function QuizRunner({
+  initialCorrectCount = 0,
+  initialIndex = 0,
+  initialRecordedAttempts = {},
+  initialTotal,
+  sectionId,
+  sessionId
+}: {
+  initialCorrectCount?: number;
+  initialIndex?: number;
+  initialRecordedAttempts?: Record<string, string>;
+  initialTotal: number;
+  sectionId: string;
+  sessionId: string;
+}) {
   const router = useRouter();
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [current, setCurrent] = useState<Question | null>(null);
   const [totalQuestions, setTotalQuestions] = useState(initialTotal);
-  const [correctCount, setCorrectCount] = useState(0);
-  const [checkedQuestionIds, setCheckedQuestionIds] = useState<Set<string>>(() => new Set());
-  const [recordedAttempts, setRecordedAttempts] = useState<Record<string, string>>({});
+  const [correctCount, setCorrectCount] = useState(initialCorrectCount);
+  const [checkedQuestionIds, setCheckedQuestionIds] = useState<Set<string>>(() => new Set(Object.keys(initialRecordedAttempts)));
+  const [recordedAttempts, setRecordedAttempts] = useState<Record<string, string>>(initialRecordedAttempts);
   const [correctAnswer, setCorrectAnswer] = useState<unknown>(null);
   const [checkState, setCheckState] = useState<CheckState>("idle");
   const [questionLoading, setQuestionLoading] = useState(false);
@@ -165,7 +179,7 @@ export function QuizRunner({ sectionId, initialTotal }: { sectionId: string; ini
       const response = await fetch(`/api/learning/sections/${encodeURIComponent(sectionId)}/questions/check`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionId: current.id, answer: selected })
+        body: JSON.stringify({ questionId: current.id, answer: selected, sessionId })
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) {
@@ -194,7 +208,7 @@ export function QuizRunner({ sectionId, initialTotal }: { sectionId: string; ini
     const response = await fetch("/api/progress/submit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sectionId, answers, recordedAttempts })
+      body: JSON.stringify({ sectionId, answers, recordedAttempts, sessionId })
     });
     const payload = await response.json();
     const resultPath = payload.data?.resultPath || payload.resultPath;

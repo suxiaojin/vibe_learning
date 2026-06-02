@@ -64,6 +64,20 @@ export function LearningPath({ course, chapter }: LearningPathProps) {
   }, [firstActivePoint?.id]);
 
   useEffect(() => {
+    if (!firstActivePoint?.id) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(`point-${firstActivePoint.id}`)?.scrollIntoView({
+        block: "center"
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [firstActivePoint?.id]);
+
+  useEffect(() => {
     function updateActivePoint() {
       let nextId = activePointId;
       let bestDistance = Number.POSITIVE_INFINITY;

@@ -89,6 +89,11 @@ enum WrongQuestionStatus {
   mastered
 }
 
+enum QuizSessionStatus {
+  in_progress
+  completed
+}
+
 enum LearningCourseType {
   public_subject
   major
@@ -133,6 +138,7 @@ model User {
   studentProfile  StudentProfile?
   progress        UserProgress[]
   attempts        QuestionAttempt[]
+  quizSessions    QuizSession[]
   wrongQuestions  WrongQuestion[]
   aiConversations AiConversation[]
   studyStats      StudyStat[]
@@ -305,6 +311,7 @@ model SyllabusItem {
   children        SyllabusItem[]       @relation("SyllabusItemChildren")
   knowledgePoints KnowledgePoint[]
   progress        UserSyllabusProgress[]
+  quizSessions    QuizSession[]
   questions       Question[]
   questionTags    QuestionKnowledgeTag[]
   createdAt       DateTime             @default(now())
@@ -489,7 +496,9 @@ model UserSyllabusProgress {
 model QuestionAttempt {
   id             String   @id @default(cuid())
   userId         String
+  sessionId      String?
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session        QuizSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   questionId     String
   question       Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
   selectedAnswer Json
@@ -497,7 +506,31 @@ model QuestionAttempt {
   createdAt      DateTime @default(now())
 
   @@index([userId, questionId])
+  @@index([sessionId, questionId])
   @@map("question_attempts")
+}
+
+model QuizSession {
+  id             String            @id @default(cuid())
+  userId         String
+  syllabusItemId String
+  status         QuizSessionStatus @default(in_progress)
+  currentIndex   Int               @default(0)
+  score          Int?
+  correctCount   Int               @default(0)
+  totalCount     Int               @default(0)
+  diamondRewardAmount Int           @default(0)
+  startedAt      DateTime          @default(now())
+  completedAt    DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  syllabusItem   SyllabusItem      @relation(fields: [syllabusItemId], references: [id], onDelete: Cascade)
+  attempts       QuestionAttempt[]
+
+  @@index([userId, syllabusItemId, status, updatedAt])
+  @@index([syllabusItemId])
+  @@map("quiz_sessions")
 }
 
 model WrongQuestion {

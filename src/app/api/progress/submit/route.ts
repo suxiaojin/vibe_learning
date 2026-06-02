@@ -15,6 +15,7 @@ export async function POST(request: Request) {
     sectionId?: string;
     answers?: Record<string, string[]>;
     recordedAttempts?: Record<string, string>;
+    sessionId?: string;
   } | null;
   if (!body?.sectionId || !body.answers) {
     return apiError("Invalid payload", 400, "INVALID_PROGRESS_SUBMISSION");
@@ -30,26 +31,37 @@ export async function POST(request: Request) {
   let newlyRecordedQuestions = 0;
   const wrongAttemptIds: string[] = [];
   const questions = result.questions as Array<(typeof result.questions)[number] & { answer: unknown }>;
-  const recordedAttempts = body.recordedAttempts || {};
+  const session = await getOrCreateQuizSession(user.id, body.sectionId, body.sessionId);
 
   for (const question of questions) {
+    const existingAttempt = await prisma.questionAttempt.findFirst({
+      where: {
+        sessionId: session.id,
+        userId: user.id,
+        questionId: question.id
+      },
+      select: { id: true, isCorrect: true }
+    });
+
+    if (existingAttempt) {
+      if (existingAttempt.isCorrect) {
+        correct += 1;
+      } else {
+        wrongAttemptIds.push(existingAttempt.id);
+      }
+      continue;
+    }
+
     const selected = body.answers[question.id] || [];
     const isCorrect = answersEqual(selected, question.answer);
     if (isCorrect) {
       correct += 1;
     }
 
-    const existingAttemptId = recordedAttempts[question.id];
-    if (typeof existingAttemptId === "string" && existingAttemptId) {
-      if (!isCorrect) {
-        wrongAttemptIds.push(existingAttemptId);
-      }
-      continue;
-    }
-
     const attempt = await prisma.questionAttempt.create({
       data: {
         userId: user.id,
+        sessionId: session.id,
         questionId: question.id,
         selectedAnswer: selected,
         isCorrect
@@ -77,8 +89,57 @@ export async function POST(request: Request) {
     pointsPassed: newlyPassed ? 1 : 0,
     studySeconds: 60
   });
+  const diamondRewardAmount = diamondRewards.reduce((sum, reward) => sum + reward.amount, 0);
+  await prisma.quizSession.update({
+    where: { id: session.id },
+    data: {
+      status: "completed",
+      completedAt: new Date(),
+      currentIndex: total,
+      score,
+      correctCount: correct,
+      totalCount: total,
+      diamondRewardAmount: diamondRewardAmount > 0 ? { increment: diamondRewardAmount } : undefined
+    }
+  });
   revalidatePath("/me");
 
-  const resultPath = `/learn/${body.sectionId}/result?attemptIds=${wrongAttemptIds.join(",")}&score=${score}&correct=${correct}&total=${total}&submittedAt=${encodeURIComponent(submittedAt.toISOString())}`;
-  return apiOk({ score, passed, correct, total, wrongAttemptIds, diamondRewards, resultPath });
+  const resultPath = `/learn/${body.sectionId}/result?sessionId=${session.id}`;
+  return apiOk({ score, passed, correct, total, wrongAttemptIds, diamondRewards, sessionId: session.id, resultPath });
+}
+
+async function getOrCreateQuizSession(userId: string, sectionId: string, sessionId?: string) {
+  if (sessionId) {
+    const existing = await prisma.quizSession.findFirst({
+      where: {
+        id: sessionId,
+        userId,
+        syllabusItemId: sectionId
+      }
+    });
+
+    if (existing) {
+      return existing;
+    }
+  }
+
+  const latest = await prisma.quizSession.findFirst({
+    where: {
+      userId,
+      syllabusItemId: sectionId,
+      status: "in_progress"
+    },
+    orderBy: { updatedAt: "desc" }
+  });
+
+  if (latest) {
+    return latest;
+  }
+
+  return prisma.quizSession.create({
+    data: {
+      userId,
+      syllabusItemId: sectionId
+    }
+  });
 }
