@@ -14,6 +14,18 @@ async function main() {
     create: { username: adminUsername, passwordHash, role: "admin" }
   });
 
+  await prisma.systemSetting.upsert({
+    where: { id: "default" },
+    update: {},
+    create: {
+      id: "default",
+      loginHeroImageUrl: "/login-hero-vibelearning.png",
+      loginMarketingTitle: "新注册用户限时赠送学习加速包",
+      loginMarketingDescription: "完成注册即可开启江苏专转本计算机闯关学习",
+      loginWelcomeTitle: "Welcome to VibeLearning"
+    }
+  });
+
   const subject = await prisma.subject.upsert({
     where: {
       province_examType_name: {

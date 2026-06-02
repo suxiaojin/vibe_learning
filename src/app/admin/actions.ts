@@ -1,6 +1,9 @@
 "use server";
 
 import bcrypt from "bcryptjs";
+import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { extname } from "node:path";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ContentStatus, Difficulty, QuestionType, RegionStatus, SyllabusRequirement } from "@prisma/client";
@@ -14,6 +17,7 @@ import {
   isQuestionBankRichAnswerQuestionType,
   type QuestionBankEditableQuestionType
 } from "@/lib/question-bank-types";
+import { systemSettingsDefaults, systemSettingsId } from "@/lib/system-settings";
 
 type QuestionOption = {
   key: string;
@@ -22,6 +26,14 @@ type QuestionOption = {
 
 const optionKeys = ["A", "B", "C", "D"] as const;
 const alphabetOptionKeys = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+const loginHeroUploadDir = "uploads/system-settings";
+const maxLoginHeroImageSize = 5 * 1024 * 1024;
+const imageMimeExtensions: Record<string, string> = {
+  "image/gif": ".gif",
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp"
+};
 
 function getStatus(formData: FormData) {
   return String(formData.get("status") || "draft") as ContentStatus;
@@ -200,6 +212,28 @@ function appendAdminStudentsMessage(path: string, key: "notice" | "error", messa
   return `${base}?${params.toString()}`;
 }
 
+function getRequiredSettingText(formData: FormData, key: keyof typeof systemSettingsDefaults) {
+  const value = String(formData.get(key) || "").trim();
+  return value || systemSettingsDefaults[key];
+}
+
+async function saveLoginHeroImage(file: File) {
+  if (!imageMimeExtensions[file.type]) {
+    redirect("/admin/settings?error=invalid-image-type");
+  }
+
+  if (file.size > maxLoginHeroImageSize) {
+    redirect("/admin/settings?error=image-too-large");
+  }
+
+  const extension = imageMimeExtensions[file.type] || extname(file.name).toLowerCase() || ".png";
+  const fileName = `login-hero-${Date.now()}-${randomUUID().slice(0, 8)}${extension}`;
+  const publicDir = `${process.cwd()}/public/${loginHeroUploadDir}`;
+  await mkdir(publicDir, { recursive: true });
+  await writeFile(`${publicDir}/${fileName}`, Buffer.from(await file.arrayBuffer()));
+  return `/${loginHeroUploadDir}/${fileName}`;
+}
+
 function getQuestionType(formData: FormData) {
   return String(formData.get("type") || "single_choice") as QuestionType;
 }
@@ -308,6 +342,37 @@ export async function updateAdminModule(formData: FormData) {
   });
   revalidatePath("/admin/module-config");
   revalidatePath("/admin", "layout");
+}
+
+export async function updateSystemSettings(formData: FormData) {
+  await requireAdmin();
+  let loginHeroImageUrl = getRequiredSettingText(formData, "loginHeroImageUrl");
+  const loginHeroImageFile = formData.get("loginHeroImageFile");
+
+  if (loginHeroImageFile instanceof File && loginHeroImageFile.size > 0) {
+    loginHeroImageUrl = await saveLoginHeroImage(loginHeroImageFile);
+  }
+
+  const data = {
+    loginHeroImageUrl,
+    loginMarketingTitle: getRequiredSettingText(formData, "loginMarketingTitle"),
+    loginMarketingDescription: getRequiredSettingText(formData, "loginMarketingDescription"),
+    loginWelcomeTitle: getRequiredSettingText(formData, "loginWelcomeTitle")
+  };
+
+  await prisma.systemSetting.upsert({
+    where: { id: systemSettingsId },
+    update: data,
+    create: {
+      id: systemSettingsId,
+      ...data
+    }
+  });
+
+  revalidatePath("/admin/settings");
+  revalidatePath("/login");
+  revalidatePath("/register");
+  redirect("/admin/settings?notice=saved");
 }
 
 export async function toggleStudentAccountStatus(formData: FormData) {

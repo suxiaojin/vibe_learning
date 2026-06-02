@@ -74,7 +74,7 @@ export function AdminShell({ children, modules }: { children: React.ReactNode; m
         <nav className="flex-1 px-3" aria-label="后台管理导航">
           {modules.map((item) => {
             const Icon = iconMap[item.icon as keyof typeof iconMap] || Settings;
-            const active = pathname.startsWith(item.href) && item.key !== "dashboard" && item.key !== "settings";
+            const active = item.key === "dashboard" ? pathname === item.href : pathname.startsWith(item.href);
             return (
               <Link
                 key={`${item.key}-${item.href}`}

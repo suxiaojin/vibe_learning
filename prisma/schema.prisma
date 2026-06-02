@@ -184,6 +184,18 @@ model AdminModule {
   @@map("admin_modules")
 }
 
+model SystemSetting {
+  id                        String   @id @default("default")
+  loginHeroImageUrl         String   @default("/login-hero-vibelearning.png")
+  loginMarketingTitle       String   @default("新注册用户限时赠送学习加速包")
+  loginMarketingDescription String   @default("完成注册即可开启江苏专转本计算机闯关学习")
+  loginWelcomeTitle         String   @default("Welcome to VibeLearning")
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
 model Region {
   id              String                @id @default(cuid())
   name            String                @unique

@@ -50,10 +50,18 @@ const transactionLabels: Record<string, string> = {
   ai_consumption: "AI 消耗"
 };
 
+type MeTab = "profile" | "medals" | "diamonds";
+
+const meTabs: Array<{ key: MeTab; label: string }> = [
+  { key: "profile", label: "我的信息" },
+  { key: "medals", label: "我的勋章" },
+  { key: "diamonds", label: "我的钻石" }
+];
+
 export default async function MePage({
   searchParams
 }: {
-  searchParams?: Promise<{ profile?: string; password?: string }>;
+  searchParams?: Promise<{ profile?: string; password?: string; tab?: string }>;
 }) {
   const user = await requireUser();
   const query = await searchParams;
@@ -88,6 +96,7 @@ export default async function MePage({
   const medalLevel = getMedalLevel(totalAttempts);
   const currentMedal = getMedalRule(medalLevel);
   const dailyAttempts = summarizeDailyAttempts(recentAttempts);
+  const activeTab = getActiveMeTab(query?.tab);
   const joinedAt = fullUser.createdAt.toLocaleDateString("zh-CN", {
     year: "numeric",
     month: "long",
@@ -117,35 +126,45 @@ export default async function MePage({
             </div>
           </header>
 
+          <ProfileTabs activeTab={activeTab} />
+
           <Message type={query?.profile} successText="资料已保存" />
           <Message type={query?.password} successText="密码已更新" />
 
-          <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
-            <ProfilePanel
-              username={fullUser.username}
-              nickname={nickname}
-              avatarColor={avatarColor}
-              avatarImage={avatarImage}
-              profileStatus={query?.profile}
+          {activeTab === "profile" ? (
+            <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+              <ProfilePanel
+                username={fullUser.username}
+                nickname={nickname}
+                avatarColor={avatarColor}
+                avatarImage={avatarImage}
+                profileStatus={query?.profile}
+                gender={fullUser.studentProfile?.gender || ""}
+                school={fullUser.studentProfile?.school || ""}
+                phoneNumber={fullUser.phoneNumber || ""}
+                email={fullUser.email || ""}
+              />
+              <PasswordPanel status={query?.password} />
+            </section>
+          ) : null}
+
+          {activeTab === "medals" ? (
+            <MedalTrack
+              dailyAttempts={dailyAttempts}
               gender={fullUser.studentProfile?.gender || ""}
-              school={fullUser.studentProfile?.school || ""}
-              phoneNumber={fullUser.phoneNumber || ""}
-              email={fullUser.email || ""}
+              totalAttempts={totalAttempts}
             />
-            <PasswordPanel status={query?.password} />
-          </section>
+          ) : null}
 
-          <MedalTrack
-            dailyAttempts={dailyAttempts}
-            gender={fullUser.studentProfile?.gender || ""}
-            totalAttempts={totalAttempts}
-          />
-
-          <DiamondPanel transactions={transactions} />
+          {activeTab === "diamonds" ? <DiamondPanel transactions={transactions} /> : null}
         </div>
       </section>
     </main>
   );
+}
+
+function getActiveMeTab(tab?: string): MeTab {
+  return meTabs.some((item) => item.key === tab) ? (tab as MeTab) : "profile";
 }
 
 function SectionFrame({
@@ -167,6 +186,33 @@ function SectionFrame({
       </div>
       <div className={cn("p-5", bodyClassName)}>{children}</div>
     </section>
+  );
+}
+
+function ProfileTabs({ activeTab }: { activeTab: MeTab }) {
+  return (
+    <nav aria-label="个人档案功能" className="border-b border-slate-200">
+      <div className="flex min-h-16 gap-7 overflow-x-auto px-1">
+        {meTabs.map((tab) => {
+          const active = activeTab === tab.key;
+          return (
+            <a
+              key={tab.key}
+              aria-current={active ? "page" : undefined}
+              className={cn(
+                "inline-flex shrink-0 items-center border-b-2 px-1 pt-1 text-sm font-black transition",
+                active
+                  ? "border-teal text-ink"
+                  : "border-transparent text-slate-600 hover:border-slate-300 hover:text-ink"
+              )}
+              href={`/me?tab=${tab.key}`}
+            >
+              {tab.label}
+            </a>
+          );
+        })}
+      </div>
+    </nav>
   );
 }
 
@@ -704,7 +750,7 @@ async function updateProfile(formData: FormData) {
   ]);
 
   revalidatePath("/me");
-  redirect("/me?profile=updated");
+  redirect("/me?tab=profile&profile=updated");
 }
 
 async function updateAvatar(formData: FormData) {
@@ -714,7 +760,7 @@ async function updateAvatar(formData: FormData) {
   const avatarImage = await readAvatarImage(formData.get("avatarImage"));
 
   if (!avatarImage) {
-    redirect("/me");
+    redirect("/me?tab=profile");
   }
 
   await prisma.studentProfile.upsert({
@@ -728,7 +774,7 @@ async function updateAvatar(formData: FormData) {
   });
 
   revalidatePath("/me");
-  redirect("/me?profile=updated");
+  redirect("/me?tab=profile&profile=updated");
 }
 
 async function readAvatarImage(value: FormDataEntryValue | null) {
@@ -737,11 +783,11 @@ async function readAvatarImage(value: FormDataEntryValue | null) {
   }
 
   if (value.size > avatarMaxBytes) {
-    redirect("/me?profile=avatar_size");
+    redirect("/me?tab=profile&profile=avatar_size");
   }
 
   if (!allowedAvatarTypes.has(value.type)) {
-    redirect("/me?profile=avatar_type");
+    redirect("/me?tab=profile&profile=avatar_type");
   }
 
   const bytes = Buffer.from(await value.arrayBuffer());
@@ -757,10 +803,10 @@ async function changePassword(formData: FormData) {
   const confirmPassword = String(formData.get("confirmPassword") || "");
 
   if (newPassword.length < 6) {
-    redirect("/me?password=short");
+    redirect("/me?tab=profile&password=short");
   }
   if (newPassword !== confirmPassword) {
-    redirect("/me?password=mismatch");
+    redirect("/me?tab=profile&password=mismatch");
   }
 
   const fullUser = await prisma.user.findUnique({
@@ -769,7 +815,7 @@ async function changePassword(formData: FormData) {
   });
 
   if (!fullUser || !(await bcrypt.compare(currentPassword, fullUser.passwordHash))) {
-    redirect("/me?password=invalid");
+    redirect("/me?tab=profile&password=invalid");
   }
 
   await prisma.$transaction([
@@ -788,5 +834,5 @@ async function changePassword(formData: FormData) {
   ]);
 
   revalidatePath("/me");
-  redirect("/me?password=updated");
+  redirect("/me?tab=profile&password=updated");
 }

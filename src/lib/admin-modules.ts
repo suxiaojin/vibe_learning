@@ -20,13 +20,17 @@ const defaultAdminModules: AdminModuleNavItem[] = [
   { key: "question-banks", label: "题库管理", href: "/admin/question-banks", icon: "database", status: "published", sortOrder: 5, builtIn: true },
   { key: "students", label: "学生管理", href: "/admin/students", icon: "users", status: "published", sortOrder: 6, builtIn: true },
   { key: "notifications", label: "通知管理", href: "/admin/notifications", icon: "bell", status: "published", sortOrder: 7, builtIn: true },
-  { key: "settings", label: "系统设置", href: "/admin/regions", icon: "settings", status: "published", sortOrder: 99, builtIn: true }
+  { key: "settings", label: "系统设置", href: "/admin/settings", icon: "settings", status: "published", sortOrder: 99, builtIn: true }
 ];
 
 async function ensureDefaultAdminModules() {
   await prisma.adminModule.createMany({
     data: defaultAdminModules,
     skipDuplicates: true
+  });
+  await prisma.adminModule.updateMany({
+    where: { key: "settings", href: "/admin/regions" },
+    data: { href: "/admin/settings" }
   });
 }
 
