@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { BookMarked, GraduationCap, HelpCircle, LogOut, MoreHorizontal, Settings, Target, UserRound } from "lucide-react";
+import { Bell, BookMarked, GraduationCap, HelpCircle, LogOut, MoreHorizontal, Settings, Target, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type StudentNavKey = "learn" | "course-center" | "wrong-book" | "me";
+type StudentNavKey = "learn" | "course-center" | "wrong-book" | "me" | "notifications";
 
 const text = {
   subtitle: "\u4e13\u8f6c\u672c\u95ef\u5173\u5b66\u4e60",
@@ -13,7 +13,8 @@ const text = {
   profile: "\u4e2a\u4eba\u6863\u6848",
   more: "\u66f4\u591a",
   moreTitle: "\u66f4\u591a\u529f\u80fd",
-  moreHint: "\u8bbe\u7f6e\u548c\u5e2e\u52a9\u5373\u5c06\u5f00\u653e",
+  moreHint: "\u901a\u77e5\u3001\u8bbe\u7f6e\u548c\u5e2e\u52a9",
+  notifications: "\u901a\u77e5",
   settings: "\u8bbe\u7f6e",
   help: "\u5e2e\u52a9",
   logout: "\u9000\u51fa\u767b\u5f55"
@@ -32,7 +33,7 @@ export function StudentSidebar({ active }: { active: StudentNavKey }) {
           <StudentNavItem active={active === "course-center"} href="/course-center" icon={<BookMarked size={24} />} label={text.courseCenter} />
           <StudentNavItem active={active === "wrong-book"} href="/wrong-book" icon={<Target size={24} />} label={text.review} />
           <StudentNavItem active={active === "me"} href="/me" icon={<UserRound size={24} />} label={text.profile} />
-          <MoreMenu />
+          <MoreMenu active={active === "notifications"} />
         </nav>
       </div>
     </aside>
@@ -64,11 +65,14 @@ function StudentNavItem({
   );
 }
 
-function MoreMenu() {
+function MoreMenu({ active }: { active: boolean }) {
   return (
     <div className="group relative">
       <button
-        className="flex min-h-14 w-full items-center gap-3 rounded-xl border-2 border-transparent px-4 text-left text-sm font-black text-slate-600 transition hover:bg-slate-100 group-hover:bg-slate-100"
+        className={cn(
+          "flex min-h-14 w-full items-center gap-3 rounded-xl border-2 px-4 text-left text-sm font-black transition group-hover:bg-slate-100",
+          active ? "border-sky-300 bg-sky-50 text-sky-600" : "border-transparent text-slate-600 hover:bg-slate-100"
+        )}
         type="button"
       >
         <span className="grid size-7 place-items-center rounded-full bg-violet-400 text-white">
@@ -83,6 +87,10 @@ function MoreMenu() {
             <p className="text-sm font-black text-slate-700">{text.moreTitle}</p>
             <p className="mt-1 text-xs font-semibold text-slate-400">{text.moreHint}</p>
           </div>
+          <Link className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-black text-slate-600 hover:bg-slate-50" href="/notifications">
+            <Bell size={18} />
+            {text.notifications}
+          </Link>
           <button className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-black text-slate-500 hover:bg-slate-50" type="button">
             <Settings size={18} />
             {text.settings}

@@ -4,6 +4,7 @@ import { getAdminModules } from "@/lib/admin-modules";
 
 const iconOptions = [
   { value: "dashboard", label: "仪表盘" },
+  { value: "bell", label: "通知" },
   { value: "map", label: "区域" },
   { value: "book", label: "课程/题库" },
   { value: "database", label: "题库数据" },

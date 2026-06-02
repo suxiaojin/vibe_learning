@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import {
+  Bell,
   BookOpenCheck,
   Database,
   GraduationCap,
@@ -18,6 +19,7 @@ import type { AdminModuleNavItem } from "@/lib/admin-modules";
 import { cn } from "@/lib/utils";
 
 const iconMap = {
+  bell: Bell,
   book: BookOpenCheck,
   database: Database,
   dashboard: LayoutDashboard,

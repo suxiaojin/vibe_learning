@@ -42,6 +42,12 @@ enum ContentStatus {
   archived
 }
 
+enum NotificationStatus {
+  draft
+  sent
+  archived
+}
+
 enum RegionStatus {
   active
   inactive
@@ -155,6 +161,8 @@ model User {
   diamondTransactions DiamondTransaction[]
   passwordChangeLogs PasswordChangeLog[] @relation("PasswordChangeTarget")
   passwordChangesMade PasswordChangeLog[] @relation("PasswordChangeActor")
+  sentNotifications Notification[] @relation("NotificationAuthor")
+  notificationRecipients NotificationRecipient[]
 
   @@index([role, status, createdAt])
   @@map("users")
@@ -632,4 +640,38 @@ model PasswordChangeLog {
   @@index([userId, createdAt])
   @@index([actorUserId, createdAt])
   @@map("password_change_logs")
+}
+
+model Notification {
+  id          String                  @id @default(cuid())
+  title       String
+  contentHtml String
+  status      NotificationStatus      @default(draft)
+  authorId    String?
+  author      User?                   @relation("NotificationAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  recipients  NotificationRecipient[]
+  sentAt      DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  @@index([status, expiresAt, sentAt])
+  @@index([authorId, createdAt])
+  @@map("notifications")
+}
+
+model NotificationRecipient {
+  id             String       @id @default(cuid())
+  notificationId String
+  userId         String
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveredAt    DateTime     @default(now())
+  readAt         DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@unique([notificationId, userId])
+  @@index([userId, readAt, deliveredAt])
+  @@index([notificationId])
+  @@map("notification_recipients")
 }
