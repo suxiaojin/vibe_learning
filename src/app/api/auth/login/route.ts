@@ -13,7 +13,11 @@ export async function POST(request: Request) {
   const username = String(formData.get("username") || "").trim();
   const password = String(formData.get("password") || "");
 
-  const user = await prisma.user.findUnique({ where: { username } });
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [{ username }, { email: username.toLowerCase() }]
+    }
+  });
   if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
     return redirectTo(request, "/login?error=Invalid%20username%20or%20password");
   }

@@ -28,6 +28,8 @@ Request:
 }
 ```
 
+`purpose` supports `register`, `login`, and `password_reset`; the email subject/body will use 注册验证码、登录验证码 or 登录新密码 accordingly.
+
 Response:
 
 ```json

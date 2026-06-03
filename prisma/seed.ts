@@ -26,7 +26,8 @@ async function main() {
       loginWelcomeTitle: "Welcome to VibeLearning",
       userAgreementContent: "test",
       privacyPolicyContent: "test",
-      platformAgreementContent: "test"
+      platformAgreementContent: "test",
+      customerServiceEmail: "714399532@qq.com"
     }
   });
 

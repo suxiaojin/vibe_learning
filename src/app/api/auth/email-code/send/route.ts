@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import {
   emailCodeCooldownMs,
   emailCodeExpiresMs,
+  emailVerificationPurposeLogin,
   emailVerificationPurposeRegister,
   generateEmailCode,
   hashEmailCode,
+  isEmailVerificationPurpose,
   isValidEmail,
   normalizeEmail,
   sendEmailCodeMail
@@ -28,8 +30,9 @@ function errorResponse(message: string, status = 400, code = "EMAIL_CODE_ERROR",
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => null)) as { email?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as { email?: unknown; purpose?: unknown } | null;
   const email = normalizeEmail(String(body?.email || ""));
+  const purpose = isEmailVerificationPurpose(body?.purpose) ? body.purpose : emailVerificationPurposeRegister;
 
   if (!isValidEmail(email)) {
     return errorResponse("请输入有效的邮箱地址。", 400, "INVALID_EMAIL");
@@ -39,17 +42,24 @@ export async function POST(request: Request) {
     where: {
       OR: [{ username: email }, { email }]
     },
-    select: { id: true }
+    select: { id: true, status: true }
   });
-  if (existingUser) {
+
+  if (purpose === emailVerificationPurposeRegister && existingUser) {
     return errorResponse("该邮箱已注册，请直接登录。", 409, "EMAIL_ALREADY_REGISTERED");
+  }
+  if (purpose === emailVerificationPurposeLogin && !existingUser) {
+    return errorResponse("该邮箱还未注册，请先注册。", 404, "EMAIL_NOT_REGISTERED");
+  }
+  if (purpose === emailVerificationPurposeLogin && existingUser?.status === "disabled") {
+    return errorResponse("账号已被禁用，请联系管理员。", 403, "ACCOUNT_DISABLED");
   }
 
   const now = new Date();
   const recentCode = await prisma.emailVerificationCode.findFirst({
     where: {
       email,
-      purpose: emailVerificationPurposeRegister,
+      purpose,
       lastSentAt: {
         gte: new Date(now.getTime() - emailCodeCooldownMs)
       }
@@ -67,8 +77,8 @@ export async function POST(request: Request) {
   const verification = await prisma.emailVerificationCode.create({
     data: {
       email,
-      purpose: emailVerificationPurposeRegister,
-      codeHash: hashEmailCode(email, emailVerificationPurposeRegister, code),
+      purpose,
+      codeHash: hashEmailCode(email, purpose, code),
       expiresAt: new Date(now.getTime() + emailCodeExpiresMs),
       lastSentAt: now
     },
@@ -79,6 +89,7 @@ export async function POST(request: Request) {
     await sendEmailCodeMail({
       email,
       code,
+      purpose,
       expiresInMinutes: Math.round(emailCodeExpiresMs / 1000 / 60)
     });
   } catch (error) {
@@ -90,7 +101,7 @@ export async function POST(request: Request) {
   await prisma.emailVerificationCode.updateMany({
     where: {
       email,
-      purpose: emailVerificationPurposeRegister,
+      purpose,
       id: { not: verification.id },
       consumedAt: null
     },

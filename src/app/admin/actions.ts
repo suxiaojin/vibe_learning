@@ -361,7 +361,8 @@ export async function updateSystemSettings(formData: FormData) {
     loginWelcomeTitle: getRequiredSettingText(formData, "loginWelcomeTitle"),
     userAgreementContent: getRequiredSettingText(formData, "userAgreementContent"),
     privacyPolicyContent: getRequiredSettingText(formData, "privacyPolicyContent"),
-    platformAgreementContent: getRequiredSettingText(formData, "platformAgreementContent")
+    platformAgreementContent: getRequiredSettingText(formData, "platformAgreementContent"),
+    customerServiceEmail: getRequiredSettingText(formData, "customerServiceEmail")
   };
 
   await prisma.systemSetting.upsert({
@@ -379,6 +380,7 @@ export async function updateSystemSettings(formData: FormData) {
   revalidatePath("/user-agreement");
   revalidatePath("/privacy-policy");
   revalidatePath("/platform-agreement");
+  revalidatePath("/forgot-password");
   redirect("/admin/settings?notice=saved");
 }
 

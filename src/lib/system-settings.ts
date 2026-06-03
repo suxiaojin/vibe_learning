@@ -11,7 +11,8 @@ export const systemSettingsDefaults = {
   loginWelcomeTitle: "Welcome to VibeLearning",
   userAgreementContent: "test",
   privacyPolicyContent: "test",
-  platformAgreementContent: "test"
+  platformAgreementContent: "test",
+  customerServiceEmail: "714399532@qq.com"
 };
 
 export type PublicSystemSettings = typeof systemSettingsDefaults & {

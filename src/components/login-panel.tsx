@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { BookOpenCheck, Eye, EyeOff, Gift, GraduationCap, Lock, Mail, Sparkles, Trophy, UserRound } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import type { PublicSystemSettings } from "@/lib/system-settings";
 import { cn } from "@/lib/utils";
 
@@ -42,7 +44,7 @@ function TabButton({
   onClick
 }: {
   active: boolean;
-  children: React.ReactNode;
+  children: ReactNode;
   onClick: () => void;
 }) {
   return (
@@ -75,16 +77,20 @@ function FormField({
   placeholder,
   type = "text",
   autoComplete,
-  trailing
+  trailing,
+  value,
+  onChange
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   id: string;
   label: string;
   name: string;
   placeholder: string;
   type?: string;
   autoComplete?: string;
-  trailing?: React.ReactNode;
+  trailing?: ReactNode;
+  value?: string;
+  onChange?: (event: ChangeEvent<HTMLInputElement>) => void;
 }) {
   return (
     <label
@@ -102,6 +108,8 @@ function FormField({
           placeholder={placeholder}
           required
           autoComplete={autoComplete}
+          value={value}
+          onChange={onChange}
         />
       </span>
       {trailing}
@@ -109,11 +117,29 @@ function FormField({
   );
 }
 
-function AgreementLine({ showForgot = false }: { showForgot?: boolean }) {
+function AgreementLine({
+  checked,
+  onCheckedChange,
+  showForgot = false
+}: {
+  checked?: boolean;
+  onCheckedChange?: (value: boolean) => void;
+  showForgot?: boolean;
+}) {
+  const controlledProps =
+    typeof checked === "boolean"
+      ? {
+          checked,
+          onChange: (event: ChangeEvent<HTMLInputElement>) => onCheckedChange?.(event.target.checked)
+        }
+      : {
+          defaultChecked: true
+        };
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[#444b60]">
       <label className="flex min-h-9 items-center gap-2">
-        <input className="size-4 rounded border-slate-300 accent-[#6d35ff]" name="agreement" type="checkbox" required defaultChecked />
+        <input className="size-4 rounded border-slate-300 accent-[#6d35ff]" name="agreement" type="checkbox" required {...controlledProps} />
         <span>
           阅读并同意
           <Link className="mx-1 font-semibold text-[#5d35ff]" href="/user-agreement">
@@ -126,7 +152,7 @@ function AgreementLine({ showForgot = false }: { showForgot?: boolean }) {
         </span>
       </label>
       {showForgot ? (
-        <Link className="min-h-9 font-semibold text-[#5d35ff]" href="#">
+        <Link className="min-h-9 font-semibold text-[#5d35ff]" href="/forgot-password">
           忘记密码
         </Link>
       ) : null}
@@ -141,9 +167,110 @@ export function LoginPanel({
   settings: PublicSystemSettings;
   error?: string;
 }) {
+  const router = useRouter();
   const [tab, setTab] = useState<"password" | "email">("password");
   const [showPassword, setShowPassword] = useState(false);
+  const [emailLoginEmail, setEmailLoginEmail] = useState("");
+  const [emailLoginCode, setEmailLoginCode] = useState("");
+  const [emailLoginAgreement, setEmailLoginAgreement] = useState(true);
+  const [emailLoginStatusText, setEmailLoginStatusText] = useState("");
+  const [emailLoginStatusType, setEmailLoginStatusType] = useState<"error" | "success">("success");
+  const [emailLoginCooldown, setEmailLoginCooldown] = useState(0);
+  const [sendingEmailCode, setSendingEmailCode] = useState(false);
+  const [submittingEmailLogin, setSubmittingEmailLogin] = useState(false);
   const MarketingIcon = marketingIconMap[settings.loginMarketingIcon as keyof typeof marketingIconMap] || Gift;
+
+  useEffect(() => {
+    if (emailLoginCooldown <= 0) {
+      return;
+    }
+    const timer = window.setTimeout(() => setEmailLoginCooldown((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearTimeout(timer);
+  }, [emailLoginCooldown]);
+
+  function showEmailLoginError(message: string) {
+    setEmailLoginStatusType("error");
+    setEmailLoginStatusText(message);
+  }
+
+  function showEmailLoginSuccess(message: string) {
+    setEmailLoginStatusType("success");
+    setEmailLoginStatusText(message);
+  }
+
+  async function sendEmailLoginCode() {
+    if (!emailLoginEmail.trim()) {
+      showEmailLoginError("请先填写账号邮箱。");
+      return;
+    }
+
+    setSendingEmailCode(true);
+    try {
+      const response = await fetch("/api/auth/email-code/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailLoginEmail, purpose: "login" })
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        data?: { message?: string; cooldownSeconds?: number };
+        error?: { message?: string; waitSeconds?: number };
+      } | null;
+
+      if (!response.ok || !payload?.ok) {
+        if (typeof payload?.error?.waitSeconds === "number") {
+          setEmailLoginCooldown(payload.error.waitSeconds);
+        }
+        showEmailLoginError(payload?.error?.message || "验证码发送失败，请稍后再试。");
+        return;
+      }
+
+      setEmailLoginCooldown(payload.data?.cooldownSeconds || 60);
+      showEmailLoginSuccess(payload.data?.message || "验证码已发送，请查收邮箱。");
+    } catch {
+      showEmailLoginError("验证码发送失败，请检查网络后重试。");
+    } finally {
+      setSendingEmailCode(false);
+    }
+  }
+
+  async function submitEmailLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!emailLoginAgreement) {
+      showEmailLoginError("请先同意用户协议和隐私政策。");
+      return;
+    }
+
+    setSubmittingEmailLogin(true);
+    try {
+      const response = await fetch("/api/auth/email-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: emailLoginEmail,
+          emailCode: emailLoginCode,
+          agreement: emailLoginAgreement
+        })
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        data?: { message?: string; redirectTo?: string };
+        error?: { message?: string };
+      } | null;
+
+      if (!response.ok || !payload?.ok) {
+        showEmailLoginError(payload?.error?.message || "登录失败，请稍后再试。");
+        return;
+      }
+
+      showEmailLoginSuccess("登录成功，正在进入系统。");
+      router.push(payload.data?.redirectTo || "/learn");
+    } catch {
+      showEmailLoginError("登录失败，请检查网络后重试。");
+    } finally {
+      setSubmittingEmailLogin(false);
+    }
+  }
 
   return (
     <div className="flex min-h-full flex-col bg-white">
@@ -218,7 +345,7 @@ export function LoginPanel({
             </button>
           </form>
         ) : (
-          <form className="mt-10 grid gap-5">
+          <form className="mt-10 grid gap-5" onSubmit={submitEmailLogin}>
             <FormField
               autoComplete="email"
               icon={<Mail size={19} />}
@@ -227,27 +354,50 @@ export function LoginPanel({
               name="email"
               placeholder="账号邮箱"
               type="email"
+              value={emailLoginEmail}
+              onChange={(event) => setEmailLoginEmail(event.target.value)}
             />
             <div className="grid min-h-[50px] grid-cols-[1fr_118px] overflow-hidden border border-[#d1d8e6] bg-white">
               <input
                 className="min-w-0 border-none px-4 text-sm outline-none placeholder:text-[#9aa4b7]"
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                maxLength={4}
                 name="emailCode"
+                pattern="[0-9]{4}"
                 placeholder="验证码"
                 required
+                value={emailLoginCode}
+                onChange={(event) => setEmailLoginCode(event.target.value.replace(/\D/g, "").slice(0, 4))}
               />
               <button
-                className="border-l border-[#d1d8e6] text-sm font-black text-[#6d35ff] transition hover:bg-[#f7f4ff]"
+                className="border-l border-[#d1d8e6] text-sm font-black text-[#6d35ff] transition hover:bg-[#f7f4ff] disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                disabled={sendingEmailCode || emailLoginCooldown > 0}
                 type="button"
+                onClick={sendEmailLoginCode}
               >
-                获取验证码
+                {emailLoginCooldown > 0 ? `${emailLoginCooldown}s` : sendingEmailCode ? "发送中" : "获取验证码"}
               </button>
             </div>
-            <AgreementLine />
+
+            {emailLoginStatusText ? (
+              <p
+                className={cn(
+                  "px-4 py-3 text-sm font-semibold",
+                  emailLoginStatusType === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+                )}
+              >
+                {emailLoginStatusText}
+              </p>
+            ) : null}
+
+            <AgreementLine checked={emailLoginAgreement} onCheckedChange={setEmailLoginAgreement} />
             <button
-              className="flex min-h-[54px] w-full items-center justify-center rounded-lg bg-[#6d28f4] text-xl font-black text-white transition hover:bg-[#5920cf]"
-              type="button"
+              className="flex min-h-[54px] w-full items-center justify-center rounded-lg bg-[#6d28f4] text-xl font-black text-white transition hover:bg-[#5920cf] disabled:cursor-not-allowed disabled:bg-slate-400"
+              disabled={submittingEmailLogin}
+              type="submit"
             >
-              登录
+              {submittingEmailLogin ? "登录中" : "登录"}
             </button>
           </form>
         )}

@@ -1,9 +1,15 @@
 import { createHmac, randomInt } from "crypto";
 
 export const emailVerificationPurposeRegister = "register";
+export const emailVerificationPurposeLogin = "login";
+export const emailPurposePasswordReset = "password_reset";
 export const emailCodeExpiresMs = 10 * 60 * 1000;
 export const emailCodeCooldownMs = 60 * 1000;
 export const emailCodeMaxAttempts = 5;
+
+export const emailVerificationPurposes = [emailVerificationPurposeRegister, emailVerificationPurposeLogin] as const;
+export type EmailVerificationPurpose = (typeof emailVerificationPurposes)[number];
+export type EmailMailPurpose = EmailVerificationPurpose | typeof emailPurposePasswordReset;
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -31,11 +37,15 @@ export function hashEmailCode(email: string, purpose: string, code: string) {
   return createHmac("sha256", getEmailCodeSecret()).update(`${purpose}:${email}:${code}`).digest("hex");
 }
 
+export function isEmailVerificationPurpose(value: unknown): value is EmailVerificationPurpose {
+  return typeof value === "string" && emailVerificationPurposes.includes(value as EmailVerificationPurpose);
+}
+
 function getEmailCodeServiceUrl() {
   return (process.env.EMAIL_CODE_SERVICE_URL || "http://172.18.255.14:8002").replace(/\/+$/, "");
 }
 
-export async function sendEmailCodeMail(input: { email: string; code: string; expiresInMinutes: number }) {
+async function sendEmailMail(input: { email: string; code: string; purpose: EmailMailPurpose; expiresInMinutes: number }) {
   const controller = new AbortController();
   const timeoutMs = Number(process.env.EMAIL_CODE_SERVICE_TIMEOUT_MS || 10000);
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -56,7 +66,7 @@ export async function sendEmailCodeMail(input: { email: string; code: string; ex
       body: JSON.stringify({
         email: input.email,
         code: input.code,
-        purpose: emailVerificationPurposeRegister,
+        purpose: input.purpose,
         expiresInMinutes: input.expiresInMinutes
       })
     });
@@ -68,4 +78,17 @@ export async function sendEmailCodeMail(input: { email: string; code: string; ex
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function sendEmailCodeMail(input: { email: string; code: string; purpose: EmailVerificationPurpose; expiresInMinutes: number }) {
+  return sendEmailMail(input);
+}
+
+export async function sendPasswordResetMail(input: { email: string; password: string }) {
+  return sendEmailMail({
+    email: input.email,
+    code: input.password,
+    purpose: emailPurposePasswordReset,
+    expiresInMinutes: 0
+  });
 }

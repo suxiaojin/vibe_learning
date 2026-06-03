@@ -112,12 +112,21 @@ def log_startup_config() -> None:
     logger.error("Startup configuration incomplete. Missing environment variables: %s", ", ".join(missing))
 
 
+def purpose_label(purpose: str) -> str:
+  if purpose == "login":
+    return "登录"
+  if purpose == "password_reset":
+    return "登录新密码"
+  return "注册"
+
+
 def build_message(request: EmailCodeRequest) -> EmailMessage:
   email = request.email.strip().lower()
   code = request.code.strip()
   if not EMAIL_PATTERN.match(email):
     raise HTTPException(status_code=400, detail="Invalid email")
-  if not re.fullmatch(r"\d{4}", code):
+  code_pattern = r"\d{6}" if request.purpose == "password_reset" else r"\d{4}"
+  if not re.fullmatch(code_pattern, code):
     raise HTTPException(status_code=400, detail="Invalid code")
 
   smtp_user = get_required_env("SMTP_USERNAME")
@@ -125,17 +134,47 @@ def build_message(request: EmailCodeRequest) -> EmailMessage:
   from_name = os.getenv("SMTP_FROM_NAME", "Vibe Learning").strip() or "Vibe Learning"
   expires = max(1, min(60, int(request.expiresInMinutes or 10)))
   safe_code = html.escape(code)
+  label = purpose_label(request.purpose)
 
   message = EmailMessage()
-  message["Subject"] = "VibeLearning 注册邮箱验证码"
+  message["Subject"] = "VibeLearning 登录新密码" if request.purpose == "password_reset" else f"VibeLearning {label}邮箱验证码"
   message["From"] = formataddr((from_name, from_email))
   message["To"] = email
+  if request.purpose == "password_reset":
+    message.set_content(
+      "\n".join(
+        [
+          "您好，",
+          "",
+          f"您的 VibeLearning 登录新密码是：{code}",
+          "收到后请及时登录，并在个人中心修改密码。",
+          "",
+          "如果这不是您本人操作，请尽快联系客服。",
+        ]
+      )
+    )
+    message.add_alternative(
+      f"""
+      <html>
+        <body>
+          <p>您好，</p>
+          <p>您的 VibeLearning 登录新密码是：</p>
+          <p style="font-size:24px;font-weight:700;letter-spacing:4px;">{safe_code}</p>
+          <p>收到后请及时登录，并在个人中心修改密码。</p>
+          <p>如果这不是您本人操作，请尽快联系客服。</p>
+        </body>
+      </html>
+      """,
+      subtype="html",
+    )
+    return message
+
   message.set_content(
     "\n".join(
       [
         "您好，",
         "",
-        f"您的 VibeLearning 注册验证码是：{code}",
+        f"您的 VibeLearning {label}验证码是：{code}",
         f"验证码 {expires} 分钟内有效，请勿转发给他人。",
         "",
         "如果这不是您本人操作，请忽略本邮件。",
@@ -147,7 +186,7 @@ def build_message(request: EmailCodeRequest) -> EmailMessage:
     <html>
       <body>
         <p>您好，</p>
-        <p>您的 VibeLearning 注册验证码是：</p>
+        <p>您的 VibeLearning {label}验证码是：</p>
         <p style="font-size:24px;font-weight:700;letter-spacing:4px;">{safe_code}</p>
         <p>验证码 {expires} 分钟内有效，请勿转发给他人。</p>
         <p>如果这不是您本人操作，请忽略本邮件。</p>

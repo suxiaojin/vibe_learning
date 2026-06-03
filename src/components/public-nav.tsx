@@ -7,6 +7,7 @@ import { BookOpenCheck } from "lucide-react";
 const hiddenNavPrefixes = [
   "/login",
   "/register",
+  "/forgot-password",
   "/user-agreement",
   "/privacy-policy",
   "/platform-agreement"

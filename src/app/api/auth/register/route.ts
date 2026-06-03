@@ -14,6 +14,7 @@ import { grantRegisterDiamondBonus } from "@/lib/rewards";
 export const runtime = "nodejs";
 
 type RegisterPayload = {
+  username: string;
   phoneNumber: string;
   email: string;
   emailCode: string;
@@ -43,6 +44,7 @@ async function parsePayload(request: Request): Promise<RegisterPayload | null> {
       return null;
     }
     return {
+      username: String(body.username || "").trim(),
       phoneNumber: String(body.phoneNumber || "").trim(),
       email: String(body.email || ""),
       emailCode: String(body.emailCode || "").trim(),
@@ -57,6 +59,7 @@ async function parsePayload(request: Request): Promise<RegisterPayload | null> {
     return null;
   }
   return {
+    username: String(formData.get("username") || "").trim(),
     phoneNumber: String(formData.get("phoneNumber") || "").trim(),
     email: String(formData.get("email") || ""),
     emailCode: String(formData.get("emailCode") || "").trim(),
@@ -77,10 +80,15 @@ export async function POST(request: Request) {
   }
 
   const phoneNumber = payload.phoneNumber;
+  const username = payload.username;
   const email = normalizeEmail(payload.email);
   const emailCode = payload.emailCode;
   const password = payload.password;
   const confirmPassword = payload.confirmPassword;
+
+  if (!username) {
+    return errorResponse("请输入账号名。", 400, "INVALID_USERNAME");
+  }
 
   if (!phonePattern.test(phoneNumber)) {
     return errorResponse("请输入有效的 11 位手机号码。", 400, "INVALID_PHONE_NUMBER");
@@ -106,13 +114,21 @@ export async function POST(request: Request) {
     return errorResponse("请先同意平台使用协议和隐私政策。", 400, "AGREEMENT_REQUIRED");
   }
 
-  const existingUser = await prisma.user.findFirst({
+  const existingUsername = await prisma.user.findUnique({
+    where: { username },
+    select: { id: true }
+  });
+  if (existingUsername) {
+    return errorResponse("账号名已存在，请换一个。", 409, "USERNAME_ALREADY_REGISTERED");
+  }
+
+  const existingEmail = await prisma.user.findFirst({
     where: {
       OR: [{ username: email }, { email }]
     },
     select: { id: true }
   });
-  if (existingUser) {
+  if (existingEmail) {
     return errorResponse("该邮箱已注册，请直接登录。", 409, "EMAIL_ALREADY_REGISTERED");
   }
 
@@ -169,24 +185,24 @@ export async function POST(request: Request) {
 
       const duplicate = await tx.user.findFirst({
         where: {
-          OR: [{ username: email }, { email }]
+          OR: [{ username }, { username: email }, { email }]
         },
-        select: { id: true }
+        select: { username: true, email: true }
       });
       if (duplicate) {
-        throw new Error("EMAIL_ALREADY_EXISTS");
+        throw new Error(duplicate.username === username ? "USERNAME_ALREADY_EXISTS" : "EMAIL_ALREADY_EXISTS");
       }
 
       const created = await tx.user.create({
         data: {
-          username: email,
+          username,
           passwordHash,
           role: "student",
           phoneNumber,
           email,
           studentProfile: {
             create: {
-              nickname: email
+              nickname: username
             }
           }
         }
@@ -203,6 +219,9 @@ export async function POST(request: Request) {
       }
     });
   } catch (error) {
+    if (isUniqueConstraintError(error) || (error instanceof Error && error.message === "USERNAME_ALREADY_EXISTS")) {
+      return errorResponse("账号名已存在，请换一个。", 409, "USERNAME_ALREADY_REGISTERED");
+    }
     if (isUniqueConstraintError(error) || (error instanceof Error && error.message === "EMAIL_ALREADY_EXISTS")) {
       return errorResponse("该邮箱已注册，请直接登录。", 409, "EMAIL_ALREADY_REGISTERED");
     }
