@@ -20,9 +20,13 @@ async function main() {
     create: {
       id: "default",
       loginHeroImageUrl: "/login-hero-vibelearning.png",
+      loginMarketingIcon: "gift",
       loginMarketingTitle: "新注册用户限时赠送学习加速包",
       loginMarketingDescription: "完成注册即可开启江苏专转本计算机闯关学习",
-      loginWelcomeTitle: "Welcome to VibeLearning"
+      loginWelcomeTitle: "Welcome to VibeLearning",
+      userAgreementContent: "test",
+      privacyPolicyContent: "test",
+      platformAgreementContent: "test"
     }
   });
 

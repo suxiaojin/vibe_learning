@@ -10,8 +10,8 @@ export default async function LoginPage({
   const settings = await getSystemSettings();
 
   return (
-    <main className="min-h-[calc(100dvh-73px)] bg-white">
-      <section className="grid min-h-[calc(100dvh-73px)] lg:grid-cols-[39.5vw_1fr]">
+    <main className="min-h-dvh bg-white">
+      <section className="grid min-h-dvh lg:grid-cols-[39.5vw_1fr]">
         <div className="relative hidden min-h-full overflow-hidden bg-[#5d35ff] lg:block">
           <img
             alt="VibeLearning 登录页学习插图"

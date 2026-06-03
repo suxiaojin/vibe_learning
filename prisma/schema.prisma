@@ -168,6 +168,22 @@ model User {
   @@map("users")
 }
 
+model EmailVerificationCode {
+  id           String    @id @default(cuid())
+  email        String
+  purpose      String    @default("register")
+  codeHash     String
+  expiresAt    DateTime
+  consumedAt   DateTime?
+  attemptCount Int       @default(0)
+  lastSentAt   DateTime  @default(now())
+  createdAt    DateTime  @default(now())
+
+  @@index([email, purpose, expiresAt])
+  @@index([email, purpose, lastSentAt])
+  @@map("email_verification_codes")
+}
+
 model AdminModule {
   id        String        @id @default(cuid())
   key       String        @unique
@@ -187,9 +203,13 @@ model AdminModule {
 model SystemSetting {
   id                        String   @id @default("default")
   loginHeroImageUrl         String   @default("/login-hero-vibelearning.png")
+  loginMarketingIcon        String   @default("gift")
   loginMarketingTitle       String   @default("新注册用户限时赠送学习加速包")
   loginMarketingDescription String   @default("完成注册即可开启江苏专转本计算机闯关学习")
   loginWelcomeTitle         String   @default("Welcome to VibeLearning")
+  userAgreementContent      String   @default("test")
+  privacyPolicyContent      String   @default("test")
+  platformAgreementContent  String   @default("test")
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 

@@ -1,0 +1,7 @@
+import { AgreementContentPage } from "@/components/agreement-content-page";
+import { getSystemSettings } from "@/lib/system-settings";
+
+export default async function PrivacyPolicyPage() {
+  const settings = await getSystemSettings();
+  return <AgreementContentPage title="隐私政策" content={settings.privacyPolicyContent} />;
+}

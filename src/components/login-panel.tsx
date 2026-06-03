@@ -1,10 +1,40 @@
 "use client";
 
 import Link from "next/link";
-import { Eye, EyeOff, Gift, Lock, Mail, UserRound } from "lucide-react";
+import { BookOpenCheck, Eye, EyeOff, Gift, GraduationCap, Lock, Mail, Sparkles, Trophy, UserRound } from "lucide-react";
 import { useState } from "react";
 import type { PublicSystemSettings } from "@/lib/system-settings";
 import { cn } from "@/lib/utils";
+
+const marketingIconMap = {
+  book: BookOpenCheck,
+  gift: Gift,
+  graduation: GraduationCap,
+  sparkles: Sparkles,
+  trophy: Trophy
+};
+
+function VibeTitle({ text, className }: { text: string; className?: string }) {
+  const lowerText = text.toLowerCase();
+  const target = "vibelearning";
+  const index = lowerText.indexOf(target);
+
+  if (index < 0) {
+    return <span className={className}>{text}</span>;
+  }
+
+  const before = text.slice(0, index);
+  const vibe = text.slice(index, index + target.length);
+  const after = text.slice(index + target.length);
+
+  return (
+    <span className={className}>
+      {before}
+      <span className="text-[#6d35ff]">{vibe}</span>
+      {after}
+    </span>
+  );
+}
 
 function TabButton({
   active,
@@ -83,14 +113,14 @@ function AgreementLine({ showForgot = false }: { showForgot?: boolean }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[#444b60]">
       <label className="flex min-h-9 items-center gap-2">
-        <input className="size-4 rounded border-slate-300 accent-[#6d35ff]" name="agreement" type="checkbox" required />
+        <input className="size-4 rounded border-slate-300 accent-[#6d35ff]" name="agreement" type="checkbox" required defaultChecked />
         <span>
           阅读并同意
-          <Link className="mx-1 font-semibold text-[#5d35ff]" href="#">
+          <Link className="mx-1 font-semibold text-[#5d35ff]" href="/user-agreement">
             用户协议
           </Link>
           与
-          <Link className="ml-1 font-semibold text-[#5d35ff]" href="#">
+          <Link className="ml-1 font-semibold text-[#5d35ff]" href="/privacy-policy">
             隐私政策
           </Link>
         </span>
@@ -113,12 +143,13 @@ export function LoginPanel({
 }) {
   const [tab, setTab] = useState<"password" | "email">("password");
   const [showPassword, setShowPassword] = useState(false);
+  const MarketingIcon = marketingIconMap[settings.loginMarketingIcon as keyof typeof marketingIconMap] || Gift;
 
   return (
     <div className="flex min-h-full flex-col bg-white">
-      <div className="flex min-h-[96px] items-center gap-5 bg-[#f4f6fa] px-8 py-4">
+      <div className="flex min-h-[88px] items-center gap-5 bg-[#f4f6fa] px-8 py-4">
         <div className="grid size-14 shrink-0 place-items-center rounded-2xl bg-white text-[#6d35ff] shadow-sm">
-          <Gift size={32} strokeWidth={1.8} />
+          <MarketingIcon size={32} strokeWidth={1.8} />
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-base font-black text-[#181b2f]">{settings.loginMarketingTitle}</p>
@@ -129,9 +160,9 @@ export function LoginPanel({
         </Link>
       </div>
 
-      <div className="mx-auto flex w-full max-w-[500px] flex-1 flex-col px-6 py-8 sm:px-10">
-        <h1 className="text-center text-3xl font-black leading-tight text-[#292b52] sm:text-[34px]">
-          {settings.loginWelcomeTitle}
+      <div className="mx-auto flex w-full max-w-[520px] flex-1 flex-col px-6 py-6 sm:px-10">
+        <h1 className="text-center text-[clamp(28px,3vw,42px)] font-black leading-tight text-[#292b52]">
+          <VibeTitle className="whitespace-nowrap" text={settings.loginWelcomeTitle} />
         </h1>
 
         <div className="mt-5 flex justify-center gap-8 border-b border-transparent" role="tablist" aria-label="登录方式">
@@ -152,9 +183,9 @@ export function LoginPanel({
                 autoComplete="username"
                 icon={<UserRound size={19} />}
                 id="username"
-                label="账号名"
+                label="账号名/邮箱"
                 name="username"
-                placeholder="账号名"
+                placeholder="账号名或邮箱地址"
               />
               <FormField
                 autoComplete="current-password"

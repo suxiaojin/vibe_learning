@@ -355,9 +355,13 @@ export async function updateSystemSettings(formData: FormData) {
 
   const data = {
     loginHeroImageUrl,
+    loginMarketingIcon: getRequiredSettingText(formData, "loginMarketingIcon"),
     loginMarketingTitle: getRequiredSettingText(formData, "loginMarketingTitle"),
     loginMarketingDescription: getRequiredSettingText(formData, "loginMarketingDescription"),
-    loginWelcomeTitle: getRequiredSettingText(formData, "loginWelcomeTitle")
+    loginWelcomeTitle: getRequiredSettingText(formData, "loginWelcomeTitle"),
+    userAgreementContent: getRequiredSettingText(formData, "userAgreementContent"),
+    privacyPolicyContent: getRequiredSettingText(formData, "privacyPolicyContent"),
+    platformAgreementContent: getRequiredSettingText(formData, "platformAgreementContent")
   };
 
   await prisma.systemSetting.upsert({
@@ -372,6 +376,9 @@ export async function updateSystemSettings(formData: FormData) {
   revalidatePath("/admin/settings");
   revalidatePath("/login");
   revalidatePath("/register");
+  revalidatePath("/user-agreement");
+  revalidatePath("/privacy-policy");
+  revalidatePath("/platform-agreement");
   redirect("/admin/settings?notice=saved");
 }
 

@@ -13,6 +13,14 @@ const errorText: Record<string, string> = {
   "invalid-image-type": "请上传 PNG、JPG、WEBP 或 GIF 图片。"
 };
 
+const marketingIconOptions = [
+  { value: "gift", label: "礼物" },
+  { value: "sparkles", label: "星光" },
+  { value: "book", label: "书本" },
+  { value: "graduation", label: "学士帽" },
+  { value: "trophy", label: "奖杯" }
+];
+
 export default async function AdminSettingsPage({
   searchParams
 }: {
@@ -45,7 +53,7 @@ export default async function AdminSettingsPage({
       </section>
 
       <section className="border border-slate-300 bg-white p-5 shadow-sm">
-        <h2 className="text-xl font-black">登录页内容</h2>
+        <h2 className="text-xl font-black">登录与注册页内容</h2>
         <form action={updateSystemSettings} className="mt-5 grid gap-5">
           <div>
             <label className="label">登录图片地址</label>
@@ -70,6 +78,17 @@ export default async function AdminSettingsPage({
                 type="file"
               />
             </label>
+          </div>
+
+          <div>
+            <label className="label">顶部营销图标</label>
+            <select className="input rounded-none" name="loginMarketingIcon" defaultValue={settings.loginMarketingIcon} required>
+              {marketingIconOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="grid gap-5 lg:grid-cols-2">
@@ -101,6 +120,36 @@ export default async function AdminSettingsPage({
               defaultValue={settings.loginMarketingDescription}
               required
             />
+          </div>
+
+          <div className="grid gap-5 xl:grid-cols-3">
+            <div>
+              <label className="label">用户协议内容</label>
+              <textarea
+                className="input min-h-36 rounded-none"
+                name="userAgreementContent"
+                defaultValue={settings.userAgreementContent}
+                required
+              />
+            </div>
+            <div>
+              <label className="label">隐私政策内容</label>
+              <textarea
+                className="input min-h-36 rounded-none"
+                name="privacyPolicyContent"
+                defaultValue={settings.privacyPolicyContent}
+                required
+              />
+            </div>
+            <div>
+              <label className="label">平台使用协议内容</label>
+              <textarea
+                className="input min-h-36 rounded-none"
+                name="platformAgreementContent"
+                defaultValue={settings.platformAgreementContent}
+                required
+              />
+            </div>
           </div>
 
           <div className="flex justify-end">
