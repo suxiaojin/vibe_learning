@@ -40,7 +40,7 @@ function FieldBlock({
 }: {
   children: React.ReactNode;
   description?: string;
-  label: string;
+  label: React.ReactNode;
 }) {
   return (
     <div>
@@ -125,7 +125,14 @@ export default async function AdminSettingsPage({
                 />
               </FieldBlock>
 
-              <FieldBlock label="重新上传登录图片">
+              <FieldBlock
+                label={
+                  <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                    <span>重新上传登录图片</span>
+                    <span className="text-xs font-black text-red-500">建议尺寸：1200 × 1800 px（竖版 2:3，至少 900 × 1350 px）</span>
+                  </span>
+                }
+              >
                 <label className="flex min-h-28 cursor-pointer flex-col items-center justify-center border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center text-sm font-bold text-slate-600 transition hover:border-[#0872b9] hover:bg-blue-50">
                   <ImageUp className="mb-2 text-[#0872b9]" size={26} />
                   <span>选择 PNG、JPG、WEBP 或 GIF 图片</span>
