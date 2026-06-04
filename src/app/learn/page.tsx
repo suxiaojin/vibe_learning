@@ -43,13 +43,11 @@ export default async function LearnPage({
 }) {
   const user = await requireUser();
   const params = await searchParams;
-  const now = new Date();
   const unreadNotificationWhere = {
     userId: user.id,
     readAt: null,
     notification: {
-      status: "sent" as const,
-      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }]
+      status: "sent" as const
     }
   };
   const [pathState, diamondAccount, fullUser, unreadNotificationReceipts, unreadNotificationCount] = await Promise.all([

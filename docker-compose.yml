@@ -13,3 +13,16 @@ services:
       - sh
       - -c
       - npx prisma migrate deploy && npx prisma db seed && npm run start
+
+  notification-worker:
+    build: .
+    container_name: vibelearning-notification-worker
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    command:
+      - sh
+      - -c
+      - npx prisma migrate deploy && npm run worker:notifications

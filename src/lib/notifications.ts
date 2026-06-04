@@ -1,5 +1,7 @@
-export const notificationRetentionDays = 10;
+export const notificationImageMaxBytes = 2 * 1024 * 1024;
+export const notificationHtmlMaxChars = 6_000_000;
 
+const maxEmbeddedImageDataUrlLength = 3_000_000;
 const allowedTags = new Set([
   "a",
   "b",
@@ -8,9 +10,11 @@ const allowedTags = new Set([
   "code",
   "div",
   "em",
+  "font",
   "h2",
   "h3",
   "i",
+  "img",
   "li",
   "ol",
   "p",
@@ -20,7 +24,7 @@ const allowedTags = new Set([
   "u",
   "ul"
 ]);
-
+const styleTags = new Set(["blockquote", "div", "h2", "h3", "li", "p", "span"]);
 const entityMap: Record<string, string> = {
   amp: "&",
   gt: ">",
@@ -29,36 +33,53 @@ const entityMap: Record<string, string> = {
   quot: '"'
 };
 
-export function getNotificationExpiresAt(now = new Date()) {
-  return new Date(now.getTime() + notificationRetentionDays * 24 * 60 * 60 * 1000);
-}
-
 export function sanitizeNotificationHtml(value: string) {
-  const trimmed = value.replace(/\u0000/g, "").trim().slice(0, 30000);
+  const trimmed = value.replace(/\u0000/g, "").trim().slice(0, notificationHtmlMaxChars);
   const withoutBlockedContent = trimmed
     .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<\s*(script|style|iframe|object|embed|link|meta|base)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, "")
-    .replace(/<\s*(script|style|iframe|object|embed|link|meta|base)[^>]*\/?\s*>/gi, "");
+    .replace(/<\s*(script|style|iframe|object|embed|link|meta|base|form|input|button|textarea|select)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, "")
+    .replace(/<\s*(script|style|iframe|object|embed|link|meta|base|form|input|button|textarea|select)[^>]*\/?\s*>/gi, "");
 
   const cleaned = withoutBlockedContent.replace(/<\/?([a-z][a-z0-9-]*)\b[^>]*>/gi, (match, rawTag) => {
     const tag = rawTag.toLowerCase();
+    const closing = /^<\s*\//.test(match);
+
     if (!allowedTags.has(tag)) {
       return "";
     }
-    if (match.startsWith("</")) {
-      return `</${tag}>`;
+    if (closing) {
+      return tag === "br" || tag === "img" ? "" : `</${tag}>`;
     }
     if (tag === "br") {
       return "<br>";
     }
-    if (tag !== "a") {
-      return `<${tag}>`;
+    if (tag === "a") {
+      const href = extractSafeHref(match);
+      return href
+        ? `<a href="${escapeAttribute(href)}" target="_blank" rel="noopener noreferrer">`
+        : "<a>";
     }
-
-    const href = extractSafeHref(match);
-    return href
-      ? `<a href="${escapeAttribute(href)}" target="_blank" rel="noopener noreferrer">`
-      : "<a>";
+    if (tag === "img") {
+      const src = extractAttribute(match, "src");
+      if (!isSafeImageSource(src)) {
+        return "";
+      }
+      const alt = extractAttribute(match, "alt").trim().slice(0, 120) || "通知图片";
+      return `<img src="${escapeAttribute(src)}" alt="${escapeAttribute(alt)}" loading="lazy">`;
+    }
+    if (tag === "font") {
+      const attributes = [
+        sanitizeFontFace(extractAttribute(match, "face")),
+        sanitizeFontSize(extractAttribute(match, "size")),
+        sanitizeColor(extractAttribute(match, "color"))
+      ].filter(Boolean);
+      return attributes.length > 0 ? `<font ${attributes.join(" ")}>` : "<font>";
+    }
+    if (styleTags.has(tag)) {
+      const style = sanitizeStyle(extractAttribute(match, "style"));
+      return style ? `<${tag} style="${escapeAttribute(style)}">` : `<${tag}>`;
+    }
+    return `<${tag}>`;
   });
 
   return cleaned || "<p></p>";
@@ -66,6 +87,7 @@ export function sanitizeNotificationHtml(value: string) {
 
 export function stripNotificationHtml(value: string) {
   return value
+    .replace(/<img\b[^>]*>/gi, " [图片] ")
     .replace(/<\s*br\s*\/?>/gi, "\n")
     .replace(/<\/(p|div|li|h2|h3|blockquote)>/gi, "\n")
     .replace(/<[^>]*>/g, " ")
@@ -76,12 +98,77 @@ export function stripNotificationHtml(value: string) {
 }
 
 function extractSafeHref(tag: string) {
-  const match = tag.match(/\shref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
-  const href = (match?.[1] || match?.[2] || match?.[3] || "").trim();
+  const href = extractAttribute(tag, "href").trim();
   if (!href) {
     return "";
   }
   return /^(https?:\/\/|mailto:|\/|#)/i.test(href) ? href : "";
+}
+
+function extractAttribute(tag: string, name: string) {
+  const expression = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i");
+  const match = tag.match(expression);
+  return match?.[1] || match?.[2] || match?.[3] || "";
+}
+
+function isSafeImageSource(src: string) {
+  if (/^(https?:\/\/|\/)/i.test(src)) {
+    return src.length <= 2000;
+  }
+  return src.length <= maxEmbeddedImageDataUrlLength
+    && /^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/=\r\n]+$/i.test(src);
+}
+
+function sanitizeFontFace(value: string) {
+  const face = value.trim().slice(0, 80);
+  return face && /^[\p{L}\p{N}\s,"'-]+$/u.test(face) ? `face="${escapeAttribute(face)}"` : "";
+}
+
+function sanitizeFontSize(value: string) {
+  const size = value.trim();
+  return /^[1-7]$/.test(size) ? `size="${size}"` : "";
+}
+
+function sanitizeColor(value: string) {
+  const color = value.trim().slice(0, 40);
+  return isSafeColor(color) ? `color="${escapeAttribute(color)}"` : "";
+}
+
+function sanitizeStyle(value: string) {
+  const safeDeclarations = value
+    .split(";")
+    .map((declaration) => declaration.trim())
+    .filter(Boolean)
+    .map((declaration) => {
+      const separator = declaration.indexOf(":");
+      if (separator < 1) {
+        return "";
+      }
+      const property = declaration.slice(0, separator).trim().toLowerCase();
+      const rawValue = declaration.slice(separator + 1).trim();
+      if ((property === "color" || property === "background-color") && isSafeColor(rawValue)) {
+        return `${property}:${rawValue}`;
+      }
+      if (property === "font-family" && /^[\p{L}\p{N}\s,"'-]+$/u.test(rawValue.slice(0, 80))) {
+        return `${property}:${rawValue.slice(0, 80)}`;
+      }
+      if (property === "font-size" && /^(?:[1-6]?\d|72)(?:px|pt)$/.test(rawValue)) {
+        return `${property}:${rawValue}`;
+      }
+      if (property === "text-align" && /^(left|center|right|justify)$/.test(rawValue)) {
+        return `${property}:${rawValue}`;
+      }
+      return "";
+    })
+    .filter(Boolean);
+  return safeDeclarations.join(";");
+}
+
+function isSafeColor(value: string) {
+  const color = value.trim().slice(0, 40);
+  return /^#[0-9a-f]{3,8}$/i.test(color)
+    || /^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)$/i.test(color)
+    || /^[a-z]{3,20}$/i.test(color);
 }
 
 function escapeAttribute(value: string) {

@@ -9,6 +9,7 @@ import {
   isValidEmail,
   normalizeEmail
 } from "@/lib/email-verification";
+import { createNotificationEvent } from "@/lib/notification-dispatch";
 import { grantRegisterDiamondBonus } from "@/lib/rewards";
 
 export const runtime = "nodejs";
@@ -209,6 +210,14 @@ export async function POST(request: Request) {
       });
 
       await grantRegisterDiamondBonus(tx, created.id);
+      await createNotificationEvent(tx, {
+        type: "user_registered",
+        eventKey: `user_registered:${created.id}`,
+        userId: created.id,
+        payload: {
+          username: created.username
+        }
+      });
     });
 
     return NextResponse.json({

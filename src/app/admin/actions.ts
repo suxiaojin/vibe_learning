@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ContentStatus, Difficulty, QuestionType, RegionStatus, SyllabusRequirement } from "@prisma/client";
 import { requireAdmin } from "@/lib/auth";
+import { createNotificationEvent } from "@/lib/notification-dispatch";
 import { prisma } from "@/lib/prisma";
 import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 import { getBeijingDate } from "@/lib/rewards";
@@ -470,7 +471,7 @@ export async function addStudentDiamonds(formData: FormData) {
       data: { balance: { increment: amount } },
       select: { balance: true }
     });
-    await tx.diamondTransaction.create({
+    const transaction = await tx.diamondTransaction.create({
       data: {
         userId: id,
         accountId: account.id,
@@ -484,6 +485,17 @@ export async function addStudentDiamonds(formData: FormData) {
           actorUsername: admin.username,
           source: "admin_student_detail"
         }
+      }
+    });
+    await createNotificationEvent(tx, {
+      type: "admin_diamond_added",
+      eventKey: `admin_diamond_added:${transaction.id}`,
+      userId: id,
+      payload: {
+        actorUsername: admin.username,
+        amount,
+        balanceAfter: updatedAccount.balance,
+        note
       }
     });
   });

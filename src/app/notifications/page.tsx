@@ -2,7 +2,6 @@ import Link from "next/link";
 import { Bell, FileText } from "lucide-react";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { requireUser } from "@/lib/auth";
-import { notificationRetentionDays } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +15,7 @@ export default async function NotificationsPage() {
   const visibleNotificationWhere = {
     userId: user.id,
     notification: {
-      status: "sent" as const,
-      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }]
+      status: "sent" as const
     }
   };
   const unreadReceipts = await prisma.notificationRecipient.findMany({
@@ -87,7 +85,7 @@ export default async function NotificationsPage() {
 
             <div className="px-6 py-5">
               <p className="text-base font-semibold text-red-600">
-                说明：消息文件有效期为{notificationRetentionDays}天，过期将无法下载查看。
+                说明：系统通知会长期保留；管理员撤回后将不再显示。
               </p>
 
               <div className="mt-6 overflow-x-auto border border-slate-200">
@@ -122,7 +120,7 @@ export default async function NotificationsPage() {
                           </td>
                           <td className="border-b border-slate-100 px-4 py-5 text-left">
                             <div
-                              className="notification-rich-text max-w-none text-sm leading-7 text-slate-700 [&_a]:font-semibold [&_a]:text-teal [&_blockquote]:border-l-4 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_h2]:text-lg [&_h2]:font-black [&_h3]:font-bold [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-1 [&_ul]:list-disc"
+                              className="notification-rich-text max-w-none text-sm leading-7 text-slate-700 [&_a]:font-semibold [&_a]:text-teal [&_blockquote]:border-l-4 [&_blockquote]:border-slate-300 [&_blockquote]:pl-3 [&_h2]:text-lg [&_h2]:font-black [&_h3]:font-bold [&_img]:my-3 [&_img]:h-auto [&_img]:max-w-full [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-1 [&_ul]:list-disc"
                               dangerouslySetInnerHTML={{ __html: receipt.notification.contentHtml }}
                             />
                           </td>

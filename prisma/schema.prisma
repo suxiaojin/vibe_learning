@@ -48,6 +48,31 @@ enum NotificationStatus {
   archived
 }
 
+enum NotificationSource {
+  manual
+  scheduled
+  automated
+}
+
+enum NotificationDispatchType {
+  scheduled
+  automated
+}
+
+enum NotificationDispatchStatus {
+  pending
+  processing
+  sent
+  cancelled
+  failed
+}
+
+enum NotificationAutomationEventType {
+  user_registered
+  admin_diamond_added
+  diamond_purchase_succeeded
+}
+
 enum RegionStatus {
   active
   inactive
@@ -162,7 +187,12 @@ model User {
   passwordChangeLogs PasswordChangeLog[] @relation("PasswordChangeTarget")
   passwordChangesMade PasswordChangeLog[] @relation("PasswordChangeActor")
   sentNotifications Notification[] @relation("NotificationAuthor")
+  notificationTemplates NotificationTemplate[] @relation("NotificationTemplateAuthor")
   notificationRecipients NotificationRecipient[]
+  notificationDispatchJobsCreated NotificationDispatchJob[] @relation("NotificationDispatchJobAuthor")
+  notificationAutomationRulesCreated NotificationAutomationRule[] @relation("NotificationAutomationRuleAuthor")
+  notificationEvents NotificationEvent[]
+  notificationDispatchRecipients NotificationDispatchRecipient[]
 
   @@index([role, status, createdAt])
   @@map("users")
@@ -680,9 +710,11 @@ model Notification {
   title       String
   contentHtml String
   status      NotificationStatus      @default(draft)
+  source      NotificationSource      @default(manual)
   authorId    String?
   author      User?                   @relation("NotificationAuthor", fields: [authorId], references: [id], onDelete: SetNull)
   recipients  NotificationRecipient[]
+  dispatchJob NotificationDispatchJob?
   sentAt      DateTime?
   expiresAt   DateTime?
   createdAt   DateTime                @default(now())
@@ -691,6 +723,121 @@ model Notification {
   @@index([status, expiresAt, sentAt])
   @@index([authorId, createdAt])
   @@map("notifications")
+}
+
+model NotificationTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  title       String
+  contentHtml String
+  authorId    String?
+  author      User?    @relation("NotificationTemplateAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  dispatchJobs NotificationDispatchJob[]
+  automationRules NotificationAutomationRule[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([authorId, updatedAt])
+  @@index([updatedAt])
+  @@map("notification_templates")
+}
+
+model NotificationDispatchJob {
+  id                 String                     @id @default(cuid())
+  type               NotificationDispatchType
+  status             NotificationDispatchStatus @default(pending)
+  templateId         String?
+  template           NotificationTemplate?      @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  automationRuleId   String?
+  automationRule     NotificationAutomationRule? @relation(fields: [automationRuleId], references: [id], onDelete: SetNull)
+  eventId            String?
+  event              NotificationEvent?         @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  authorId           String?
+  author             User?                      @relation("NotificationDispatchJobAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  notificationId     String?                    @unique
+  notification       Notification?              @relation(fields: [notificationId], references: [id], onDelete: SetNull)
+  titleSnapshot      String
+  contentHtmlSnapshot String
+  audienceSnapshot   Json?
+  scheduledAt        DateTime
+  startedAt          DateTime?
+  sentAt             DateTime?
+  cancelledAt        DateTime?
+  failedAt           DateTime?
+  attemptCount       Int                        @default(0)
+  maxAttempts        Int                        @default(3)
+  lastError          String?
+  recipients         NotificationDispatchRecipient[]
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+
+  @@unique([automationRuleId, eventId])
+  @@index([status, scheduledAt])
+  @@index([type, createdAt])
+  @@index([templateId])
+  @@index([automationRuleId])
+  @@index([eventId])
+  @@index([authorId])
+  @@map("notification_dispatch_jobs")
+}
+
+model NotificationDispatchRecipient {
+  id                  String                  @id @default(cuid())
+  jobId               String
+  job                 NotificationDispatchJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  userId              String?
+  user                User?                   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  usernameSnapshot    String
+  provinceSnapshot    String?
+  studySystemSnapshot String?
+  majorNameSnapshot   String?
+  createdAt           DateTime                @default(now())
+
+  @@unique([jobId, userId])
+  @@index([jobId])
+  @@index([userId])
+  @@map("notification_dispatch_recipients")
+}
+
+model NotificationAutomationRule {
+  id           String                          @id @default(cuid())
+  name         String
+  eventType    NotificationAutomationEventType
+  templateId   String
+  template     NotificationTemplate            @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  enabled      Boolean                         @default(true)
+  delayMinutes Int                             @default(0)
+  createdById  String?
+  createdBy    User?                           @relation("NotificationAutomationRuleAuthor", fields: [createdById], references: [id], onDelete: SetNull)
+  jobs         NotificationDispatchJob[]
+  createdAt    DateTime                        @default(now())
+  updatedAt    DateTime                        @updatedAt
+
+  @@index([eventType, enabled])
+  @@index([templateId])
+  @@index([createdById])
+  @@map("notification_automation_rules")
+}
+
+model NotificationEvent {
+  id           String                          @id @default(cuid())
+  type         NotificationAutomationEventType
+  eventKey     String                          @unique
+  userId       String?
+  user         User?                           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  payload      Json?
+  occurredAt   DateTime                        @default(now())
+  processedAt  DateTime?
+  attemptCount Int                             @default(0)
+  lastError    String?
+  jobs         NotificationDispatchJob[]
+  createdAt    DateTime                        @default(now())
+  updatedAt    DateTime                        @updatedAt
+
+  @@index([processedAt, occurredAt])
+  @@index([type, occurredAt])
+  @@index([userId])
+  @@map("notification_events")
 }
 
 model NotificationRecipient {
