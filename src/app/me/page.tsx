@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
 import bcrypt from "bcryptjs";
-import { CheckCircle2, Crown, Gem, KeyRound, Mail, Medal, Pencil, Phone, School, Trophy, UserRound } from "lucide-react";
+import { CalendarDays, CheckCircle2, Crown, Gem, KeyRound, Mail, Medal, Pencil, Phone, School, Search, Trophy, UserRound, UsersRound } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AvatarUploadForm } from "@/components/avatar-upload-form";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { requireUser } from "@/lib/auth";
+import { formatBuddyError, getBuddyList, searchBuddyCandidates, type BuddySearchFilters } from "@/lib/buddies";
 import { prisma } from "@/lib/prisma";
 import { getMedalLevel, getMedalRule, medalRules } from "@/lib/rewards";
 import { cn } from "@/lib/utils";
@@ -50,27 +51,50 @@ const transactionLabels: Record<string, string> = {
   ai_consumption: "AI 消耗"
 };
 
-type MeTab = "profile" | "medals" | "diamonds";
+type MeTab = "profile" | "medals" | "diamonds" | "buddies";
 
 const meTabs: Array<{ key: MeTab; label: string }> = [
   { key: "profile", label: "我的信息" },
   { key: "medals", label: "我的勋章" },
-  { key: "diamonds", label: "我的钻石" }
+  { key: "diamonds", label: "我的钻石" },
+  { key: "buddies", label: "我的搭子" }
 ];
+
+type BuddyList = Awaited<ReturnType<typeof getBuddyList>>;
+type BuddySearchResult = Awaited<ReturnType<typeof searchBuddyCandidates>>;
+type BuddySearchError = {
+  code: string;
+  details?: unknown;
+  message: string;
+  status: number;
+} | null;
 
 export default async function MePage({
   searchParams
 }: {
-  searchParams?: Promise<{ profile?: string; password?: string; tab?: string }>;
+  searchParams?: Promise<{
+    profile?: string;
+    password?: string;
+    tab?: string;
+    error?: string;
+    birthYear?: string;
+    birthMonth?: string;
+    gender?: string;
+    schoolId?: string;
+    majorId?: string;
+    province?: string;
+    studySystem?: string;
+  }>;
 }) {
   const user = await requireUser();
   const query = await searchParams;
+  const activeTab = getActiveMeTab(query?.tab);
   const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const heatmapStart = new Date(Date.now() - (heatmapWeekCount * 7 + 7) * dayMs);
-  const [fullUser, transactions, totalAttempts, recentAttempts] = await Promise.all([
+  const [fullUser, transactions, totalAttempts, recentAttempts, schools, majors, regions, buddies] = await Promise.all([
     prisma.user.findUnique({
       where: { id: user.id },
-      include: { studentProfile: true }
+      include: { studentProfile: { include: { schoolOption: true } } }
     }),
     prisma.diamondTransaction.findMany({
       where: { userId: user.id, createdAt: { gte: oneWeekAgo } },
@@ -81,7 +105,20 @@ export default async function MePage({
     prisma.questionAttempt.findMany({
       where: { userId: user.id, createdAt: { gte: heatmapStart } },
       select: { createdAt: true }
-    })
+    }),
+    prisma.school.findMany({
+      where: { status: "published" },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
+    }),
+    prisma.major.findMany({
+      where: { status: "published" },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
+    }),
+    prisma.region.findMany({
+      where: { status: "active" },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+    }),
+    activeTab === "buddies" ? getBuddyList(user.id) : Promise.resolve([])
   ]);
 
   if (!fullUser) {
@@ -96,12 +133,15 @@ export default async function MePage({
   const medalLevel = getMedalLevel(totalAttempts);
   const currentMedal = getMedalRule(medalLevel);
   const dailyAttempts = summarizeDailyAttempts(recentAttempts);
-  const activeTab = getActiveMeTab(query?.tab);
   const joinedAt = fullUser.createdAt.toLocaleDateString("zh-CN", {
     year: "numeric",
     month: "long",
     timeZone: "Asia/Shanghai"
   });
+  const buddySearchFilters = getBuddySearchFilters(query);
+  const buddySearchState = activeTab === "buddies" && hasBuddySearchFilters(buddySearchFilters)
+    ? await runBuddySearch(user.id, buddySearchFilters)
+    : { result: null, error: null };
 
   return (
     <main className="min-h-dvh bg-mist/60 lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
@@ -141,6 +181,10 @@ export default async function MePage({
                 profileStatus={query?.profile}
                 gender={fullUser.studentProfile?.gender || ""}
                 school={fullUser.studentProfile?.school || ""}
+                schoolId={fullUser.studentProfile?.schoolId || ""}
+                schools={schools}
+                birthYear={fullUser.studentProfile?.birthYear || ""}
+                birthMonth={fullUser.studentProfile?.birthMonth || ""}
                 phoneNumber={fullUser.phoneNumber || ""}
                 email={fullUser.email || ""}
               />
@@ -157,6 +201,19 @@ export default async function MePage({
           ) : null}
 
           {activeTab === "diamonds" ? <DiamondPanel transactions={transactions} /> : null}
+
+          {activeTab === "buddies" ? (
+            <BuddyPanel
+              buddies={buddies}
+              errorCode={query?.error}
+              filters={buddySearchFilters}
+              majors={majors}
+              regions={regions}
+              schools={schools}
+              searchError={buddySearchState.error}
+              searchResult={buddySearchState.result}
+            />
+          ) : null}
         </div>
       </section>
     </main>
@@ -165,6 +222,66 @@ export default async function MePage({
 
 function getActiveMeTab(tab?: string): MeTab {
   return meTabs.some((item) => item.key === tab) ? (tab as MeTab) : "profile";
+}
+
+function getBuddySearchFilters(query?: {
+  birthYear?: string;
+  birthMonth?: string;
+  gender?: string;
+  schoolId?: string;
+  majorId?: string;
+  province?: string;
+  studySystem?: string;
+}): BuddySearchFilters {
+  return {
+    birthYear: parseInteger(query?.birthYear),
+    birthMonth: parseInteger(query?.birthMonth),
+    gender: query?.gender === "male" || query?.gender === "female" ? query.gender : undefined,
+    schoolId: query?.schoolId?.trim() || undefined,
+    majorId: query?.majorId?.trim() || undefined,
+    province: query?.province?.trim() || undefined,
+    studySystem: query?.studySystem?.trim() || undefined
+  };
+}
+
+function hasBuddySearchFilters(filters: BuddySearchFilters) {
+  return Boolean(
+    (filters.birthYear && filters.birthMonth)
+      || filters.gender
+      || filters.schoolId
+      || filters.majorId
+      || filters.province
+      || filters.studySystem
+  );
+}
+
+async function runBuddySearch(userId: string, filters: BuddySearchFilters): Promise<{ result: BuddySearchResult | null; error: BuddySearchError }> {
+  try {
+    return { result: await searchBuddyCandidates(userId, filters), error: null };
+  } catch (error) {
+    return { result: null, error: formatBuddyError(error) || { code: "UNKNOWN", message: "搜索失败，请稍后再试。", status: 500 } };
+  }
+}
+
+function relationshipLabel(action: string) {
+  const labels: Record<string, string> = {
+    none: "查看主页",
+    outgoing_pending: "等待处理",
+    incoming_pending: "待你处理",
+    outgoing_withdraw_cooldown: "冷却中",
+    active: "已是搭子",
+    terminated: "无法添加",
+    self: "自己"
+  };
+  return labels[action] || "查看主页";
+}
+
+function parseInteger(value?: string) {
+  if (!value) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? parsed : undefined;
 }
 
 function SectionFrame({
@@ -224,6 +341,10 @@ function ProfilePanel({
   profileStatus,
   gender,
   school,
+  schoolId,
+  schools,
+  birthYear,
+  birthMonth,
   phoneNumber,
   email
 }: {
@@ -234,6 +355,10 @@ function ProfilePanel({
   profileStatus?: string;
   gender: string;
   school: string;
+  schoolId: string;
+  schools: Array<{ id: string; name: string; province: string }>;
+  birthYear: number | "";
+  birthMonth: number | "";
   phoneNumber: string;
   email: string;
 }) {
@@ -285,11 +410,36 @@ function ProfilePanel({
           </div>
         </fieldset>
 
+        <div className="grid gap-4 md:grid-cols-2">
+          <label>
+            <span className="label">出生年份</span>
+            <div className="relative">
+              <CalendarDays className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input className="input pl-10" name="birthYear" defaultValue={birthYear} inputMode="numeric" maxLength={4} placeholder="例如 2006" />
+            </div>
+          </label>
+          <label>
+            <span className="label">出生月份</span>
+            <select className="input" name="birthMonth" defaultValue={birthMonth}>
+              <option value="">不选择</option>
+              {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
+                <option key={month} value={month}>{month} 月</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
         <label>
           <span className="label">学校</span>
           <div className="relative">
             <School className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input className="input pl-10" name="school" defaultValue={school} maxLength={80} placeholder="填写学校名称" />
+            <input className="input pl-10" name="school" defaultValue={school} list="school-options" maxLength={80} placeholder="填写或选择学校名称" />
+            <input name="schoolId" type="hidden" value={schoolId} />
+            <datalist id="school-options">
+              {schools.map((item) => (
+                <option key={item.id} value={item.name}>{item.province}</option>
+              ))}
+            </datalist>
           </div>
         </label>
 
@@ -409,6 +559,172 @@ function DiamondPanel({
         </aside>
       </div>
     </SectionFrame>
+  );
+}
+
+function BuddyPanel({
+  buddies,
+  errorCode,
+  filters,
+  majors,
+  regions,
+  schools,
+  searchError,
+  searchResult
+}: {
+  buddies: BuddyList;
+  errorCode?: string;
+  filters: BuddySearchFilters;
+  majors: Array<{ id: string; name: string }>;
+  regions: Array<{ id: string; province: string; studySystem: string }>;
+  schools: Array<{ id: string; name: string; province: string }>;
+  searchError: BuddySearchError;
+  searchResult: BuddySearchResult | null;
+}) {
+  const provinces = Array.from(new Set(regions.map((region) => region.province))).filter(Boolean);
+  const studySystems = Array.from(new Set(regions.map((region) => region.studySystem))).filter(Boolean);
+  const actionErrorText: Record<string, string> = {
+    BUDDY_REQUEST_PENDING: "申请已发送，等待对方处理。",
+    BUDDY_REQUEST_REVERSED_PENDING: "对方已经申请你为搭子，请进入个人主页处理申请。",
+    BUDDY_RELATIONSHIP_TERMINATED: "双方已经不能再次建立搭子关系。",
+    BUDDY_REQUEST_WITHDRAW_COOLDOWN: "撤回申请后 30 天内不能再次申请该用户。",
+    BUDDY_REQUEST_NOT_ACTIONABLE: "该申请当前不能处理。",
+    UNKNOWN: "操作失败，请稍后再试。"
+  };
+
+  return (
+    <section className="space-y-6">
+      {errorCode ? (
+        <p className="rounded-xl bg-coral/10 px-4 py-3 text-sm font-bold text-coral">
+          {actionErrorText[errorCode] || actionErrorText.UNKNOWN}
+        </p>
+      ) : null}
+
+      <SectionFrame icon={<UsersRound className="text-teal" size={22} />} title="我的搭子">
+        {buddies.length === 0 ? (
+          <p className="rounded-xl bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">
+            还没有搭子。可以在下方按条件搜索同学。
+          </p>
+        ) : (
+          <div className="flex gap-4 overflow-x-auto pb-2">
+            {buddies.map((buddy) => (
+              <a key={buddy.pairId} className="group w-24 shrink-0 text-center" href={`/students/${buddy.user.id}`}>
+                <div className="mx-auto w-fit transition group-hover:scale-105">
+                  <Avatar name={buddy.user.nickname} color={buddy.user.avatarColor} image={buddy.user.avatarImage} size="md" />
+                </div>
+                <p className="mt-2 truncate text-sm font-black text-ink group-hover:text-teal">{buddy.user.nickname}</p>
+              </a>
+            ))}
+          </div>
+        )}
+      </SectionFrame>
+
+      <SectionFrame icon={<Search className="text-sky-500" size={22} />} title="搜索搭子">
+        <form className="grid gap-4 md:grid-cols-3" method="get">
+          <input name="tab" type="hidden" value="buddies" />
+          <label>
+            <span className="label">出生年份</span>
+            <input className="input" name="birthYear" defaultValue={filters.birthYear || ""} inputMode="numeric" placeholder="2006" />
+          </label>
+          <label>
+            <span className="label">出生月份</span>
+            <select className="input" name="birthMonth" defaultValue={filters.birthMonth || ""}>
+              <option value="">不限</option>
+              {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
+                <option key={month} value={month}>{month} 月</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="label">性别</span>
+            <select className="input" name="gender" defaultValue={filters.gender || ""}>
+              <option value="">不限</option>
+              <option value="male">男</option>
+              <option value="female">女</option>
+            </select>
+          </label>
+          <label>
+            <span className="label">学校</span>
+            <select className="input" name="schoolId" defaultValue={filters.schoolId || ""}>
+              <option value="">不限</option>
+              {schools.map((school) => (
+                <option key={school.id} value={school.id}>{school.name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="label">专业</span>
+            <select className="input" name="majorId" defaultValue={filters.majorId || ""}>
+              <option value="">不限</option>
+              {majors.map((major) => (
+                <option key={major.id} value={major.id}>{major.name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="label">省份</span>
+            <select className="input" name="province" defaultValue={filters.province || ""}>
+              <option value="">不限</option>
+              {provinces.map((province) => (
+                <option key={province} value={province}>{province}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="label">学制</span>
+            <select className="input" name="studySystem" defaultValue={filters.studySystem || ""}>
+              <option value="">不限</option>
+              {studySystems.map((studySystem) => (
+                <option key={studySystem} value={studySystem}>{studySystem}</option>
+              ))}
+            </select>
+          </label>
+          <div className="flex items-end gap-2 md:col-span-2">
+            <button className="primary-button" type="submit">
+              <Search size={18} />
+              搜索
+            </button>
+            <a className="secondary-button" href="/me?tab=buddies">清空</a>
+          </div>
+        </form>
+
+        {searchError ? (
+          <p className="mt-4 rounded-xl bg-coral/10 px-4 py-3 text-sm font-bold text-coral">
+            {searchError.message}
+            {typeof searchError.details === "object" && searchError.details && "missingFields" in searchError.details
+              ? ` 缺少：${(searchError.details as { missingFields?: string[] }).missingFields?.join("、") || ""}`
+              : ""}
+          </p>
+        ) : null}
+
+        {searchResult ? (
+          <div className="mt-6 space-y-3">
+            {searchResult.items.length === 0 ? (
+              <p className="rounded-xl bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">没有找到符合条件的用户。</p>
+            ) : (
+              searchResult.items.map((item) => (
+                <a
+                  key={item.user.id}
+                  className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 p-4 transition hover:border-teal/40 hover:bg-teal/5"
+                  href={`/students/${item.user.id}`}
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <Avatar name={item.user.nickname} color={item.user.avatarColor} image={item.user.avatarImage} size="md" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-black text-ink">{item.user.nickname}</p>
+                      <p className="mt-1 truncate text-xs font-semibold text-slate-500">
+                        {[item.user.schoolName, item.user.majorName, item.user.province, item.user.studySystem].filter(Boolean).join(" · ") || "资料未公开"}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="shrink-0 text-xs font-black text-teal">{relationshipLabel(item.relationship.action)}</span>
+                </a>
+              ))
+            )}
+          </div>
+        ) : null}
+      </SectionFrame>
+    </section>
   );
 }
 
@@ -720,6 +1036,15 @@ async function updateProfile(formData: FormData) {
   const gender = genderInput === "male" || genderInput === "female" ? genderInput : null;
   const schoolInput = String(formData.get("school") || "").trim();
   const school = schoolInput ? schoolInput.slice(0, 80) : null;
+  const schoolRecord = school ? await findOrCreateSchoolByName(school) : null;
+  const birthYearInput = String(formData.get("birthYear") || "").trim();
+  const birthMonthInput = String(formData.get("birthMonth") || "").trim();
+  const parsedBirthYear = Number(birthYearInput);
+  const parsedBirthMonth = Number(birthMonthInput);
+  const hasBirthYear = birthYearInput.length > 0 && Number.isInteger(parsedBirthYear) && parsedBirthYear >= 1900;
+  const hasBirthMonth = birthMonthInput.length > 0 && Number.isInteger(parsedBirthMonth) && parsedBirthMonth >= 1 && parsedBirthMonth <= 12;
+  const birthYear = hasBirthYear && hasBirthMonth ? parsedBirthYear : null;
+  const birthMonth = hasBirthYear && hasBirthMonth ? parsedBirthMonth : null;
   const phoneInput = String(formData.get("phoneNumber") || "").trim();
   const phoneNumber = phoneInput ? phoneInput.slice(0, 30) : null;
   const emailInput = String(formData.get("email") || "").trim();
@@ -738,19 +1063,53 @@ async function updateProfile(formData: FormData) {
       update: {
         nickname,
         gender,
-        school
+        school,
+        schoolId: schoolRecord?.id || null,
+        birthYear,
+        birthMonth
       },
       create: {
         userId: user.id,
         nickname,
         gender,
-        school
+        school,
+        schoolId: schoolRecord?.id || null,
+        birthYear,
+        birthMonth
       }
     })
   ]);
 
   revalidatePath("/me");
   redirect("/me?tab=profile&profile=updated");
+}
+
+async function findOrCreateSchoolByName(name: string) {
+  const normalized = name.trim().slice(0, 80);
+  if (!normalized) {
+    return null;
+  }
+  const existing = await prisma.school.findFirst({
+    where: { name: normalized, status: "published" },
+    orderBy: [{ province: "asc" }, { sortOrder: "asc" }]
+  });
+  if (existing) {
+    return existing;
+  }
+  return prisma.school.upsert({
+    where: {
+      province_name: {
+        province: "未设置",
+        name: normalized
+      }
+    },
+    update: { status: "published" },
+    create: {
+      name: normalized,
+      province: "未设置",
+      status: "published"
+    }
+  });
 }
 
 async function updateAvatar(formData: FormData) {

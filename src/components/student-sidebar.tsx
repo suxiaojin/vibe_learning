@@ -1,15 +1,16 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Bell, BookMarked, GraduationCap, HelpCircle, LogOut, MoreHorizontal, Settings, Target, UserRound } from "lucide-react";
+import { Bell, BookMarked, GraduationCap, HelpCircle, LogOut, MoreHorizontal, Settings, Target, UserRound, UsersRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type StudentNavKey = "learn" | "course-center" | "wrong-book" | "me" | "notifications";
+type StudentNavKey = "learn" | "course-center" | "wrong-book" | "buddy-circle" | "me" | "notifications";
 
 const text = {
   subtitle: "\u4e13\u8f6c\u672c\u95ef\u5173\u5b66\u4e60",
   learn: "\u5b66\u4e60",
   courseCenter: "\u8bfe\u7a0b\u4e2d\u5fc3",
   review: "\u590d\u4e60",
+  buddyCircle: "搭子圈",
   profile: "\u4e2a\u4eba\u6863\u6848",
   more: "\u66f4\u591a",
   moreTitle: "\u66f4\u591a\u529f\u80fd",
@@ -32,6 +33,7 @@ export function StudentSidebar({ active }: { active: StudentNavKey }) {
           <StudentNavItem active={active === "learn"} href="/learn" icon={<GraduationCap size={24} />} label={text.learn} />
           <StudentNavItem active={active === "course-center"} href="/course-center" icon={<BookMarked size={24} />} label={text.courseCenter} />
           <StudentNavItem active={active === "wrong-book"} href="/wrong-book" icon={<Target size={24} />} label={text.review} />
+          <StudentNavItem active={active === "buddy-circle"} href="/buddy-circle" icon={<UsersRound size={24} />} label={text.buddyCircle} />
           <StudentNavItem active={active === "me"} href="/me" icon={<UserRound size={24} />} label={text.profile} />
           <MoreMenu active={active === "notifications"} />
         </nav>

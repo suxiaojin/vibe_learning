@@ -1,4 +1,5 @@
 import type { NotificationAutomationEventType, Prisma } from "@prisma/client";
+import { expireDueBuddyRequests } from "@/lib/buddies";
 import { prisma } from "@/lib/prisma";
 
 const staleProcessingMinutes = 10;
@@ -193,7 +194,8 @@ export async function processDueNotificationJobs(limit = 25) {
 export async function runNotificationWorkerCycle() {
   const events = await processNotificationEvents();
   const jobs = await processDueNotificationJobs();
-  return { events, jobs };
+  const buddyRequests = await expireDueBuddyRequests();
+  return { events, jobs, buddyRequests };
 }
 
 async function executeNotificationDispatchJob(jobId: string) {

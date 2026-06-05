@@ -3,6 +3,7 @@ import { LearningCourseSwitcher, LearningPath, type PathCourse } from "@/compone
 import { NotificationBell } from "@/components/notification-bell";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { requireUser } from "@/lib/auth";
+import { getNotificationBellData } from "@/lib/user-event-notifications";
 import { prisma } from "@/lib/prisma";
 import { ensureDiamondAccount } from "@/lib/rewards";
 import { getStudentLearningPath, type SyllabusPathGroup } from "@/lib/syllabus-learning";
@@ -43,36 +44,14 @@ export default async function LearnPage({
 }) {
   const user = await requireUser();
   const params = await searchParams;
-  const unreadNotificationWhere = {
-    userId: user.id,
-    readAt: null,
-    notification: {
-      status: "sent" as const
-    }
-  };
-  const [pathState, diamondAccount, fullUser, unreadNotificationReceipts, unreadNotificationCount] = await Promise.all([
+  const [pathState, diamondAccount, fullUser, notificationBellData] = await Promise.all([
     getStudentLearningPath(user.id, params?.course),
     ensureDiamondAccount(user.id),
     prisma.user.findUnique({
       where: { id: user.id },
       include: { studentProfile: true }
     }),
-    prisma.notificationRecipient.findMany({
-      where: unreadNotificationWhere,
-      orderBy: { deliveredAt: "desc" },
-      take: 5,
-      select: {
-        notification: {
-          select: {
-            id: true,
-            title: true,
-            contentHtml: true,
-            sentAt: true
-          }
-        }
-      }
-    }),
-    prisma.notificationRecipient.count({ where: unreadNotificationWhere })
+    getNotificationBellData(user.id)
   ]);
 
   const currentGroup = pathState.selectedGroup;
@@ -142,8 +121,8 @@ export default async function LearnPage({
           <div className="flex items-center justify-end gap-4 px-3 py-2 text-sm font-black text-slate-700">
             <span className="flex items-center gap-2"><Gem className="text-sky-500" size={24} />{diamondAccount.balance}</span>
             <NotificationBell
-              notifications={unreadNotificationReceipts.map((receipt) => receipt.notification)}
-              unreadCount={unreadNotificationCount}
+              notifications={notificationBellData.notifications}
+              unreadCount={notificationBellData.unreadCount}
             />
             <Avatar name={displayName} image={avatarImage} />
           </div>

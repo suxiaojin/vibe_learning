@@ -73,6 +73,34 @@ enum NotificationAutomationEventType {
   diamond_purchase_succeeded
 }
 
+enum BuddyPairStatus {
+  available
+  active
+  rejected
+  removed
+}
+
+enum BuddyRequestStatus {
+  pending
+  accepted
+  rejected
+  withdrawn
+  expired
+}
+
+enum BuddyPostType {
+  original
+  repost
+}
+
+enum UserEventNotificationType {
+  buddy_request_received
+  buddy_request_accepted
+  buddy_request_rejected
+  buddy_post_liked
+  buddy_post_reposted
+}
+
 enum RegionStatus {
   active
   inactive
@@ -193,6 +221,15 @@ model User {
   notificationAutomationRulesCreated NotificationAutomationRule[] @relation("NotificationAutomationRuleAuthor")
   notificationEvents NotificationEvent[]
   notificationDispatchRecipients NotificationDispatchRecipient[]
+  buddyPairsAsA BuddyPair[] @relation("BuddyPairUserA")
+  buddyPairsAsB BuddyPair[] @relation("BuddyPairUserB")
+  buddyPairsTerminated BuddyPair[] @relation("BuddyPairTerminalActor")
+  buddyRequestsSent BuddyRequest[] @relation("BuddyRequestRequester")
+  buddyRequestsReceived BuddyRequest[] @relation("BuddyRequestRecipient")
+  buddyPosts BuddyPost[] @relation("BuddyPostAuthor")
+  buddyPostLikes BuddyPostLike[]
+  userEventNotificationsReceived UserEventNotification[] @relation("UserEventNotificationRecipient")
+  userEventNotificationsActed UserEventNotification[] @relation("UserEventNotificationActor")
 
   @@index([role, status, createdAt])
   @@map("users")
@@ -300,6 +337,21 @@ model Major {
   @@map("majors")
 }
 
+model School {
+  id              String          @id @default(cuid())
+  name            String
+  province        String          @default("未设置")
+  status          ContentStatus   @default(published)
+  sortOrder       Int             @default(0)
+  studentProfiles StudentProfile[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([province, name])
+  @@index([status, sortOrder])
+  @@map("schools")
+}
+
 model RegionPublicSubject {
   id              String        @id @default(cuid())
   regionId        String
@@ -334,21 +386,30 @@ model StudentProfile {
   regionId        String?
   publicSubjectId String?
   majorId         String?
+  schoolId        String?
   nickname        String?
   avatarColor     String         @default("green")
   avatarImage     String?
   gender          StudentGender?
   school          String?
+  birthYear       Int?
+  birthMonth      Int?
+  allowBuddySearch Boolean       @default(true)
   user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   region          Region?        @relation(fields: [regionId], references: [id], onDelete: SetNull)
   publicSubject   PublicSubject? @relation(fields: [publicSubjectId], references: [id], onDelete: SetNull)
   major           Major?         @relation(fields: [majorId], references: [id], onDelete: SetNull)
+  schoolOption    School?        @relation(fields: [schoolId], references: [id], onDelete: SetNull)
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
   @@index([regionId])
   @@index([publicSubjectId])
   @@index([majorId])
+  @@index([schoolId])
+  @@index([allowBuddySearch, gender])
+  @@index([allowBuddySearch, schoolId])
+  @@index([allowBuddySearch, birthYear, birthMonth])
   @@map("student_profiles")
 }
 
@@ -854,4 +915,111 @@ model NotificationRecipient {
   @@index([userId, readAt, deliveredAt])
   @@index([notificationId])
   @@map("notification_recipients")
+}
+
+model BuddyPair {
+  id           String          @id @default(cuid())
+  userAId      String
+  userBId      String
+  status       BuddyPairStatus @default(available)
+  activeSince  DateTime?
+  terminalAt   DateTime?
+  terminalById String?
+  userA        User            @relation("BuddyPairUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB        User            @relation("BuddyPairUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  terminalBy   User?           @relation("BuddyPairTerminalActor", fields: [terminalById], references: [id], onDelete: SetNull)
+  requests     BuddyRequest[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@unique([userAId, userBId])
+  @@index([userAId, status])
+  @@index([userBId, status])
+  @@index([status, updatedAt])
+  @@map("buddy_pairs")
+}
+
+model BuddyRequest {
+  id               String             @id @default(cuid())
+  pairId           String
+  requesterId      String
+  recipientId      String
+  status           BuddyRequestStatus @default(pending)
+  expiresAt        DateTime
+  respondedAt      DateTime?
+  withdrawnAt      DateTime?
+  expiredAt        DateTime?
+  reapplyAllowedAt DateTime?
+  pair             BuddyPair          @relation(fields: [pairId], references: [id], onDelete: Cascade)
+  requester        User               @relation("BuddyRequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  recipient        User               @relation("BuddyRequestRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  notifications    UserEventNotification[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([recipientId, status, createdAt])
+  @@index([requesterId, status, createdAt])
+  @@index([status, expiresAt])
+  @@index([pairId, createdAt])
+  @@map("buddy_requests")
+}
+
+model BuddyPost {
+  id                 String                  @id @default(cuid())
+  authorId           String
+  type               BuddyPostType           @default(original)
+  content            String?
+  originalPostId     String?
+  deletedAt          DateTime?
+  author             User                    @relation("BuddyPostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  originalPost       BuddyPost?              @relation("BuddyPostReposts", fields: [originalPostId], references: [id], onDelete: Restrict)
+  reposts            BuddyPost[]             @relation("BuddyPostReposts")
+  likes              BuddyPostLike[]
+  eventNotifications UserEventNotification[]
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  @@unique([authorId, originalPostId])
+  @@index([authorId, deletedAt, createdAt])
+  @@index([originalPostId])
+  @@index([deletedAt, createdAt])
+  @@map("buddy_posts")
+}
+
+model BuddyPostLike {
+  id        String    @id @default(cuid())
+  postId    String
+  userId    String
+  active    Boolean   @default(true)
+  post      BuddyPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([postId, userId])
+  @@index([postId, active])
+  @@index([userId, createdAt])
+  @@map("buddy_post_likes")
+}
+
+model UserEventNotification {
+  id                    String                    @id @default(cuid())
+  recipientId           String
+  actorId               String?
+  actorNicknameSnapshot String
+  type                  UserEventNotificationType
+  requestId             String?
+  postId                String?
+  dedupeKey             String                    @unique
+  readAt                DateTime?
+  recipient             User                      @relation("UserEventNotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor                 User?                     @relation("UserEventNotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  request               BuddyRequest?             @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  post                  BuddyPost?                @relation(fields: [postId], references: [id], onDelete: SetNull)
+  createdAt             DateTime                  @default(now())
+
+  @@index([recipientId, readAt, createdAt])
+  @@index([requestId])
+  @@index([postId])
+  @@map("user_event_notifications")
 }

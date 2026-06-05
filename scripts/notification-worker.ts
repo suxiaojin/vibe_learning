@@ -9,8 +9,8 @@ async function main() {
   while (!stopping) {
     try {
       const result = await runNotificationWorkerCycle();
-      if (result.events > 0 || result.jobs > 0) {
-        console.log(`Notification worker processed events=${result.events}, jobs=${result.jobs}`);
+      if (result.events > 0 || result.jobs > 0 || result.buddyRequests > 0) {
+        console.log(`Notification worker processed events=${result.events}, jobs=${result.jobs}, buddyRequests=${result.buddyRequests}`);
       }
     } catch (error) {
       console.error("Notification worker cycle failed", error);
