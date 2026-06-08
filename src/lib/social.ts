@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getMedalLevel, getMedalRule } from "@/lib/rewards";
 
 export type SocialUserSearchResult = Awaited<ReturnType<typeof searchUsersByNickname>>["items"][number];
+export type SocialRecommendation = Awaited<ReturnType<typeof listRecommendedFollows>>["items"][number];
 
 export async function getFollowingIds(userId: string) {
   const follows = await prisma.socialFollow.findMany({
@@ -18,6 +19,15 @@ export async function getFollowingIds(userId: string) {
   });
 
   return follows.map((follow) => follow.followingId);
+}
+
+export async function getBlockedUserIds(userId: string) {
+  const blocks = await prisma.socialBlock.findMany({
+    where: { blockerId: userId },
+    select: { blockedId: true }
+  });
+
+  return blocks.map((block) => block.blockedId);
 }
 
 export async function getSocialProfile(viewerId: string, targetId: string) {
@@ -126,18 +136,53 @@ export async function unfollowUser(followerId: string, followingId: string) {
   });
 }
 
+export async function blockUser(blockerId: string, blockedId: string) {
+  if (blockerId === blockedId) {
+    throw new BuddyError("SOCIAL_BLOCK_SELF_NOT_ALLOWED", "不能屏蔽自己。");
+  }
+
+  const target = await prisma.user.findFirst({
+    where: { id: blockedId, role: "student", status: "active" },
+    select: { id: true }
+  });
+  if (!target) {
+    throw new BuddyError("SOCIAL_PROFILE_NOT_FOUND", "用户不存在或暂不可访问。", 404);
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const block = await tx.socialBlock.upsert({
+      where: { blockerId_blockedId: { blockerId, blockedId } },
+      update: {},
+      create: { blockerId, blockedId }
+    });
+
+    await tx.socialFollow.deleteMany({
+      where: {
+        OR: [
+          { followerId: blockerId, followingId: blockedId },
+          { followerId: blockedId, followingId: blockerId }
+        ]
+      }
+    });
+
+    return block;
+  });
+}
+
 export async function searchUsersByNickname(viewerId: string, query: string, input?: { limit?: number }) {
   const keyword = query.trim();
   const limit = Math.max(1, Math.min(input?.limit || 12, 30));
   if (!keyword) {
     return { items: [] };
   }
+  const blockedIds = await getBlockedUserIds(viewerId);
 
   const users = await prisma.user.findMany({
     where: {
-      id: { not: viewerId },
+      id: { notIn: [viewerId, ...blockedIds] },
       role: "student",
       status: "active",
+      blockedUsers: { none: { blockedId: viewerId } },
       studentProfile: {
         is: {
           nickname: {
@@ -178,10 +223,94 @@ export async function searchUsersByNickname(viewerId: string, query: string, inp
       avatarColor: user.studentProfile?.avatarColor || "green",
       bio: user.studentProfile?.bio || "",
       province: user.studentProfile?.region?.province || null,
+      studySystem: user.studentProfile?.region?.studySystem || null,
       majorName: user.studentProfile?.major?.name || null,
       isFollowing: user.followers.length > 0,
       followerCount: user._count.followers,
       followingCount: user._count.following
     }))
+  };
+}
+
+export async function listRecommendedFollows(viewerId: string, input?: { limit?: number }) {
+  const limit = Math.max(1, Math.min(input?.limit || 5, 10));
+  const viewer = await prisma.user.findUnique({
+    where: { id: viewerId },
+    include: {
+      studentProfile: {
+        include: { region: true }
+      }
+    }
+  });
+  const profile = viewer?.studentProfile;
+  if (!profile?.majorId || !profile.region?.province || !profile.region.studySystem) {
+    return { items: [] };
+  }
+
+  const [followingIds, blockedIds] = await Promise.all([
+    getFollowingIds(viewerId),
+    getBlockedUserIds(viewerId)
+  ]);
+
+  const users = await prisma.user.findMany({
+    where: {
+      id: { notIn: [viewerId, ...followingIds, ...blockedIds] },
+      role: "student",
+      status: "active",
+      blockedUsers: { none: { blockedId: viewerId } },
+      studentProfile: {
+        is: {
+          majorId: profile.majorId,
+          region: {
+            is: {
+              province: profile.region.province,
+              studySystem: profile.region.studySystem
+            }
+          }
+        }
+      }
+    },
+    include: {
+      diamondAccount: true,
+      studentProfile: {
+        include: {
+          region: true,
+          major: true
+        }
+      },
+      _count: {
+        select: {
+          followers: true,
+          following: true
+        }
+      }
+    },
+    orderBy: { createdAt: "desc" },
+    take: 100
+  });
+
+  return {
+    items: users
+      .sort((left, right) => {
+        const balanceDelta = (right.diamondAccount?.balance || 0) - (left.diamondAccount?.balance || 0);
+        if (balanceDelta !== 0) {
+          return balanceDelta;
+        }
+        return right.createdAt.getTime() - left.createdAt.getTime();
+      })
+      .slice(0, limit)
+      .map((user) => ({
+        id: user.id,
+        username: user.username,
+        nickname: user.studentProfile?.nickname || user.username,
+        avatarImage: user.studentProfile?.avatarImage || "",
+        avatarColor: user.studentProfile?.avatarColor || "green",
+        province: user.studentProfile?.region?.province || null,
+        studySystem: user.studentProfile?.region?.studySystem || null,
+        majorName: user.studentProfile?.major?.name || null,
+        diamondBalance: user.diamondAccount?.balance || 0,
+        followerCount: user._count.followers,
+        followingCount: user._count.following
+      }))
   };
 }

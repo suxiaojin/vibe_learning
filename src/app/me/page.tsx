@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
 import bcrypt from "bcryptjs";
-import { CalendarDays, CheckCircle2, Crown, Gem, Heart, ImageIcon, KeyRound, Mail, Medal, Pencil, Phone, Repeat2, School, Trophy, UserRound } from "lucide-react";
+import { Camera, CheckCircle2, Crown, Gem, Heart, KeyRound, Mail, Medal, Pencil, Phone, Repeat2, School, Trash2, Trophy, UserRound, X } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AvatarUploadForm } from "@/components/avatar-upload-form";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { requireUser } from "@/lib/auth";
-import { listProfileBuddyPosts, type ProfilePostTab } from "@/lib/buddy-posts";
+import { deleteBuddyPost, likeBuddyPost, listProfileBuddyPosts, repostBuddyPost, unlikeBuddyPost, unrepostBuddyPost } from "@/lib/buddy-posts";
 import { prisma } from "@/lib/prisma";
 import { getMedalLevel, getMedalRule, medalRules } from "@/lib/rewards";
 import { getSocialProfile } from "@/lib/social";
@@ -69,17 +69,14 @@ export default async function MePage({
   searchParams
 }: {
   searchParams?: Promise<{
-    edit?: string;
     profile?: string;
     password?: string;
     tab?: string;
-    homeTab?: string;
   }>;
 }) {
   const user = await requireUser();
   const query = await searchParams;
   const activeTab = getActiveMeTab(query?.tab);
-  const homeTab = getProfilePostTab(query?.homeTab);
   const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const heatmapStart = new Date(Date.now() - (heatmapWeekCount * 7 + 7) * dayMs);
   const [fullUser, transactions, totalAttempts, recentAttempts, schools, homeProfile, homePosts] = await Promise.all([
@@ -102,7 +99,7 @@ export default async function MePage({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
     }),
     activeTab === "homepage" ? getSocialProfile(user.id, user.id) : Promise.resolve(null),
-    activeTab === "homepage" ? listProfileBuddyPosts(user.id, user.id, { tab: homeTab, limit: 30 }) : Promise.resolve({ items: [], nextCursor: null })
+    activeTab === "homepage" ? listProfileBuddyPosts(user.id, user.id, { tab: "posts", limit: 30 }) : Promise.resolve({ items: [], nextCursor: null })
   ]);
 
   if (!fullUser) {
@@ -163,8 +160,6 @@ export default async function MePage({
                 school={fullUser.studentProfile?.school || ""}
                 schoolId={fullUser.studentProfile?.schoolId || ""}
                 schools={schools}
-                birthYear={fullUser.studentProfile?.birthYear || ""}
-                birthMonth={fullUser.studentProfile?.birthMonth || ""}
                 phoneNumber={fullUser.phoneNumber || ""}
                 email={fullUser.email || ""}
               />
@@ -184,8 +179,6 @@ export default async function MePage({
 
           {activeTab === "homepage" && homeProfile ? (
             <MyHomePagePanel
-              activeTab={homeTab}
-              editing={query?.edit === "profile"}
               posts={homePosts.items}
               profile={homeProfile}
               profileStatus={query?.profile}
@@ -199,18 +192,6 @@ export default async function MePage({
 
 function getActiveMeTab(tab?: string): MeTab {
   return meTabs.some((item) => item.key === tab) ? (tab as MeTab) : "profile";
-}
-
-function getProfilePostTab(tab?: string): ProfilePostTab {
-  return tab === "likes" || tab === "reposts" ? tab : "posts";
-}
-
-function parseInteger(value?: string) {
-  if (!value) {
-    return undefined;
-  }
-  const parsed = Number(value);
-  return Number.isInteger(parsed) ? parsed : undefined;
 }
 
 function SectionFrame({
@@ -272,8 +253,6 @@ function ProfilePanel({
   school,
   schoolId,
   schools,
-  birthYear,
-  birthMonth,
   phoneNumber,
   email
 }: {
@@ -286,8 +265,6 @@ function ProfilePanel({
   school: string;
   schoolId: string;
   schools: Array<{ id: string; name: string; province: string }>;
-  birthYear: number | "";
-  birthMonth: number | "";
   phoneNumber: string;
   email: string;
 }) {
@@ -338,25 +315,6 @@ function ProfilePanel({
             ))}
           </div>
         </fieldset>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <label>
-            <span className="label">出生年份</span>
-            <div className="relative">
-              <CalendarDays className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input className="input pl-10" name="birthYear" defaultValue={birthYear} inputMode="numeric" maxLength={4} placeholder="例如 2006" />
-            </div>
-          </label>
-          <label>
-            <span className="label">出生月份</span>
-            <select className="input" name="birthMonth" defaultValue={birthMonth}>
-              <option value="">不选择</option>
-              {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
-                <option key={month} value={month}>{month} 月</option>
-              ))}
-            </select>
-          </label>
-        </div>
 
         <label>
           <span className="label">学校</span>
@@ -492,14 +450,10 @@ function DiamondPanel({
 }
 
 function MyHomePagePanel({
-  activeTab,
-  editing,
   posts,
   profile,
   profileStatus
 }: {
-  activeTab: ProfilePostTab;
-  editing: boolean;
   posts: ProfilePost[];
   profile: SocialProfile;
   profileStatus?: string;
@@ -510,11 +464,9 @@ function MyHomePagePanel({
     cover_size: "背景图大小不能超过 2MB",
     cover_type: "背景图仅支持 JPG、PNG、WebP"
   };
-  const profileTabs: Array<{ key: ProfilePostTab; label: string }> = [
-    { key: "posts", label: "我的帖子" },
-    { key: "likes", label: "我的点赞" },
-    { key: "reposts", label: "我的转帖" }
-  ];
+  const editModalId = "home-profile-editor";
+  const openEditor = Boolean(profileStatus && profileStatus !== "updated" && profileErrorText[profileStatus]);
+  const profileMeta = [profile.user.province, profile.user.studySystem, profile.user.majorName].filter(Boolean).join(" - ");
 
   return (
     <section className="space-y-5">
@@ -530,82 +482,87 @@ function MyHomePagePanel({
         <div className="px-6 pb-6">
           <div className="-mt-12 flex flex-wrap items-end justify-between gap-4">
             <Avatar name={profile.user.nickname} color={profile.user.avatarColor} image={profile.user.avatarImage} size="lg" />
-            <a className="secondary-button" href={editing ? "/me?tab=homepage" : "/me?tab=homepage&edit=profile"}>
+            <label className="secondary-button cursor-pointer" htmlFor={editModalId}>
               <Pencil size={17} />
-              {editing ? "收起编辑" : "编辑个人资料"}
-            </a>
+              编辑个人资料
+            </label>
           </div>
 
           <div className="mt-4">
             <h2 className="text-3xl font-black text-ink">{profile.user.nickname}</h2>
-            <p className="mt-1 text-sm font-semibold text-slate-500">@{profile.user.username}</p>
-            <p className="mt-4 whitespace-pre-wrap text-base font-semibold leading-7 text-slate-700">
-              {profile.user.bio || "还没有填写简介。"}
-            </p>
             <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-slate-500">
-              <span>{formatDateTime(profile.user.joinedAt)} 加入</span>
-              <span>{profile.user.province || "省份未填写"}</span>
-              {profile.user.majorName ? <span>{profile.user.majorName}</span> : null}
+              <span>{formatJoinedMonth(profile.user.joinedAt)} 加入</span>
+              <span>{profileMeta || "省份 - 学制 - 专业未填写"}</span>
             </div>
             <div className="mt-5 flex flex-wrap gap-5 text-sm">
               <StatValue label="粉丝" value={profile.stats.followerCount} />
               <StatValue label="获赞" value={profile.stats.likedCount} />
               <StatValue label="关注" value={profile.stats.followingCount} />
+              <StatValue label="帖子" value={profile.stats.postCount} />
             </div>
           </div>
         </div>
       </section>
 
-      {editing ? (
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
-          <div className="mb-4 flex items-center gap-2">
-            <ImageIcon className="text-sky-500" size={20} />
-            <h3 className="text-lg font-black text-ink">编辑主页资料</h3>
+      <input className="peer sr-only" defaultChecked={openEditor} id={editModalId} type="checkbox" />
+      <div className="fixed inset-0 z-50 hidden overflow-y-auto bg-ink/35 px-4 py-8 peer-checked:block">
+        <form action={updateHomeProfile} className="relative mx-auto w-full max-w-3xl rounded-2xl bg-white p-5 shadow-[0_18px_60px_rgba(15,23,42,0.24)]" encType="multipart/form-data">
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <label className="grid size-10 cursor-pointer place-items-center rounded-full text-ink hover:bg-slate-100" htmlFor={editModalId}>
+              <X size={24} />
+            </label>
+            <h3 className="text-2xl font-black text-ink">编辑个人资料</h3>
+            <button className="min-h-10 rounded-full bg-ink px-6 text-sm font-black text-white transition hover:bg-slate-700" type="submit">
+              保存
+            </button>
           </div>
-          <form action={updateHomeProfile} className="grid gap-4 md:grid-cols-2">
-            <label>
-              <span className="label">背景图</span>
-              <input accept="image/jpeg,image/png,image/webp" className="input" name="coverImage" type="file" />
-            </label>
-            <label>
+
+          <label className="block cursor-pointer">
+            <span className="label">背景图</span>
+            <span
+              className="relative block h-48 overflow-hidden rounded-xl bg-slate-200 bg-cover bg-center"
+              style={profile.user.coverImage ? { backgroundImage: `url(${profile.user.coverImage})` } : undefined}
+            >
+              <span className="absolute inset-0 grid place-items-center bg-black/10">
+                <span className="grid size-14 place-items-center rounded-full bg-ink/70 text-white">
+                  <Camera size={24} />
+                </span>
+              </span>
+            </span>
+            <span className="mt-2 block text-xs font-semibold text-slate-400">建议分辨率 1500 x 500，支持 JPG、PNG、WebP，最大 2MB。</span>
+            <input accept="image/jpeg,image/png,image/webp" className="sr-only" name="coverImage" type="file" />
+          </label>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-[160px_minmax(0,1fr)]">
+            <label className="cursor-pointer">
               <span className="label">头像</span>
-              <input accept="image/jpeg,image/png,image/webp" className="input" name="avatarImage" type="file" />
+              <span className="relative block w-fit">
+                <Avatar name={profile.user.nickname} color={profile.user.avatarColor} image={profile.user.avatarImage} size="md" />
+                <span className="absolute inset-0 grid place-items-center rounded-full bg-black/20 text-white">
+                  <Camera size={22} />
+                </span>
+              </span>
+              <span className="mt-2 block text-xs font-semibold leading-5 text-slate-400">建议 400 x 400，最大 800KB。</span>
+              <input accept="image/jpeg,image/png,image/webp" className="sr-only" name="avatarImage" type="file" />
             </label>
-            <label>
-              <span className="label">昵称</span>
-              <input className="input" maxLength={30} name="nickname" defaultValue={profile.user.nickname} />
-            </label>
-            <label className="md:col-span-2">
-              <span className="label">简介</span>
-              <textarea className="input min-h-28 resize-y leading-7" maxLength={300} name="bio" defaultValue={profile.user.bio} />
-            </label>
-            <div className="md:col-span-2">
-              <button className="primary-button" type="submit">
-                <Pencil size={18} />
-                保存主页资料
-              </button>
+            <div className="space-y-4">
+              <label>
+                <span className="label">昵称</span>
+                <input className="input" maxLength={30} name="nickname" defaultValue={profile.user.nickname} />
+              </label>
+              <label>
+                <span className="label">简介</span>
+                <textarea className="input min-h-28 resize-y leading-7" maxLength={300} name="bio" defaultValue={profile.user.bio} />
+              </label>
             </div>
-          </form>
-        </section>
-      ) : null}
+          </div>
+        </form>
+      </div>
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
-        <nav className="grid border-b border-slate-100 md:grid-cols-3" aria-label="主页帖子分类">
-          {profileTabs.map((tab) => (
-            <a
-              key={tab.key}
-              aria-current={activeTab === tab.key ? "page" : undefined}
-              className={cn(
-                "relative grid min-h-14 place-items-center text-sm font-black transition",
-                activeTab === tab.key ? "text-ink" : "text-slate-500 hover:bg-slate-50 hover:text-ink"
-              )}
-              href={`/me?tab=homepage&homeTab=${tab.key}`}
-            >
-              {tab.label}
-              {activeTab === tab.key ? <span className="absolute bottom-0 h-1 w-14 rounded-full bg-sky-500" /> : null}
-            </a>
-          ))}
-        </nav>
+        <div className="border-b border-slate-100 px-5 py-4">
+          <h3 className="text-base font-black text-ink">我的帖子</h3>
+        </div>
         <div className="divide-y divide-slate-100">
           {posts.length === 0 ? (
             <p className="px-5 py-12 text-center text-sm font-semibold text-slate-500">这里暂时还没有内容。</p>
@@ -632,32 +589,128 @@ function HomePostCard({ post }: { post: ProfilePost }) {
       <div className="flex items-start gap-3">
         <Avatar name={post.author.nickname} color={post.author.avatarColor} image={post.author.avatarImage} size="sm" />
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <a className="font-black text-ink hover:text-teal" href={`/students/${post.author.id}`}>{post.author.nickname}</a>
-            <span className="font-semibold text-slate-400">@{post.author.username}</span>
-            <span className="font-semibold text-slate-400">· {formatDateTime(post.createdAt)}</span>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+              <a className="font-black text-ink hover:text-teal" href={`/students/${post.author.id}`}>{post.author.nickname}</a>
+              <span className="font-semibold text-slate-400">@{post.author.username}</span>
+              <span className="font-semibold text-slate-400">· {formatDateTime(post.createdAt)}</span>
+            </div>
+            {post.canDelete ? (
+              <form action={deleteHomePost}>
+                <input name="postId" type="hidden" value={post.id} />
+                <button
+                  aria-label="删除帖子"
+                  className="grid size-9 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-coral/10 hover:text-coral"
+                  type="submit"
+                >
+                  <Trash2 size={17} />
+                </button>
+              </form>
+            ) : null}
           </div>
           {post.type === "original" ? (
             <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p>
           ) : (
-            <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              {post.sourceState === "visible" && post.originalPost ? (
-                <>
-                  <p className="text-xs font-bold text-slate-400">转帖自 {post.originalPost.author.nickname}</p>
-                  <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-600">{post.originalPost.content}</p>
-                </>
-              ) : (
-                <p className="text-sm font-bold text-slate-400">原内容已删除</p>
-              )}
+            <div className="mt-3 space-y-3">
+              {post.content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p> : null}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                {post.sourceState === "visible" && post.originalPost ? (
+                  <>
+                    <p className="text-xs font-bold text-slate-400">转帖自 {post.originalPost.author.nickname}</p>
+                    <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-600">{post.originalPost.content}</p>
+                  </>
+                ) : (
+                  <p className="text-sm font-bold text-slate-400">原内容已删除</p>
+                )}
+              </div>
             </div>
           )}
-          <div className="mt-4 flex gap-5 text-xs font-bold text-slate-400">
-            <span className="inline-flex items-center gap-1"><Heart size={15} />{post.likeCount}</span>
-            {post.type === "original" ? <span className="inline-flex items-center gap-1"><Repeat2 size={15} />可转帖</span> : null}
+          <div className="mt-4 flex gap-8 text-sm font-black">
+            <HomeLikeAction post={post} />
+            {post.type === "original" ? <HomeRepostAction post={post} /> : null}
           </div>
         </div>
       </div>
     </article>
+  );
+}
+
+function HomeLikeAction({ post }: { post: ProfilePost }) {
+  return (
+    <form action={post.likedByMe ? unlikeHomePost : likeHomePost}>
+      <input name="postId" type="hidden" value={post.id} />
+      <button
+        aria-label={post.likedByMe ? "取消点赞" : "点赞"}
+        className={cn(
+          "inline-flex min-h-9 min-w-16 items-center gap-2 rounded-full px-2 transition",
+          post.likedByMe ? "text-pink-500" : "text-slate-400 hover:text-pink-500"
+        )}
+        disabled={!post.canLike && !post.likedByMe}
+        type="submit"
+      >
+        <Heart className={post.likedByMe ? "fill-current" : ""} size={18} />
+        <span>{post.likeCount}</span>
+      </button>
+    </form>
+  );
+}
+
+function HomeRepostAction({ post }: { post: ProfilePost }) {
+  if (post.repostedByMe) {
+    return (
+      <form action={unrepostHomePost}>
+        <input name="postId" type="hidden" value={post.id} />
+        <button
+          aria-label="取消转帖"
+          className="inline-flex min-h-9 min-w-16 items-center gap-2 rounded-full px-2 text-teal transition hover:text-slate-400"
+          type="submit"
+        >
+          <Repeat2 size={18} />
+          <span>{post.repostCount}</span>
+        </button>
+      </form>
+    );
+  }
+
+  const modalId = `home-repost-${post.id}`;
+  return (
+    <div className="relative">
+      <input className="peer sr-only" id={modalId} type="checkbox" />
+      <label
+        aria-label="转帖"
+        className={cn(
+          "inline-flex min-h-9 min-w-16 cursor-pointer items-center gap-2 rounded-full px-2 text-slate-400 transition hover:text-teal",
+          !post.canRepost && "pointer-events-none cursor-not-allowed opacity-50"
+        )}
+        htmlFor={modalId}
+      >
+        <Repeat2 size={18} />
+        <span>{post.repostCount}</span>
+      </label>
+      <div className="fixed inset-0 z-50 hidden place-items-start justify-center overflow-y-auto bg-ink/35 px-4 py-12 peer-checked:grid">
+        <form action={repostHomePost} className="relative w-full max-w-2xl rounded-2xl bg-white p-5 shadow-[0_18px_60px_rgba(15,23,42,0.24)]">
+          <input name="postId" type="hidden" value={post.id} />
+          <div className="flex items-center justify-between gap-3">
+            <label className="grid size-9 cursor-pointer place-items-center rounded-full text-ink hover:bg-slate-100" htmlFor={modalId}>
+              <X size={22} />
+            </label>
+            <button className="min-h-10 rounded-full bg-ink px-6 text-sm font-black text-white transition hover:bg-slate-700" type="submit">
+              发帖
+            </button>
+          </div>
+          <textarea
+            className="mt-5 min-h-24 w-full resize-y border-0 text-xl font-semibold leading-8 text-ink outline-none placeholder:text-slate-400"
+            maxLength={300}
+            name="content"
+            placeholder="添加评论"
+          />
+          <div className="mt-4 rounded-2xl border border-slate-200 p-4">
+            <p className="text-sm font-black text-ink">{post.author.nickname}</p>
+            <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
@@ -961,6 +1014,14 @@ function formatDateTime(date: Date) {
   });
 }
 
+function formatJoinedMonth(date: Date) {
+  return date.toLocaleDateString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    timeZone: "Asia/Shanghai"
+  });
+}
+
 async function updateHomeProfile(formData: FormData) {
   "use server";
 
@@ -971,13 +1032,13 @@ async function updateHomeProfile(formData: FormData) {
   const bio = bioInput ? bioInput.slice(0, 300) : null;
   const avatarImage = await readUploadedImage(formData.get("avatarImage"), {
     maxBytes: avatarMaxBytes,
-    sizeRedirect: "/me?tab=homepage&edit=profile&profile=avatar_size",
-    typeRedirect: "/me?tab=homepage&edit=profile&profile=avatar_type"
+    sizeRedirect: "/me?tab=homepage&profile=avatar_size",
+    typeRedirect: "/me?tab=homepage&profile=avatar_type"
   });
   const coverImage = await readUploadedImage(formData.get("coverImage"), {
     maxBytes: coverMaxBytes,
-    sizeRedirect: "/me?tab=homepage&edit=profile&profile=cover_size",
-    typeRedirect: "/me?tab=homepage&edit=profile&profile=cover_type"
+    sizeRedirect: "/me?tab=homepage&profile=cover_size",
+    typeRedirect: "/me?tab=homepage&profile=cover_type"
   });
   const imageData: { avatarImage?: string; coverImage?: string } = {};
   if (avatarImage) {
@@ -1007,6 +1068,51 @@ async function updateHomeProfile(formData: FormData) {
   redirect("/me?tab=homepage&profile=updated");
 }
 
+async function deleteHomePost(formData: FormData) {
+  "use server";
+  const user = await requireUser();
+  await deleteBuddyPost(user.id, String(formData.get("postId") || ""));
+  revalidatePath("/me");
+  revalidatePath("/buddy-circle");
+  redirect("/me?tab=homepage");
+}
+
+async function likeHomePost(formData: FormData) {
+  "use server";
+  const user = await requireUser();
+  await likeBuddyPost(user.id, String(formData.get("postId") || ""));
+  revalidatePath("/me");
+  revalidatePath("/buddy-circle");
+  redirect("/me?tab=homepage");
+}
+
+async function unlikeHomePost(formData: FormData) {
+  "use server";
+  const user = await requireUser();
+  await unlikeBuddyPost(user.id, String(formData.get("postId") || ""));
+  revalidatePath("/me");
+  revalidatePath("/buddy-circle");
+  redirect("/me?tab=homepage");
+}
+
+async function repostHomePost(formData: FormData) {
+  "use server";
+  const user = await requireUser();
+  await repostBuddyPost(user.id, String(formData.get("postId") || ""), String(formData.get("content") || ""));
+  revalidatePath("/me");
+  revalidatePath("/buddy-circle");
+  redirect("/me?tab=homepage");
+}
+
+async function unrepostHomePost(formData: FormData) {
+  "use server";
+  const user = await requireUser();
+  await unrepostBuddyPost(user.id, String(formData.get("postId") || ""));
+  revalidatePath("/me");
+  revalidatePath("/buddy-circle");
+  redirect("/me?tab=homepage");
+}
+
 async function updateProfile(formData: FormData) {
   "use server";
 
@@ -1018,14 +1124,6 @@ async function updateProfile(formData: FormData) {
   const schoolInput = String(formData.get("school") || "").trim();
   const school = schoolInput ? schoolInput.slice(0, 80) : null;
   const schoolRecord = school ? await findOrCreateSchoolByName(school) : null;
-  const birthYearInput = String(formData.get("birthYear") || "").trim();
-  const birthMonthInput = String(formData.get("birthMonth") || "").trim();
-  const parsedBirthYear = Number(birthYearInput);
-  const parsedBirthMonth = Number(birthMonthInput);
-  const hasBirthYear = birthYearInput.length > 0 && Number.isInteger(parsedBirthYear) && parsedBirthYear >= 1900;
-  const hasBirthMonth = birthMonthInput.length > 0 && Number.isInteger(parsedBirthMonth) && parsedBirthMonth >= 1 && parsedBirthMonth <= 12;
-  const birthYear = hasBirthYear && hasBirthMonth ? parsedBirthYear : null;
-  const birthMonth = hasBirthYear && hasBirthMonth ? parsedBirthMonth : null;
   const phoneInput = String(formData.get("phoneNumber") || "").trim();
   const phoneNumber = phoneInput ? phoneInput.slice(0, 30) : null;
   const emailInput = String(formData.get("email") || "").trim();
@@ -1045,18 +1143,14 @@ async function updateProfile(formData: FormData) {
         nickname,
         gender,
         school,
-        schoolId: schoolRecord?.id || null,
-        birthYear,
-        birthMonth
+        schoolId: schoolRecord?.id || null
       },
       create: {
         userId: user.id,
         nickname,
         gender,
         school,
-        schoolId: schoolRecord?.id || null,
-        birthYear,
-        birthMonth
+        schoolId: schoolRecord?.id || null
       }
     })
   ]);
