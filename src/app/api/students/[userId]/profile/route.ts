@@ -1,6 +1,6 @@
 import { apiOk } from "@/lib/api-response";
 import { listProfileBuddyPosts } from "@/lib/buddy-posts";
-import { getPublicStudentProfile } from "@/lib/buddies";
+import { getSocialProfile } from "@/lib/social";
 import { buddyApiError, getStudentApiUser } from "@/lib/student-api";
 
 export async function GET(
@@ -15,18 +15,21 @@ export async function GET(
   try {
     const { userId } = await context.params;
     const url = new URL(request.url);
-    const profile = await getPublicStudentProfile(user.id, userId);
-    const posts = profile.canViewPosts
-      ? await listProfileBuddyPosts(user.id, userId, {
-          cursor: url.searchParams.get("cursor") || undefined,
-          limit: parseInteger(url.searchParams.get("limit"))
-        })
-      : { items: [], nextCursor: null };
+    const profile = await getSocialProfile(user.id, userId);
+    const posts = await listProfileBuddyPosts(user.id, userId, {
+      cursor: url.searchParams.get("cursor") || undefined,
+      limit: parseInteger(url.searchParams.get("limit")),
+      tab: parseTab(url.searchParams.get("tab"))
+    });
 
     return apiOk({ profile, posts });
   } catch (error) {
     return buddyApiError(error);
   }
+}
+
+function parseTab(value: string | null) {
+  return value === "likes" || value === "reposts" ? value : "posts";
 }
 
 function parseInteger(value: string | null) {

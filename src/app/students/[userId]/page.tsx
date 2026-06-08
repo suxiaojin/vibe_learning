@@ -1,32 +1,22 @@
-import { ArrowLeft, Gem, Medal, UserPlus, UserRound, UsersRound, XCircle } from "lucide-react";
+import { ArrowLeft, Gem, Heart, Medal, Repeat2, UserCheck, UserPlus } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { StudentSidebar } from "@/components/student-sidebar";
-import { listProfileBuddyPosts } from "@/lib/buddy-posts";
-import {
-  acceptBuddyRequest,
-  createBuddyRequest,
-  formatBuddyError,
-  getPublicStudentProfile,
-  rejectBuddyRequest,
-  removeBuddy,
-  withdrawBuddyRequest
-} from "@/lib/buddies";
+import { listProfileBuddyPosts, type ProfilePostTab } from "@/lib/buddy-posts";
+import { formatBuddyError } from "@/lib/buddies";
 import { requireUser } from "@/lib/auth";
+import { followUser, getSocialProfile, unfollowUser } from "@/lib/social";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 type ProfilePost = Awaited<ReturnType<typeof listProfileBuddyPosts>>["items"][number];
+type SocialProfile = Awaited<ReturnType<typeof getSocialProfile>>;
 
 const errorText: Record<string, string> = {
-  BUDDY_REQUEST_PENDING: "申请已发送，等待对方处理。",
-  BUDDY_REQUEST_REVERSED_PENDING: "对方已经申请你为搭子，请直接处理现有申请。",
-  BUDDY_RELATIONSHIP_TERMINATED: "双方已经不能再次建立搭子关系。",
-  BUDDY_REQUEST_WITHDRAW_COOLDOWN: "撤回申请后 30 天内不能再次申请该用户。",
-  BUDDY_REQUEST_NOT_ACTIONABLE: "该申请当前不能处理。",
-  BUDDY_ALREADY_ACTIVE: "你们已经是搭子了。",
+  SOCIAL_FOLLOW_SELF_NOT_ALLOWED: "不能关注自己。",
+  SOCIAL_PROFILE_NOT_FOUND: "用户不存在或暂不可访问。",
   UNKNOWN: "操作失败，请稍后再试。"
 };
 
@@ -35,7 +25,7 @@ export default async function StudentProfilePage({
   searchParams
 }: {
   params: Promise<{ userId: string }>;
-  searchParams?: Promise<{ error?: string }>;
+  searchParams?: Promise<{ error?: string; homeTab?: string }>;
 }) {
   const currentUser = await requireUser();
   if (currentUser.role !== "student") {
@@ -43,18 +33,21 @@ export default async function StudentProfilePage({
   }
   const { userId } = await params;
   const query = await searchParams;
-  const profile = await getPublicStudentProfile(currentUser.id, userId);
-  const posts = profile.canViewPosts ? await listProfileBuddyPosts(currentUser.id, userId, { limit: 20 }) : { items: [], nextCursor: null };
+  const activeTab = getProfilePostTab(query?.homeTab);
+  const [profile, posts] = await Promise.all([
+    getSocialProfile(currentUser.id, userId),
+    listProfileBuddyPosts(currentUser.id, userId, { tab: activeTab, limit: 30 })
+  ]);
 
   return (
     <main className="min-h-dvh bg-mist/60 lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
-      <StudentSidebar active="me" />
+      <StudentSidebar active="buddy-circle" />
 
       <section className="min-w-0 px-5 py-8 lg:px-8">
-        <div className="mx-auto max-w-4xl space-y-5">
-          <a className="inline-flex items-center gap-2 text-sm font-black text-slate-500 hover:text-teal" href="/me?tab=buddies">
+        <div className="mx-auto max-w-5xl space-y-5">
+          <a className="inline-flex items-center gap-2 text-sm font-black text-slate-500 hover:text-teal" href="/buddy-circle">
             <ArrowLeft size={17} />
-            返回我的搭子
+            返回搭子圈
           </a>
 
           {query?.error ? (
@@ -63,42 +56,17 @@ export default async function StudentProfilePage({
             </p>
           ) : null}
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-soft">
-            <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
-              <div className="flex min-w-0 items-center gap-4">
-                <ProfileAvatar user={profile.user} />
-                <div className="min-w-0">
-                  <h1 className="truncate text-3xl font-black text-ink">{profile.user.nickname}</h1>
-                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-semibold text-slate-500">
-                    <span>{profile.user.joinedYear} 年加入</span>
-                    <span className="flex items-center gap-1"><Gem size={16} className="text-sky-500" />{profile.user.diamondBalance} 钻石</span>
-                    <span className="flex items-center gap-1"><Medal size={16} className="text-honey" />{profile.user.medalLabel}</span>
-                    <span>性别：{profile.user.gender === "male" ? "男" : profile.user.gender === "female" ? "女" : "未填写"}</span>
-                  </div>
-                </div>
-              </div>
-              <RelationshipAction targetId={profile.user.id} relationship={profile.relationship} />
-            </div>
-          </section>
+          <ProfileHero profile={profile} />
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
-            <div className="mb-4 flex items-center gap-2">
-              <UsersRound className="text-teal" size={20} />
-              <h2 className="text-lg font-black text-ink">动态</h2>
+          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
+            <ProfileTabs activeTab={activeTab} targetId={profile.user.id} />
+            <div className="divide-y divide-slate-100">
+              {posts.items.length === 0 ? (
+                <p className="px-5 py-12 text-center text-sm font-semibold text-slate-500">这里暂时还没有内容。</p>
+              ) : (
+                posts.items.map((post) => <ProfilePostCard key={post.id} post={post} />)
+              )}
             </div>
-            {!profile.canViewPosts ? (
-              <p className="rounded-xl bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">
-                成为搭子后才能查看 TA 的动态。
-              </p>
-            ) : posts.items.length === 0 ? (
-              <p className="rounded-xl bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">
-                暂无动态。
-              </p>
-            ) : (
-              <div className="space-y-4">
-                {posts.items.map((post) => <ProfilePostCard key={post.id} post={post} />)}
-              </div>
-            )}
           </section>
         </div>
       </section>
@@ -106,118 +74,151 @@ export default async function StudentProfilePage({
   );
 }
 
-function RelationshipAction({
-  relationship,
-  targetId
-}: {
-  relationship: Awaited<ReturnType<typeof getPublicStudentProfile>>["relationship"];
-  targetId: string;
-}) {
-  const returnTo = `/students/${targetId}`;
+function ProfileHero({ profile }: { profile: SocialProfile }) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
+      <div
+        className="h-48 bg-slate-200 bg-cover bg-center md:h-64"
+        style={profile.user.coverImage ? { backgroundImage: `url(${profile.user.coverImage})` } : undefined}
+      />
+      <div className="px-6 pb-6">
+        <div className="-mt-12 flex flex-wrap items-end justify-between gap-4">
+          <ProfileAvatar user={profile.user} size="lg" />
+          <ProfileAction profile={profile} />
+        </div>
 
-  if (relationship.action === "self") {
-    return <span className="badge bg-slate-100 text-slate-500">这是你自己</span>;
-  }
-  if (relationship.action === "none") {
-    return (
-      <form action={sendBuddyRequest}>
-        <input name="targetId" type="hidden" value={targetId} />
-        <input name="returnTo" type="hidden" value={returnTo} />
-        <button className="primary-button" type="submit">
-          <UserPlus size={18} />
-          添加搭子
-        </button>
-      </form>
-    );
-  }
-  if (relationship.action === "outgoing_pending" && relationship.requestId) {
-    return (
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="badge bg-sky-50 text-sky-700">等待对方处理</span>
-        <form action={withdrawRequest}>
-          <input name="requestId" type="hidden" value={relationship.requestId} />
-          <input name="returnTo" type="hidden" value={returnTo} />
-          <button className="secondary-button min-h-10 px-4 text-xs" type="submit">撤回申请</button>
-        </form>
+        <div className="mt-4">
+          <h1 className="text-3xl font-black text-ink">{profile.user.nickname}</h1>
+          <p className="mt-1 text-sm font-semibold text-slate-500">@{profile.user.username}</p>
+          <p className="mt-4 whitespace-pre-wrap text-base font-semibold leading-7 text-slate-700">
+            {profile.user.bio || "这个用户还没有填写简介。"}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-slate-500">
+            <span>{formatDateTime(profile.user.joinedAt)} 加入</span>
+            <span>{profile.user.province || "省份未填写"}</span>
+            <span className="flex items-center gap-1"><Gem size={16} className="text-sky-500" />{profile.user.diamondBalance} 钻石</span>
+            <span className="flex items-center gap-1"><Medal size={16} className="text-honey" />{profile.user.medalLabel}</span>
+          </div>
+          <div className="mt-5 flex flex-wrap gap-5 text-sm">
+            <StatValue label="粉丝" value={profile.stats.followerCount} />
+            <StatValue label="获赞" value={profile.stats.likedCount} />
+            <StatValue label="关注" value={profile.stats.followingCount} />
+          </div>
+        </div>
       </div>
-    );
-  }
-  if (relationship.action === "incoming_pending" && relationship.requestId) {
+    </section>
+  );
+}
+
+function ProfileAction({ profile }: { profile: SocialProfile }) {
+  if (profile.relationship.isSelf) {
     return (
-      <div className="flex flex-wrap gap-2">
-        <form action={acceptRequest}>
-          <input name="requestId" type="hidden" value={relationship.requestId} />
-          <input name="returnTo" type="hidden" value={returnTo} />
-          <button className="primary-button min-h-10 px-4 text-xs" type="submit">接受申请</button>
-        </form>
-        <form action={rejectRequest}>
-          <input name="requestId" type="hidden" value={relationship.requestId} />
-          <input name="returnTo" type="hidden" value={returnTo} />
-          <button className="secondary-button min-h-10 px-4 text-xs text-coral" type="submit">拒绝申请</button>
-        </form>
-      </div>
+      <a className="secondary-button" href="/me?tab=homepage">
+        编辑我的主页
+      </a>
     );
   }
-  if (relationship.action === "active") {
-    return (
-      <form action={removeBuddyAction}>
-        <input name="targetId" type="hidden" value={targetId} />
-        <input name="returnTo" type="hidden" value={returnTo} />
-        <button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-coral px-4 text-sm font-black text-white transition hover:bg-red-500" type="submit">
-          <XCircle size={18} />
-          删除搭子并永久解除关系
-        </button>
-      </form>
-    );
-  }
-  if (relationship.action === "outgoing_withdraw_cooldown") {
-    return (
-      <span className="rounded-xl bg-slate-100 px-4 py-3 text-xs font-bold text-slate-500">
-        撤回冷却中，{relationship.reapplyAllowedAt ? formatDateTime(relationship.reapplyAllowedAt) : "稍后"}后可再次申请
-      </span>
-    );
-  }
-  return <span className="badge bg-slate-100 text-slate-500">无法添加</span>;
+
+  return (
+    <form action={profile.relationship.isFollowing ? unfollowFromProfile : followFromProfile}>
+      <input name="targetId" type="hidden" value={profile.user.id} />
+      <button className={profile.relationship.isFollowing ? "secondary-button" : "primary-button"} type="submit">
+        {profile.relationship.isFollowing ? <UserCheck size={18} /> : <UserPlus size={18} />}
+        {profile.relationship.isFollowing ? "已关注" : "关注"}
+      </button>
+    </form>
+  );
+}
+
+function ProfileTabs({ activeTab, targetId }: { activeTab: ProfilePostTab; targetId: string }) {
+  const tabs: Array<{ key: ProfilePostTab; label: string }> = [
+    { key: "posts", label: "帖子" },
+    { key: "likes", label: "点赞" },
+    { key: "reposts", label: "转帖" }
+  ];
+  return (
+    <nav className="grid border-b border-slate-100 md:grid-cols-3" aria-label="主页帖子分类">
+      {tabs.map((tab) => (
+        <a
+          key={tab.key}
+          aria-current={activeTab === tab.key ? "page" : undefined}
+          className={cn(
+            "relative grid min-h-14 place-items-center text-sm font-black transition",
+            activeTab === tab.key ? "text-ink" : "text-slate-500 hover:bg-slate-50 hover:text-ink"
+          )}
+          href={`/students/${targetId}?homeTab=${tab.key}`}
+        >
+          {tab.label}
+          {activeTab === tab.key ? <span className="absolute bottom-0 h-1 w-14 rounded-full bg-sky-500" /> : null}
+        </a>
+      ))}
+    </nav>
+  );
 }
 
 function ProfilePostCard({ post }: { post: ProfilePost }) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-black text-ink">{post.author.nickname}</p>
-          <p className="mt-0.5 text-xs font-semibold text-slate-400">{formatDateTime(post.createdAt)}</p>
+    <article className="p-5">
+      <div className="flex items-start gap-3">
+        <ProfileAvatar user={post.author} size="sm" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <a className="font-black text-ink hover:text-teal" href={`/students/${post.author.id}`}>{post.author.nickname}</a>
+            <span className="font-semibold text-slate-400">@{post.author.username}</span>
+            <span className="font-semibold text-slate-400">· {formatDateTime(post.createdAt)}</span>
+          </div>
+          {post.type === "original" ? (
+            <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p>
+          ) : (
+            <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              {post.sourceState === "visible" && post.originalPost ? (
+                <>
+                  <p className="text-xs font-bold text-slate-400">转帖自 {post.originalPost.author.nickname}</p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-600">{post.originalPost.content}</p>
+                </>
+              ) : (
+                <p className="text-sm font-bold text-slate-400">原内容已删除</p>
+              )}
+            </div>
+          )}
+          <div className="mt-4 flex gap-5 text-xs font-bold text-slate-400">
+            <span className="inline-flex items-center gap-1"><Heart size={15} />{post.likeCount}</span>
+            {post.type === "original" ? <span className="inline-flex items-center gap-1"><Repeat2 size={15} />可转帖</span> : null}
+          </div>
         </div>
       </div>
-      {post.type === "original" ? (
-        <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p>
-      ) : (
-        <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
-          {post.sourceState === "visible" && post.originalPost ? (
-            <>
-              <p className="text-xs font-bold text-slate-400">转帖自 {post.originalPost.author.nickname}</p>
-              <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-600">{post.originalPost.content}</p>
-            </>
-          ) : (
-            <p className="text-sm font-bold text-slate-400">
-              {post.sourceState === "deleted" ? "原内容已删除" : "原内容不可见"}
-            </p>
-          )}
-        </div>
-      )}
     </article>
   );
 }
 
-function ProfileAvatar({ user }: { user: Awaited<ReturnType<typeof getPublicStudentProfile>>["user"] }) {
+function ProfileAvatar({
+  size,
+  user
+}: {
+  size: "lg" | "sm";
+  user: { avatarImage?: string; nickname: string };
+}) {
+  const sizeClass = size === "lg" ? "size-28 text-5xl" : "size-12 text-lg";
   if (user.avatarImage) {
-    return <img alt={`${user.nickname} 的头像`} className="size-20 rounded-full object-cover shadow-sm" src={user.avatarImage} />;
+    return <img alt={`${user.nickname} 的头像`} className={cn("shrink-0 rounded-full object-cover shadow-sm", sizeClass)} src={user.avatarImage} />;
   }
   return (
-    <span className={cn("grid size-20 shrink-0 place-items-center rounded-full bg-[#58cc02] text-2xl font-black text-white shadow-sm")}>
+    <span className={cn("grid shrink-0 place-items-center rounded-full bg-[#58cc02] font-black text-white shadow-sm", sizeClass)}>
       {user.nickname.slice(0, 1).toUpperCase()}
     </span>
   );
+}
+
+function StatValue({ label, value }: { label: string; value: number }) {
+  return (
+    <span className="font-semibold text-slate-500">
+      <strong className="mr-1 text-base text-ink">{value}</strong>{label}
+    </span>
+  );
+}
+
+function getProfilePostTab(tab?: string): ProfilePostTab {
+  return tab === "likes" || tab === "reposts" ? tab : "posts";
 }
 
 function formatDateTime(date: Date) {
@@ -231,78 +232,35 @@ function formatDateTime(date: Date) {
   });
 }
 
-async function sendBuddyRequest(formData: FormData) {
+async function followFromProfile(formData: FormData) {
   "use server";
   const user = await requireUser();
   const targetId = String(formData.get("targetId") || "");
   try {
-    await createBuddyRequest(user.id, targetId);
+    await followUser(user.id, targetId);
   } catch (error) {
-    redirectWithError(formData, error);
+    redirectWithError(targetId, error);
   }
-  revalidatePath("/me");
-  redirect(getReturnTo(formData, `/students/${targetId}`));
-}
-
-async function acceptRequest(formData: FormData) {
-  "use server";
-  const user = await requireUser();
-  try {
-    await acceptBuddyRequest(user.id, String(formData.get("requestId") || ""));
-  } catch (error) {
-    redirectWithError(formData, error);
-  }
-  revalidatePath("/me");
+  revalidatePath(`/students/${targetId}`);
   revalidatePath("/buddy-circle");
-  redirect(getReturnTo(formData, "/me?tab=buddies"));
+  redirect(`/students/${targetId}`);
 }
 
-async function rejectRequest(formData: FormData) {
-  "use server";
-  const user = await requireUser();
-  try {
-    await rejectBuddyRequest(user.id, String(formData.get("requestId") || ""));
-  } catch (error) {
-    redirectWithError(formData, error);
-  }
-  revalidatePath("/me");
-  redirect(getReturnTo(formData, "/me?tab=buddies"));
-}
-
-async function withdrawRequest(formData: FormData) {
-  "use server";
-  const user = await requireUser();
-  try {
-    await withdrawBuddyRequest(user.id, String(formData.get("requestId") || ""));
-  } catch (error) {
-    redirectWithError(formData, error);
-  }
-  revalidatePath("/me");
-  redirect(getReturnTo(formData, "/me?tab=buddies"));
-}
-
-async function removeBuddyAction(formData: FormData) {
+async function unfollowFromProfile(formData: FormData) {
   "use server";
   const user = await requireUser();
   const targetId = String(formData.get("targetId") || "");
   try {
-    await removeBuddy(user.id, targetId);
+    await unfollowUser(user.id, targetId);
   } catch (error) {
-    redirectWithError(formData, error);
+    redirectWithError(targetId, error);
   }
-  revalidatePath("/me");
+  revalidatePath(`/students/${targetId}`);
   revalidatePath("/buddy-circle");
-  redirect(getReturnTo(formData, "/me?tab=buddies"));
+  redirect(`/students/${targetId}`);
 }
 
-function getReturnTo(formData: FormData, fallback: string) {
-  const returnTo = String(formData.get("returnTo") || "");
-  return returnTo.startsWith("/") ? returnTo : fallback;
-}
-
-function redirectWithError(formData: FormData, error: unknown): never {
+function redirectWithError(targetId: string, error: unknown): never {
   const buddyError = formatBuddyError(error);
-  const returnTo = getReturnTo(formData, "/me?tab=buddies");
-  const separator = returnTo.includes("?") ? "&" : "?";
-  redirect(`${returnTo}${separator}error=${buddyError?.code || "UNKNOWN"}`);
+  redirect(`/students/${targetId}?error=${buddyError?.code || "UNKNOWN"}`);
 }

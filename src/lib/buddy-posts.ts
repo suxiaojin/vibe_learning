@@ -1,11 +1,35 @@
 import { Prisma } from "@prisma/client";
-import { areActiveBuddies, BuddyError, getActiveBuddyIds } from "@/lib/buddies";
+import { BuddyError } from "@/lib/buddies";
 import { prisma } from "@/lib/prisma";
+import { getFollowingIds } from "@/lib/social";
 import { createUserEventNotification } from "@/lib/user-event-notifications";
+
+export type BuddyFeedScope = "discover" | "following";
+export type BuddyFeedSort = "latest" | "hot";
+export type ProfilePostTab = "posts" | "likes" | "reposts";
+
+export type BuddyFeedFilters = {
+  cursor?: string;
+  limit?: number;
+  majorId?: string;
+  province?: string;
+  scope?: BuddyFeedScope;
+  sort?: BuddyFeedSort;
+  studySystem?: string;
+};
 
 type BuddyPostWithDetails = Prisma.BuddyPostGetPayload<{
   include: {
-    author: { include: { studentProfile: true } };
+    author: {
+      include: {
+        studentProfile: {
+          include: {
+            major: true;
+            region: true;
+          };
+        };
+      };
+    };
     originalPost: { include: { author: { include: { studentProfile: true } } } };
     likes: { select: { active: true } };
     _count: { select: { likes: true } };
@@ -41,42 +65,70 @@ export async function deleteBuddyPost(authorId: string, postId: string) {
   }
 }
 
-export async function listBuddyFeed(userId: string, input?: { cursor?: string; limit?: number }) {
+export async function listBuddyFeed(userId: string, input?: BuddyFeedFilters) {
   const limit = normalizeLimit(input?.limit);
-  const buddyIds = await getActiveBuddyIds(userId);
+  const scope = input?.scope === "following" ? "following" : "discover";
+  const sort = input?.sort === "hot" ? "hot" : "latest";
+  const followingIds = scope === "following" ? await getFollowingIds(userId) : undefined;
+  if (scope === "following" && (!followingIds || followingIds.length === 0)) {
+    return { items: [], nextCursor: null };
+  }
+  const where = getFeedWhere(scope, input, followingIds);
+
+  const take = sort === "hot" ? Math.max(limit + 1, 120) : limit + 1;
   const posts = await prisma.buddyPost.findMany({
-    where: {
-      authorId: { in: [userId, ...buddyIds] },
-      deletedAt: null
-    },
+    where,
     include: postDetailsInclude(userId),
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    ...(input?.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
-    take: limit + 1
+    ...(sort === "latest" && input?.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
+    take
   });
 
   const items = [];
-  for (const post of posts.slice(0, limit)) {
+  for (const post of posts) {
     items.push(await toBuddyPostDto(post, userId));
   }
 
+  if (sort === "hot") {
+    items.sort((left, right) => {
+      if (right.likeCount !== left.likeCount) {
+        return right.likeCount - left.likeCount;
+      }
+      return right.createdAt.getTime() - left.createdAt.getTime();
+    });
+  }
+
+  const pageItems = items.slice(0, limit);
   return {
-    items,
-    nextCursor: posts.length > limit ? posts[limit].id : null
+    items: pageItems,
+    nextCursor: sort === "latest" && posts.length > limit ? posts[limit].id : null
   };
 }
 
-export async function listProfileBuddyPosts(viewerId: string, targetId: string, input?: { cursor?: string; limit?: number }) {
-  if (viewerId !== targetId && !(await areActiveBuddies(viewerId, targetId))) {
-    return { items: [], nextCursor: null };
+export async function listProfileBuddyPosts(
+  viewerId: string,
+  targetId: string,
+  input?: { cursor?: string; limit?: number; tab?: ProfilePostTab }
+) {
+  const limit = normalizeLimit(input?.limit);
+  const tab = input?.tab || "posts";
+  const where: Prisma.BuddyPostWhereInput = {
+    deletedAt: null,
+    author: {
+      role: "student",
+      status: "active"
+    }
+  };
+
+  if (tab === "likes") {
+    where.likes = { some: { userId: targetId, active: true } };
+  } else {
+    where.authorId = targetId;
+    where.type = tab === "reposts" ? "repost" : "original";
   }
 
-  const limit = normalizeLimit(input?.limit);
   const posts = await prisma.buddyPost.findMany({
-    where: {
-      authorId: targetId,
-      deletedAt: null
-    },
+    where,
     include: postDetailsInclude(viewerId),
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     ...(input?.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
@@ -143,7 +195,11 @@ export async function repostBuddyPost(userId: string, originalPostId: string) {
     where: {
       id: originalPostId,
       type: "original",
-      deletedAt: null
+      deletedAt: null,
+      author: {
+        role: "student",
+        status: "active"
+      }
     },
     select: {
       id: true,
@@ -155,9 +211,6 @@ export async function repostBuddyPost(userId: string, originalPostId: string) {
   }
   if (original.authorId === userId) {
     throw new BuddyError("BUDDY_POST_SELF_REPOST_NOT_ALLOWED", "不能转帖自己的动态。");
-  }
-  if (!(await areActiveBuddies(userId, original.authorId))) {
-    throw new BuddyError("BUDDY_POST_NOT_VISIBLE", "只能转帖当前搭子的原始动态。", 403);
   }
 
   try {
@@ -187,7 +240,7 @@ export async function repostBuddyPost(userId: string, originalPostId: string) {
 }
 
 export async function toBuddyPostDto(post: BuddyPostWithDetails, viewerId: string) {
-  const sourceState = await getPostSourceState(post);
+  const sourceState = getPostSourceState(post);
   const canInteract = post.authorId !== viewerId && !post.deletedAt && sourceState === "visible";
 
   return {
@@ -215,6 +268,36 @@ export async function toBuddyPostDto(post: BuddyPostWithDetails, viewerId: strin
   };
 }
 
+function getFeedWhere(scope: BuddyFeedScope, input?: BuddyFeedFilters, followingIds?: string[]): Prisma.BuddyPostWhereInput {
+  const profileWhere: Prisma.StudentProfileWhereInput = {};
+  if (input?.majorId) {
+    profileWhere.majorId = input.majorId;
+  }
+  if (input?.province || input?.studySystem) {
+    profileWhere.region = {
+      is: {
+        ...(input.province ? { province: input.province } : {}),
+        ...(input.studySystem ? { studySystem: input.studySystem } : {})
+      }
+    };
+  }
+
+  const where: Prisma.BuddyPostWhereInput = {
+    deletedAt: null,
+    author: {
+      role: "student",
+      status: "active",
+      ...(Object.keys(profileWhere).length > 0 ? { studentProfile: { is: profileWhere } } : {})
+    }
+  };
+
+  if (scope === "following") {
+    where.authorId = { in: followingIds || [] };
+  }
+
+  return where;
+}
+
 async function assertPostInteractable(userId: string, postId: string, action: "like") {
   const post = await prisma.buddyPost.findUnique({
     where: { id: postId },
@@ -225,16 +308,13 @@ async function assertPostInteractable(userId: string, postId: string, action: "l
       _count: { select: { likes: { where: { active: true } } } }
     }
   });
-  if (!post || post.deletedAt) {
+  if (!post || post.deletedAt || post.author.role !== "student" || post.author.status !== "active") {
     throw new BuddyError("BUDDY_POST_NOT_VISIBLE", "动态不存在或不可见。", 404);
   }
   if (post.authorId === userId) {
     throw new BuddyError("BUDDY_POST_SELF_LIKE_NOT_ALLOWED", "不能点赞自己的动态。");
   }
-  if (!(await areActiveBuddies(userId, post.authorId))) {
-    throw new BuddyError("BUDDY_POST_NOT_VISIBLE", "只能互动当前搭子的动态。", 403);
-  }
-  if ((await getPostSourceState(post)) !== "visible") {
+  if (getPostSourceState(post) !== "visible") {
     throw new BuddyError("BUDDY_POST_REPOST_SOURCE_UNAVAILABLE", "该动态当前不可互动。", 409);
   }
   if (action === "like") {
@@ -243,20 +323,15 @@ async function assertPostInteractable(userId: string, postId: string, action: "l
   return post;
 }
 
-async function getPostSourceState(post: {
+function getPostSourceState(post: {
   type: "original" | "repost";
-  authorId: string;
-  originalPostId: string | null;
-  originalPost?: { authorId: string; deletedAt: Date | null } | null;
+  originalPost?: { deletedAt: Date | null } | null;
 }) {
   if (post.type === "original") {
     return "visible" as const;
   }
   if (!post.originalPost || post.originalPost.deletedAt) {
     return "deleted" as const;
-  }
-  if (!(await areActiveBuddies(post.authorId, post.originalPost.authorId))) {
-    return "unavailable" as const;
   }
   return "visible" as const;
 }
@@ -271,7 +346,16 @@ function normalizeLimit(limit?: number) {
 
 function postDetailsInclude(userId: string) {
   return {
-    author: { include: { studentProfile: true } },
+    author: {
+      include: {
+        studentProfile: {
+          include: {
+            major: true,
+            region: true
+          }
+        }
+      }
+    },
     originalPost: { include: { author: { include: { studentProfile: true } } } },
     likes: { where: { userId }, select: { active: true } },
     _count: { select: { likes: { where: { active: true } } } }
@@ -282,9 +366,12 @@ function toPostUser(user: {
   id: string;
   username: string;
   studentProfile?: {
-    nickname: string | null;
-    avatarImage: string | null;
     avatarColor: string | null;
+    avatarImage: string | null;
+    bio?: string | null;
+    major?: { name: string } | null;
+    nickname: string | null;
+    region?: { province: string; studySystem: string } | null;
   } | null;
 }) {
   return {
@@ -292,6 +379,9 @@ function toPostUser(user: {
     username: user.username,
     nickname: user.studentProfile?.nickname || user.username,
     avatarImage: user.studentProfile?.avatarImage || "",
-    avatarColor: user.studentProfile?.avatarColor || "green"
+    avatarColor: user.studentProfile?.avatarColor || "green",
+    province: user.studentProfile?.region?.province || null,
+    studySystem: user.studentProfile?.region?.studySystem || null,
+    majorName: user.studentProfile?.major?.name || null
   };
 }

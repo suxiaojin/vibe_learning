@@ -13,7 +13,12 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const result = await listBuddyFeed(user.id, {
       cursor: url.searchParams.get("cursor") || undefined,
-      limit: parseInteger(url.searchParams.get("limit"))
+      limit: parseInteger(url.searchParams.get("limit")),
+      majorId: url.searchParams.get("majorId") || undefined,
+      province: url.searchParams.get("province") || undefined,
+      scope: url.searchParams.get("tab") === "following" ? "following" : "discover",
+      sort: url.searchParams.get("sort") === "hot" ? "hot" : "latest",
+      studySystem: url.searchParams.get("studySystem") || undefined
     });
     return apiOk(result);
   } catch (error) {

@@ -1,14 +1,15 @@
 import type { ReactNode } from "react";
 import bcrypt from "bcryptjs";
-import { CalendarDays, CheckCircle2, Crown, Gem, KeyRound, Mail, Medal, Pencil, Phone, School, Search, Trophy, UserRound, UsersRound } from "lucide-react";
+import { CalendarDays, CheckCircle2, Crown, Gem, Heart, ImageIcon, KeyRound, Mail, Medal, Pencil, Phone, Repeat2, School, Trophy, UserRound } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AvatarUploadForm } from "@/components/avatar-upload-form";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { requireUser } from "@/lib/auth";
-import { formatBuddyError, getBuddyList, searchBuddyCandidates, type BuddySearchFilters } from "@/lib/buddies";
+import { listProfileBuddyPosts, type ProfilePostTab } from "@/lib/buddy-posts";
 import { prisma } from "@/lib/prisma";
 import { getMedalLevel, getMedalRule, medalRules } from "@/lib/rewards";
+import { getSocialProfile } from "@/lib/social";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,7 @@ const avatarColors = [
 ];
 
 const avatarMaxBytes = 800 * 1024;
+const coverMaxBytes = 2 * 1024 * 1024;
 const allowedAvatarTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const meSectionClass = "rounded-2xl border border-slate-200/70 bg-transparent shadow-none";
 const dayMs = 24 * 60 * 60 * 1000;
@@ -51,50 +53,39 @@ const transactionLabels: Record<string, string> = {
   ai_consumption: "AI 消耗"
 };
 
-type MeTab = "profile" | "medals" | "diamonds" | "buddies";
+type MeTab = "profile" | "medals" | "diamonds" | "homepage";
 
 const meTabs: Array<{ key: MeTab; label: string }> = [
   { key: "profile", label: "我的信息" },
   { key: "medals", label: "我的勋章" },
   { key: "diamonds", label: "我的钻石" },
-  { key: "buddies", label: "我的搭子" }
+  { key: "homepage", label: "我的主页" }
 ];
 
-type BuddyList = Awaited<ReturnType<typeof getBuddyList>>;
-type BuddySearchResult = Awaited<ReturnType<typeof searchBuddyCandidates>>;
-type BuddySearchError = {
-  code: string;
-  details?: unknown;
-  message: string;
-  status: number;
-} | null;
+type SocialProfile = Awaited<ReturnType<typeof getSocialProfile>>;
+type ProfilePost = Awaited<ReturnType<typeof listProfileBuddyPosts>>["items"][number];
 
 export default async function MePage({
   searchParams
 }: {
   searchParams?: Promise<{
+    edit?: string;
     profile?: string;
     password?: string;
     tab?: string;
-    error?: string;
-    birthYear?: string;
-    birthMonth?: string;
-    gender?: string;
-    schoolId?: string;
-    majorId?: string;
-    province?: string;
-    studySystem?: string;
+    homeTab?: string;
   }>;
 }) {
   const user = await requireUser();
   const query = await searchParams;
   const activeTab = getActiveMeTab(query?.tab);
+  const homeTab = getProfilePostTab(query?.homeTab);
   const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const heatmapStart = new Date(Date.now() - (heatmapWeekCount * 7 + 7) * dayMs);
-  const [fullUser, transactions, totalAttempts, recentAttempts, schools, majors, regions, buddies] = await Promise.all([
+  const [fullUser, transactions, totalAttempts, recentAttempts, schools, homeProfile, homePosts] = await Promise.all([
     prisma.user.findUnique({
       where: { id: user.id },
-      include: { studentProfile: { include: { schoolOption: true } } }
+      include: { studentProfile: { include: { region: true, schoolOption: true } } }
     }),
     prisma.diamondTransaction.findMany({
       where: { userId: user.id, createdAt: { gte: oneWeekAgo } },
@@ -110,15 +101,8 @@ export default async function MePage({
       where: { status: "published" },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
     }),
-    prisma.major.findMany({
-      where: { status: "published" },
-      orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
-    }),
-    prisma.region.findMany({
-      where: { status: "active" },
-      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
-    }),
-    activeTab === "buddies" ? getBuddyList(user.id) : Promise.resolve([])
+    activeTab === "homepage" ? getSocialProfile(user.id, user.id) : Promise.resolve(null),
+    activeTab === "homepage" ? listProfileBuddyPosts(user.id, user.id, { tab: homeTab, limit: 30 }) : Promise.resolve({ items: [], nextCursor: null })
   ]);
 
   if (!fullUser) {
@@ -138,10 +122,6 @@ export default async function MePage({
     month: "long",
     timeZone: "Asia/Shanghai"
   });
-  const buddySearchFilters = getBuddySearchFilters(query);
-  const buddySearchState = activeTab === "buddies" && hasBuddySearchFilters(buddySearchFilters)
-    ? await runBuddySearch(user.id, buddySearchFilters)
-    : { result: null, error: null };
 
   return (
     <main className="min-h-dvh bg-mist/60 lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
@@ -202,16 +182,13 @@ export default async function MePage({
 
           {activeTab === "diamonds" ? <DiamondPanel transactions={transactions} /> : null}
 
-          {activeTab === "buddies" ? (
-            <BuddyPanel
-              buddies={buddies}
-              errorCode={query?.error}
-              filters={buddySearchFilters}
-              majors={majors}
-              regions={regions}
-              schools={schools}
-              searchError={buddySearchState.error}
-              searchResult={buddySearchState.result}
+          {activeTab === "homepage" && homeProfile ? (
+            <MyHomePagePanel
+              activeTab={homeTab}
+              editing={query?.edit === "profile"}
+              posts={homePosts.items}
+              profile={homeProfile}
+              profileStatus={query?.profile}
             />
           ) : null}
         </div>
@@ -224,56 +201,8 @@ function getActiveMeTab(tab?: string): MeTab {
   return meTabs.some((item) => item.key === tab) ? (tab as MeTab) : "profile";
 }
 
-function getBuddySearchFilters(query?: {
-  birthYear?: string;
-  birthMonth?: string;
-  gender?: string;
-  schoolId?: string;
-  majorId?: string;
-  province?: string;
-  studySystem?: string;
-}): BuddySearchFilters {
-  return {
-    birthYear: parseInteger(query?.birthYear),
-    birthMonth: parseInteger(query?.birthMonth),
-    gender: query?.gender === "male" || query?.gender === "female" ? query.gender : undefined,
-    schoolId: query?.schoolId?.trim() || undefined,
-    majorId: query?.majorId?.trim() || undefined,
-    province: query?.province?.trim() || undefined,
-    studySystem: query?.studySystem?.trim() || undefined
-  };
-}
-
-function hasBuddySearchFilters(filters: BuddySearchFilters) {
-  return Boolean(
-    (filters.birthYear && filters.birthMonth)
-      || filters.gender
-      || filters.schoolId
-      || filters.majorId
-      || filters.province
-      || filters.studySystem
-  );
-}
-
-async function runBuddySearch(userId: string, filters: BuddySearchFilters): Promise<{ result: BuddySearchResult | null; error: BuddySearchError }> {
-  try {
-    return { result: await searchBuddyCandidates(userId, filters), error: null };
-  } catch (error) {
-    return { result: null, error: formatBuddyError(error) || { code: "UNKNOWN", message: "搜索失败，请稍后再试。", status: 500 } };
-  }
-}
-
-function relationshipLabel(action: string) {
-  const labels: Record<string, string> = {
-    none: "查看主页",
-    outgoing_pending: "等待处理",
-    incoming_pending: "待你处理",
-    outgoing_withdraw_cooldown: "冷却中",
-    active: "已是搭子",
-    terminated: "无法添加",
-    self: "自己"
-  };
-  return labels[action] || "查看主页";
+function getProfilePostTab(tab?: string): ProfilePostTab {
+  return tab === "likes" || tab === "reposts" ? tab : "posts";
 }
 
 function parseInteger(value?: string) {
@@ -562,169 +491,173 @@ function DiamondPanel({
   );
 }
 
-function BuddyPanel({
-  buddies,
-  errorCode,
-  filters,
-  majors,
-  regions,
-  schools,
-  searchError,
-  searchResult
+function MyHomePagePanel({
+  activeTab,
+  editing,
+  posts,
+  profile,
+  profileStatus
 }: {
-  buddies: BuddyList;
-  errorCode?: string;
-  filters: BuddySearchFilters;
-  majors: Array<{ id: string; name: string }>;
-  regions: Array<{ id: string; province: string; studySystem: string }>;
-  schools: Array<{ id: string; name: string; province: string }>;
-  searchError: BuddySearchError;
-  searchResult: BuddySearchResult | null;
+  activeTab: ProfilePostTab;
+  editing: boolean;
+  posts: ProfilePost[];
+  profile: SocialProfile;
+  profileStatus?: string;
 }) {
-  const provinces = Array.from(new Set(regions.map((region) => region.province))).filter(Boolean);
-  const studySystems = Array.from(new Set(regions.map((region) => region.studySystem))).filter(Boolean);
-  const actionErrorText: Record<string, string> = {
-    BUDDY_REQUEST_PENDING: "申请已发送，等待对方处理。",
-    BUDDY_REQUEST_REVERSED_PENDING: "对方已经申请你为搭子，请进入个人主页处理申请。",
-    BUDDY_RELATIONSHIP_TERMINATED: "双方已经不能再次建立搭子关系。",
-    BUDDY_REQUEST_WITHDRAW_COOLDOWN: "撤回申请后 30 天内不能再次申请该用户。",
-    BUDDY_REQUEST_NOT_ACTIONABLE: "该申请当前不能处理。",
-    UNKNOWN: "操作失败，请稍后再试。"
+  const profileErrorText: Record<string, string> = {
+    avatar_size: "头像大小不能超过 800KB",
+    avatar_type: "头像仅支持 JPG、PNG、WebP",
+    cover_size: "背景图大小不能超过 2MB",
+    cover_type: "背景图仅支持 JPG、PNG、WebP"
   };
+  const profileTabs: Array<{ key: ProfilePostTab; label: string }> = [
+    { key: "posts", label: "我的帖子" },
+    { key: "likes", label: "我的点赞" },
+    { key: "reposts", label: "我的转帖" }
+  ];
 
   return (
-    <section className="space-y-6">
-      {errorCode ? (
-        <p className="rounded-xl bg-coral/10 px-4 py-3 text-sm font-bold text-coral">
-          {actionErrorText[errorCode] || actionErrorText.UNKNOWN}
-        </p>
+    <section className="space-y-5">
+      {profileStatus && profileStatus !== "updated" && profileErrorText[profileStatus] ? (
+        <p className="rounded-xl bg-coral/10 px-4 py-3 text-sm font-bold text-coral">{profileErrorText[profileStatus]}</p>
       ) : null}
 
-      <SectionFrame icon={<UsersRound className="text-teal" size={22} />} title="我的搭子">
-        {buddies.length === 0 ? (
-          <p className="rounded-xl bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">
-            还没有搭子。可以在下方按条件搜索同学。
-          </p>
-        ) : (
-          <div className="flex gap-4 overflow-x-auto pb-2">
-            {buddies.map((buddy) => (
-              <a key={buddy.pairId} className="group w-24 shrink-0 text-center" href={`/students/${buddy.user.id}`}>
-                <div className="mx-auto w-fit transition group-hover:scale-105">
-                  <Avatar name={buddy.user.nickname} color={buddy.user.avatarColor} image={buddy.user.avatarImage} size="md" />
-                </div>
-                <p className="mt-2 truncate text-sm font-black text-ink group-hover:text-teal">{buddy.user.nickname}</p>
-              </a>
-            ))}
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
+        <div
+          className="h-48 bg-slate-200 bg-cover bg-center md:h-64"
+          style={profile.user.coverImage ? { backgroundImage: `url(${profile.user.coverImage})` } : undefined}
+        />
+        <div className="px-6 pb-6">
+          <div className="-mt-12 flex flex-wrap items-end justify-between gap-4">
+            <Avatar name={profile.user.nickname} color={profile.user.avatarColor} image={profile.user.avatarImage} size="lg" />
+            <a className="secondary-button" href={editing ? "/me?tab=homepage" : "/me?tab=homepage&edit=profile"}>
+              <Pencil size={17} />
+              {editing ? "收起编辑" : "编辑个人资料"}
+            </a>
           </div>
-        )}
-      </SectionFrame>
 
-      <SectionFrame icon={<Search className="text-sky-500" size={22} />} title="搜索搭子">
-        <form className="grid gap-4 md:grid-cols-3" method="get">
-          <input name="tab" type="hidden" value="buddies" />
-          <label>
-            <span className="label">出生年份</span>
-            <input className="input" name="birthYear" defaultValue={filters.birthYear || ""} inputMode="numeric" placeholder="2006" />
-          </label>
-          <label>
-            <span className="label">出生月份</span>
-            <select className="input" name="birthMonth" defaultValue={filters.birthMonth || ""}>
-              <option value="">不限</option>
-              {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
-                <option key={month} value={month}>{month} 月</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="label">性别</span>
-            <select className="input" name="gender" defaultValue={filters.gender || ""}>
-              <option value="">不限</option>
-              <option value="male">男</option>
-              <option value="female">女</option>
-            </select>
-          </label>
-          <label>
-            <span className="label">学校</span>
-            <select className="input" name="schoolId" defaultValue={filters.schoolId || ""}>
-              <option value="">不限</option>
-              {schools.map((school) => (
-                <option key={school.id} value={school.id}>{school.name}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="label">专业</span>
-            <select className="input" name="majorId" defaultValue={filters.majorId || ""}>
-              <option value="">不限</option>
-              {majors.map((major) => (
-                <option key={major.id} value={major.id}>{major.name}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="label">省份</span>
-            <select className="input" name="province" defaultValue={filters.province || ""}>
-              <option value="">不限</option>
-              {provinces.map((province) => (
-                <option key={province} value={province}>{province}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="label">学制</span>
-            <select className="input" name="studySystem" defaultValue={filters.studySystem || ""}>
-              <option value="">不限</option>
-              {studySystems.map((studySystem) => (
-                <option key={studySystem} value={studySystem}>{studySystem}</option>
-              ))}
-            </select>
-          </label>
-          <div className="flex items-end gap-2 md:col-span-2">
-            <button className="primary-button" type="submit">
-              <Search size={18} />
-              搜索
-            </button>
-            <a className="secondary-button" href="/me?tab=buddies">清空</a>
+          <div className="mt-4">
+            <h2 className="text-3xl font-black text-ink">{profile.user.nickname}</h2>
+            <p className="mt-1 text-sm font-semibold text-slate-500">@{profile.user.username}</p>
+            <p className="mt-4 whitespace-pre-wrap text-base font-semibold leading-7 text-slate-700">
+              {profile.user.bio || "还没有填写简介。"}
+            </p>
+            <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-slate-500">
+              <span>{formatDateTime(profile.user.joinedAt)} 加入</span>
+              <span>{profile.user.province || "省份未填写"}</span>
+              {profile.user.majorName ? <span>{profile.user.majorName}</span> : null}
+            </div>
+            <div className="mt-5 flex flex-wrap gap-5 text-sm">
+              <StatValue label="粉丝" value={profile.stats.followerCount} />
+              <StatValue label="获赞" value={profile.stats.likedCount} />
+              <StatValue label="关注" value={profile.stats.followingCount} />
+            </div>
           </div>
-        </form>
+        </div>
+      </section>
 
-        {searchError ? (
-          <p className="mt-4 rounded-xl bg-coral/10 px-4 py-3 text-sm font-bold text-coral">
-            {searchError.message}
-            {typeof searchError.details === "object" && searchError.details && "missingFields" in searchError.details
-              ? ` 缺少：${(searchError.details as { missingFields?: string[] }).missingFields?.join("、") || ""}`
-              : ""}
-          </p>
-        ) : null}
-
-        {searchResult ? (
-          <div className="mt-6 space-y-3">
-            {searchResult.items.length === 0 ? (
-              <p className="rounded-xl bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">没有找到符合条件的用户。</p>
-            ) : (
-              searchResult.items.map((item) => (
-                <a
-                  key={item.user.id}
-                  className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 p-4 transition hover:border-teal/40 hover:bg-teal/5"
-                  href={`/students/${item.user.id}`}
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <Avatar name={item.user.nickname} color={item.user.avatarColor} image={item.user.avatarImage} size="md" />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-black text-ink">{item.user.nickname}</p>
-                      <p className="mt-1 truncate text-xs font-semibold text-slate-500">
-                        {[item.user.schoolName, item.user.majorName, item.user.province, item.user.studySystem].filter(Boolean).join(" · ") || "资料未公开"}
-                      </p>
-                    </div>
-                  </div>
-                  <span className="shrink-0 text-xs font-black text-teal">{relationshipLabel(item.relationship.action)}</span>
-                </a>
-              ))
-            )}
+      {editing ? (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
+          <div className="mb-4 flex items-center gap-2">
+            <ImageIcon className="text-sky-500" size={20} />
+            <h3 className="text-lg font-black text-ink">编辑主页资料</h3>
           </div>
-        ) : null}
-      </SectionFrame>
+          <form action={updateHomeProfile} className="grid gap-4 md:grid-cols-2">
+            <label>
+              <span className="label">背景图</span>
+              <input accept="image/jpeg,image/png,image/webp" className="input" name="coverImage" type="file" />
+            </label>
+            <label>
+              <span className="label">头像</span>
+              <input accept="image/jpeg,image/png,image/webp" className="input" name="avatarImage" type="file" />
+            </label>
+            <label>
+              <span className="label">昵称</span>
+              <input className="input" maxLength={30} name="nickname" defaultValue={profile.user.nickname} />
+            </label>
+            <label className="md:col-span-2">
+              <span className="label">简介</span>
+              <textarea className="input min-h-28 resize-y leading-7" maxLength={300} name="bio" defaultValue={profile.user.bio} />
+            </label>
+            <div className="md:col-span-2">
+              <button className="primary-button" type="submit">
+                <Pencil size={18} />
+                保存主页资料
+              </button>
+            </div>
+          </form>
+        </section>
+      ) : null}
+
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
+        <nav className="grid border-b border-slate-100 md:grid-cols-3" aria-label="主页帖子分类">
+          {profileTabs.map((tab) => (
+            <a
+              key={tab.key}
+              aria-current={activeTab === tab.key ? "page" : undefined}
+              className={cn(
+                "relative grid min-h-14 place-items-center text-sm font-black transition",
+                activeTab === tab.key ? "text-ink" : "text-slate-500 hover:bg-slate-50 hover:text-ink"
+              )}
+              href={`/me?tab=homepage&homeTab=${tab.key}`}
+            >
+              {tab.label}
+              {activeTab === tab.key ? <span className="absolute bottom-0 h-1 w-14 rounded-full bg-sky-500" /> : null}
+            </a>
+          ))}
+        </nav>
+        <div className="divide-y divide-slate-100">
+          {posts.length === 0 ? (
+            <p className="px-5 py-12 text-center text-sm font-semibold text-slate-500">这里暂时还没有内容。</p>
+          ) : (
+            posts.map((post) => <HomePostCard key={post.id} post={post} />)
+          )}
+        </div>
+      </section>
     </section>
+  );
+}
+
+function StatValue({ label, value }: { label: string; value: number }) {
+  return (
+    <span className="font-semibold text-slate-500">
+      <strong className="mr-1 text-base text-ink">{value}</strong>{label}
+    </span>
+  );
+}
+
+function HomePostCard({ post }: { post: ProfilePost }) {
+  return (
+    <article className="p-5">
+      <div className="flex items-start gap-3">
+        <Avatar name={post.author.nickname} color={post.author.avatarColor} image={post.author.avatarImage} size="sm" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <a className="font-black text-ink hover:text-teal" href={`/students/${post.author.id}`}>{post.author.nickname}</a>
+            <span className="font-semibold text-slate-400">@{post.author.username}</span>
+            <span className="font-semibold text-slate-400">· {formatDateTime(post.createdAt)}</span>
+          </div>
+          {post.type === "original" ? (
+            <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p>
+          ) : (
+            <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              {post.sourceState === "visible" && post.originalPost ? (
+                <>
+                  <p className="text-xs font-bold text-slate-400">转帖自 {post.originalPost.author.nickname}</p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-600">{post.originalPost.content}</p>
+                </>
+              ) : (
+                <p className="text-sm font-bold text-slate-400">原内容已删除</p>
+              )}
+            </div>
+          )}
+          <div className="mt-4 flex gap-5 text-xs font-bold text-slate-400">
+            <span className="inline-flex items-center gap-1"><Heart size={15} />{post.likeCount}</span>
+            {post.type === "original" ? <span className="inline-flex items-center gap-1"><Repeat2 size={15} />可转帖</span> : null}
+          </div>
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -983,14 +916,16 @@ function Message({ type, successText, errors = {} }: { type?: string; successTex
   );
 }
 
-function Avatar({ name, color, image, size }: { name: string; color: string; image?: string; size: "header" | "md" | "lg" }) {
+function Avatar({ name, color, image, size }: { name: string; color: string; image?: string; size: "header" | "md" | "lg" | "sm" }) {
   const colorClass = avatarColors.find((item) => item.key === color)?.className || avatarColors[0].className;
   const sizeClass =
     size === "lg"
       ? "size-28 text-5xl font-black"
       : size === "header"
         ? "size-20 text-3xl font-black"
-        : "size-24 text-4xl font-black";
+        : size === "sm"
+          ? "size-12 text-lg font-black"
+          : "size-24 text-4xl font-black";
 
   if (image) {
     return (
@@ -1024,6 +959,52 @@ function formatDateTime(date: Date) {
     minute: "2-digit",
     timeZone: "Asia/Shanghai"
   });
+}
+
+async function updateHomeProfile(formData: FormData) {
+  "use server";
+
+  const user = await requireUser();
+  const nicknameInput = String(formData.get("nickname") || "").trim();
+  const nickname = nicknameInput.slice(0, 30) || user.username;
+  const bioInput = String(formData.get("bio") || "").trim();
+  const bio = bioInput ? bioInput.slice(0, 300) : null;
+  const avatarImage = await readUploadedImage(formData.get("avatarImage"), {
+    maxBytes: avatarMaxBytes,
+    sizeRedirect: "/me?tab=homepage&edit=profile&profile=avatar_size",
+    typeRedirect: "/me?tab=homepage&edit=profile&profile=avatar_type"
+  });
+  const coverImage = await readUploadedImage(formData.get("coverImage"), {
+    maxBytes: coverMaxBytes,
+    sizeRedirect: "/me?tab=homepage&edit=profile&profile=cover_size",
+    typeRedirect: "/me?tab=homepage&edit=profile&profile=cover_type"
+  });
+  const imageData: { avatarImage?: string; coverImage?: string } = {};
+  if (avatarImage) {
+    imageData.avatarImage = avatarImage;
+  }
+  if (coverImage) {
+    imageData.coverImage = coverImage;
+  }
+
+  await prisma.studentProfile.upsert({
+    where: { userId: user.id },
+    update: {
+      nickname,
+      bio,
+      ...imageData
+    },
+    create: {
+      userId: user.id,
+      nickname,
+      bio,
+      ...imageData
+    }
+  });
+
+  revalidatePath("/me");
+  revalidatePath(`/students/${user.id}`);
+  redirect("/me?tab=homepage&profile=updated");
 }
 
 async function updateProfile(formData: FormData) {
@@ -1137,16 +1118,27 @@ async function updateAvatar(formData: FormData) {
 }
 
 async function readAvatarImage(value: FormDataEntryValue | null) {
+  return readUploadedImage(value, {
+    maxBytes: avatarMaxBytes,
+    sizeRedirect: "/me?tab=profile&profile=avatar_size",
+    typeRedirect: "/me?tab=profile&profile=avatar_type"
+  });
+}
+
+async function readUploadedImage(
+  value: FormDataEntryValue | null,
+  options: { maxBytes: number; sizeRedirect: string; typeRedirect: string }
+) {
   if (!(value instanceof File) || value.size === 0) {
     return null;
   }
 
-  if (value.size > avatarMaxBytes) {
-    redirect("/me?tab=profile&profile=avatar_size");
+  if (value.size > options.maxBytes) {
+    redirect(options.sizeRedirect);
   }
 
   if (!allowedAvatarTypes.has(value.type)) {
-    redirect("/me?tab=profile&profile=avatar_type");
+    redirect(options.typeRedirect);
   }
 
   const bytes = Buffer.from(await value.arrayBuffer());

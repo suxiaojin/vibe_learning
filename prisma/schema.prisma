@@ -228,6 +228,8 @@ model User {
   buddyRequestsReceived BuddyRequest[] @relation("BuddyRequestRecipient")
   buddyPosts BuddyPost[] @relation("BuddyPostAuthor")
   buddyPostLikes BuddyPostLike[]
+  following SocialFollow[] @relation("SocialFollowFollower")
+  followers SocialFollow[] @relation("SocialFollowFollowing")
   userEventNotificationsReceived UserEventNotification[] @relation("UserEventNotificationRecipient")
   userEventNotificationsActed UserEventNotification[] @relation("UserEventNotificationActor")
 
@@ -390,6 +392,8 @@ model StudentProfile {
   nickname        String?
   avatarColor     String         @default("green")
   avatarImage     String?
+  coverImage      String?
+  bio             String?
   gender          StudentGender?
   school          String?
   birthYear       Int?
@@ -1000,6 +1004,20 @@ model BuddyPostLike {
   @@index([postId, active])
   @@index([userId, createdAt])
   @@map("buddy_post_likes")
+}
+
+model SocialFollow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  follower    User     @relation("SocialFollowFollower", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("SocialFollowFollowing", fields: [followingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([followerId, followingId])
+  @@index([followerId, createdAt])
+  @@index([followingId, createdAt])
+  @@map("social_follows")
 }
 
 model UserEventNotification {
