@@ -1,0 +1,127 @@
+"use client";
+
+import { CheckCircle2, Loader2, Send, Share2, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { cn } from "@/lib/utils";
+
+type BuddyPostResponse = {
+  ok: boolean;
+  error?: {
+    message?: string;
+  };
+};
+
+const maxShareLength = 300;
+
+export function ShareToBuddyButton({
+  buttonClassName,
+  buttonLabel = "分享到搭子圈",
+  defaultContent,
+  sourceLabel = "学习动态"
+}: {
+  buttonClassName?: string;
+  buttonLabel?: string;
+  defaultContent: string;
+  sourceLabel?: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [draft, setDraft] = useState(defaultContent);
+  const [error, setError] = useState("");
+  const [open, setOpen] = useState(false);
+  const [shared, setShared] = useState(false);
+
+  useEffect(() => {
+    setDraft(defaultContent);
+    setError("");
+    setShared(false);
+  }, [defaultContent]);
+
+  async function submitShare() {
+    const content = draft.trim();
+    if (!content || busy) {
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/buddy-posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content })
+      });
+      const payload = (await response.json().catch(() => null)) as BuddyPostResponse | null;
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error?.message || "发布失败，请稍后再试。");
+      }
+      setShared(true);
+      setOpen(false);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "发布失败，请稍后再试。");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        className={cn(
+          "inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border-2 border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-600 transition hover:border-teal/40 hover:text-teal disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400",
+          buttonClassName
+        )}
+        disabled={!defaultContent.trim()}
+        type="button"
+        onClick={() => {
+          setDraft(defaultContent);
+          setError("");
+          setOpen(true);
+        }}
+      >
+        {shared ? <CheckCircle2 size={17} /> : <Share2 size={17} />}
+        {shared ? "已分享" : buttonLabel}
+      </button>
+
+      {open ? (
+        <div className="fixed inset-0 z-50 grid place-items-start justify-center overflow-y-auto bg-ink/35 px-4 py-10">
+          <div className="relative w-full max-w-xl rounded-2xl bg-white p-5 shadow-[0_18px_60px_rgba(15,23,42,0.24)]">
+            <div className="flex items-center justify-between gap-3">
+              <button
+                aria-label="关闭分享"
+                className="grid size-9 place-items-center rounded-full text-ink transition hover:bg-slate-100"
+                type="button"
+                onClick={() => setOpen(false)}
+              >
+                <X size={22} />
+              </button>
+              <div className="min-w-0 flex-1 text-center">
+                <p className="truncate text-sm font-black text-ink">分享到搭子圈</p>
+                <p className="mt-0.5 truncate text-xs font-semibold text-slate-400">{sourceLabel}</p>
+              </div>
+              <button
+                className="inline-flex min-h-10 items-center gap-2 rounded-full bg-ink px-5 text-sm font-black text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                disabled={busy || !draft.trim()}
+                type="button"
+                onClick={submitShare}
+              >
+                {busy ? <Loader2 className="animate-spin" size={17} /> : <Send size={17} />}
+                发布
+              </button>
+            </div>
+
+            <textarea
+              className="mt-5 min-h-48 w-full resize-y rounded-2xl border-2 border-slate-100 bg-slate-50 px-4 py-3 text-base font-semibold leading-7 text-ink outline-none transition placeholder:text-slate-400 focus:border-teal/40 focus:bg-white"
+              maxLength={maxShareLength}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+            />
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold">
+              <span className={error ? "text-coral" : "text-slate-400"}>{error || "发布后会出现在发现流和关注你的同学的信息流中。"}</span>
+              <span className="text-slate-400">{draft.length}/{maxShareLength}</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}

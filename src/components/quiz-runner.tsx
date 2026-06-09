@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Heart, Loader2, X, XCircle } from "lucide-react";
+import { ShareToBuddyButton } from "@/components/share-to-buddy-button";
 import { getQuestionBankTypeLabel, isQuestionBankRichAnswerQuestionType, type QuestionBankEditableQuestionType } from "@/lib/question-bank-types";
 
 type Question = {
@@ -147,6 +148,18 @@ export function QuizRunner({
   const options = useMemo(() => coerceOptions(current?.options), [current]);
   const questionTypeLabel = current ? questionTypeText(current.type) : "";
   const sourceTitle = current?.questionBank?.title || current?.source || "";
+  const questionShareContent = current && checkState !== "idle"
+    ? buildQuestionShareContent({
+        correctAnswer,
+        currentIndex,
+        questionTypeLabel,
+        selected,
+        sourceTitle,
+        stem: current.stem,
+        totalQuestions,
+        wasCorrect: checkState === "correct"
+      })
+    : "";
 
   function toggleAnswer(question: Question, key: string) {
     if (checkState !== "idle") {
@@ -324,7 +337,7 @@ export function QuizRunner({
           checkState === "correct" ? "bg-[#58cc02]/20" : checkState === "wrong" ? "bg-coral/10" : "bg-white"
         }`}
       >
-        <div className="mx-auto flex min-h-16 w-full max-w-5xl items-center justify-between gap-4">
+        <div className="mx-auto flex min-h-16 w-full max-w-5xl flex-wrap items-center justify-between gap-4">
           {checkState === "idle" ? (
             <button className="secondary-button" type="button" disabled={loading || checking || questionLoading} onClick={skipQuestion}>
               {text.skip}
@@ -341,27 +354,38 @@ export function QuizRunner({
             </div>
           )}
 
-          {checkState === "idle" ? (
-            <button
-              className="inline-flex min-h-12 w-36 items-center justify-center gap-2 rounded-2xl border-b-4 border-[#45a000] bg-[#58cc02] px-5 py-2 text-sm font-black text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-400"
-              type="button"
-              disabled={!canCheck}
-              onClick={checkAnswer}
-            >
-              {checking ? <Loader2 className="animate-spin" size={18} /> : null}
-              {text.check}
-            </button>
-          ) : (
-            <button
-              className="inline-flex min-h-12 w-36 items-center justify-center gap-2 rounded-2xl border-b-4 border-[#45a000] bg-[#58cc02] px-5 py-2 text-sm font-black text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-400"
-              type="button"
-              disabled={loading}
-              onClick={nextQuestion}
-            >
-              {loading ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
-              {isLast ? text.done : text.continue}
-            </button>
-          )}
+          <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
+            {checkState !== "idle" ? (
+              <ShareToBuddyButton
+                buttonClassName="min-h-12 rounded-2xl border-white bg-white px-4 shadow-sm hover:border-white"
+                buttonLabel="分享"
+                defaultContent={questionShareContent}
+                sourceLabel={`题 ${currentIndex + 1} / ${totalQuestions}`}
+              />
+            ) : null}
+
+            {checkState === "idle" ? (
+              <button
+                className="inline-flex min-h-12 w-36 items-center justify-center gap-2 rounded-2xl border-b-4 border-[#45a000] bg-[#58cc02] px-5 py-2 text-sm font-black text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-400"
+                type="button"
+                disabled={!canCheck}
+                onClick={checkAnswer}
+              >
+                {checking ? <Loader2 className="animate-spin" size={18} /> : null}
+                {text.check}
+              </button>
+            ) : (
+              <button
+                className="inline-flex min-h-12 w-36 items-center justify-center gap-2 rounded-2xl border-b-4 border-[#45a000] bg-[#58cc02] px-5 py-2 text-sm font-black text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-400"
+                type="button"
+                disabled={loading}
+                onClick={nextQuestion}
+              >
+                {loading ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
+                {isLast ? text.done : text.continue}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </section>
@@ -370,4 +394,41 @@ export function QuizRunner({
 
 function questionTypeText(type: Question["type"]) {
   return getQuestionBankTypeLabel(type);
+}
+
+function buildQuestionShareContent({
+  correctAnswer,
+  currentIndex,
+  questionTypeLabel,
+  selected,
+  sourceTitle,
+  stem,
+  totalQuestions,
+  wasCorrect
+}: {
+  correctAnswer: unknown;
+  currentIndex: number;
+  questionTypeLabel: string;
+  selected: string[];
+  sourceTitle: string;
+  stem: string;
+  totalQuestions: number;
+  wasCorrect: boolean;
+}) {
+  const title = clipShareText(stem, 86);
+  const source = sourceTitle ? `\n题库：${clipShareText(sourceTitle, 42)}` : "";
+  const selectedText = selected.length > 0 ? answerText(selected) : "未选择";
+  const resultLine = wasCorrect
+    ? "我刚做对了一道题，感觉这个考点挺典型。"
+    : "我在这道题上卡住了，想听听大家怎么理解。";
+  const answerLine = wasCorrect
+    ? `我的答案：${selectedText}`
+    : `我的答案：${selectedText}，正确答案：${answerText(correctAnswer)}`;
+
+  return `${resultLine}\n题 ${currentIndex + 1}/${totalQuestions} · ${questionTypeLabel}\n${title}\n${answerLine}${source}`;
+}
+
+function clipShareText(value: string, maxLength: number) {
+  const textValue = value.replace(/\s+/g, " ").trim();
+  return textValue.length > maxLength ? `${textValue.slice(0, maxLength)}...` : textValue;
 }

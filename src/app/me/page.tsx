@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { AutoDismissMessage } from "@/components/auto-dismiss-message";
 import { AvatarUploadForm } from "@/components/avatar-upload-form";
 import { HomeProfileEditor } from "@/components/home-profile-editor";
+import { ShareToBuddyButton } from "@/components/share-to-buddy-button";
 import { SocialPostActions } from "@/components/social-post-actions";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { requireUser } from "@/lib/auth";
@@ -686,6 +687,15 @@ function MedalTrack({
         ? 50 + ((totalAttempts - expertTarget) / (scholarTarget - expertTarget)) * 50
         : (totalAttempts / expertTarget) * 50;
   const progressPercent = Math.max(0, Math.min(100, progress));
+  const monthAttemptCount = getCurrentMonthAttemptCount(dailyAttempts);
+  const activeDays = Object.values(dailyAttempts).filter((count) => count > 0).length;
+  const activeLearningShareContent = buildActiveLearningShareContent({
+    activeDays,
+    monthAttemptCount,
+    nextLabel: nextRule?.label,
+    remaining,
+    totalAttempts
+  });
   const nodes = [
     { label: "小白", threshold: 0, position: 0, icon: Medal },
     { label: "达人", threshold: expertTarget, position: 50, icon: Trophy },
@@ -735,7 +745,11 @@ function MedalTrack({
           </div>
         </div>
 
-        <AnswerHeatmap dailyAttempts={dailyAttempts} />
+        <AnswerHeatmap
+          dailyAttempts={dailyAttempts}
+          monthAttemptCount={monthAttemptCount}
+          shareContent={activeLearningShareContent}
+        />
       </div>
     </SectionFrame>
   );
@@ -751,16 +765,50 @@ function nodeTransform(position: number) {
   return "translateX(-50%)";
 }
 
-function AnswerHeatmap({ dailyAttempts }: { dailyAttempts: Record<string, number> }) {
+function buildActiveLearningShareContent({
+  activeDays,
+  monthAttemptCount,
+  nextLabel,
+  remaining,
+  totalAttempts
+}: {
+  activeDays: number;
+  monthAttemptCount: number;
+  nextLabel?: string;
+  remaining: number;
+  totalAttempts: number;
+}) {
+  const medalLine = nextLabel
+    ? `距离「${nextLabel}」还差 ${remaining} 道题。`
+    : "已经拿到最高学习勋章。";
+  return `晒一下我的 Active Learning：本月完成 ${monthAttemptCount} 题，近 26 周活跃 ${activeDays} 天，累计刷题 ${totalAttempts} 道。\n${medalLine}\n继续保持节奏，和搭子们一起冲。`;
+}
+
+function AnswerHeatmap({
+  dailyAttempts,
+  monthAttemptCount,
+  shareContent
+}: {
+  dailyAttempts: Record<string, number>;
+  monthAttemptCount: number;
+  shareContent: string;
+}) {
   const weeks = buildHeatmapWeeks(dailyAttempts);
-  const monthAttemptCount = getCurrentMonthAttemptCount(dailyAttempts);
   const monthHeaders = weeks.map((week, weekIndex) => getWeekMonthLabel(week, weekIndex));
 
   return (
     <div className="min-w-0 rounded-2xl border border-slate-200/70 bg-transparent px-4 py-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-black text-ink">Active Learning</h3>
-        <span className="text-xs font-semibold text-slate-500">本月 {monthAttemptCount} 题</span>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <span className="text-xs font-semibold text-slate-500">本月 {monthAttemptCount} 题</span>
+          <ShareToBuddyButton
+            buttonClassName="min-h-8 rounded-xl px-3 py-1 text-xs"
+            buttonLabel="分享"
+            defaultContent={shareContent}
+            sourceLabel="Active Learning"
+          />
+        </div>
       </div>
 
       <div className="mt-4 overflow-x-auto pb-1">

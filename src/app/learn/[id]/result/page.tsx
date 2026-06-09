@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { CheckCircle2, Flame, Gem, RotateCcw, Trophy, XCircle } from "lucide-react";
 import { redirect } from "next/navigation";
+import { ShareToBuddyButton } from "@/components/share-to-buddy-button";
 import { WrongQuestionAi } from "@/components/wrong-question-ai";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -116,6 +117,16 @@ export default async function QuizResultPage({
   const passed = score >= 80;
   const submittedAt = currentSession.completedAt || currentSession.updatedAt;
   const currentWrongAttempts = currentSession.attempts.filter((attempt) => !attempt.isCorrect);
+  const resultShareContent = buildResultShareContent({
+    chapterTitle: access.chapter.title,
+    correct,
+    courseTitle: access.course.title,
+    passed,
+    score,
+    sectionTitle: access.section.title,
+    submittedAt,
+    total
+  });
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
@@ -152,6 +163,11 @@ export default async function QuizResultPage({
             ) : (
               <Link className="primary-button bg-[#58cc02] hover:bg-[#58cc02]/90" href={`/learn/${id}?restart=1`}>再练一次</Link>
             )}
+            <ShareToBuddyButton
+              buttonClassName={passed ? "min-h-12 border-[#58cc02]/30 text-[#45a000]" : "min-h-12 border-coral/30 text-coral"}
+              defaultContent={resultShareContent}
+              sourceLabel="闯关结果"
+            />
             <Link className="secondary-button" href={`/learn?course=${access.group.key}&chapter=${access.chapter.id}`}>返回学习路线</Link>
             {currentWrongAttempts.length > 0 ? <Link className="secondary-button" href="/wrong-book">查看错题本</Link> : null}
           </div>
@@ -245,6 +261,35 @@ function AttemptCard({ attempt, index, tone }: { attempt: AttemptWithQuestion; i
       {tone === "wrong" ? <WrongQuestionAi questionId={attempt.questionId} /> : null}
     </article>
   );
+}
+
+function buildResultShareContent({
+  chapterTitle,
+  correct,
+  courseTitle,
+  passed,
+  score,
+  sectionTitle,
+  submittedAt,
+  total
+}: {
+  chapterTitle: string;
+  correct: number;
+  courseTitle: string;
+  passed: boolean;
+  score: number;
+  sectionTitle: string;
+  submittedAt: Date;
+  total: number;
+}) {
+  const statusText = passed ? "刚闯关成功" : "刚完成一次闯关复盘";
+  const encouragement = passed ? "下一关继续保持节奏。" : "先把错题吃透，再回来冲 80 分。";
+  return `${statusText}：${clipShareText(sectionTitle, 42)}\n正确 ${correct}/${total} 题，得分 ${score} 分。\n课程：${clipShareText(courseTitle, 28)} / ${clipShareText(chapterTitle, 28)}\n时间：${formatDateTime(submittedAt)}\n${encouragement}`;
+}
+
+function clipShareText(value: string, maxLength: number) {
+  const textValue = value.replace(/\s+/g, " ").trim();
+  return textValue.length > maxLength ? `${textValue.slice(0, maxLength)}...` : textValue;
 }
 
 function ResultMetric({
