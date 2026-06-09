@@ -5,8 +5,11 @@ import {
   ArrowLeft,
   BookOpenCheck,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Crown,
+  FileText,
   Gem,
   Info,
   KeyRound,
@@ -18,11 +21,13 @@ import {
   Phone,
   Plus,
   ShieldCheck,
+  Trash2,
   Trophy
 } from "lucide-react";
 import { notFound } from "next/navigation";
-import { addStudentDiamonds, resetStudentPassword, toggleStudentAccountStatus, updateStudentAdminRemark } from "@/app/admin/actions";
+import { addStudentDiamonds, deleteStudentPost, resetStudentPassword, toggleStudentAccountStatus, updateStudentAdminRemark } from "@/app/admin/actions";
 import { requireAdmin } from "@/lib/auth";
+import { listProfileBuddyPosts } from "@/lib/buddy-posts";
 import { prisma } from "@/lib/prisma";
 import { getMedalLevel, getMedalRule } from "@/lib/rewards";
 import { getStudentLearningPath } from "@/lib/syllabus-learning";
@@ -32,10 +37,11 @@ type DetailTab = "basic" | "learning" | "portrait";
 
 type PageProps = {
   params: Promise<{ studentId: string }>;
-  searchParams?: Promise<{ error?: string; notice?: string; tab?: string }>;
+  searchParams?: Promise<{ diamondPage?: string; error?: string; notice?: string; postPage?: string; tab?: string }>;
 };
 
 type LearningPath = Awaited<ReturnType<typeof getStudentLearningPath>>;
+type ProfilePost = Awaited<ReturnType<typeof listProfileBuddyPosts>>["items"][number];
 
 type StudentDetailProfile = {
   publicSubject?: { name: string } | null;
@@ -110,6 +116,7 @@ const tabs: Array<{ key: DetailTab; label: string }> = [
 ];
 
 const dayMs = 24 * 60 * 60 * 1000;
+const portraitPageSize = 5;
 
 const transactionLabels: Record<string, string> = {
   register_bonus: "注册赠送",
@@ -121,9 +128,11 @@ const transactionLabels: Record<string, string> = {
 };
 
 export default async function StudentDetailPage({ params, searchParams }: PageProps) {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const [{ studentId }, query] = await Promise.all([params, searchParams]);
   const activeTab = resolveTab(query?.tab);
+  const diamondPage = resolvePage(query?.diamondPage);
+  const postPage = resolvePage(query?.postPage);
   const sevenDaysAgo = new Date(Date.now() - 7 * dayMs);
   const student = await prisma.user.findFirst({
     where: { id: studentId, role: "student" },
@@ -155,7 +164,19 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
     notFound();
   }
 
-  const [totalAttempts, correctAttempts, latestAttempt, sevenDayAttempts, recentSessions, wrongQuestions, diamondTransactions, learningPath] = await Promise.all([
+  const postFetchLimit = Math.min(postPage * portraitPageSize + 1, 50);
+  const [
+    totalAttempts,
+    correctAttempts,
+    latestAttempt,
+    sevenDayAttempts,
+    recentSessions,
+    wrongQuestions,
+    diamondTransactionCount,
+    diamondTransactions,
+    userPosts,
+    learningPath
+  ] = await Promise.all([
     prisma.questionAttempt.count({ where: { userId: student.id } }),
     prisma.questionAttempt.count({ where: { userId: student.id, isCorrect: true } }),
     prisma.questionAttempt.findFirst({
@@ -224,11 +245,16 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
         }
       }
     }),
+    prisma.diamondTransaction.count({
+      where: { userId: student.id }
+    }),
     prisma.diamondTransaction.findMany({
       where: { userId: student.id },
       orderBy: { createdAt: "desc" },
-      take: 20
+      skip: (diamondPage - 1) * portraitPageSize,
+      take: portraitPageSize
     }),
+    listProfileBuddyPosts(admin.id, student.id, { includeInteractions: true, tab: "posts", limit: postFetchLimit }),
     getStudentLearningPath(student.id)
   ]);
 
@@ -242,6 +268,9 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
   const correctRate = totalAttempts > 0 ? Math.round((correctAttempts / totalAttempts) * 100) : 0;
   const passedStageCount = getPassedStageCount(learningPath);
   const weakAreas = buildWeakAreas(wrongQuestions);
+  const userPostPageItems = userPosts.items.slice((postPage - 1) * portraitPageSize, postPage * portraitPageSize);
+  const userPostsHasNext = userPosts.items.length > postPage * portraitPageSize;
+  const portraitBasePath = `/admin/students/${student.id}`;
 
   return (
     <main className="space-y-4">
@@ -383,7 +412,13 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
             </div>
             <div className="grid grid-cols-[180px_minmax(0,1fr)] border-b border-dashed border-slate-200 py-4">
               <div className="font-bold text-slate-700">钻石流水</div>
-              <DiamondTransactionsTable transactions={diamondTransactions} />
+              <DiamondTransactionsTable
+                basePath={portraitBasePath}
+                currentPage={diamondPage}
+                postPage={postPage}
+                totalCount={diamondTransactionCount}
+                transactions={diamondTransactions}
+              />
             </div>
             <div className="grid grid-cols-[180px_minmax(0,1fr)] border-b border-dashed border-slate-200 py-4">
               <div className="flex items-center gap-2 font-bold text-slate-700">
@@ -403,6 +438,21 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
                 <button className="secondary-button rounded-none" type="submit">保存备注</button>
               </form>
             </div>
+            <div className="grid grid-cols-[180px_minmax(0,1fr)] border-b border-dashed border-slate-200 py-4">
+              <div className="flex items-center gap-2 font-bold text-slate-700">
+                <FileText size={16} />
+                用户帖子
+              </div>
+              <UserPostsList
+                basePath={portraitBasePath}
+                currentPage={postPage}
+                diamondPage={diamondPage}
+                hasNext={userPostsHasNext}
+                posts={userPostPageItems}
+                returnTo={`${portraitBasePath}?tab=portrait&diamondPage=${diamondPage}&postPage=${postPage}`}
+                studentId={student.id}
+              />
+            </div>
           </div>
         </DetailSection>
       ) : null}
@@ -412,6 +462,58 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
 
 function resolveTab(value?: string): DetailTab {
   return value === "learning" || value === "portrait" ? value : "basic";
+}
+
+function resolvePage(value?: string) {
+  const page = Number(value || 1);
+  return Number.isInteger(page) && page > 0 ? page : 1;
+}
+
+function portraitPageHref(basePath: string, pages: { diamondPage: number; postPage: number }) {
+  const params = new URLSearchParams({
+    tab: "portrait",
+    diamondPage: String(Math.max(1, pages.diamondPage)),
+    postPage: String(Math.max(1, pages.postPage))
+  });
+  return `${basePath}?${params.toString()}`;
+}
+
+function PaginationControls({
+  currentPage,
+  hasNext,
+  hrefForPage
+}: {
+  currentPage: number;
+  hasNext: boolean;
+  hrefForPage: (page: number) => string;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-2 text-xs font-black">
+      {currentPage > 1 ? (
+        <Link className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-slate-600 hover:border-teal hover:text-teal" href={hrefForPage(currentPage - 1)}>
+          <ChevronLeft size={14} />
+          上一页
+        </Link>
+      ) : (
+        <span className="inline-flex items-center gap-1 rounded border border-slate-100 px-2 py-1 text-slate-300">
+          <ChevronLeft size={14} />
+          上一页
+        </span>
+      )}
+      <span className="rounded bg-slate-100 px-2 py-1 text-slate-500">第 {currentPage} 页</span>
+      {hasNext ? (
+        <Link className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-slate-600 hover:border-teal hover:text-teal" href={hrefForPage(currentPage + 1)}>
+          下一页
+          <ChevronRight size={14} />
+        </Link>
+      ) : (
+        <span className="inline-flex items-center gap-1 rounded border border-slate-100 px-2 py-1 text-slate-300">
+          下一页
+          <ChevronRight size={14} />
+        </span>
+      )}
+    </div>
+  );
 }
 
 function PasswordRow({ returnTo, studentId }: { returnTo: string; studentId: string }) {
@@ -575,8 +677,16 @@ function WeakAreasList({ areas }: { areas: WeakArea[] }) {
 }
 
 function DiamondTransactionsTable({
+  basePath,
+  currentPage,
+  postPage,
+  totalCount,
   transactions
 }: {
+  basePath: string;
+  currentPage: number;
+  postPage: number;
+  totalCount: number;
   transactions: Array<{
     id: string;
     type: string;
@@ -587,35 +697,184 @@ function DiamondTransactionsTable({
   }>;
 }) {
   if (transactions.length === 0) {
-    return <p className="text-sm font-semibold text-slate-500">暂无钻石流水。</p>;
+    return (
+      <div className="space-y-3">
+        <p className="text-sm font-semibold text-slate-500">暂无钻石流水。</p>
+        <PaginationControls
+          currentPage={currentPage}
+          hasNext={false}
+          hrefForPage={(page) => portraitPageHref(basePath, { diamondPage: page, postPage })}
+        />
+      </div>
+    );
   }
 
   return (
-    <div className="min-w-0 overflow-x-auto">
-      <table className="w-full min-w-[620px] text-left text-sm">
-        <thead>
-          <tr className="border-b border-slate-200 text-xs font-black text-slate-400">
-            <th className="py-2 pr-4">时间</th>
-            <th className="py-2 pr-4">类型</th>
-            <th className="py-2 pr-4">数量</th>
-            <th className="py-2 pr-4">余额</th>
-            <th className="py-2">说明</th>
-          </tr>
-        </thead>
-        <tbody>
-          {transactions.map((item) => (
-            <tr key={item.id} className="border-b border-slate-100 last:border-0">
-              <td className="py-2 pr-4 font-semibold text-slate-500">{formatDateTime(item.createdAt)}</td>
-              <td className="py-2 pr-4 font-bold text-ink">{transactionLabels[item.type] || item.type}</td>
-              <td className={cn("py-2 pr-4 font-black", item.amount >= 0 ? "text-[#58cc02]" : "text-coral")}>
-                {formatSignedNumber(item.amount)}
-              </td>
-              <td className="py-2 pr-4 font-semibold text-slate-600">{item.balanceAfter}</td>
-              <td className="py-2 text-slate-500">{item.note || "-"}</td>
+    <div className="min-w-0 space-y-3">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[620px] text-left text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-xs font-black text-slate-400">
+              <th className="py-2 pr-4">时间</th>
+              <th className="py-2 pr-4">类型</th>
+              <th className="py-2 pr-4">数量</th>
+              <th className="py-2 pr-4">余额</th>
+              <th className="py-2">说明</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {transactions.map((item) => (
+              <tr key={item.id} className="border-b border-slate-100 last:border-0">
+                <td className="py-2 pr-4 font-semibold text-slate-500">{formatDateTime(item.createdAt)}</td>
+                <td className="py-2 pr-4 font-bold text-ink">{transactionLabels[item.type] || item.type}</td>
+                <td className={cn("py-2 pr-4 font-black", item.amount >= 0 ? "text-[#58cc02]" : "text-coral")}>
+                  {formatSignedNumber(item.amount)}
+                </td>
+                <td className="py-2 pr-4 font-semibold text-slate-600">{item.balanceAfter}</td>
+                <td className="py-2 text-slate-500">{item.note || "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <PaginationControls
+        currentPage={currentPage}
+        hasNext={currentPage * portraitPageSize < totalCount}
+        hrefForPage={(page) => portraitPageHref(basePath, { diamondPage: page, postPage })}
+      />
+    </div>
+  );
+}
+
+function UserPostsList({
+  basePath,
+  currentPage,
+  diamondPage,
+  hasNext,
+  posts,
+  returnTo,
+  studentId
+}: {
+  basePath: string;
+  currentPage: number;
+  diamondPage: number;
+  hasNext: boolean;
+  posts: ProfilePost[];
+  returnTo: string;
+  studentId: string;
+}) {
+  if (posts.length === 0) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm font-semibold text-slate-500">暂无帖子内容。</p>
+        <PaginationControls
+          currentPage={currentPage}
+          hasNext={hasNext}
+          hrefForPage={(page) => portraitPageHref(basePath, { diamondPage, postPage: page })}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-w-0 space-y-3">
+      {posts.map((post) => (
+        <UserPostCard key={post.id} post={post} returnTo={returnTo} studentId={studentId} />
+      ))}
+      <PaginationControls
+        currentPage={currentPage}
+        hasNext={hasNext}
+        hrefForPage={(page) => portraitPageHref(basePath, { diamondPage, postPage: page })}
+      />
+    </div>
+  );
+}
+
+function UserPostCard({ post, returnTo, studentId }: { post: ProfilePost; returnTo: string; studentId: string }) {
+  const isOwnPost = post.author.id === studentId;
+  const postLabel = isOwnPost ? (post.type === "repost" ? "转帖" : "原创") : "点赞";
+
+  return (
+    <article className="rounded border border-slate-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+          <span className="font-black text-ink">{post.author.nickname}</span>
+          <span className="font-semibold text-slate-400">@{post.author.username}</span>
+          <span className="font-semibold text-slate-400">· {formatDateTime(post.createdAt)}</span>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-black text-slate-500">
+            {postLabel}
+          </span>
+        </div>
+        {isOwnPost ? (
+          <details className="relative shrink-0">
+            <summary
+              aria-label="删除帖子"
+              className="grid size-8 cursor-pointer list-none place-items-center rounded-full text-slate-400 transition hover:bg-coral/10 hover:text-coral [&::-webkit-details-marker]:hidden"
+            >
+              <Trash2 size={16} />
+            </summary>
+            <form action={deleteStudentPost} className="absolute right-0 z-10 mt-2 w-52 rounded border border-coral/20 bg-white p-3 shadow-lg">
+              <input name="studentId" type="hidden" value={studentId} />
+              <input name="postId" type="hidden" value={post.id} />
+              <input name="returnTo" type="hidden" value={returnTo} />
+              <p className="text-xs font-bold leading-5 text-slate-600">确认删除这条{post.type === "repost" ? "转帖" : "帖子"}？</p>
+              <button className="mt-2 w-full rounded bg-coral px-3 py-2 text-xs font-black text-white" type="submit">
+                确认删除
+              </button>
+            </form>
+          </details>
+        ) : null}
+      </div>
+      {post.type === "original" ? (
+        <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p>
+      ) : (
+        <div className="mt-3 space-y-3">
+          {post.content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p> : null}
+          <UserRepostSourceCard originalPost={post.originalPost} sourceState={post.sourceState} />
+        </div>
+      )}
+      <div className="mt-3 flex flex-wrap gap-3 text-xs font-bold text-slate-500">
+        <span>点赞 {post.likeCount}</span>
+        <span>转帖 {post.repostCount}</span>
+      </div>
+    </article>
+  );
+}
+
+function UserRepostSourceCard({
+  depth = 0,
+  originalPost,
+  sourceState
+}: {
+  depth?: number;
+  originalPost: ProfilePost["originalPost"];
+  sourceState: ProfilePost["sourceState"];
+}) {
+  if (sourceState !== "visible" || !originalPost) {
+    return (
+      <div className="rounded border border-slate-200 bg-slate-50 p-4">
+        <p className="text-sm font-bold text-slate-400">原内容已删除</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("rounded border border-slate-200 bg-slate-50 p-4", depth > 0 ? "bg-white/70" : "")}>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="font-black text-ink">{originalPost.author.nickname}</span>
+        <span className="font-semibold text-slate-400">@{originalPost.author.username}</span>
+        <span className="font-semibold text-slate-400">· {formatDateTime(originalPost.createdAt)}</span>
+      </div>
+      <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-600">{originalPost.content}</p>
+      {originalPost.type === "repost" ? (
+        <div className="mt-3 border-l-2 border-slate-200 pl-3">
+          <UserRepostSourceCard depth={depth + 1} originalPost={originalPost.originalPost} sourceState={originalPost.sourceState} />
+        </div>
+      ) : null}
+      <div className="mt-3 flex flex-wrap gap-3 text-xs font-bold text-slate-500">
+        <span>点赞 {originalPost.likeCount}</span>
+        <span>转帖 {originalPost.repostCount}</span>
+      </div>
     </div>
   );
 }

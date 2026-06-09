@@ -526,6 +526,40 @@ export async function updateStudentAdminRemark(formData: FormData) {
   redirect(appendAdminStudentsMessage(returnTo, "notice", "后台备注已保存"));
 }
 
+export async function deleteStudentPost(formData: FormData) {
+  await requireAdmin();
+  const studentId = String(formData.get("studentId") || "");
+  const postId = String(formData.get("postId") || "");
+  const returnTo = getAdminStudentsReturnTo(formData);
+  const post = await prisma.buddyPost.findFirst({
+    where: {
+      id: postId,
+      deletedAt: null
+    },
+    select: {
+      authorId: true
+    }
+  });
+
+  if (!post) {
+    redirect(appendAdminStudentsMessage(returnTo, "error", "帖子不存在或已删除"));
+  }
+  if (post.authorId !== studentId) {
+    redirect(appendAdminStudentsMessage(returnTo, "error", "只能删除该学生自己发布或转帖的内容"));
+  }
+
+  await prisma.buddyPost.update({
+    where: { id: postId },
+    data: { deletedAt: new Date() }
+  });
+
+  revalidatePath("/admin/students");
+  revalidatePath(`/admin/students/${studentId}`);
+  revalidatePath(`/students/${post.authorId}`);
+  revalidatePath("/buddy-circle");
+  redirect(appendAdminStudentsMessage(returnTo, "notice", "帖子已删除"));
+}
+
 export async function createPublicSubject(formData: FormData) {
   await requireAdmin();
   const regionIds = getRegionIds(formData);
