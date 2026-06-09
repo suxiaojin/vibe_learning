@@ -93,6 +93,20 @@ enum BuddyPostType {
   repost
 }
 
+enum BuddyPostShareType {
+  question_card
+  quiz_result_card
+  active_learning_card
+}
+
+enum ShareCopyContext {
+  question_correct
+  question_wrong
+  quiz_passed
+  quiz_failed
+  active_learning
+}
+
 enum UserEventNotificationType {
   buddy_request_received
   buddy_request_accepted
@@ -286,6 +300,34 @@ model SystemSetting {
   updatedAt                 DateTime @updatedAt
 
   @@map("system_settings")
+}
+
+model ShareCopyStyle {
+  id        String            @id @default(cuid())
+  context   ShareCopyContext
+  label     String
+  status    ContentStatus     @default(published)
+  sortOrder Int               @default(0)
+  phrases   ShareCopyPhrase[]
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@index([context, status, sortOrder])
+  @@map("share_copy_styles")
+}
+
+model ShareCopyPhrase {
+  id        String         @id @default(cuid())
+  styleId   String
+  content   String
+  status    ContentStatus  @default(published)
+  sortOrder Int            @default(0)
+  style     ShareCopyStyle @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([styleId, status, sortOrder])
+  @@map("share_copy_phrases")
 }
 
 model Region {
@@ -975,6 +1017,8 @@ model BuddyPost {
   authorId           String
   type               BuddyPostType           @default(original)
   content            String?
+  shareType          BuddyPostShareType?
+  sharePayload       Json?
   originalPostId     String?
   deletedAt          DateTime?
   author             User                    @relation("BuddyPostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
@@ -988,6 +1032,7 @@ model BuddyPost {
   @@unique([authorId, originalPostId])
   @@index([authorId, deletedAt, createdAt])
   @@index([originalPostId])
+  @@index([shareType, createdAt])
   @@index([deletedAt, createdAt])
   @@map("buddy_posts")
 }

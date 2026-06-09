@@ -3,8 +3,9 @@ import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { CheckCircle2, Flame, Gem, RotateCcw, Trophy, XCircle } from "lucide-react";
 import { redirect } from "next/navigation";
-import { ShareToBuddyButton } from "@/components/share-to-buddy-button";
+import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
 import { WrongQuestionAi } from "@/components/wrong-question-ai";
+import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getNextSyllabusSectionForStudent, getSyllabusSectionForStudent } from "@/lib/syllabus-learning";
@@ -117,16 +118,19 @@ export default async function QuizResultPage({
   const passed = score >= 80;
   const submittedAt = currentSession.completedAt || currentSession.updatedAt;
   const currentWrongAttempts = currentSession.attempts.filter((attempt) => !attempt.isCorrect);
-  const resultShareContent = buildResultShareContent({
+  const resultShareCard = buildResultShareCard({
     chapterTitle: access.chapter.title,
     correct,
     courseTitle: access.course.title,
+    diamondRewardAmount: currentSession.diamondRewardAmount,
     passed,
     score,
     sectionTitle: access.section.title,
     submittedAt,
     total
   });
+  const resultShareContent = passed ? "刚闯关成功，下一关继续保持节奏。" : "刚完成一次闯关复盘，把错题吃透再冲。";
+  const resultShareSuggestions = getResultShareSuggestions(passed);
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
@@ -165,7 +169,10 @@ export default async function QuizResultPage({
             )}
             <ShareToBuddyButton
               buttonClassName={passed ? "min-h-12 border-[#58cc02]/30 text-[#45a000]" : "min-h-12 border-coral/30 text-coral"}
+              contentSuggestions={resultShareSuggestions}
+              copyContext={passed ? "quiz_passed" : "quiz_failed"}
               defaultContent={resultShareContent}
+              shareCard={resultShareCard}
               sourceLabel="闯关结果"
             />
             <Link className="secondary-button" href={`/learn?course=${access.group.key}&chapter=${access.chapter.id}`}>返回学习路线</Link>
@@ -263,10 +270,11 @@ function AttemptCard({ attempt, index, tone }: { attempt: AttemptWithQuestion; i
   );
 }
 
-function buildResultShareContent({
+function buildResultShareCard({
   chapterTitle,
   correct,
   courseTitle,
+  diamondRewardAmount,
   passed,
   score,
   sectionTitle,
@@ -276,15 +284,40 @@ function buildResultShareContent({
   chapterTitle: string;
   correct: number;
   courseTitle: string;
+  diamondRewardAmount: number;
   passed: boolean;
   score: number;
   sectionTitle: string;
   submittedAt: Date;
   total: number;
-}) {
-  const statusText = passed ? "刚闯关成功" : "刚完成一次闯关复盘";
-  const encouragement = passed ? "下一关继续保持节奏。" : "先把错题吃透，再回来冲 80 分。";
-  return `${statusText}：${clipShareText(sectionTitle, 42)}\n正确 ${correct}/${total} 题，得分 ${score} 分。\n课程：${clipShareText(courseTitle, 28)} / ${clipShareText(chapterTitle, 28)}\n时间：${formatDateTime(submittedAt)}\n${encouragement}`;
+}): BuddyShareCard {
+  return {
+    type: "quiz_result_card",
+    chapterTitle: clipShareText(chapterTitle, 32),
+    correct,
+    courseTitle: clipShareText(courseTitle, 32),
+    diamondRewardAmount,
+    passed,
+    score,
+    sectionTitle: clipShareText(sectionTitle, 42),
+    submittedAtLabel: formatDateTime(submittedAt),
+    total
+  };
+}
+
+function getResultShareSuggestions(passed: boolean): ShareCopySuggestion[] {
+  if (passed) {
+    return [
+      { label: "继续冲", content: "刚闯关成功，下一关继续保持节奏。" },
+      { label: "满血通关", content: "这关顺利拿下，今天的学习进度继续推进。" },
+      { label: "打卡记录", content: "完成一关，给今天的学习打个卡。" }
+    ];
+  }
+  return [
+    { label: "复盘再战", content: "刚完成一次闯关复盘，把错题吃透再冲。" },
+    { label: "错题提醒", content: "这关还差一点，先把薄弱点标出来。" },
+    { label: "稳住节奏", content: "没关系，复盘完再来一次，节奏不能乱。" }
+  ];
 }
 
 function clipShareText(value: string, maxLength: number) {

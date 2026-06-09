@@ -3,8 +3,10 @@
 import type { ReactNode } from "react";
 import { Ban, Loader2, MoreHorizontal, Trash2, UserMinus, UserPlus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { BuddyShareCardView } from "@/components/buddy-share-card";
 import { DismissibleDetails } from "@/components/dismissible-details";
 import { SocialPostActions } from "@/components/social-post-actions";
+import type { BuddyShareCard, BuddyShareType } from "@/lib/buddy-share-cards";
 import { cn } from "@/lib/utils";
 
 type FeedScope = "discover" | "following";
@@ -26,6 +28,8 @@ type FeedPostSource = {
   type: "original" | "repost";
   content: string;
   createdAt: string;
+  sharePayload: BuddyShareCard | null;
+  shareType: BuddyShareType | null;
   author: FeedUser;
   likeCount: number;
   repostCount: number;
@@ -42,6 +46,8 @@ type FeedPost = {
   type: "original" | "repost";
   content: string;
   createdAt: string;
+  sharePayload: BuddyShareCard | null;
+  shareType: BuddyShareType | null;
   author: FeedUser;
   likeCount: number;
   repostCount: number;
@@ -206,7 +212,7 @@ function ClientBuddyPostCard({
           </div>
 
           {post.type === "original" ? (
-            <p className="mt-4 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p>
+            <PostBody content={post.content} sharePayload={post.sharePayload} />
           ) : (
             <div className="mt-4 space-y-3">
               {post.content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p> : null}
@@ -264,7 +270,7 @@ function ClientRepostSourceCard({
               {[originalPost.author.province, originalPost.author.studySystem, originalPost.author.majorName].filter(Boolean).join(" - ") || "公开帖子"} - {formatDateTime(originalPost.createdAt)}
             </span>
           </div>
-          <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-600">{originalPost.content}</p>
+          <PostBody compact content={originalPost.content} sharePayload={originalPost.sharePayload} />
           {originalPost.type === "repost" ? (
             <div className="mt-3 border-l-2 border-slate-200 pl-3">
               <ClientRepostSourceCard depth={depth + 1} originalPost={originalPost.originalPost} sourceState={originalPost.sourceState} />
@@ -284,6 +290,15 @@ function ClientRepostSourceCard({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PostBody({ compact = false, content, sharePayload }: { compact?: boolean; content: string; sharePayload: BuddyShareCard | null }) {
+  return (
+    <div className={cn(compact ? "mt-2" : "mt-4", "space-y-3")}>
+      {content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{content}</p> : null}
+      <BuddyShareCardView card={sharePayload} compact={compact} />
     </div>
   );
 }

@@ -1,4 +1,6 @@
 import { Prisma } from "@prisma/client";
+import type { BuddyShareCard, BuddyShareType } from "@/lib/buddy-share-cards";
+import { normalizeBuddyShareInput } from "@/lib/buddy-share-cards";
 import { BuddyError } from "@/lib/buddies";
 import { prisma } from "@/lib/prisma";
 import { getBlockedUserIds, getFollowingIds } from "@/lib/social";
@@ -59,6 +61,8 @@ type BuddyPostSourceDto = {
   type: "original" | "repost";
   content: string;
   deletedAt: Date | null;
+  sharePayload: BuddyShareCard | null;
+  shareType: BuddyShareType | null;
   author: ReturnType<typeof toPostUser>;
   createdAt: Date;
   likeCount: number;
@@ -77,6 +81,8 @@ type BuddyPostDto = {
   content: string;
   createdAt: Date;
   deletedAt: Date | null;
+  sharePayload: BuddyShareCard | null;
+  shareType: BuddyShareType | null;
   author: ReturnType<typeof toPostUser>;
   likeCount: number;
   repostCount: number;
@@ -89,18 +95,24 @@ type BuddyPostDto = {
   originalPost: BuddyPostSourceDto | null;
 };
 
-export async function createBuddyPost(authorId: string, contentInput: string) {
+export async function createBuddyPost(authorId: string, contentInput: string, shareInput?: unknown) {
   const content = normalizePostContent(contentInput);
   if (!content) {
     throw new BuddyError("BUDDY_POST_EMPTY", "动态内容不能为空。");
   }
   assertPostContentAllowed(content);
+  const share = normalizeBuddyShareInput(shareInput);
+  if (share) {
+    assertPostContentAllowed(JSON.stringify(share));
+  }
 
   return prisma.buddyPost.create({
     data: {
       authorId,
       type: "original",
-      content
+      content,
+      sharePayload: share ? share as Prisma.InputJsonValue : undefined,
+      shareType: share?.type
     }
   });
 }
@@ -416,6 +428,8 @@ export async function toBuddyPostDto(post: BuddyPostWithDetails, viewerId: strin
     content: post.content || "",
     createdAt: post.createdAt,
     deletedAt: post.deletedAt,
+    sharePayload: normalizeBuddyShareInput(post.sharePayload),
+    shareType: post.shareType,
     author: toPostUser(post.author),
     likeCount: post._count.likes,
     repostCount: post._count.reposts,
@@ -455,6 +469,8 @@ async function toBuddyPostSourceDto(
     type: visibleSource.type,
     content: visibleSource.content || "",
     deletedAt: visibleSource.deletedAt,
+    sharePayload: normalizeBuddyShareInput(visibleSource.sharePayload),
+    shareType: visibleSource.shareType,
     author: toPostUser(visibleSource.author),
     createdAt: visibleSource.createdAt,
     likeCount: visibleSource._count.likes,

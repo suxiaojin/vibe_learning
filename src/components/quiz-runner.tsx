@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Heart, Loader2, X, XCircle } from "lucide-react";
-import { ShareToBuddyButton } from "@/components/share-to-buddy-button";
+import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
+import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import { getQuestionBankTypeLabel, isQuestionBankRichAnswerQuestionType, type QuestionBankEditableQuestionType } from "@/lib/question-bank-types";
 
 type Question = {
@@ -148,10 +149,11 @@ export function QuizRunner({
   const options = useMemo(() => coerceOptions(current?.options), [current]);
   const questionTypeLabel = current ? questionTypeText(current.type) : "";
   const sourceTitle = current?.questionBank?.title || current?.source || "";
-  const questionShareContent = current && checkState !== "idle"
-    ? buildQuestionShareContent({
+  const questionShareCard = current && checkState !== "idle"
+    ? buildQuestionShareCard({
         correctAnswer,
         currentIndex,
+        options,
         questionTypeLabel,
         selected,
         sourceTitle,
@@ -159,7 +161,11 @@ export function QuizRunner({
         totalQuestions,
         wasCorrect: checkState === "correct"
       })
-    : "";
+    : undefined;
+  const questionShareContent = checkState === "correct"
+    ? "这道题我做对了，考点挺典型。"
+    : "这道题我想听听大家怎么理解。";
+  const questionShareSuggestions = getQuestionShareSuggestions(checkState);
 
   function toggleAnswer(question: Question, key: string) {
     if (checkState !== "idle") {
@@ -368,7 +374,10 @@ export function QuizRunner({
               <ShareToBuddyButton
                 buttonClassName="min-h-12 rounded-2xl border-white bg-white px-4 shadow-sm hover:border-white"
                 buttonLabel="分享"
+                contentSuggestions={questionShareSuggestions}
+                copyContext={checkState === "correct" ? "question_correct" : "question_wrong"}
                 defaultContent={questionShareContent}
+                shareCard={questionShareCard}
                 sourceLabel={`题 ${currentIndex + 1} / ${totalQuestions}`}
               />
             ) : null}
@@ -405,9 +414,10 @@ function questionTypeText(type: Question["type"]) {
   return getQuestionBankTypeLabel(type);
 }
 
-function buildQuestionShareContent({
+function buildQuestionShareCard({
   correctAnswer,
   currentIndex,
+  options,
   questionTypeLabel,
   selected,
   sourceTitle,
@@ -417,24 +427,53 @@ function buildQuestionShareContent({
 }: {
   correctAnswer: unknown;
   currentIndex: number;
+  options: Option[];
   questionTypeLabel: string;
   selected: string[];
   sourceTitle: string;
   stem: string;
   totalQuestions: number;
   wasCorrect: boolean;
-}) {
-  const title = clipShareText(stem, 86);
-  const source = sourceTitle ? `\n题库：${clipShareText(sourceTitle, 42)}` : "";
-  const selectedText = selected.length > 0 ? answerText(selected) : "未选择";
-  const resultLine = wasCorrect
-    ? "我刚做对了一道题，感觉这个考点挺典型。"
-    : "我在这道题上卡住了，想听听大家怎么理解。";
-  const answerLine = wasCorrect
-    ? `我的答案：${selectedText}`
-    : `我的答案：${selectedText}，正确答案：${answerText(correctAnswer)}`;
+}): BuddyShareCard {
+  const selectedText = selected.length > 0 ? answerDetailText(selected, options) : "未选择";
+  return {
+    type: "question_card",
+    correctAnswer: answerDetailText(correctAnswer, options) || "未记录",
+    indexLabel: `题 ${currentIndex + 1}/${totalQuestions}`,
+    questionTypeLabel,
+    selectedAnswer: selectedText,
+    sourceTitle: sourceTitle ? clipShareText(sourceTitle, 42) : undefined,
+    title: clipShareText(stem, 92),
+    wasCorrect
+  };
+}
 
-  return `${resultLine}\n题 ${currentIndex + 1}/${totalQuestions} · ${questionTypeLabel}\n${title}\n${answerLine}${source}`;
+function answerDetailText(answer: unknown, options: Option[]) {
+  const optionTextByKey = new Map(options.map((option) => [option.key, option.text]));
+  return normalizeAnswer(answer)
+    .map((item) => {
+      const optionText = optionTextByKey.get(item);
+      return optionText || item;
+    })
+    .join("；");
+}
+
+function getQuestionShareSuggestions(checkState: CheckState): ShareCopySuggestion[] {
+  if (checkState === "correct") {
+    return [
+      { label: "考点典型", content: "这道题我做对了，考点挺典型。" },
+      { label: "高频收藏", content: "刷到一道高频感很强的题，分享给大家一起记。" },
+      { label: "复习提醒", content: "这个知识点容易混，顺手做个复习标记。" }
+    ];
+  }
+  if (checkState === "wrong") {
+    return [
+      { label: "求助讨论", content: "这道题我想听听大家怎么理解。" },
+      { label: "错题复盘", content: "这题踩坑了，先发出来做个错题复盘。" },
+      { label: "想听思路", content: "我的思路可能偏了，有没有同学讲讲这题怎么想？" }
+    ];
+  }
+  return [];
 }
 
 function clipShareText(value: string, maxLength: number) {

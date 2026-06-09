@@ -3,6 +3,7 @@ import { Ban, Check, ChevronDown, MoreHorizontal, Search, Send, SlidersHorizonta
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { BuddyFeedLoadMore } from "@/components/buddy-feed-load-more";
+import { BuddyShareCardView } from "@/components/buddy-share-card";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { DismissibleDetails } from "@/components/dismissible-details";
 import { SocialPostActions } from "@/components/social-post-actions";
@@ -419,7 +420,7 @@ function BuddyPostCard({ post, returnTo, scope }: { post: BuddyFeedItem; returnT
           </div>
 
           {post.type === "original" ? (
-            <p className="mt-4 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p>
+            <PostBody content={post.content} sharePayload={post.sharePayload} />
           ) : (
             <div className="mt-4 space-y-3">
               {post.content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p> : null}
@@ -475,7 +476,7 @@ function RepostSourceCard({
               {[originalPost.author.province, originalPost.author.studySystem, originalPost.author.majorName].filter(Boolean).join(" · ") || "公开帖子"} · {formatDateTime(originalPost.createdAt)}
             </span>
           </div>
-          <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-600">{originalPost.content}</p>
+          <PostBody compact content={originalPost.content} sharePayload={originalPost.sharePayload} />
           {originalPost.type === "repost" ? (
             <div className="mt-3 border-l-2 border-slate-200 pl-3">
               <RepostSourceCard depth={depth + 1} originalPost={originalPost.originalPost} sourceState={originalPost.sourceState} />
@@ -495,6 +496,15 @@ function RepostSourceCard({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PostBody({ compact = false, content, sharePayload }: { compact?: boolean; content: string; sharePayload: BuddyFeedItem["sharePayload"] }) {
+  return (
+    <div className={cn(compact ? "mt-2" : "mt-4", "space-y-3")}>
+      {content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{content}</p> : null}
+      <BuddyShareCardView card={sharePayload} compact={compact} />
     </div>
   );
 }

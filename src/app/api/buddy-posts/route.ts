@@ -33,11 +33,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    const body = (await request.json().catch(() => null)) as { content?: string } | null;
+    const body = (await request.json().catch(() => null)) as { content?: string; share?: unknown } | null;
     if (typeof body?.content !== "string") {
       return apiError("Missing content.", 400, "BUDDY_POST_CONTENT_REQUIRED");
     }
-    const post = await createBuddyPost(user.id, body.content);
+    const post = await createBuddyPost(user.id, body.content, body.share);
     revalidatePath("/buddy-circle");
     revalidatePath("/me");
     return apiOk({ post });

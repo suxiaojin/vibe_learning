@@ -6,9 +6,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { extname } from "node:path";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { ContentStatus, Difficulty, QuestionType, RegionStatus, SyllabusRequirement } from "@prisma/client";
+import { ContentStatus, Difficulty, QuestionType, RegionStatus, ShareCopyContext, SyllabusRequirement } from "@prisma/client";
 import { requireAdmin } from "@/lib/auth";
-import { createNotificationEvent } from "@/lib/notification-dispatch";
 import { prisma } from "@/lib/prisma";
 import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 import { getBeijingDate } from "@/lib/rewards";
@@ -18,6 +17,7 @@ import {
   isQuestionBankRichAnswerQuestionType,
   type QuestionBankEditableQuestionType
 } from "@/lib/question-bank-types";
+import { isShareCopyContext } from "@/lib/share-copy";
 import { systemSettingsDefaults, systemSettingsId } from "@/lib/system-settings";
 
 type QuestionOption = {
@@ -38,6 +38,23 @@ const imageMimeExtensions: Record<string, string> = {
 
 function getStatus(formData: FormData) {
   return String(formData.get("status") || "draft") as ContentStatus;
+}
+
+function getShareCopyContext(formData: FormData) {
+  const context = String(formData.get("context") || "");
+  if (!isShareCopyContext(context)) {
+    throw new Error("Invalid share copy context");
+  }
+  return context as ShareCopyContext;
+}
+
+function shareCopySettingsPath(context?: ShareCopyContext) {
+  const query = new URLSearchParams({ tab: "share-copy" });
+  if (context) {
+    query.set("context", context);
+  }
+  query.set("notice", "share-copy-saved");
+  return `/admin/settings?${query.toString()}`;
 }
 
 function getSyllabusRequirement(formData: FormData) {
@@ -385,6 +402,94 @@ export async function updateSystemSettings(formData: FormData) {
   redirect("/admin/settings?notice=saved");
 }
 
+export async function createShareCopyStyle(formData: FormData) {
+  await requireAdmin();
+  const context = getShareCopyContext(formData);
+  const label = String(formData.get("label") || "").trim();
+  if (!label) {
+    redirect(shareCopySettingsPath(context));
+  }
+  await prisma.shareCopyStyle.create({
+    data: {
+      context,
+      label,
+      sortOrder: Number(formData.get("sortOrder") || 0),
+      status: getStatus(formData)
+    }
+  });
+  revalidatePath("/admin/settings");
+  redirect(shareCopySettingsPath(context));
+}
+
+export async function updateShareCopyStyle(formData: FormData) {
+  await requireAdmin();
+  const context = getShareCopyContext(formData);
+  await prisma.shareCopyStyle.update({
+    where: { id: String(formData.get("styleId") || "") },
+    data: {
+      label: String(formData.get("label") || "").trim(),
+      sortOrder: Number(formData.get("sortOrder") || 0),
+      status: getStatus(formData)
+    }
+  });
+  revalidatePath("/admin/settings");
+  redirect(shareCopySettingsPath(context));
+}
+
+export async function deleteShareCopyStyle(formData: FormData) {
+  await requireAdmin();
+  const context = getShareCopyContext(formData);
+  await prisma.shareCopyStyle.delete({
+    where: { id: String(formData.get("styleId") || "") }
+  });
+  revalidatePath("/admin/settings");
+  redirect(shareCopySettingsPath(context));
+}
+
+export async function createShareCopyPhrase(formData: FormData) {
+  await requireAdmin();
+  const context = getShareCopyContext(formData);
+  const content = String(formData.get("content") || "").trim();
+  if (!content) {
+    redirect(shareCopySettingsPath(context));
+  }
+  await prisma.shareCopyPhrase.create({
+    data: {
+      styleId: String(formData.get("styleId") || ""),
+      content,
+      sortOrder: Number(formData.get("sortOrder") || 0),
+      status: getStatus(formData)
+    }
+  });
+  revalidatePath("/admin/settings");
+  redirect(shareCopySettingsPath(context));
+}
+
+export async function updateShareCopyPhrase(formData: FormData) {
+  await requireAdmin();
+  const context = getShareCopyContext(formData);
+  await prisma.shareCopyPhrase.update({
+    where: { id: String(formData.get("phraseId") || "") },
+    data: {
+      content: String(formData.get("content") || "").trim(),
+      sortOrder: Number(formData.get("sortOrder") || 0),
+      status: getStatus(formData)
+    }
+  });
+  revalidatePath("/admin/settings");
+  redirect(shareCopySettingsPath(context));
+}
+
+export async function deleteShareCopyPhrase(formData: FormData) {
+  await requireAdmin();
+  const context = getShareCopyContext(formData);
+  await prisma.shareCopyPhrase.delete({
+    where: { id: String(formData.get("phraseId") || "") }
+  });
+  revalidatePath("/admin/settings");
+  redirect(shareCopySettingsPath(context));
+}
+
 export async function toggleStudentAccountStatus(formData: FormData) {
   await requireAdmin();
   const id = String(formData.get("id") || "");
@@ -471,7 +576,7 @@ export async function addStudentDiamonds(formData: FormData) {
       data: { balance: { increment: amount } },
       select: { balance: true }
     });
-    const transaction = await tx.diamondTransaction.create({
+    await tx.diamondTransaction.create({
       data: {
         userId: id,
         accountId: account.id,
@@ -485,17 +590,6 @@ export async function addStudentDiamonds(formData: FormData) {
           actorUsername: admin.username,
           source: "admin_student_detail"
         }
-      }
-    });
-    await createNotificationEvent(tx, {
-      type: "admin_diamond_added",
-      eventKey: `admin_diamond_added:${transaction.id}`,
-      userId: id,
-      payload: {
-        actorUsername: admin.username,
-        amount,
-        balanceAfter: updatedAccount.balance,
-        note
       }
     });
   });
@@ -531,33 +625,25 @@ export async function deleteStudentPost(formData: FormData) {
   const studentId = String(formData.get("studentId") || "");
   const postId = String(formData.get("postId") || "");
   const returnTo = getAdminStudentsReturnTo(formData);
-  const post = await prisma.buddyPost.findFirst({
+
+  await prisma.user.findFirstOrThrow({
+    where: { id: studentId, role: "student" },
+    select: { id: true }
+  });
+  await prisma.buddyPost.updateMany({
     where: {
       id: postId,
+      authorId: studentId,
       deletedAt: null
     },
-    select: {
-      authorId: true
-    }
-  });
-
-  if (!post) {
-    redirect(appendAdminStudentsMessage(returnTo, "error", "帖子不存在或已删除"));
-  }
-  if (post.authorId !== studentId) {
-    redirect(appendAdminStudentsMessage(returnTo, "error", "只能删除该学生自己发布或转帖的内容"));
-  }
-
-  await prisma.buddyPost.update({
-    where: { id: postId },
     data: { deletedAt: new Date() }
   });
 
   revalidatePath("/admin/students");
   revalidatePath(`/admin/students/${studentId}`);
-  revalidatePath(`/students/${post.authorId}`);
   revalidatePath("/buddy-circle");
-  redirect(appendAdminStudentsMessage(returnTo, "notice", "帖子已删除"));
+  revalidatePath("/me");
+  redirect(appendAdminStudentsMessage(returnTo, "notice", "学生帖子已删除"));
 }
 
 export async function createPublicSubject(formData: FormData) {

@@ -1,6 +1,7 @@
 import { ArrowLeft, UserCheck, UserPlus } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { BuddyShareCardView } from "@/components/buddy-share-card";
 import { SocialPostActions } from "@/components/social-post-actions";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { listProfileBuddyPosts } from "@/lib/buddy-posts";
@@ -142,7 +143,7 @@ function ProfilePostCard({ post }: { post: ProfilePost }) {
             <span className="font-semibold text-slate-400">· {formatDateTime(post.createdAt)}</span>
           </div>
           {post.type === "original" ? (
-            <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p>
+            <ProfilePostBody content={post.content} sharePayload={post.sharePayload} />
           ) : (
             <div className="mt-3 space-y-3">
               {post.content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p> : null}
@@ -197,7 +198,7 @@ function ProfileRepostSourceCard({
               {[originalPost.author.province, originalPost.author.studySystem, originalPost.author.majorName].filter(Boolean).join(" · ") || "公开帖子"} · {formatDateTime(originalPost.createdAt)}
             </span>
           </div>
-          <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-600">{originalPost.content}</p>
+          <ProfilePostBody compact content={originalPost.content} sharePayload={originalPost.sharePayload} />
           {originalPost.type === "repost" ? (
             <div className="mt-3 border-l-2 border-slate-200 pl-3">
               <ProfileRepostSourceCard depth={depth + 1} originalPost={originalPost.originalPost} sourceState={originalPost.sourceState} />
@@ -217,6 +218,15 @@ function ProfileRepostSourceCard({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ProfilePostBody({ compact = false, content, sharePayload }: { compact?: boolean; content: string; sharePayload: ProfilePost["sharePayload"] }) {
+  return (
+    <div className={cn(compact ? "mt-2" : "mt-3", "space-y-3")}>
+      {content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{content}</p> : null}
+      <BuddyShareCardView card={sharePayload} compact={compact} />
     </div>
   );
 }

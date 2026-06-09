@@ -5,12 +5,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AutoDismissMessage } from "@/components/auto-dismiss-message";
 import { AvatarUploadForm } from "@/components/avatar-upload-form";
+import { BuddyShareCardView } from "@/components/buddy-share-card";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { HomeProfileEditor } from "@/components/home-profile-editor";
-import { ShareToBuddyButton } from "@/components/share-to-buddy-button";
+import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
 import { SocialPostActions } from "@/components/social-post-actions";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { requireUser } from "@/lib/auth";
+import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import { deleteBuddyPost, likeBuddyPost, listProfileBuddyPosts, repostBuddyPost, unlikeBuddyPost, unrepostBuddyPost } from "@/lib/buddy-posts";
 import { prisma } from "@/lib/prisma";
 import { getMedalLevel, getMedalRule, medalRules } from "@/lib/rewards";
@@ -575,7 +577,7 @@ function HomePostCard({ post }: { post: ProfilePost }) {
             ) : null}
           </div>
           {post.type === "original" ? (
-            <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p>
+            <HomePostBody content={post.content} sharePayload={post.sharePayload} />
           ) : (
             <div className="mt-3 space-y-3">
               {post.content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p> : null}
@@ -630,7 +632,7 @@ function HomeRepostSourceCard({
               {[originalPost.author.province, originalPost.author.studySystem, originalPost.author.majorName].filter(Boolean).join(" · ") || "公开帖子"} · {formatDateTime(originalPost.createdAt)}
             </span>
           </div>
-          <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-600">{originalPost.content}</p>
+          <HomePostBody compact content={originalPost.content} sharePayload={originalPost.sharePayload} />
           {originalPost.type === "repost" ? (
             <div className="mt-3 border-l-2 border-slate-200 pl-3">
               <HomeRepostSourceCard depth={depth + 1} originalPost={originalPost.originalPost} sourceState={originalPost.sourceState} />
@@ -650,6 +652,15 @@ function HomeRepostSourceCard({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function HomePostBody({ compact = false, content, sharePayload }: { compact?: boolean; content: string; sharePayload: ProfilePost["sharePayload"] }) {
+  return (
+    <div className={cn(compact ? "mt-2" : "mt-3", "space-y-3")}>
+      {content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{content}</p> : null}
+      <BuddyShareCardView card={sharePayload} compact={compact} />
     </div>
   );
 }
@@ -693,13 +704,8 @@ function MedalTrack({
   const progressPercent = Math.max(0, Math.min(100, progress));
   const monthAttemptCount = getCurrentMonthAttemptCount(dailyAttempts);
   const activeDays = Object.values(dailyAttempts).filter((count) => count > 0).length;
-  const activeLearningShareContent = buildActiveLearningShareContent({
-    activeDays,
-    monthAttemptCount,
-    nextLabel: nextRule?.label,
-    remaining,
-    totalAttempts
-  });
+  const activeLearningShareContent = "晒一下最近的学习节奏，继续冲。";
+  const activeLearningShareSuggestions = getActiveLearningShareSuggestions();
   const nodes = [
     { label: "小白", threshold: 0, position: 0, icon: Medal },
     { label: "达人", threshold: expertTarget, position: 50, icon: Trophy },
@@ -750,9 +756,14 @@ function MedalTrack({
         </div>
 
         <AnswerHeatmap
+          activeDays={activeDays}
           dailyAttempts={dailyAttempts}
           monthAttemptCount={monthAttemptCount}
+          nextLabel={nextRule?.label}
+          remaining={remaining}
           shareContent={activeLearningShareContent}
+          shareSuggestions={activeLearningShareSuggestions}
+          totalAttempts={totalAttempts}
         />
       </div>
     </SectionFrame>
@@ -769,36 +780,44 @@ function nodeTransform(position: number) {
   return "translateX(-50%)";
 }
 
-function buildActiveLearningShareContent({
-  activeDays,
-  monthAttemptCount,
-  nextLabel,
-  remaining,
-  totalAttempts
-}: {
-  activeDays: number;
-  monthAttemptCount: number;
-  nextLabel?: string;
-  remaining: number;
-  totalAttempts: number;
-}) {
-  const medalLine = nextLabel
-    ? `距离「${nextLabel}」还差 ${remaining} 道题。`
-    : "已经拿到最高学习勋章。";
-  return `晒一下我的 Active Learning：本月完成 ${monthAttemptCount} 题，近 26 周活跃 ${activeDays} 天，累计刷题 ${totalAttempts} 道。\n${medalLine}\n继续保持节奏，和搭子们一起冲。`;
+function getActiveLearningShareSuggestions(): ShareCopySuggestion[] {
+  return [
+    { label: "学习节奏", content: "晒一下最近的学习节奏，继续冲。" },
+    { label: "坚持打卡", content: "把学习活跃度发出来，给自己一个继续坚持的理由。" },
+    { label: "搭子监督", content: "今天也在认真刷题，欢迎搭子们监督我。" }
+  ];
 }
 
 function AnswerHeatmap({
+  activeDays,
   dailyAttempts,
   monthAttemptCount,
-  shareContent
+  nextLabel,
+  remaining,
+  shareContent,
+  shareSuggestions,
+  totalAttempts
 }: {
+  activeDays: number;
   dailyAttempts: Record<string, number>;
   monthAttemptCount: number;
+  nextLabel?: string;
+  remaining: number;
   shareContent: string;
+  shareSuggestions: ShareCopySuggestion[];
+  totalAttempts: number;
 }) {
   const weeks = buildHeatmapWeeks(dailyAttempts);
   const monthHeaders = weeks.map((week, weekIndex) => getWeekMonthLabel(week, weekIndex));
+  const activeLearningShareCard: BuddyShareCard = {
+    type: "active_learning_card",
+    activeDays,
+    monthAttemptCount,
+    nextLabel,
+    remaining,
+    totalAttempts,
+    weeks
+  };
 
   return (
     <div className="min-w-0 rounded-2xl border border-slate-200/70 bg-transparent px-4 py-4">
@@ -809,7 +828,10 @@ function AnswerHeatmap({
           <ShareToBuddyButton
             buttonClassName="min-h-8 rounded-xl px-3 py-1 text-xs"
             buttonLabel="分享"
+            contentSuggestions={shareSuggestions}
+            copyContext="active_learning"
             defaultContent={shareContent}
+            shareCard={activeLearningShareCard}
             sourceLabel="Active Learning"
           />
         </div>
