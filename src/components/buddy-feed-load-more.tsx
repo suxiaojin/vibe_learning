@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { Ban, Loader2, MoreHorizontal, Trash2, UserMinus, UserPlus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { DismissibleDetails } from "@/components/dismissible-details";
 import { SocialPostActions } from "@/components/social-post-actions";
 import { cn } from "@/lib/utils";
 
@@ -327,7 +328,7 @@ function ClientPostMoreMenu({
   }
 
   return (
-    <details className="group relative shrink-0">
+    <DismissibleDetails className="group relative shrink-0" group="buddy-post-menu">
       <summary
         aria-label="更多操作"
         className="grid size-9 cursor-pointer list-none place-items-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-ink [&::-webkit-details-marker]:hidden"
@@ -338,28 +339,46 @@ function ClientPostMoreMenu({
         {scope === "discover" && showAuthorActions ? (
           <>
             <MenuButton icon={<UserPlus size={18} />} label={`关注 @${post.author.username}`} onClick={() => runAction(`/api/social/follows/${post.author.id}`, "POST")} />
-            <MenuButton icon={<Ban size={18} />} label={`屏蔽 @${post.author.username}`} onClick={() => runAction(`/api/social/blocks/${post.author.id}`, "POST")} />
+            <MenuButton
+              confirmMessage={`确认屏蔽 @${post.author.username}？屏蔽后将不再看到对方的帖子。`}
+              icon={<Ban size={18} />}
+              label={`屏蔽 @${post.author.username}`}
+              onClick={() => runAction(`/api/social/blocks/${post.author.id}`, "POST")}
+            />
           </>
         ) : null}
 
         {scope === "following" && showAuthorActions ? (
-          <MenuButton icon={<UserMinus size={18} />} label={`取消关注 @${post.author.username}`} onClick={() => runAction(`/api/social/follows/${post.author.id}`, "DELETE")} />
+          <MenuButton
+            confirmMessage={`确认取消关注 @${post.author.username}？`}
+            icon={<UserMinus size={18} />}
+            label={`取消关注 @${post.author.username}`}
+            onClick={() => runAction(`/api/social/follows/${post.author.id}`, "DELETE")}
+          />
         ) : null}
 
         {post.canDelete ? (
-          <MenuButton danger icon={<Trash2 size={18} />} label="删除帖子" onClick={() => runAction(`/api/buddy-posts/${post.id}`, "DELETE")} />
+          <MenuButton
+            danger
+            confirmMessage="确认删除这条帖子？删除后不可恢复。"
+            icon={<Trash2 size={18} />}
+            label="删除帖子"
+            onClick={() => runAction(`/api/buddy-posts/${post.id}`, "DELETE")}
+          />
         ) : null}
       </div>
-    </details>
+    </DismissibleDetails>
   );
 }
 
 function MenuButton({
+  confirmMessage,
   danger = false,
   icon,
   label,
   onClick
 }: {
+  confirmMessage?: string;
   danger?: boolean;
   icon: ReactNode;
   label: string;
@@ -372,7 +391,12 @@ function MenuButton({
         danger ? "text-coral" : "text-slate-700"
       )}
       type="button"
-      onClick={onClick}
+      onClick={() => {
+        if (confirmMessage && !window.confirm(confirmMessage)) {
+          return;
+        }
+        onClick();
+      }}
     >
       {icon}
       {label}

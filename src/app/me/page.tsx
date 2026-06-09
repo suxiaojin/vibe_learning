@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AutoDismissMessage } from "@/components/auto-dismiss-message";
 import { AvatarUploadForm } from "@/components/avatar-upload-form";
+import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { HomeProfileEditor } from "@/components/home-profile-editor";
 import { ShareToBuddyButton } from "@/components/share-to-buddy-button";
 import { SocialPostActions } from "@/components/social-post-actions";
@@ -546,6 +547,8 @@ function StatValue({ label, value }: { label: string; value: number }) {
 }
 
 function HomePostCard({ post }: { post: ProfilePost }) {
+  const deleteFormId = `home-post-delete-${post.id}`;
+
   return (
     <article className="p-5">
       <div className="flex items-start gap-3">
@@ -558,15 +561,16 @@ function HomePostCard({ post }: { post: ProfilePost }) {
               <span className="font-semibold text-slate-400">· {formatDateTime(post.createdAt)}</span>
             </div>
             {post.canDelete ? (
-              <form action={deleteHomePost}>
+              <form id={deleteFormId} action={deleteHomePost}>
                 <input name="postId" type="hidden" value={post.id} />
-                <button
+                <ConfirmSubmitButton
                   aria-label="删除帖子"
                   className="grid size-9 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-coral/10 hover:text-coral"
-                  type="submit"
+                  form={deleteFormId}
+                  message="确认删除这条帖子？删除后不可恢复。"
                 >
                   <Trash2 size={17} />
-                </button>
+                </ConfirmSubmitButton>
               </form>
             ) : null}
           </div>

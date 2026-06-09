@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Heart, Loader2, X, XCircle } from "lucide-react";
 import { ShareToBuddyButton } from "@/components/share-to-buddy-button";
@@ -33,6 +32,7 @@ const text = {
   loading: "\u9898\u76ee\u52a0\u8f7d\u4e2d...",
   loadFailed: "\u9898\u76ee\u52a0\u8f7d\u5931\u8d25\uff0c\u8bf7\u8fd4\u56de\u5b66\u4e60\u9875\u91cd\u8bd5\u3002",
   exit: "\u9000\u51fa\u7ec3\u4e60",
+  exitConfirm: "\u786e\u8ba4\u9000\u51fa\u672c\u6b21\u7ec3\u4e60\uff1f",
   question: "\u9898",
   skip: "\u8df3\u8fc7",
   check: "\u68c0\u67e5",
@@ -263,9 +263,18 @@ export function QuizRunner({
   return (
     <section className="flex h-dvh flex-col overflow-hidden bg-white">
       <div className="mx-auto flex w-full max-w-5xl items-center gap-5 px-5 py-6">
-        <Link className="grid size-10 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600" href="/learn" aria-label={text.exit}>
+        <button
+          className="grid size-10 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+          type="button"
+          aria-label={text.exit}
+          onClick={() => {
+            if (window.confirm(text.exitConfirm)) {
+              router.push("/learn");
+            }
+          }}
+        >
           <X size={22} />
-        </Link>
+        </button>
         <div className="min-w-0 flex-1">
           <div className="h-4 overflow-hidden rounded-full bg-slate-200">
             <div className="h-full rounded-full bg-[#58cc02] transition-all" style={{ width: `${progressPercent}%` }} />

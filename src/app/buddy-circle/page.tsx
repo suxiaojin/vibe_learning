@@ -3,6 +3,8 @@ import { Ban, Check, ChevronDown, MoreHorizontal, Search, Send, SlidersHorizonta
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { BuddyFeedLoadMore } from "@/components/buddy-feed-load-more";
+import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
+import { DismissibleDetails } from "@/components/dismissible-details";
 import { SocialPostActions } from "@/components/social-post-actions";
 import { StudentSidebar } from "@/components/student-sidebar";
 import {
@@ -517,12 +519,15 @@ function getPostRepostSource(post: {
 function PostMoreMenu({ post, returnTo, scope }: { post: BuddyFeedItem; returnTo: string; scope: BuddyFeedScope }) {
   const showAuthorActions = !post.canDelete;
   const hasActions = post.canDelete || showAuthorActions;
+  const blockFormId = `post-menu-block-${post.id}`;
+  const deleteFormId = `post-menu-delete-${post.id}`;
+  const unfollowFormId = `post-menu-unfollow-${post.id}`;
   if (!hasActions) {
     return null;
   }
 
   return (
-    <details className="group relative shrink-0">
+    <DismissibleDetails className="group relative shrink-0" group="buddy-post-menu">
       <summary
         aria-label="更多操作"
         className="grid size-9 cursor-pointer list-none place-items-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-ink [&::-webkit-details-marker]:hidden"
@@ -537,41 +542,74 @@ function PostMoreMenu({ post, returnTo, scope }: { post: BuddyFeedItem; returnTo
               <input name="returnTo" type="hidden" value={returnTo} />
               <MenuButton icon={<UserPlus size={18} />} label={`关注 @${post.author.username}`} />
             </form>
-            <form action={blockFromCircle}>
+            <form id={blockFormId} action={blockFromCircle}>
               <input name="targetId" type="hidden" value={post.author.id} />
               <input name="returnTo" type="hidden" value={returnTo} />
-              <MenuButton icon={<Ban size={18} />} label={`屏蔽 @${post.author.username}`} />
+              <MenuButton
+                confirmMessage={`确认屏蔽 @${post.author.username}？屏蔽后将不再看到对方的帖子。`}
+                formId={blockFormId}
+                icon={<Ban size={18} />}
+                label={`屏蔽 @${post.author.username}`}
+              />
             </form>
           </>
         ) : null}
 
         {scope === "following" && showAuthorActions ? (
-          <form action={unfollowFromCircle}>
+          <form id={unfollowFormId} action={unfollowFromCircle}>
             <input name="targetId" type="hidden" value={post.author.id} />
             <input name="returnTo" type="hidden" value={returnTo} />
-            <MenuButton icon={<UserMinus size={18} />} label={`取消关注 @${post.author.username}`} />
+            <MenuButton
+              confirmMessage={`确认取消关注 @${post.author.username}？`}
+              formId={unfollowFormId}
+              icon={<UserMinus size={18} />}
+              label={`取消关注 @${post.author.username}`}
+            />
           </form>
         ) : null}
 
         {post.canDelete ? (
-          <form action={deletePost}>
+          <form id={deleteFormId} action={deletePost}>
             <input name="postId" type="hidden" value={post.id} />
             <input name="returnTo" type="hidden" value={returnTo} />
-            <MenuButton danger icon={<Trash2 size={18} />} label="删除帖子" />
+            <MenuButton danger confirmMessage="确认删除这条帖子？删除后不可恢复。" formId={deleteFormId} icon={<Trash2 size={18} />} label="删除帖子" />
           </form>
         ) : null}
       </div>
-    </details>
+    </DismissibleDetails>
   );
 }
 
-function MenuButton({ danger = false, icon, label }: { danger?: boolean; icon: ReactNode; label: string }) {
+function MenuButton({
+  confirmMessage,
+  danger = false,
+  formId,
+  icon,
+  label
+}: {
+  confirmMessage?: string;
+  danger?: boolean;
+  formId?: string;
+  icon: ReactNode;
+  label: string;
+}) {
+  const className = cn(
+    "flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm font-black transition hover:bg-slate-50",
+    danger ? "text-coral" : "text-slate-700"
+  );
+
+  if (confirmMessage && formId) {
+    return (
+      <ConfirmSubmitButton className={className} form={formId} message={confirmMessage}>
+        {icon}
+        {label}
+      </ConfirmSubmitButton>
+    );
+  }
+
   return (
     <button
-      className={cn(
-        "flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm font-black transition hover:bg-slate-50",
-        danger ? "text-coral" : "text-slate-700"
-      )}
+      className={className}
       type="submit"
     >
       {icon}
