@@ -1,9 +1,12 @@
 import type { ReactNode } from "react";
 import bcrypt from "bcryptjs";
-import { Camera, CheckCircle2, Crown, Gem, Heart, KeyRound, Mail, Medal, Pencil, Phone, Repeat2, School, Trash2, Trophy, UserRound, X } from "lucide-react";
+import { CheckCircle2, Crown, Gem, KeyRound, Mail, Medal, Pencil, Phone, School, Trash2, Trophy, UserRound } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { AutoDismissMessage } from "@/components/auto-dismiss-message";
 import { AvatarUploadForm } from "@/components/avatar-upload-form";
+import { HomeProfileEditor } from "@/components/home-profile-editor";
+import { SocialPostActions } from "@/components/social-post-actions";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { requireUser } from "@/lib/auth";
 import { deleteBuddyPost, likeBuddyPost, listProfileBuddyPosts, repostBuddyPost, unlikeBuddyPost, unrepostBuddyPost } from "@/lib/buddy-posts";
@@ -56,10 +59,10 @@ const transactionLabels: Record<string, string> = {
 type MeTab = "profile" | "medals" | "diamonds" | "homepage";
 
 const meTabs: Array<{ key: MeTab; label: string }> = [
+  { key: "homepage", label: "我的主页" },
   { key: "profile", label: "我的信息" },
   { key: "medals", label: "我的勋章" },
-  { key: "diamonds", label: "我的钻石" },
-  { key: "homepage", label: "我的主页" }
+  { key: "diamonds", label: "我的钻石" }
 ];
 
 type SocialProfile = Awaited<ReturnType<typeof getSocialProfile>>;
@@ -99,7 +102,7 @@ export default async function MePage({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
     }),
     activeTab === "homepage" ? getSocialProfile(user.id, user.id) : Promise.resolve(null),
-    activeTab === "homepage" ? listProfileBuddyPosts(user.id, user.id, { tab: "posts", limit: 30 }) : Promise.resolve({ items: [], nextCursor: null })
+    activeTab === "homepage" ? listProfileBuddyPosts(user.id, user.id, { includeInteractions: true, tab: "posts", limit: 30 }) : Promise.resolve({ items: [], nextCursor: null })
   ]);
 
   if (!fullUser) {
@@ -191,7 +194,7 @@ export default async function MePage({
 }
 
 function getActiveMeTab(tab?: string): MeTab {
-  return meTabs.some((item) => item.key === tab) ? (tab as MeTab) : "profile";
+  return meTabs.some((item) => item.key === tab) ? (tab as MeTab) : "homepage";
 }
 
 function SectionFrame({
@@ -471,7 +474,9 @@ function MyHomePagePanel({
   return (
     <section className="space-y-5">
       {profileStatus && profileStatus !== "updated" && profileErrorText[profileStatus] ? (
-        <p className="rounded-xl bg-coral/10 px-4 py-3 text-sm font-bold text-coral">{profileErrorText[profileStatus]}</p>
+        <AutoDismissMessage className="rounded-xl bg-coral/10 px-4 py-3 text-sm font-bold text-coral">
+          {profileErrorText[profileStatus]}
+        </AutoDismissMessage>
       ) : null}
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
@@ -504,60 +509,16 @@ function MyHomePagePanel({
         </div>
       </section>
 
-      <input className="peer sr-only" defaultChecked={openEditor} id={editModalId} type="checkbox" />
-      <div className="fixed inset-0 z-50 hidden overflow-y-auto bg-ink/35 px-4 py-8 peer-checked:block">
-        <form action={updateHomeProfile} className="relative mx-auto w-full max-w-3xl rounded-2xl bg-white p-5 shadow-[0_18px_60px_rgba(15,23,42,0.24)]" encType="multipart/form-data">
-          <div className="mb-5 flex items-center justify-between gap-3">
-            <label className="grid size-10 cursor-pointer place-items-center rounded-full text-ink hover:bg-slate-100" htmlFor={editModalId}>
-              <X size={24} />
-            </label>
-            <h3 className="text-2xl font-black text-ink">编辑个人资料</h3>
-            <button className="min-h-10 rounded-full bg-ink px-6 text-sm font-black text-white transition hover:bg-slate-700" type="submit">
-              保存
-            </button>
-          </div>
-
-          <label className="block cursor-pointer">
-            <span className="label">背景图</span>
-            <span
-              className="relative block h-48 overflow-hidden rounded-xl bg-slate-200 bg-cover bg-center"
-              style={profile.user.coverImage ? { backgroundImage: `url(${profile.user.coverImage})` } : undefined}
-            >
-              <span className="absolute inset-0 grid place-items-center bg-black/10">
-                <span className="grid size-14 place-items-center rounded-full bg-ink/70 text-white">
-                  <Camera size={24} />
-                </span>
-              </span>
-            </span>
-            <span className="mt-2 block text-xs font-semibold text-slate-400">建议分辨率 1500 x 500，支持 JPG、PNG、WebP，最大 2MB。</span>
-            <input accept="image/jpeg,image/png,image/webp" className="sr-only" name="coverImage" type="file" />
-          </label>
-
-          <div className="mt-5 grid gap-4 md:grid-cols-[160px_minmax(0,1fr)]">
-            <label className="cursor-pointer">
-              <span className="label">头像</span>
-              <span className="relative block w-fit">
-                <Avatar name={profile.user.nickname} color={profile.user.avatarColor} image={profile.user.avatarImage} size="md" />
-                <span className="absolute inset-0 grid place-items-center rounded-full bg-black/20 text-white">
-                  <Camera size={22} />
-                </span>
-              </span>
-              <span className="mt-2 block text-xs font-semibold leading-5 text-slate-400">建议 400 x 400，最大 800KB。</span>
-              <input accept="image/jpeg,image/png,image/webp" className="sr-only" name="avatarImage" type="file" />
-            </label>
-            <div className="space-y-4">
-              <label>
-                <span className="label">昵称</span>
-                <input className="input" maxLength={30} name="nickname" defaultValue={profile.user.nickname} />
-              </label>
-              <label>
-                <span className="label">简介</span>
-                <textarea className="input min-h-28 resize-y leading-7" maxLength={300} name="bio" defaultValue={profile.user.bio} />
-              </label>
-            </div>
-          </div>
-        </form>
-      </div>
+      <HomeProfileEditor
+        action={updateHomeProfile}
+        avatarColor={profile.user.avatarColor}
+        avatarImage={profile.user.avatarImage}
+        bio={profile.user.bio}
+        coverImage={profile.user.coverImage}
+        modalId={editModalId}
+        name={profile.user.nickname}
+        openInitially={openEditor}
+      />
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
         <div className="border-b border-slate-100 px-5 py-4">
@@ -613,21 +574,20 @@ function HomePostCard({ post }: { post: ProfilePost }) {
           ) : (
             <div className="mt-3 space-y-3">
               {post.content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p> : null}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                {post.sourceState === "visible" && post.originalPost ? (
-                  <>
-                    <p className="text-xs font-bold text-slate-400">转帖自 {post.originalPost.author.nickname}</p>
-                    <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-600">{post.originalPost.content}</p>
-                  </>
-                ) : (
-                  <p className="text-sm font-bold text-slate-400">原内容已删除</p>
-                )}
-              </div>
+              <HomeRepostSourceCard originalPost={post.originalPost} sourceState={post.sourceState} />
             </div>
           )}
-          <div className="mt-4 flex gap-8 text-sm font-black">
-            <HomeLikeAction post={post} />
-            {post.type === "original" ? <HomeRepostAction post={post} /> : null}
+          <div className="mt-4">
+            <SocialPostActions
+              canLike={post.canLike}
+              canRepost={post.canRepost}
+              initialLikeCount={post.likeCount}
+              initialLiked={post.likedByMe}
+              initialRepostCount={post.repostCount}
+              initialReposted={post.repostedByMe}
+              postId={post.id}
+              repostSource={getPostRepostSource(post)}
+            />
           </div>
         </div>
       </div>
@@ -635,83 +595,75 @@ function HomePostCard({ post }: { post: ProfilePost }) {
   );
 }
 
-function HomeLikeAction({ post }: { post: ProfilePost }) {
-  return (
-    <form action={post.likedByMe ? unlikeHomePost : likeHomePost}>
-      <input name="postId" type="hidden" value={post.id} />
-      <button
-        aria-label={post.likedByMe ? "取消点赞" : "点赞"}
-        className={cn(
-          "inline-flex min-h-9 min-w-16 items-center gap-2 rounded-full px-2 transition",
-          post.likedByMe ? "text-pink-500" : "text-slate-400 hover:text-pink-500"
-        )}
-        disabled={!post.canLike && !post.likedByMe}
-        type="submit"
-      >
-        <Heart className={post.likedByMe ? "fill-current" : ""} size={18} />
-        <span>{post.likeCount}</span>
-      </button>
-    </form>
-  );
-}
-
-function HomeRepostAction({ post }: { post: ProfilePost }) {
-  if (post.repostedByMe) {
+function HomeRepostSourceCard({
+  depth = 0,
+  originalPost,
+  sourceState
+}: {
+  depth?: number;
+  originalPost: ProfilePost["originalPost"];
+  sourceState: ProfilePost["sourceState"];
+}) {
+  if (sourceState !== "visible" || !originalPost) {
     return (
-      <form action={unrepostHomePost}>
-        <input name="postId" type="hidden" value={post.id} />
-        <button
-          aria-label="取消转帖"
-          className="inline-flex min-h-9 min-w-16 items-center gap-2 rounded-full px-2 text-teal transition hover:text-slate-400"
-          type="submit"
-        >
-          <Repeat2 size={18} />
-          <span>{post.repostCount}</span>
-        </button>
-      </form>
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <p className="text-sm font-bold text-slate-400">原内容已删除</p>
+      </div>
     );
   }
 
-  const modalId = `home-repost-${post.id}`;
   return (
-    <div className="relative">
-      <input className="peer sr-only" id={modalId} type="checkbox" />
-      <label
-        aria-label="转帖"
-        className={cn(
-          "inline-flex min-h-9 min-w-16 cursor-pointer items-center gap-2 rounded-full px-2 text-slate-400 transition hover:text-teal",
-          !post.canRepost && "pointer-events-none cursor-not-allowed opacity-50"
-        )}
-        htmlFor={modalId}
-      >
-        <Repeat2 size={18} />
-        <span>{post.repostCount}</span>
-      </label>
-      <div className="fixed inset-0 z-50 hidden place-items-start justify-center overflow-y-auto bg-ink/35 px-4 py-12 peer-checked:grid">
-        <form action={repostHomePost} className="relative w-full max-w-2xl rounded-2xl bg-white p-5 shadow-[0_18px_60px_rgba(15,23,42,0.24)]">
-          <input name="postId" type="hidden" value={post.id} />
-          <div className="flex items-center justify-between gap-3">
-            <label className="grid size-9 cursor-pointer place-items-center rounded-full text-ink hover:bg-slate-100" htmlFor={modalId}>
-              <X size={22} />
-            </label>
-            <button className="min-h-10 rounded-full bg-ink px-6 text-sm font-black text-white transition hover:bg-slate-700" type="submit">
-              发帖
-            </button>
+    <div className={cn("rounded-2xl border border-slate-200 bg-slate-50 p-4", depth > 0 ? "bg-white/70" : "")}>
+      <div className="flex items-start gap-3">
+        <a href={`/students/${originalPost.author.id}`}>
+          <Avatar name={originalPost.author.nickname} color={originalPost.author.avatarColor} image={originalPost.author.avatarImage} size="sm" />
+        </a>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <a className="font-black text-ink hover:text-teal" href={`/students/${originalPost.author.id}`}>{originalPost.author.nickname}</a>
+            <span className="text-xs font-semibold text-slate-400">
+              {[originalPost.author.province, originalPost.author.studySystem, originalPost.author.majorName].filter(Boolean).join(" · ") || "公开帖子"} · {formatDateTime(originalPost.createdAt)}
+            </span>
           </div>
-          <textarea
-            className="mt-5 min-h-24 w-full resize-y border-0 text-xl font-semibold leading-8 text-ink outline-none placeholder:text-slate-400"
-            maxLength={300}
-            name="content"
-            placeholder="添加评论"
-          />
-          <div className="mt-4 rounded-2xl border border-slate-200 p-4">
-            <p className="text-sm font-black text-ink">{post.author.nickname}</p>
-            <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p>
+          <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-600">{originalPost.content}</p>
+          {originalPost.type === "repost" ? (
+            <div className="mt-3 border-l-2 border-slate-200 pl-3">
+              <HomeRepostSourceCard depth={depth + 1} originalPost={originalPost.originalPost} sourceState={originalPost.sourceState} />
+            </div>
+          ) : null}
+          <div className="mt-3">
+            <SocialPostActions
+              canLike={originalPost.canLike}
+              canRepost={originalPost.canRepost}
+              initialLikeCount={originalPost.likeCount}
+              initialLiked={originalPost.likedByMe}
+              initialRepostCount={originalPost.repostCount}
+              initialReposted={originalPost.repostedByMe}
+              postId={originalPost.id}
+              repostSource={getPostRepostSource(originalPost)}
+            />
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
+}
+
+function getPostRepostSource(post: {
+  author: { nickname: string; username: string };
+  canRepost: boolean;
+  content: string;
+  createdAt: Date;
+  originalPost?: { content: string } | null;
+}) {
+  return post.canRepost
+    ? {
+        authorName: post.author.nickname,
+        content: post.content || post.originalPost?.content || "",
+        createdAtLabel: formatDateTime(post.createdAt),
+        username: post.author.username
+      }
+    : undefined;
 }
 
 function MedalTrack({
@@ -958,14 +910,18 @@ function CurrentMedalBadge({ gender, level, label }: { gender: string; level: st
 function Message({ type, successText, errors = {} }: { type?: string; successText: string; errors?: Record<string, string> }) {
   if (type !== "updated") {
     const errorText = type ? errors[type] : null;
-    return errorText ? <p className="rounded-2xl border border-coral/20 bg-coral/10 px-4 py-3 text-sm font-bold text-coral">{errorText}</p> : null;
+    return errorText ? (
+      <AutoDismissMessage className="rounded-2xl border border-coral/20 bg-coral/10 px-4 py-3 text-sm font-bold text-coral">
+        {errorText}
+      </AutoDismissMessage>
+    ) : null;
   }
 
   return (
-    <p className="flex items-center gap-2 rounded-2xl border border-teal/20 bg-teal/10 px-4 py-3 text-sm font-bold text-teal">
+    <AutoDismissMessage className="flex items-center gap-2 rounded-2xl border border-teal/20 bg-teal/10 px-4 py-3 text-sm font-bold text-teal">
       <CheckCircle2 size={18} />
       {successText}
-    </p>
+    </AutoDismissMessage>
   );
 }
 
@@ -1010,6 +966,7 @@ function formatDateTime(date: Date) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
     timeZone: "Asia/Shanghai"
   });
 }

@@ -18,6 +18,7 @@ const marketingIconMap = {
 
 const phonePattern = /^1[3-9]\d{9}$/;
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const usernamePattern = /^[A-Za-z0-9]+$/;
 
 type FieldName = "username" | "password" | "confirmPassword" | "phoneNumber" | "email" | "emailCode";
 type FieldErrors = Partial<Record<FieldName, string>>;
@@ -48,7 +49,10 @@ function VibeTitle() {
 function validateField(name: FieldName, values: Record<FieldName, string>) {
   switch (name) {
     case "username":
-      return values.username.trim() ? "" : "请输入账号名。";
+      if (!values.username.trim()) {
+        return "请输入账号名。";
+      }
+      return usernamePattern.test(values.username.trim()) ? "" : "账号名只能使用英文字母和数字。";
     case "password":
       return values.password.length >= 6 ? "" : "密码至少需要 6 个字符，字母、数字、符号都可以。";
     case "confirmPassword":
@@ -156,6 +160,11 @@ export function RegisterPanel({
     const usernameValue = username.trim();
     if (!usernameValue) {
       setUsernameStatus("idle");
+      return;
+    }
+    if (!usernamePattern.test(usernameValue)) {
+      setUsernameStatus("idle");
+      setFieldErrors((current) => ({ ...current, username: "账号名只能使用英文字母和数字。" }));
       return;
     }
 
@@ -395,6 +404,7 @@ export function RegisterPanel({
                 className="min-w-0 border-none text-base outline-none placeholder:text-[#9aa4b7]"
                 id="username"
                 name="username"
+                pattern="[A-Za-z0-9]+"
                 placeholder="账号名"
                 required
                 value={username}

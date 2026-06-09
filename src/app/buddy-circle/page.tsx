@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
-import { Ban, Check, ChevronDown, Heart, MoreHorizontal, Repeat2, Search, Send, SlidersHorizontal, Trash2, UserCheck, UserMinus, UserPlus, X } from "lucide-react";
+import { Ban, Check, ChevronDown, MoreHorizontal, Search, Send, SlidersHorizontal, Trash2, UserCheck, UserMinus, UserPlus } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { BuddyFeedLoadMore } from "@/components/buddy-feed-load-more";
+import { SocialPostActions } from "@/components/social-post-actions";
 import { StudentSidebar } from "@/components/student-sidebar";
 import {
   createBuddyPost,
@@ -84,7 +86,7 @@ export default async function BuddyCirclePage({
       scope,
       sort,
       studySystem: params?.studySystem || undefined,
-      limit: 30
+      limit: 20
     }),
     query ? searchUsersByNickname(user.id, query) : Promise.resolve({ items: [] }),
     listRecommendedFollows(user.id, { limit: 5 })
@@ -120,6 +122,14 @@ export default async function BuddyCirclePage({
                   <BuddyPostCard key={post.id} post={post} returnTo={returnTo} scope={scope} />
                 ))
               )}
+              <BuddyFeedLoadMore
+                initialNextCursor={feed.nextCursor}
+                majorId={params?.majorId || undefined}
+                province={params?.province || undefined}
+                scope={scope}
+                sort={sort}
+                studySystem={params?.studySystem || undefined}
+              />
             </section>
           </div>
 
@@ -411,27 +421,97 @@ function BuddyPostCard({ post, returnTo, scope }: { post: BuddyFeedItem; returnT
           ) : (
             <div className="mt-4 space-y-3">
               {post.content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p> : null}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                {post.sourceState === "visible" && post.originalPost ? (
-                  <>
-                    <p className="text-sm font-black text-ink">{post.originalPost.author.nickname}</p>
-                    <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-600">{post.originalPost.content}</p>
-                  </>
-                ) : (
-                  <p className="text-sm font-bold text-slate-400">原内容已删除</p>
-                )}
-              </div>
+              <RepostSourceCard originalPost={post.originalPost} sourceState={post.sourceState} />
             </div>
           )}
 
-          <div className="mt-4 flex flex-wrap items-center gap-8 border-t border-slate-100 pt-4">
-            <LikeAction post={post} returnTo={returnTo} />
-            {post.type === "original" ? <RepostAction post={post} returnTo={returnTo} /> : null}
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <SocialPostActions
+              canLike={post.canLike}
+              canRepost={post.canRepost}
+              initialLikeCount={post.likeCount}
+              initialLiked={post.likedByMe}
+              initialRepostCount={post.repostCount}
+              initialReposted={post.repostedByMe}
+              postId={post.id}
+              repostSource={getPostRepostSource(post)}
+            />
           </div>
         </div>
       </div>
     </article>
   );
+}
+
+function RepostSourceCard({
+  depth = 0,
+  originalPost,
+  sourceState
+}: {
+  depth?: number;
+  originalPost: BuddyFeedItem["originalPost"];
+  sourceState: BuddyFeedItem["sourceState"];
+}) {
+  if (sourceState !== "visible" || !originalPost) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <p className="text-sm font-bold text-slate-400">原内容已删除</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("rounded-2xl border border-slate-200 bg-slate-50 p-4", depth > 0 ? "bg-white/70" : "")}>
+      <div className="flex items-start gap-3">
+        <a href={`/students/${originalPost.author.id}`}>
+          <ProfileAvatar user={originalPost.author} />
+        </a>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <a className="font-black text-ink hover:text-teal" href={`/students/${originalPost.author.id}`}>{originalPost.author.nickname}</a>
+            <span className="text-xs font-semibold text-slate-400">
+              {[originalPost.author.province, originalPost.author.studySystem, originalPost.author.majorName].filter(Boolean).join(" · ") || "公开帖子"} · {formatDateTime(originalPost.createdAt)}
+            </span>
+          </div>
+          <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-600">{originalPost.content}</p>
+          {originalPost.type === "repost" ? (
+            <div className="mt-3 border-l-2 border-slate-200 pl-3">
+              <RepostSourceCard depth={depth + 1} originalPost={originalPost.originalPost} sourceState={originalPost.sourceState} />
+            </div>
+          ) : null}
+          <div className="mt-3">
+            <SocialPostActions
+              canLike={originalPost.canLike}
+              canRepost={originalPost.canRepost}
+              initialLikeCount={originalPost.likeCount}
+              initialLiked={originalPost.likedByMe}
+              initialRepostCount={originalPost.repostCount}
+              initialReposted={originalPost.repostedByMe}
+              postId={originalPost.id}
+              repostSource={getPostRepostSource(originalPost)}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function getPostRepostSource(post: {
+  author: { nickname: string; username: string };
+  canRepost: boolean;
+  content: string;
+  createdAt: Date;
+  originalPost?: { content: string } | null;
+}) {
+  return post.canRepost
+    ? {
+        authorName: post.author.nickname,
+        content: post.content || post.originalPost?.content || "",
+        createdAtLabel: formatDateTime(post.createdAt),
+        username: post.author.username
+      }
+    : undefined;
 }
 
 function PostMoreMenu({ post, returnTo, scope }: { post: BuddyFeedItem; returnTo: string; scope: BuddyFeedScope }) {
@@ -500,94 +580,6 @@ function MenuButton({ danger = false, icon, label }: { danger?: boolean; icon: R
   );
 }
 
-function LikeAction({ post, returnTo }: { post: BuddyFeedItem; returnTo: string }) {
-  return (
-    <form action={post.likedByMe ? unlikePost : likePost}>
-      <input name="postId" type="hidden" value={post.id} />
-      <input name="returnTo" type="hidden" value={returnTo} />
-      <button
-        aria-label={post.likedByMe ? "取消点赞" : "点赞"}
-        className={cn(
-          "inline-flex min-h-9 min-w-16 items-center gap-2 rounded-full px-2 text-sm font-black transition",
-          post.likedByMe ? "text-pink-500" : "text-slate-400 hover:text-pink-500"
-        )}
-        disabled={!post.canLike && !post.likedByMe}
-        type="submit"
-      >
-        <Heart className={post.likedByMe ? "fill-current" : ""} size={18} />
-        <span>{post.likeCount}</span>
-      </button>
-    </form>
-  );
-}
-
-function RepostAction({ post, returnTo }: { post: BuddyFeedItem; returnTo: string }) {
-  if (post.repostedByMe) {
-    return (
-      <form action={unrepostPost}>
-        <input name="postId" type="hidden" value={post.id} />
-        <input name="returnTo" type="hidden" value={returnTo} />
-        <button
-          aria-label="取消转帖"
-          className="inline-flex min-h-9 min-w-16 items-center gap-2 rounded-full px-2 text-sm font-black text-teal transition hover:text-slate-400"
-          type="submit"
-        >
-          <Repeat2 size={18} />
-          <span>{post.repostCount}</span>
-        </button>
-      </form>
-    );
-  }
-
-  const modalId = `repost-${post.id}`;
-  return (
-    <div className="relative">
-      <input className="peer sr-only" id={modalId} type="checkbox" />
-      <label
-        aria-label="转帖"
-        className={cn(
-          "inline-flex min-h-9 min-w-16 cursor-pointer items-center gap-2 rounded-full px-2 text-sm font-black text-slate-400 transition hover:text-teal",
-          !post.canRepost && "pointer-events-none cursor-not-allowed opacity-50"
-        )}
-        htmlFor={modalId}
-      >
-        <Repeat2 size={18} />
-        <span>{post.repostCount}</span>
-      </label>
-      <div className="fixed inset-0 z-50 hidden place-items-start justify-center overflow-y-auto bg-ink/35 px-4 py-12 peer-checked:grid">
-        <form action={repostPost} className="relative w-full max-w-2xl rounded-2xl bg-white p-5 shadow-[0_18px_60px_rgba(15,23,42,0.24)]">
-          <input name="postId" type="hidden" value={post.id} />
-          <input name="returnTo" type="hidden" value={returnTo} />
-          <div className="flex items-center justify-between gap-3">
-            <label className="grid size-9 cursor-pointer place-items-center rounded-full text-ink hover:bg-slate-100" htmlFor={modalId}>
-              <X size={22} />
-            </label>
-            <button className="min-h-10 rounded-full bg-ink px-6 text-sm font-black text-white transition hover:bg-slate-700" type="submit">
-              发帖
-            </button>
-          </div>
-          <textarea
-            className="mt-5 min-h-24 w-full resize-y border-0 text-xl font-semibold leading-8 text-ink outline-none placeholder:text-slate-400"
-            maxLength={300}
-            name="content"
-            placeholder="添加评论"
-          />
-          <div className="mt-4 rounded-2xl border border-slate-200 p-4">
-            <div className="flex items-center gap-2 text-sm">
-              <ProfileAvatar user={post.author} />
-              <div className="min-w-0">
-                <p className="truncate font-black text-ink">{post.author.nickname}</p>
-                <p className="truncate text-xs font-semibold text-slate-400">@{post.author.username} · {formatDateTime(post.createdAt)}</p>
-              </div>
-            </div>
-            <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
 function ProfileAvatar({ user }: { user: { avatarColor?: string; avatarImage?: string; nickname: string } }) {
   if (user.avatarImage) {
     return <img alt={`${user.nickname} 的头像`} className="size-12 shrink-0 rounded-full object-cover shadow-sm" src={user.avatarImage} />;
@@ -625,6 +617,7 @@ function formatDateTime(date: Date) {
     hour: "2-digit",
     minute: "2-digit",
     month: "2-digit",
+    second: "2-digit",
     timeZone: "Asia/Shanghai",
     year: "numeric"
   });

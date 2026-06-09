@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Bell, BookMarked, GraduationCap, HelpCircle, LogOut, MoreHorizontal, Settings, Target, UserRound, UsersRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type StudentNavKey = "learn" | "course-center" | "wrong-book" | "buddy-circle" | "me" | "notifications";
+type StudentNavKey = "learn" | "course-center" | "wrong-book" | "buddy-circle" | "me" | "notifications" | "settings";
 
 const text = {
   subtitle: "\u4e13\u8f6c\u672c\u95ef\u5173\u5b66\u4e60",
@@ -35,7 +35,7 @@ export function StudentSidebar({ active }: { active: StudentNavKey }) {
           <StudentNavItem active={active === "wrong-book"} href="/wrong-book" icon={<Target size={24} />} label={text.review} />
           <StudentNavItem active={active === "buddy-circle"} href="/buddy-circle" icon={<UsersRound size={24} />} label={text.buddyCircle} />
           <StudentNavItem active={active === "me"} href="/me" icon={<UserRound size={24} />} label={text.profile} />
-          <MoreMenu active={active === "notifications"} />
+          <MoreMenu active={active === "notifications" || active === "settings"} />
         </nav>
       </div>
     </aside>
@@ -93,10 +93,10 @@ function MoreMenu({ active }: { active: boolean }) {
             <Bell size={18} />
             {text.notifications}
           </Link>
-          <button className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-black text-slate-500 hover:bg-slate-50" type="button">
+          <Link className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-black text-slate-500 hover:bg-slate-50" href="/settings?tab=blocked-users">
             <Settings size={18} />
             {text.settings}
-          </button>
+          </Link>
           <button className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-black text-slate-500 hover:bg-slate-50" type="button">
             <HelpCircle size={18} />
             {text.help}

@@ -26,6 +26,7 @@ type RegisterPayload = {
 
 const phonePattern = /^1[3-9]\d{9}$/;
 const emailCodePattern = /^\d{4}$/;
+const usernamePattern = /^[A-Za-z0-9]+$/;
 
 function errorResponse(message: string, status = 400, code = "REGISTER_ERROR") {
   return NextResponse.json(
@@ -89,6 +90,9 @@ export async function POST(request: Request) {
 
   if (!username) {
     return errorResponse("请输入账号名。", 400, "INVALID_USERNAME");
+  }
+  if (!usernamePattern.test(username)) {
+    return errorResponse("账号名只能使用英文字母和数字。", 400, "INVALID_USERNAME_FORMAT");
   }
 
   if (!phonePattern.test(phoneNumber)) {

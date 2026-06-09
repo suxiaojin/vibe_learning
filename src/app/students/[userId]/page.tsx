@@ -1,6 +1,7 @@
-import { ArrowLeft, Heart, Repeat2, UserCheck, UserPlus } from "lucide-react";
+import { ArrowLeft, UserCheck, UserPlus } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { SocialPostActions } from "@/components/social-post-actions";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { listProfileBuddyPosts } from "@/lib/buddy-posts";
 import { formatBuddyError } from "@/lib/buddies";
@@ -145,26 +146,96 @@ function ProfilePostCard({ post }: { post: ProfilePost }) {
           ) : (
             <div className="mt-3 space-y-3">
               {post.content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p> : null}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                {post.sourceState === "visible" && post.originalPost ? (
-                  <>
-                    <p className="text-xs font-bold text-slate-400">转帖自 {post.originalPost.author.nickname}</p>
-                    <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-600">{post.originalPost.content}</p>
-                  </>
-                ) : (
-                  <p className="text-sm font-bold text-slate-400">原内容已删除</p>
-                )}
-              </div>
+              <ProfileRepostSourceCard originalPost={post.originalPost} sourceState={post.sourceState} />
             </div>
           )}
-          <div className="mt-4 flex gap-5 text-xs font-bold text-slate-400">
-            <span className="inline-flex items-center gap-1"><Heart size={15} />{post.likeCount}</span>
-            {post.type === "original" ? <span className="inline-flex items-center gap-1"><Repeat2 size={15} />{post.repostCount}</span> : null}
+          <div className="mt-4">
+            <SocialPostActions
+              canLike={post.canLike}
+              canRepost={post.canRepost}
+              initialLikeCount={post.likeCount}
+              initialLiked={post.likedByMe}
+              initialRepostCount={post.repostCount}
+              initialReposted={post.repostedByMe}
+              postId={post.id}
+              repostSource={getPostRepostSource(post)}
+            />
           </div>
         </div>
       </div>
     </article>
   );
+}
+
+function ProfileRepostSourceCard({
+  depth = 0,
+  originalPost,
+  sourceState
+}: {
+  depth?: number;
+  originalPost: ProfilePost["originalPost"];
+  sourceState: ProfilePost["sourceState"];
+}) {
+  if (sourceState !== "visible" || !originalPost) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <p className="text-sm font-bold text-slate-400">原内容已删除</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("rounded-2xl border border-slate-200 bg-slate-50 p-4", depth > 0 ? "bg-white/70" : "")}>
+      <div className="flex items-start gap-3">
+        <a href={`/students/${originalPost.author.id}`}>
+          <ProfileAvatar user={originalPost.author} size="sm" />
+        </a>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <a className="font-black text-ink hover:text-teal" href={`/students/${originalPost.author.id}`}>{originalPost.author.nickname}</a>
+            <span className="text-xs font-semibold text-slate-400">
+              {[originalPost.author.province, originalPost.author.studySystem, originalPost.author.majorName].filter(Boolean).join(" · ") || "公开帖子"} · {formatDateTime(originalPost.createdAt)}
+            </span>
+          </div>
+          <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-600">{originalPost.content}</p>
+          {originalPost.type === "repost" ? (
+            <div className="mt-3 border-l-2 border-slate-200 pl-3">
+              <ProfileRepostSourceCard depth={depth + 1} originalPost={originalPost.originalPost} sourceState={originalPost.sourceState} />
+            </div>
+          ) : null}
+          <div className="mt-3">
+            <SocialPostActions
+              canLike={originalPost.canLike}
+              canRepost={originalPost.canRepost}
+              initialLikeCount={originalPost.likeCount}
+              initialLiked={originalPost.likedByMe}
+              initialRepostCount={originalPost.repostCount}
+              initialReposted={originalPost.repostedByMe}
+              postId={originalPost.id}
+              repostSource={getPostRepostSource(originalPost)}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function getPostRepostSource(post: {
+  author: { nickname: string; username: string };
+  canRepost: boolean;
+  content: string;
+  createdAt: Date;
+  originalPost?: { content: string } | null;
+}) {
+  return post.canRepost
+    ? {
+        authorName: post.author.nickname,
+        content: post.content || post.originalPost?.content || "",
+        createdAtLabel: formatDateTime(post.createdAt),
+        username: post.author.username
+      }
+    : undefined;
 }
 
 function ProfileAvatar({
@@ -199,6 +270,7 @@ function formatDateTime(date: Date) {
     hour: "2-digit",
     minute: "2-digit",
     month: "2-digit",
+    second: "2-digit",
     timeZone: "Asia/Shanghai",
     year: "numeric"
   });

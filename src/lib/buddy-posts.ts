@@ -30,12 +30,64 @@ type BuddyPostWithDetails = Prisma.BuddyPostGetPayload<{
         };
       };
     };
-    originalPost: { include: { author: { include: { studentProfile: true } } } };
-    likes: { select: { active: true } };
+    originalPost: {
+      include: {
+        author: {
+          include: {
+            studentProfile: {
+              include: {
+                major: true;
+                region: true;
+              };
+            };
+          };
+        };
+        likes: { select: { active: true; createdAt: true; updatedAt: true } };
+        reposts: { select: { id: true } };
+        _count: { select: { likes: true; reposts: true } };
+      };
+    };
+    likes: { select: { active: true; createdAt: true; updatedAt: true } };
     reposts: { select: { id: true } };
     _count: { select: { likes: true; reposts: true } };
   };
 }>;
+
+type BuddyPostSourceRecord = NonNullable<BuddyPostWithDetails["originalPost"]>;
+type BuddyPostSourceDto = {
+  id: string;
+  type: "original" | "repost";
+  content: string;
+  deletedAt: Date | null;
+  author: ReturnType<typeof toPostUser>;
+  createdAt: Date;
+  likeCount: number;
+  repostCount: number;
+  likedByMe: boolean;
+  repostedByMe: boolean;
+  canLike: boolean;
+  canRepost: boolean;
+  sourceState: "visible" | "deleted";
+  originalPost: BuddyPostSourceDto | null;
+};
+
+type BuddyPostDto = {
+  id: string;
+  type: "original" | "repost";
+  content: string;
+  createdAt: Date;
+  deletedAt: Date | null;
+  author: ReturnType<typeof toPostUser>;
+  likeCount: number;
+  repostCount: number;
+  likedByMe: boolean;
+  repostedByMe: boolean;
+  canLike: boolean;
+  canRepost: boolean;
+  canDelete: boolean;
+  sourceState: "visible" | "deleted";
+  originalPost: BuddyPostSourceDto | null;
+};
 
 export async function createBuddyPost(authorId: string, contentInput: string) {
   const content = normalizePostContent(contentInput);
@@ -113,7 +165,7 @@ export async function listBuddyFeed(userId: string, input?: BuddyFeedFilters) {
 export async function listProfileBuddyPosts(
   viewerId: string,
   targetId: string,
-  input?: { cursor?: string; limit?: number; tab?: ProfilePostTab }
+  input?: { cursor?: string; includeInteractions?: boolean; limit?: number; tab?: ProfilePostTab }
 ) {
   const limit = normalizeLimit(input?.limit);
   const tab = input?.tab || "posts";
@@ -125,7 +177,9 @@ export async function listProfileBuddyPosts(
     }
   };
 
-  if (tab === "likes") {
+  if (tab === "posts" && input?.includeInteractions) {
+    return listProfileInteractionPosts(viewerId, targetId, limit);
+  } else if (tab === "likes") {
     where.likes = { some: { userId: targetId, active: true } };
   } else {
     where.authorId = targetId;
@@ -151,6 +205,71 @@ export async function listProfileBuddyPosts(
     items,
     nextCursor: posts.length > limit ? posts[limit].id : null
   };
+}
+
+async function listProfileInteractionPosts(viewerId: string, targetId: string, limit: number) {
+  const visiblePostWhere: Prisma.BuddyPostWhereInput = {
+    deletedAt: null,
+    author: {
+      role: "student",
+      status: "active"
+    }
+  };
+  const [ownPosts, likedRows] = await Promise.all([
+    prisma.buddyPost.findMany({
+      where: {
+        ...visiblePostWhere,
+        authorId: targetId
+      },
+      include: postDetailsInclude(viewerId),
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit
+    }),
+    prisma.buddyPostLike.findMany({
+      where: {
+        userId: targetId,
+        active: true,
+        post: { is: visiblePostWhere }
+      },
+      include: {
+        post: { include: postDetailsInclude(viewerId) }
+      },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+      take: limit
+    })
+  ]);
+
+  const activityByPostId = new Map<string, { activityAt: number; post: BuddyPostWithDetails }>();
+  for (const post of ownPosts) {
+    activityByPostId.set(post.id, {
+      activityAt: post.createdAt.getTime(),
+      post
+    });
+  }
+  for (const row of likedRows) {
+    const activityAt = Math.max(row.updatedAt.getTime(), row.createdAt.getTime());
+    const existing = activityByPostId.get(row.post.id);
+    if (!existing || activityAt > existing.activityAt) {
+      activityByPostId.set(row.post.id, {
+        activityAt,
+        post: row.post
+      });
+    }
+  }
+
+  const sortedPosts = Array.from(activityByPostId.values()).sort((left, right) => {
+    if (right.activityAt !== left.activityAt) {
+      return right.activityAt - left.activityAt;
+    }
+    return right.post.createdAt.getTime() - left.post.createdAt.getTime();
+  });
+
+  const items = [];
+  for (const item of sortedPosts.slice(0, limit)) {
+    items.push(await toBuddyPostDto(item.post, viewerId));
+  }
+
+  return { items, nextCursor: null };
 }
 
 export async function likeBuddyPost(userId: string, postId: string) {
@@ -207,19 +326,17 @@ export async function repostBuddyPost(userId: string, originalPostId: string, co
   const original = await prisma.buddyPost.findFirst({
     where: {
       id: originalPostId,
-      type: "original",
       deletedAt: null,
       author: {
         role: "student",
         status: "active"
       }
     },
-    select: {
-      id: true,
-      authorId: true
+    include: {
+      originalPost: { select: { deletedAt: true } }
     }
   });
-  if (!original) {
+  if (!original || getPostSourceState(original) !== "visible") {
     throw new BuddyError("BUDDY_POST_REPOST_SOURCE_UNAVAILABLE", "原动态不可转帖。", 404);
   }
 
@@ -289,7 +406,7 @@ export async function unrepostBuddyPost(userId: string, originalPostId: string) 
   }
 }
 
-export async function toBuddyPostDto(post: BuddyPostWithDetails, viewerId: string) {
+export async function toBuddyPostDto(post: BuddyPostWithDetails, viewerId: string): Promise<BuddyPostDto> {
   const sourceState = getPostSourceState(post);
   const canInteract = !post.deletedAt && sourceState === "visible";
 
@@ -305,17 +422,50 @@ export async function toBuddyPostDto(post: BuddyPostWithDetails, viewerId: strin
     likedByMe: post.likes.some((like) => like.active),
     repostedByMe: post.reposts.length > 0,
     canLike: canInteract,
-    canRepost: canInteract && post.type === "original",
+    canRepost: canInteract,
     canDelete: post.authorId === viewerId,
     sourceState,
-    originalPost: post.originalPost
-      ? {
-          id: post.originalPost.id,
-          content: post.originalPost.content || "",
-          deletedAt: post.originalPost.deletedAt,
-          author: toPostUser(post.originalPost.author),
-          createdAt: post.originalPost.createdAt
-        }
+    originalPost: post.originalPost ? await toBuddyPostSourceDto(post.originalPost, viewerId, 2) : null
+  };
+}
+
+async function toBuddyPostSourceDto(
+  source: BuddyPostSourceRecord,
+  viewerId: string,
+  depth: number
+): Promise<BuddyPostSourceDto> {
+  const fullSource = source.type === "repost" && depth > 0
+    ? await prisma.buddyPost.findUnique({
+        where: { id: source.id },
+        include: postDetailsInclude(viewerId)
+      })
+    : null;
+  const visibleSource = fullSource || source;
+  const sourceState = visibleSource.deletedAt
+    ? "deleted"
+    : fullSource
+      ? getPostSourceState(fullSource)
+      : source.type === "original"
+        ? "visible"
+        : "deleted";
+  const canInteract = !visibleSource.deletedAt && sourceState === "visible";
+
+  return {
+    id: visibleSource.id,
+    type: visibleSource.type,
+    content: visibleSource.content || "",
+    deletedAt: visibleSource.deletedAt,
+    author: toPostUser(visibleSource.author),
+    createdAt: visibleSource.createdAt,
+    likeCount: visibleSource._count.likes,
+    repostCount: visibleSource._count.reposts,
+    likedByMe: visibleSource.likes.some((like) => like.active),
+    repostedByMe: visibleSource.reposts.length > 0,
+    canLike: canInteract,
+    canRepost: canInteract,
+    sourceState,
+    originalPost: fullSource?.originalPost && depth > 0
+      ? await toBuddyPostSourceDto(fullSource.originalPost, viewerId, depth - 1)
       : null
   };
 }
@@ -421,8 +571,29 @@ function postDetailsInclude(userId: string) {
         }
       }
     },
-    originalPost: { include: { author: { include: { studentProfile: true } } } },
-    likes: { where: { userId }, select: { active: true } },
+    originalPost: {
+      include: {
+        author: {
+          include: {
+            studentProfile: {
+              include: {
+                major: true,
+                region: true
+              }
+            }
+          }
+        },
+        likes: { where: { userId }, select: { active: true, createdAt: true, updatedAt: true } },
+        reposts: { where: { authorId: userId, deletedAt: null }, select: { id: true } },
+        _count: {
+          select: {
+            likes: { where: { active: true } },
+            reposts: { where: { deletedAt: null } }
+          }
+        }
+      }
+    },
+    likes: { where: { userId }, select: { active: true, createdAt: true, updatedAt: true } },
     reposts: { where: { authorId: userId, deletedAt: null }, select: { id: true } },
     _count: {
       select: {

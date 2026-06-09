@@ -5,6 +5,7 @@ import { getMedalLevel, getMedalRule } from "@/lib/rewards";
 
 export type SocialUserSearchResult = Awaited<ReturnType<typeof searchUsersByNickname>>["items"][number];
 export type SocialRecommendation = Awaited<ReturnType<typeof listRecommendedFollows>>["items"][number];
+export type BlockedUser = Awaited<ReturnType<typeof listBlockedUsers>>["items"][number];
 
 export async function getFollowingIds(userId: string) {
   const follows = await prisma.socialFollow.findMany({
@@ -167,6 +168,50 @@ export async function blockUser(blockerId: string, blockedId: string) {
 
     return block;
   });
+}
+
+export async function unblockUser(blockerId: string, blockedId: string) {
+  await prisma.socialBlock.deleteMany({
+    where: { blockerId, blockedId }
+  });
+}
+
+export async function listBlockedUsers(userId: string) {
+  const blocks = await prisma.socialBlock.findMany({
+    where: {
+      blockerId: userId,
+      blocked: {
+        role: "student"
+      }
+    },
+    include: {
+      blocked: {
+        include: {
+          studentProfile: {
+            include: {
+              region: true,
+              major: true
+            }
+          }
+        }
+      }
+    },
+    orderBy: { createdAt: "desc" }
+  });
+
+  return {
+    items: blocks.map((block) => ({
+      blockedAt: block.createdAt,
+      id: block.blocked.id,
+      username: block.blocked.username,
+      nickname: block.blocked.studentProfile?.nickname || block.blocked.username,
+      avatarImage: block.blocked.studentProfile?.avatarImage || "",
+      avatarColor: block.blocked.studentProfile?.avatarColor || "green",
+      province: block.blocked.studentProfile?.region?.province || null,
+      studySystem: block.blocked.studentProfile?.region?.studySystem || null,
+      majorName: block.blocked.studentProfile?.major?.name || null
+    }))
+  };
 }
 
 export async function searchUsersByNickname(viewerId: string, query: string, input?: { limit?: number }) {
