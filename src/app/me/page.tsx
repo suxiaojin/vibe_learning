@@ -10,6 +10,7 @@ import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { HomeProfileEditor } from "@/components/home-profile-editor";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
 import { SocialPostActions } from "@/components/social-post-actions";
+import { SocialPostAuthorHeader } from "@/components/social-post-author-header";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { requireUser } from "@/lib/auth";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
@@ -557,11 +558,7 @@ function HomePostCard({ post }: { post: ProfilePost }) {
         <Avatar name={post.author.nickname} color={post.author.avatarColor} image={post.author.avatarImage} size="sm" />
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
-              <a className="font-black text-ink hover:text-teal" href={`/students/${post.author.id}`}>{post.author.nickname}</a>
-              <span className="font-semibold text-slate-400">@{post.author.username}</span>
-              <span className="font-semibold text-slate-400">· {formatDateTime(post.createdAt)}</span>
-            </div>
+            <SocialPostAuthorHeader author={post.author} dateLabel={formatDateTime(post.createdAt)} />
             {post.canDelete ? (
               <form id={deleteFormId} action={deleteHomePost}>
                 <input name="postId" type="hidden" value={post.id} />
@@ -626,12 +623,7 @@ function HomeRepostSourceCard({
           <Avatar name={originalPost.author.nickname} color={originalPost.author.avatarColor} image={originalPost.author.avatarImage} size="sm" />
         </a>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <a className="font-black text-ink hover:text-teal" href={`/students/${originalPost.author.id}`}>{originalPost.author.nickname}</a>
-            <span className="text-xs font-semibold text-slate-400">
-              {[originalPost.author.province, originalPost.author.studySystem, originalPost.author.majorName].filter(Boolean).join(" · ") || "公开帖子"} · {formatDateTime(originalPost.createdAt)}
-            </span>
-          </div>
+          <SocialPostAuthorHeader author={originalPost.author} dateLabel={formatDateTime(originalPost.createdAt)} />
           <HomePostBody compact content={originalPost.content} sharePayload={originalPost.sharePayload} />
           {originalPost.type === "repost" ? (
             <div className="mt-3 border-l-2 border-slate-200 pl-3">

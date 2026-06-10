@@ -3,6 +3,7 @@ import type { BuddyShareCard, BuddyShareType } from "@/lib/buddy-share-cards";
 import { normalizeBuddyShareInput } from "@/lib/buddy-share-cards";
 import { BuddyError } from "@/lib/buddies";
 import { prisma } from "@/lib/prisma";
+import { getMedalLevel, getMedalRule } from "@/lib/rewards";
 import { getBlockedUserIds, getFollowingIds } from "@/lib/social";
 import { createUserEventNotification } from "@/lib/user-event-notifications";
 
@@ -30,6 +31,7 @@ type BuddyPostWithDetails = Prisma.BuddyPostGetPayload<{
             region: true;
           };
         };
+        _count: { select: { attempts: true } };
       };
     };
     originalPost: {
@@ -42,6 +44,7 @@ type BuddyPostWithDetails = Prisma.BuddyPostGetPayload<{
                 region: true;
               };
             };
+            _count: { select: { attempts: true } };
           };
         };
         likes: { select: { active: true; createdAt: true; updatedAt: true } };
@@ -584,7 +587,8 @@ function postDetailsInclude(userId: string) {
             major: true,
             region: true
           }
-        }
+        },
+        _count: { select: { attempts: true } }
       }
     },
     originalPost: {
@@ -596,7 +600,8 @@ function postDetailsInclude(userId: string) {
                 major: true,
                 region: true
               }
-            }
+            },
+            _count: { select: { attempts: true } }
           }
         },
         likes: { where: { userId }, select: { active: true, createdAt: true, updatedAt: true } },
@@ -623,23 +628,31 @@ function postDetailsInclude(userId: string) {
 function toPostUser(user: {
   id: string;
   username: string;
+  _count: { attempts: number };
   studentProfile?: {
     avatarColor: string | null;
     avatarImage: string | null;
     bio?: string | null;
+    gender: "male" | "female" | null;
     major?: { name: string } | null;
     nickname: string | null;
     region?: { province: string; studySystem: string } | null;
   } | null;
 }) {
+  const medalLevel = getMedalLevel(user._count.attempts);
+  const medalRule = getMedalRule(medalLevel);
+
   return {
     id: user.id,
     username: user.username,
     nickname: user.studentProfile?.nickname || user.username,
     avatarImage: user.studentProfile?.avatarImage || "",
     avatarColor: user.studentProfile?.avatarColor || "green",
+    gender: user.studentProfile?.gender || null,
     province: user.studentProfile?.region?.province || null,
     studySystem: user.studentProfile?.region?.studySystem || null,
-    majorName: user.studentProfile?.major?.name || null
+    majorName: user.studentProfile?.major?.name || null,
+    medalLevel,
+    medalLabel: medalRule.label
   };
 }

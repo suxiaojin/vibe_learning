@@ -2,6 +2,7 @@
 
 import { Heart, Repeat2, X } from "lucide-react";
 import { useState } from "react";
+import { notifyBuddyPostSent } from "@/components/post-success-toast";
 import { cn } from "@/lib/utils";
 
 export function SocialPostActions({
@@ -79,6 +80,7 @@ export function SocialPostActions({
       setReposted(true);
       setRepostContent("");
       setRepostOpen(false);
+      notifyBuddyPostSent();
     } catch {
       setReposted(reposted);
       setRepostCount(repostCount);

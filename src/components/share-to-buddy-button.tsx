@@ -3,6 +3,7 @@
 import { CheckCircle2, Loader2, Send, Share2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { BuddyShareCardView } from "@/components/buddy-share-card";
+import { notifyBuddyPostSent } from "@/components/post-success-toast";
 import type { ShareCopyContext } from "@prisma/client";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import { cn } from "@/lib/utils";
@@ -108,10 +109,9 @@ export function ShareToBuddyButton({
     if (style.phrases.length === 0) {
       return;
     }
-    const previousIndex = phraseIndexes[style.id] ?? -1;
-    const nextIndex = style.phrases.length === 1
-      ? 0
-      : pickNextPhraseIndex(previousIndex, style.phrases.length);
+    const currentIndex = getStylePhraseIndex(style, draft, phraseIndexes);
+    const isCurrentStyle = style.phrases.some((phrase) => phrase.content === draft);
+    const nextIndex = isCurrentStyle ? (currentIndex + 1) % style.phrases.length : currentIndex;
     setPhraseIndexes((current) => ({ ...current, [style.id]: nextIndex }));
     setDraft(style.phrases[nextIndex]?.content || defaultContent);
   }
@@ -136,6 +136,7 @@ export function ShareToBuddyButton({
       }
       setShared(true);
       setOpen(false);
+      notifyBuddyPostSent();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "发布失败，请稍后再试。");
     } finally {
@@ -198,21 +199,24 @@ export function ShareToBuddyButton({
             {styleOptions.length > 0 ? (
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <span className="text-xs font-black text-slate-400">换一句</span>
-                {styleOptions.map((style) => (
-                  <button
-                    key={style.id}
-                    className={cn(
-                      "min-h-8 rounded-full border px-3 text-xs font-black transition",
-                      style.phrases.some((phrase) => phrase.content === draft)
-                        ? "border-teal bg-teal/10 text-teal"
-                        : "border-slate-200 bg-white text-slate-500 hover:border-teal/40 hover:text-teal"
-                    )}
-                    type="button"
-                    onClick={() => applyStyle(style)}
-                  >
-                    {style.label}
-                  </button>
-                ))}
+                {styleOptions.map((style) => {
+                  const phraseIndex = getStylePhraseIndex(style, draft, phraseIndexes);
+                  return (
+                    <button
+                      key={style.id}
+                      className={cn(
+                        "min-h-8 rounded-full border px-3 text-xs font-black transition",
+                        style.phrases.some((phrase) => phrase.content === draft)
+                          ? "border-teal bg-teal/10 text-teal"
+                          : "border-slate-200 bg-white text-slate-500 hover:border-teal/40 hover:text-teal"
+                      )}
+                      type="button"
+                      onClick={() => applyStyle(style)}
+                    >
+                      {style.label}（{phraseIndex + 1}/{style.phrases.length}）
+                    </button>
+                  );
+                })}
               </div>
             ) : null}
             {shareCard ? (
@@ -231,10 +235,10 @@ export function ShareToBuddyButton({
   );
 }
 
-function pickNextPhraseIndex(previousIndex: number, phraseCount: number) {
-  let nextIndex = Math.floor(Math.random() * phraseCount);
-  if (nextIndex === previousIndex) {
-    nextIndex = (nextIndex + 1) % phraseCount;
+function getStylePhraseIndex(style: ShareCopyStyle, draft: string, phraseIndexes: Record<string, number>) {
+  const draftIndex = style.phrases.findIndex((phrase) => phrase.content === draft);
+  if (draftIndex >= 0) {
+    return draftIndex;
   }
-  return nextIndex;
+  return Math.min(phraseIndexes[style.id] ?? 0, Math.max(0, style.phrases.length - 1));
 }

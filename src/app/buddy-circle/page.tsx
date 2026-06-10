@@ -6,7 +6,9 @@ import { BuddyFeedLoadMore } from "@/components/buddy-feed-load-more";
 import { BuddyShareCardView } from "@/components/buddy-share-card";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { DismissibleDetails } from "@/components/dismissible-details";
+import { PostSuccessNoticeTrigger } from "@/components/post-success-toast";
 import { SocialPostActions } from "@/components/social-post-actions";
+import { SocialPostAuthorHeader } from "@/components/social-post-author-header";
 import { StudentSidebar } from "@/components/student-sidebar";
 import {
   createBuddyPost,
@@ -32,6 +34,7 @@ type BuddyFeedItem = Awaited<ReturnType<typeof listBuddyFeed>>["items"][number];
 type CircleSearchParams = {
   error?: string;
   majorId?: string;
+  notice?: string;
   province?: string;
   q?: string;
   sort?: string;
@@ -98,6 +101,7 @@ export default async function BuddyCirclePage({
 
   return (
     <main className="min-h-dvh bg-mist/60 lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
+      <PostSuccessNoticeTrigger active={params?.notice === "post-sent"} />
       <StudentSidebar active="buddy-circle" />
 
       <section className="min-w-0 px-5 py-8 lg:px-8">
@@ -408,14 +412,7 @@ function BuddyPostCard({ post, returnTo, scope }: { post: BuddyFeedItem; returnT
         </a>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <a className="font-black text-ink hover:text-teal" href={`/students/${post.author.id}`}>
-                {post.author.nickname}
-              </a>
-              <p className="mt-0.5 text-xs font-semibold text-slate-400">
-                {[post.author.province, post.author.studySystem, post.author.majorName].filter(Boolean).join(" · ") || "公开帖子"} · {formatDateTime(post.createdAt)}
-              </p>
-            </div>
+            <SocialPostAuthorHeader author={post.author} dateLabel={formatDateTime(post.createdAt)} />
             <PostMoreMenu post={post} returnTo={returnTo} scope={scope} />
           </div>
 
@@ -470,12 +467,7 @@ function RepostSourceCard({
           <ProfileAvatar user={originalPost.author} />
         </a>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <a className="font-black text-ink hover:text-teal" href={`/students/${originalPost.author.id}`}>{originalPost.author.nickname}</a>
-            <span className="text-xs font-semibold text-slate-400">
-              {[originalPost.author.province, originalPost.author.studySystem, originalPost.author.majorName].filter(Boolean).join(" · ") || "公开帖子"} · {formatDateTime(originalPost.createdAt)}
-            </span>
-          </div>
+          <SocialPostAuthorHeader author={originalPost.author} dateLabel={formatDateTime(originalPost.createdAt)} />
           <PostBody compact content={originalPost.content} sharePayload={originalPost.sharePayload} />
           {originalPost.type === "repost" ? (
             <div className="mt-3 border-l-2 border-slate-200 pl-3">
@@ -681,7 +673,7 @@ async function publishPost(formData: FormData) {
   }
   revalidatePath("/buddy-circle");
   revalidatePath("/me");
-  redirect(getReturnTo(formData));
+  redirect(withPostSentNotice(getReturnTo(formData)));
 }
 
 async function deletePost(formData: FormData) {
@@ -788,6 +780,12 @@ async function blockFromCircle(formData: FormData) {
 function getReturnTo(formData: FormData) {
   const returnTo = String(formData.get("returnTo") || "/buddy-circle");
   return returnTo.startsWith("/buddy-circle") ? returnTo : "/buddy-circle";
+}
+
+function withPostSentNotice(returnTo: string) {
+  const url = new URL(`http://local${returnTo}`);
+  url.searchParams.set("notice", "post-sent");
+  return `${url.pathname}${url.search}`;
 }
 
 function redirectWithError(formData: FormData, error: unknown): never {

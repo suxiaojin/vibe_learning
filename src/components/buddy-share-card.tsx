@@ -11,6 +11,9 @@ const heatmapLevelClasses = [
   "border-emerald-700 bg-emerald-700"
 ];
 
+const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const weekdayLabels = ["", "Mon", "", "Wed", "", "Fri", ""];
+
 export function BuddyShareCardView({ card, compact = false }: { card?: BuddyShareCard | null; compact?: boolean }) {
   if (!card) {
     return null;
@@ -89,25 +92,52 @@ function ActiveLearningShareCard({ card, compact }: { card: Extract<BuddyShareCa
         <Metric label={card.nextLabel ? `距离${card.nextLabel}` : "勋章进度"} value={card.nextLabel ? `${card.remaining} 道` : "最高勋章"} />
       </div>
       <div className="overflow-x-auto px-4 pb-4">
-        <div className="flex min-w-max gap-1">
-          {card.weeks.map((week, weekIndex) => (
-            <div key={weekIndex} className="grid grid-rows-7 gap-1">
-              {week.map((day, dayIndex) => (
-                <span
-                  key={`${day.key}-${weekIndex}-${dayIndex}`}
-                  className={cn(
-                    "block size-3 rounded-[3px] border",
-                    day.future ? "border-transparent bg-transparent" : heatmapLevelClasses[day.level] || heatmapLevelClasses[0]
-                  )}
-                  title={day.key ? `${day.key}：${day.count} 道` : undefined}
-                />
-              ))}
-            </div>
-          ))}
+        <div className="grid min-w-max grid-cols-[2rem_auto] gap-x-2 gap-y-1">
+          <span aria-hidden="true" />
+          <div className="flex h-4 gap-1 text-[10px] font-bold text-slate-400">
+            {card.weeks.map((week, weekIndex) => (
+              <span key={weekIndex} className="relative block size-3">
+                {getMonthLabel(week, weekIndex) ? <span className="absolute left-0 top-0">{getMonthLabel(week, weekIndex)}</span> : null}
+              </span>
+            ))}
+          </div>
+          <div className="grid grid-rows-7 gap-1 text-right text-[10px] font-bold leading-3 text-slate-400">
+            {weekdayLabels.map((label, index) => <span key={index}>{label}</span>)}
+          </div>
+          <div className="flex gap-1">
+            {card.weeks.map((week, weekIndex) => (
+              <div key={weekIndex} className="grid grid-rows-7 gap-1">
+                {week.map((day, dayIndex) => (
+                  <span
+                    key={`${day.key}-${weekIndex}-${dayIndex}`}
+                    className={cn(
+                      "block size-3 rounded-[3px] border",
+                      day.future ? "border-transparent bg-transparent" : heatmapLevelClasses[day.level] || heatmapLevelClasses[0]
+                    )}
+                    title={day.key ? `${day.key}：${day.count} 道` : undefined}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
   );
+}
+
+function getMonthLabel(
+  week: Extract<BuddyShareCard, { type: "active_learning_card" }>["weeks"][number],
+  weekIndex: number
+) {
+  const labeledDay = week.find((day) => day.key && new Date(`${day.key}T00:00:00Z`).getUTCDate() === 1)
+    || (weekIndex === 0 ? week.find((day) => day.key) : undefined);
+
+  if (!labeledDay?.key) {
+    return "";
+  }
+
+  return monthLabels[new Date(`${labeledDay.key}T00:00:00Z`).getUTCMonth()] || "";
 }
 
 function AnswerBox({ label, tone, value }: { label: string; tone: "danger" | "success" | "teal"; value: string }) {

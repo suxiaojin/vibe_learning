@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { BuddyShareCardView } from "@/components/buddy-share-card";
 import { SocialPostActions } from "@/components/social-post-actions";
+import { SocialPostAuthorHeader } from "@/components/social-post-author-header";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { listProfileBuddyPosts } from "@/lib/buddy-posts";
 import { formatBuddyError } from "@/lib/buddies";
@@ -137,11 +138,7 @@ function ProfilePostCard({ post }: { post: ProfilePost }) {
       <div className="flex items-start gap-3">
         <ProfileAvatar user={post.author} size="sm" />
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <a className="font-black text-ink hover:text-teal" href={`/students/${post.author.id}`}>{post.author.nickname}</a>
-            <span className="font-semibold text-slate-400">@{post.author.username}</span>
-            <span className="font-semibold text-slate-400">· {formatDateTime(post.createdAt)}</span>
-          </div>
+          <SocialPostAuthorHeader author={post.author} dateLabel={formatDateTime(post.createdAt)} />
           {post.type === "original" ? (
             <ProfilePostBody content={post.content} sharePayload={post.sharePayload} />
           ) : (
@@ -192,12 +189,7 @@ function ProfileRepostSourceCard({
           <ProfileAvatar user={originalPost.author} size="sm" />
         </a>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <a className="font-black text-ink hover:text-teal" href={`/students/${originalPost.author.id}`}>{originalPost.author.nickname}</a>
-            <span className="text-xs font-semibold text-slate-400">
-              {[originalPost.author.province, originalPost.author.studySystem, originalPost.author.majorName].filter(Boolean).join(" · ") || "公开帖子"} · {formatDateTime(originalPost.createdAt)}
-            </span>
-          </div>
+          <SocialPostAuthorHeader author={originalPost.author} dateLabel={formatDateTime(originalPost.createdAt)} />
           <ProfilePostBody compact content={originalPost.content} sharePayload={originalPost.sharePayload} />
           {originalPost.type === "repost" ? (
             <div className="mt-3 border-l-2 border-slate-200 pl-3">

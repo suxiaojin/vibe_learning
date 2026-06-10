@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { BuddyShareCardView } from "@/components/buddy-share-card";
 import { DismissibleDetails } from "@/components/dismissible-details";
 import { SocialPostActions } from "@/components/social-post-actions";
+import { SocialPostAuthorHeader } from "@/components/social-post-author-header";
 import type { BuddyShareCard, BuddyShareType } from "@/lib/buddy-share-cards";
 import { cn } from "@/lib/utils";
 
@@ -18,9 +19,12 @@ type FeedUser = {
   nickname: string;
   avatarImage?: string;
   avatarColor?: string;
+  gender?: "male" | "female" | null;
   province?: string | null;
   studySystem?: string | null;
   majorName?: string | null;
+  medalLevel: "novice" | "expert" | "scholar";
+  medalLabel: string;
 };
 
 type FeedPostSource = {
@@ -200,14 +204,7 @@ function ClientBuddyPostCard({
         </a>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <a className="font-black text-ink hover:text-teal" href={`/students/${post.author.id}`}>
-                {post.author.nickname}
-              </a>
-              <p className="mt-0.5 text-xs font-semibold text-slate-400">
-                {[post.author.province, post.author.studySystem, post.author.majorName].filter(Boolean).join(" - ") || "公开帖子"} - {formatDateTime(post.createdAt)}
-              </p>
-            </div>
+            <SocialPostAuthorHeader author={post.author} dateLabel={formatDateTime(post.createdAt)} />
             <ClientPostMoreMenu onHidden={onHidden} post={post} scope={scope} />
           </div>
 
@@ -262,14 +259,7 @@ function ClientRepostSourceCard({
           <ProfileAvatar user={originalPost.author} />
         </a>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <a className="font-black text-ink hover:text-teal" href={`/students/${originalPost.author.id}`}>
-              {originalPost.author.nickname}
-            </a>
-            <span className="text-xs font-semibold text-slate-400">
-              {[originalPost.author.province, originalPost.author.studySystem, originalPost.author.majorName].filter(Boolean).join(" - ") || "公开帖子"} - {formatDateTime(originalPost.createdAt)}
-            </span>
-          </div>
+          <SocialPostAuthorHeader author={originalPost.author} dateLabel={formatDateTime(originalPost.createdAt)} />
           <PostBody compact content={originalPost.content} sharePayload={originalPost.sharePayload} />
           {originalPost.type === "repost" ? (
             <div className="mt-3 border-l-2 border-slate-200 pl-3">
