@@ -142,7 +142,9 @@ export function QuizRunner({
   }, [currentIndex, initialTotal, sectionId]);
 
   const selected = current ? answers[current.id] || [] : [];
-  const progressPercent = totalQuestions ? Math.round((currentIndex / totalQuestions) * 100) : 0;
+  const progressPercent = totalQuestions
+    ? Math.max(0, Math.min(100, Math.round((correctCount / totalQuestions) * 100)))
+    : 0;
   const canCheck = Boolean(current && selected.length > 0 && checkState === "idle" && !checking && !questionLoading);
   const isLast = currentIndex >= totalQuestions - 1;
 
