@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { BuddyError } from "@/lib/buddies";
 import { prisma } from "@/lib/prisma";
 import { getMedalLevel, getMedalRule } from "@/lib/rewards";
+import { createUserEventNotification } from "@/lib/user-event-notifications";
 
 export type SocialUserSearchResult = Awaited<ReturnType<typeof searchUsersByNickname>>["items"][number];
 export type SocialRecommendation = Awaited<ReturnType<typeof listRecommendedFollows>>["items"][number];
@@ -115,11 +116,20 @@ export async function followUser(followerId: string, followingId: string) {
   }
 
   try {
-    return await prisma.socialFollow.create({
-      data: {
-        followerId,
-        followingId
-      }
+    return await prisma.$transaction(async (tx) => {
+      const follow = await tx.socialFollow.create({
+        data: {
+          followerId,
+          followingId
+        }
+      });
+      await createUserEventNotification(tx, {
+        recipientId: followingId,
+        actorId: followerId,
+        type: "social_followed",
+        dedupeKey: `social-follow:${follow.id}`
+      });
+      return follow;
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {

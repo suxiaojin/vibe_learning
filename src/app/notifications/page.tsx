@@ -4,6 +4,7 @@ import {
   Bell,
   BellRing,
   CheckCheck,
+  ChevronRight,
   Heart,
   Inbox,
   ListChecks,
@@ -15,12 +16,12 @@ import {
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { NotificationBulkToolbar } from "@/components/notification-bulk-toolbar";
+import { NotificationKeyboardNavigation } from "@/components/notification-keyboard-navigation";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { requireUser } from "@/lib/auth";
 import { acceptBuddyRequest, formatBuddyError, rejectBuddyRequest } from "@/lib/buddies";
 import { prisma } from "@/lib/prisma";
 import {
-  escapeHtml,
   getUserEventNotificationText,
   getUserEventNotificationTitle
 } from "@/lib/user-event-notifications";
@@ -39,7 +40,15 @@ type SystemReceipt = {
 type BuddyNotification = {
   id: string;
   type: Parameters<typeof getUserEventNotificationTitle>[0];
+  actorId: string | null;
   actorNicknameSnapshot: string;
+  actor: {
+    studentProfile: {
+      avatarColor: string;
+      avatarImage: string | null;
+    } | null;
+  } | null;
+  postId: string | null;
   createdAt: Date;
   readAt: Date | null;
   request: {
@@ -48,6 +57,18 @@ type BuddyNotification = {
     recipientId: string;
     status: string;
     expiresAt: Date;
+  } | null;
+  post: {
+    id: string;
+    authorId: string;
+    content: string | null;
+    deletedAt: Date | null;
+    originalPost: {
+      id: string;
+      authorId: string;
+      content: string | null;
+      deletedAt: Date | null;
+    } | null;
   } | null;
 };
 
@@ -150,7 +171,32 @@ export default async function NotificationsPage({
   const notifications = await prisma.userEventNotification.findMany({
     where: { recipientId: user.id },
     orderBy: { createdAt: "desc" },
-    include: { request: true },
+    include: {
+      actor: {
+        select: {
+          studentProfile: {
+            select: { avatarColor: true, avatarImage: true }
+          }
+        }
+      },
+      request: true,
+      post: {
+        select: {
+          id: true,
+          authorId: true,
+          content: true,
+          deletedAt: true,
+          originalPost: {
+            select: {
+              id: true,
+              authorId: true,
+              content: true,
+              deletedAt: true
+            }
+          }
+        }
+      }
+    },
     skip: (currentPage - 1) * pageSize,
     take: pageSize
   });
@@ -164,8 +210,9 @@ export default async function NotificationsPage({
       detail={selectedNotification ? (
         <NotificationDetailPanel
           actions={<BuddyNotificationActions notification={selectedNotification} userId={user.id} />}
-          contentHtml={escapeHtml(getUserEventNotificationText(selectedNotification))}
+          content={<BuddyNotificationContent notification={selectedNotification} />}
           icon={buddyNotificationIcon(selectedNotification.type, 22)}
+          iconClassName={buddyNotificationIconClass(selectedNotification.type)}
           sentAt={selectedNotification.createdAt}
           title={getUserEventNotificationTitle(selectedNotification.type)}
         />
@@ -336,26 +383,29 @@ function SystemNotificationsList({
         <input name="tab" type="hidden" value="system" />
       </form>
       {manageMode ? <NotificationBulkToolbar formId={deleteFormId} itemCount={receipts.length} /> : null}
-      <div className="min-h-0 flex-1">
-        {receipts.length === 0 ? (
-          <EmptyList label="暂无系统消息" />
-        ) : receipts.map((receipt) => (
-          <NotificationListItem
-            key={receipt.id}
-            checkboxLabel={`选择消息：${receipt.notification.title}`}
-            checkboxValue={receipt.id}
-            formId={deleteFormId}
-            href={`/notifications?tab=system&page=${currentPage}&notificationId=${receipt.id}`}
-            icon={<BellRing size={19} />}
-            iconClassName="bg-sky-50 text-sky-600"
-            manageMode={manageMode}
-            selected={selectedId === receipt.id}
-            time={formatCompactDate(receipt.notification.sentAt || receipt.deliveredAt)}
-            title={receipt.notification.title}
-            unread={!receipt.readAt}
-          />
-        ))}
-      </div>
+      <NotificationKeyboardNavigation disabled={manageMode}>
+        <div className="min-h-0 flex-1">
+          {receipts.length === 0 ? (
+            <EmptyList label="暂无系统消息" />
+          ) : receipts.map((receipt) => (
+            <NotificationListItem
+              key={receipt.id}
+              checkboxLabel={`选择消息：${receipt.notification.title}`}
+              checkboxValue={receipt.id}
+              formId={deleteFormId}
+              href={`/notifications?tab=system&page=${currentPage}&notificationId=${receipt.id}`}
+              icon={<BellRing size={19} />}
+              iconClassName="bg-sky-50 text-sky-600"
+              manageMode={manageMode}
+              summary={truncateText(stripHtml(receipt.notification.contentHtml), 20)}
+              selected={selectedId === receipt.id}
+              time={formatCompactDate(receipt.notification.sentAt || receipt.deliveredAt)}
+              title={receipt.notification.title}
+              unread={!receipt.readAt}
+            />
+          ))}
+        </div>
+      </NotificationKeyboardNavigation>
       <NotificationPagination currentPage={currentPage} manageMode={manageMode} tab="system" totalPages={totalPages} />
     </div>
   );
@@ -383,27 +433,30 @@ function BuddyNotificationsList({
         <input name="tab" type="hidden" value="buddies" />
       </form>
       {manageMode ? <NotificationBulkToolbar formId={deleteFormId} itemCount={notifications.length} /> : null}
-      <div className="min-h-0 flex-1">
-        {notifications.length === 0 ? (
-          <EmptyList label="暂无互动消息" />
-        ) : notifications.map((notification) => (
-          <NotificationListItem
-            key={notification.id}
-            checkboxLabel={`选择消息：${getUserEventNotificationTitle(notification.type)}`}
-            checkboxValue={notification.id}
-            formId={deleteFormId}
-            href={`/notifications?tab=buddies&page=${currentPage}&notificationId=${notification.id}`}
-            icon={buddyNotificationIcon(notification.type, 19)}
-            iconClassName={buddyNotificationIconClass(notification.type)}
-            manageMode={manageMode}
-            meta={notification.request ? requestStatusText(notification.request.status, notification.request.expiresAt) : undefined}
-            selected={selectedId === notification.id}
-            time={formatCompactDate(notification.createdAt)}
-            title={getUserEventNotificationTitle(notification.type)}
-            unread={!notification.readAt}
-          />
-        ))}
-      </div>
+      <NotificationKeyboardNavigation disabled={manageMode}>
+        <div className="min-h-0 flex-1">
+          {notifications.length === 0 ? (
+            <EmptyList label="暂无互动消息" />
+          ) : notifications.map((notification) => (
+            <NotificationListItem
+              key={notification.id}
+              checkboxLabel={`选择消息：${getUserEventNotificationTitle(notification.type)}`}
+              checkboxValue={notification.id}
+              formId={deleteFormId}
+              href={`/notifications?tab=buddies&page=${currentPage}&notificationId=${notification.id}`}
+              icon={buddyNotificationIcon(notification.type, 19)}
+              iconClassName={buddyNotificationIconClass(notification.type)}
+              manageMode={manageMode}
+              meta={notification.request ? requestStatusText(notification.request.status, notification.request.expiresAt) : undefined}
+              summary={truncateText(getBuddyNotificationSummary(notification), 20)}
+              selected={selectedId === notification.id}
+              time={formatCompactDate(notification.createdAt)}
+              title={getUserEventNotificationTitle(notification.type)}
+              unread={!notification.readAt}
+            />
+          ))}
+        </div>
+      </NotificationKeyboardNavigation>
       <NotificationPagination currentPage={currentPage} manageMode={manageMode} tab="buddies" totalPages={totalPages} />
     </div>
   );
@@ -418,6 +471,7 @@ function NotificationListItem({
   iconClassName,
   manageMode,
   meta,
+  summary,
   selected,
   time,
   title,
@@ -431,6 +485,7 @@ function NotificationListItem({
   iconClassName: string;
   manageMode: boolean;
   meta?: string;
+  summary?: string;
   selected: boolean;
   time: string;
   title: string;
@@ -444,7 +499,8 @@ function NotificationListItem({
           <p className={cn("truncate text-sm text-ink", unread ? "font-black" : "font-bold")}>{title}</p>
         </div>
         <time className="shrink-0 text-xs font-semibold tabular-nums text-slate-400">{time}</time>
-        </div>
+      </div>
+      {summary ? <p className="mt-1 truncate text-xs font-semibold leading-5 text-slate-500">{summary}</p> : null}
       {meta ? <p className="mt-2 text-xs font-bold text-sky-600">{meta}</p> : null}
     </div>
   );
@@ -470,7 +526,13 @@ function NotificationListItem({
           <span className={cn("grid size-10 shrink-0 place-items-center rounded-lg", iconClassName)}>{icon}</span>
         )}
         {manageMode ? content : (
-          <Link className="min-w-0 flex-1 outline-none focus-visible:ring-2 focus-visible:ring-teal/20" href={href}>
+          <Link
+            aria-keyshortcuts="ArrowUp ArrowDown"
+            className="min-w-0 flex-1 outline-none focus-visible:ring-2 focus-visible:ring-teal/20"
+            data-notification-item
+            data-selected={selected ? "true" : "false"}
+            href={href}
+          >
             {content}
           </Link>
         )}
@@ -481,18 +543,22 @@ function NotificationListItem({
 
 function NotificationDetailPanel({
   actions,
+  content,
   contentHtml,
   icon,
+  iconClassName,
   sentAt,
   title
 }: {
   actions?: ReactNode;
+  content?: ReactNode;
   contentHtml?: string;
   icon?: ReactNode;
+  iconClassName?: string;
   sentAt?: Date;
   title?: string;
 }) {
-  if (!title || !contentHtml || !sentAt) {
+  if (!title || (!content && !contentHtml) || !sentAt) {
     return (
       <div className="grid min-h-[620px] place-items-center px-8 text-center">
         <div>
@@ -508,7 +574,7 @@ function NotificationDetailPanel({
     <div className="min-h-[620px]">
       <header className="border-b border-slate-200 px-8 py-7">
         <div className="flex items-start gap-4">
-          <span className="grid size-11 shrink-0 place-items-center rounded-lg bg-sky-50 text-sky-600">{icon}</span>
+          <span className={cn("grid size-11 shrink-0 place-items-center rounded-lg", iconClassName || "bg-sky-50 text-sky-600")}>{icon}</span>
           <div className="min-w-0">
             <h2 className="break-words text-2xl font-black leading-9 text-ink">{title}</h2>
             <time className="mt-2 block text-sm font-semibold tabular-nums text-slate-400" dateTime={sentAt.toISOString()}>
@@ -518,11 +584,204 @@ function NotificationDetailPanel({
         </div>
       </header>
       <div className="px-8 py-8">
-        <div
-          className="notification-rich-text max-w-none break-words text-base leading-8 text-slate-700 [&_a]:font-semibold [&_a]:text-teal [&_blockquote]:border-l-4 [&_blockquote]:border-slate-300 [&_blockquote]:pl-4 [&_h1]:text-2xl [&_h1]:font-black [&_h2]:text-xl [&_h2]:font-black [&_h3]:text-lg [&_h3]:font-bold [&_img]:my-4 [&_img]:h-auto [&_img]:max-w-full [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-2 [&_ul]:list-disc"
-          dangerouslySetInnerHTML={{ __html: contentHtml }}
-        />
+        {content || (
+          <div
+            className="notification-rich-text max-w-none break-words text-base leading-8 text-slate-700 [&_a]:font-semibold [&_a]:text-teal [&_blockquote]:border-l-4 [&_blockquote]:border-slate-300 [&_blockquote]:pl-4 [&_h1]:text-2xl [&_h1]:font-black [&_h2]:text-xl [&_h2]:font-black [&_h3]:text-lg [&_h3]:font-bold [&_img]:my-4 [&_img]:h-auto [&_img]:max-w-full [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-2 [&_ul]:list-disc"
+            dangerouslySetInnerHTML={{ __html: contentHtml || "" }}
+          />
+        )}
         {actions ? <div className="mt-8 border-t border-slate-200 pt-6">{actions}</div> : null}
+      </div>
+    </div>
+  );
+}
+
+function BuddyNotificationContent({ notification }: { notification: BuddyNotification }) {
+  const actorLabel = `@${notification.actorNicknameSnapshot || "对方"}`;
+  const actorProfile = notification.actor?.studentProfile;
+
+  if (notification.type === "buddy_post_liked") {
+    return (
+      <div className="text-base leading-8 text-slate-700">
+        <BuddyActorLine
+          action="点赞了你的动态"
+          actorId={notification.actorId}
+          avatarColor={actorProfile?.avatarColor}
+          avatarImage={actorProfile?.avatarImage}
+          label={actorLabel}
+        />
+        <PostPreviewCard
+          content={notification.post?.content}
+          href={notification.post && !notification.post.deletedAt ? `/me?tab=homepage#post-${notification.post.id}` : undefined}
+        />
+      </div>
+    );
+  }
+
+  if (notification.type === "buddy_post_reposted") {
+    const repost = notification.post;
+    const originalPost = repost?.originalPost;
+    return (
+      <div className="text-base leading-8 text-slate-700">
+        <BuddyActorLine
+          action="转帖了你的动态"
+          actorId={notification.actorId}
+          avatarColor={actorProfile?.avatarColor}
+          avatarImage={actorProfile?.avatarImage}
+          label={actorLabel}
+        />
+        <RepostPreviewCard
+          actorLabel={actorLabel}
+          avatarColor={actorProfile?.avatarColor}
+          avatarImage={actorProfile?.avatarImage}
+          originalContent={originalPost?.content}
+          originalHref={originalPost && !originalPost.deletedAt ? `/me?tab=homepage#post-${originalPost.id}` : undefined}
+          repostContent={repost?.content}
+          repostHref={repost && !repost.deletedAt && notification.actorId ? `/students/${notification.actorId}#post-${repost.id}` : undefined}
+        />
+      </div>
+    );
+  }
+
+  const actionText: Record<BuddyNotification["type"], string> = {
+    buddy_request_received: "正在添加你为搭子",
+    buddy_request_accepted: "已接受你的搭子申请",
+    buddy_request_rejected: "拒绝成为你的搭子",
+    buddy_post_liked: "点赞了你的动态",
+    buddy_post_reposted: "转帖了你的动态",
+    social_followed: "关注了你"
+  };
+  return (
+    <BuddyActorLine
+      action={actionText[notification.type]}
+      actorId={notification.actorId}
+      avatarColor={actorProfile?.avatarColor}
+      avatarImage={actorProfile?.avatarImage}
+      label={actorLabel}
+    />
+  );
+}
+
+function BuddyActorLine({
+  action,
+  actorId,
+  avatarColor,
+  avatarImage,
+  label
+}: {
+  action: string;
+  actorId: string | null;
+  avatarColor?: string;
+  avatarImage?: string | null;
+  label: string;
+}) {
+  const avatar = <NotificationActorAvatar avatarColor={avatarColor} avatarImage={avatarImage} label={label} size="md" />;
+  return (
+    <div className="flex items-center gap-3">
+      {actorId ? <Link href={`/students/${actorId}`}>{avatar}</Link> : avatar}
+      <p className="min-w-0">
+        {actorId ? (
+          <Link className="font-black text-teal hover:underline" href={`/students/${actorId}`}>{label}</Link>
+        ) : <span className="font-black text-slate-700">{label}</span>}
+        <span> {action}</span>
+      </p>
+    </div>
+  );
+}
+
+function NotificationActorAvatar({
+  avatarColor,
+  avatarImage,
+  label,
+  size
+}: {
+  avatarColor?: string;
+  avatarImage?: string | null;
+  label: string;
+  size: "md" | "sm";
+}) {
+  const sizeClass = size === "md" ? "size-9 text-sm" : "size-8 text-xs";
+  if (avatarImage) {
+    return <img alt={`${label} 的头像`} className={cn("shrink-0 rounded-full object-cover shadow-sm", sizeClass)} src={avatarImage} />;
+  }
+  const avatarColorClasses: Record<string, string> = {
+    coral: "bg-coral",
+    green: "bg-[#58cc02]",
+    honey: "bg-honey",
+    sky: "bg-sky-500",
+    violet: "bg-violet-500"
+  };
+  return (
+    <span className={cn(
+      "grid shrink-0 place-items-center rounded-full font-black text-white shadow-sm",
+      avatarColorClasses[avatarColor || "green"] || avatarColorClasses.green,
+      sizeClass
+    )}>
+      {label.replace(/^@/, "").slice(0, 1).toUpperCase()}
+    </span>
+  );
+}
+
+function PostPreviewCard({ content, href }: { content?: string | null; href?: string }) {
+  const body = content ? truncateText(content, 30) : href ? "查看这条动态" : "相关动态已删除或不可查看";
+  const inner = (
+    <div className="flex items-start gap-3 p-4">
+      <p className="min-w-0 flex-1 break-words text-sm font-semibold leading-6 text-slate-700">{body}</p>
+      {href ? <ChevronRight className="mt-1 shrink-0 text-slate-300" size={18} /> : null}
+    </div>
+  );
+  const className = cn(
+    "mt-4 block overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm",
+    href && "transition hover:border-teal/40 hover:bg-slate-50"
+  );
+  return href ? <Link className={className} href={href}>{inner}</Link> : <div className={className}>{inner}</div>;
+}
+
+function RepostPreviewCard({
+  actorLabel,
+  avatarColor,
+  avatarImage,
+  originalContent,
+  originalHref,
+  repostContent,
+  repostHref
+}: {
+  actorLabel: string;
+  avatarColor?: string;
+  avatarImage?: string | null;
+  originalContent?: string | null;
+  originalHref?: string;
+  repostContent?: string | null;
+  repostHref?: string;
+}) {
+  const repostBody = repostContent ? truncateText(repostContent, 30) : repostHref ? "查看这条转帖" : "相关转帖已删除或不可查看";
+  const originalBody = originalContent ? truncateText(originalContent, 30) : originalHref ? "查看原动态" : "原动态已删除或不可查看";
+  const repostInner = (
+    <div className="flex items-start gap-3 px-4 pb-3 pt-4">
+      <NotificationActorAvatar avatarColor={avatarColor} avatarImage={avatarImage} label={actorLabel} size="sm" />
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-bold leading-5 text-slate-400">{actorLabel}</p>
+        <p className="mt-0.5 break-words text-sm font-semibold leading-6 text-slate-700">{repostBody}</p>
+      </div>
+      {repostHref ? <ChevronRight className="mt-2 shrink-0 text-slate-300" size={18} /> : null}
+    </div>
+  );
+  const originalInner = (
+    <div className="flex items-start gap-3 border-l-2 border-slate-300 bg-slate-50 px-4 py-3">
+      <p className="min-w-0 flex-1 break-words text-sm font-semibold leading-6 text-slate-600">{originalBody}</p>
+      {originalHref ? <ChevronRight className="mt-1 shrink-0 text-slate-300" size={17} /> : null}
+    </div>
+  );
+
+  return (
+    <div className="mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      {repostHref ? (
+        <Link className="block transition hover:bg-slate-50" href={repostHref}>{repostInner}</Link>
+      ) : repostInner}
+      <div className="px-4 pb-4">
+        {originalHref ? (
+          <Link className="block transition hover:bg-slate-100" href={originalHref}>{originalInner}</Link>
+        ) : originalInner}
       </div>
     </div>
   );
@@ -661,6 +920,35 @@ function requestStatusText(status: string, expiresAt: Date) {
     expired: "已过期"
   };
   return labels[status] || status;
+}
+
+function getBuddyNotificationSummary(notification: BuddyNotification) {
+  const base = getUserEventNotificationText(notification);
+  if (notification.type === "buddy_post_liked") {
+    return notification.post?.content ? `${base}：${notification.post.content}` : base;
+  }
+  if (notification.type === "buddy_post_reposted") {
+    return notification.post?.originalPost?.content ? `${base}：${notification.post.originalPost.content}` : base;
+  }
+  return base;
+}
+
+function stripHtml(value: string) {
+  return value
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0?39;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function truncateText(value: string, maxLength: number) {
+  const characters = Array.from(value.trim());
+  return characters.length > maxLength ? `${characters.slice(0, maxLength).join("")}…` : characters.join("");
 }
 
 function formatCompactDate(date: Date) {

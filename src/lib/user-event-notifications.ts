@@ -120,7 +120,8 @@ export function getUserEventNotificationTitle(type: UserEventNotificationType) {
     buddy_request_accepted: "搭子申请已接受",
     buddy_request_rejected: "搭子申请被拒绝",
     buddy_post_liked: "动态被点赞",
-    buddy_post_reposted: "动态被转帖"
+    buddy_post_reposted: "动态被转帖",
+    social_followed: "新增关注"
   };
   return titleByType[type];
 }
@@ -129,13 +130,14 @@ export function getUserEventNotificationText(input: {
   type: UserEventNotificationType;
   actorNicknameSnapshot: string;
 }) {
-  const actor = input.actorNicknameSnapshot || "对方";
+  const actor = `@${input.actorNicknameSnapshot || "对方"}`;
   const textByType: Record<UserEventNotificationType, string> = {
     buddy_request_received: `${actor} 正在添加您为他的搭子`,
     buddy_request_accepted: `${actor} 已接受你的搭子申请`,
     buddy_request_rejected: `${actor} 拒绝成为你的搭子`,
     buddy_post_liked: `${actor} 点赞了你的动态`,
-    buddy_post_reposted: `${actor} 转帖了你的动态`
+    buddy_post_reposted: `${actor} 转帖了你的动态`,
+    social_followed: `${actor} 关注了你`
   };
   return textByType[input.type];
 }

@@ -553,7 +553,7 @@ function HomePostCard({ post }: { post: ProfilePost }) {
   const deleteFormId = `home-post-delete-${post.id}`;
 
   return (
-    <article className="p-5">
+    <article className="scroll-mt-6 p-5 transition-colors target:bg-sky-50/70" id={`post-${post.id}`}>
       <div className="flex items-start gap-3">
         <Avatar name={post.author.nickname} color={post.author.avatarColor} image={post.author.avatarImage} size="sm" />
         <div className="min-w-0 flex-1">

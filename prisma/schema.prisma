@@ -113,6 +113,7 @@ enum UserEventNotificationType {
   buddy_request_rejected
   buddy_post_liked
   buddy_post_reposted
+  social_followed
 }
 
 enum RegionStatus {

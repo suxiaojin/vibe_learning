@@ -134,7 +134,7 @@ function ProfileAction({ profile }: { profile: SocialProfile }) {
 
 function ProfilePostCard({ post }: { post: ProfilePost }) {
   return (
-    <article className="p-5">
+    <article className="scroll-mt-6 p-5 transition-colors target:bg-sky-50/70" id={`post-${post.id}`}>
       <div className="flex items-start gap-3">
         <ProfileAvatar user={post.author} size="sm" />
         <div className="min-w-0 flex-1">
