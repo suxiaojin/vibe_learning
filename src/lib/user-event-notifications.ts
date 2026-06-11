@@ -40,7 +40,7 @@ export async function createUserEventNotification(
   });
 }
 
-export async function getNotificationBellData(userId: string, take = 5) {
+export async function getNotificationBellData(userId: string, take = 3) {
   const systemWhere = {
     userId,
     readAt: null,

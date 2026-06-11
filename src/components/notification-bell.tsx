@@ -34,7 +34,7 @@ export function NotificationBell({
         ) : null}
       </Link>
 
-      <div className="pointer-events-none invisible absolute right-0 top-full z-50 w-80 translate-y-2 opacity-0 transition duration-150 group-hover:visible group-hover:translate-y-1 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-1 group-focus-within:opacity-100">
+      <div className="pointer-events-none invisible absolute right-0 top-full z-50 w-80 pt-2 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:opacity-100">
         <div className="rounded-xl border border-slate-200 bg-white p-3 text-left shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <p className="text-sm font-black text-ink">未读通知</p>
@@ -45,7 +45,11 @@ export function NotificationBell({
           ) : (
             <div className="mt-2 grid gap-2">
               {notifications.map((notification) => (
-                <div key={notification.id} className="rounded-lg bg-slate-50 p-3">
+                <Link
+                  key={notification.id}
+                  className="block rounded-lg bg-slate-50 p-3 transition hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-teal/20"
+                  href={getNotificationHref(notification.id)}
+                >
                   <p className="truncate text-sm font-black text-ink">{notification.title}</p>
                   <p className="mt-1 max-h-10 overflow-hidden text-xs font-semibold leading-5 text-slate-500">
                     {stripNotificationHtml(notification.contentHtml)}
@@ -53,7 +57,7 @@ export function NotificationBell({
                   <p className="mt-2 text-[11px] font-semibold text-slate-400">
                     {notification.sentAt ? formatDateTime(notification.sentAt) : "刚刚"}
                   </p>
-                </div>
+                </Link>
               ))}
             </div>
           )}
@@ -61,6 +65,14 @@ export function NotificationBell({
       </div>
     </div>
   );
+}
+
+function getNotificationHref(id: string) {
+  if (id.startsWith("buddy:")) {
+    return `/notifications?tab=buddies&notificationId=${encodeURIComponent(id.slice("buddy:".length))}`;
+  }
+  const notificationId = id.startsWith("system:") ? id.slice("system:".length) : id;
+  return `/notifications?tab=system&notificationId=${encodeURIComponent(notificationId)}`;
 }
 
 function formatDateTime(date: Date) {
