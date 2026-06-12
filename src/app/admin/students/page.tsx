@@ -11,6 +11,9 @@ type StudentStatus = (typeof studentStatuses)[number];
 type SearchParams = {
   keyword?: string;
   status?: string;
+  province?: string;
+  studySystem?: string;
+  majorId?: string;
   notice?: string;
   error?: string;
 };
@@ -28,18 +31,39 @@ export default async function StudentsPage({
   await requireAdmin();
   const params = await searchParams;
   const keyword = params?.keyword?.trim() || "";
+  const selectedProvince = params?.province?.trim() || "";
+  const selectedStudySystem = params?.studySystem?.trim() || "";
+  const selectedMajorId = params?.majorId?.trim() || "";
   const selectedStatus = studentStatuses.includes((params?.status || "") as StudentStatus)
     ? (params?.status as StudentStatus)
     : "";
 
+  const regionWhere: Prisma.RegionWhereInput = {
+    ...(selectedProvince ? { province: selectedProvince } : {}),
+    ...(selectedStudySystem ? { studySystem: selectedStudySystem } : {})
+  };
+  const profileWhere: Prisma.StudentProfileWhereInput = {
+    ...(selectedProvince || selectedStudySystem ? { region: { is: regionWhere } } : {}),
+    ...(selectedMajorId ? { majorId: selectedMajorId } : {})
+  };
+
   const where: Prisma.UserWhereInput = {
     role: "student",
     ...(selectedStatus ? { status: selectedStatus } : {}),
-    ...(keyword ? { username: { contains: keyword, mode: "insensitive" } } : {})
+    ...(keyword ? { username: { contains: keyword, mode: "insensitive" } } : {}),
+    ...(selectedProvince || selectedStudySystem || selectedMajorId
+      ? { studentProfile: { is: profileWhere } }
+      : {})
   };
-  const currentPath = buildStudentsPath({ keyword, status: selectedStatus });
+  const currentPath = buildStudentsPath({
+    keyword,
+    status: selectedStatus,
+    province: selectedProvince,
+    studySystem: selectedStudySystem,
+    majorId: selectedMajorId
+  });
 
-  const [students, totalCount, activeCount, disabledCount] = await Promise.all([
+  const [students, totalCount, activeCount, disabledCount, regions, majors] = await Promise.all([
     prisma.user.findMany({
       where,
       orderBy: { createdAt: "desc" },
@@ -64,8 +88,18 @@ export default async function StudentsPage({
     }),
     prisma.user.count({ where: { role: "student" } }),
     prisma.user.count({ where: { role: "student", status: "active" } }),
-    prisma.user.count({ where: { role: "student", status: "disabled" } })
+    prisma.user.count({ where: { role: "student", status: "disabled" } }),
+    prisma.region.findMany({
+      orderBy: [{ province: "asc" }, { studySystem: "asc" }],
+      select: { province: true, studySystem: true }
+    }),
+    prisma.major.findMany({
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: { id: true, name: true }
+    })
   ]);
+  const provinces = Array.from(new Set(regions.map((region) => region.province)));
+  const studySystems = Array.from(new Set(regions.map((region) => region.studySystem)));
 
   return (
     <main className="panel">
@@ -84,10 +118,37 @@ export default async function StudentsPage({
       {params?.notice ? <div className="mt-4 rounded-2xl bg-teal/10 p-3 text-sm font-semibold text-teal">{params.notice}</div> : null}
       {params?.error ? <div className="mt-4 rounded-2xl bg-red-50 p-3 text-sm font-semibold text-red-700">{params.error}</div> : null}
 
-      <form className="mt-5 grid gap-3 rounded-2xl bg-slate-50 p-4 md:grid-cols-[1fr_180px_auto]" action="/admin/students">
+      <form className="mt-5 grid gap-3 rounded-2xl bg-slate-50 p-4 md:grid-cols-2 xl:grid-cols-[minmax(240px,1fr)_140px_140px_190px_160px_auto]" action="/admin/students">
         <div>
           <label className="label">搜索学生</label>
           <input className="input" name="keyword" defaultValue={keyword} placeholder="输入用户名" />
+        </div>
+        <div>
+          <label className="label">省份</label>
+          <select className="input" name="province" defaultValue={selectedProvince}>
+            <option value="">全部省份</option>
+            {provinces.map((province) => (
+              <option key={province} value={province}>{province}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label">学制</label>
+          <select className="input" name="studySystem" defaultValue={selectedStudySystem}>
+            <option value="">全部学制</option>
+            {studySystems.map((studySystem) => (
+              <option key={studySystem} value={studySystem}>{studySystem}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label">专业</label>
+          <select className="input" name="majorId" defaultValue={selectedMajorId}>
+            <option value="">全部专业</option>
+            {majors.map((major) => (
+              <option key={major.id} value={major.id}>{major.name}</option>
+            ))}
+          </select>
         </div>
         <div>
           <label className="label">账号状态</label>
@@ -175,13 +236,34 @@ export default async function StudentsPage({
   );
 }
 
-function buildStudentsPath({ keyword, status }: { keyword: string; status: string }) {
+function buildStudentsPath({
+  keyword,
+  status,
+  province,
+  studySystem,
+  majorId
+}: {
+  keyword: string;
+  status: string;
+  province: string;
+  studySystem: string;
+  majorId: string;
+}) {
   const params = new URLSearchParams();
   if (keyword) {
     params.set("keyword", keyword);
   }
   if (status) {
     params.set("status", status);
+  }
+  if (province) {
+    params.set("province", province);
+  }
+  if (studySystem) {
+    params.set("studySystem", studySystem);
+  }
+  if (majorId) {
+    params.set("majorId", majorId);
   }
   const query = params.toString();
   return query ? `/admin/students?${query}` : "/admin/students";
