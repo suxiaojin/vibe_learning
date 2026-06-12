@@ -3,6 +3,7 @@ import {
   Bot,
   CalendarClock,
   History,
+  Mail,
   Power,
   PowerOff,
   RotateCcw,
@@ -14,14 +15,19 @@ import {
 } from "lucide-react";
 import {
   archiveNotification,
+  cancelScheduledEmail,
   cancelScheduledNotification,
+  createEmailAutomationRule,
   createNotificationAutomationRule,
   deleteNotificationAutomationRule,
   deleteNotificationTemplate,
+  rescheduleEmailNotification,
   rescheduleNotification,
   restoreNotification,
   saveNotificationTemplate,
+  scheduleEmailNotification,
   scheduleNotification,
+  sendEmailNotification,
   sendNotification,
   toggleNotificationAutomationRule
 } from "@/app/admin/notifications/actions";
@@ -29,6 +35,7 @@ import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { NotificationRecipientPicker, type NotificationRecipientOption } from "@/components/notification-recipient-picker";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { requireAdmin } from "@/lib/auth";
+import { isValidEmail, normalizeEmail } from "@/lib/email-verification";
 import { stripNotificationHtml } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import { cn } from "@/lib/utils";
@@ -36,11 +43,12 @@ import { cn } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type NotificationTab = "records" | "send" | "templates";
+type NotificationTab = "email" | "records" | "send" | "templates";
 type NotificationSendMode = "automated" | "immediate" | "scheduled";
 
 const tabs: Array<{ key: NotificationTab; label: string }> = [
   { key: "send", label: "通知发送" },
+  { key: "email", label: "邮件发送" },
   { key: "templates", label: "通知模板" },
   { key: "records", label: "通知记录" }
 ];
@@ -50,6 +58,7 @@ const errorText: Record<string, string> = {
   "automation-name-required": "请输入自动通知规则名称。",
   "content-required": "请输入通知内容。",
   "content-too-large": "通知内容过大，请减少图片或文字后再提交。",
+  "email-recipients-unavailable": "所选学生没有可用邮箱，请重新选择。",
   "recipients-required": "请选择接收学生。",
   "recipients-unavailable": "没有找到可接收通知的正常学生账号。",
   "scheduled-time-invalid": "请选择晚于当前时间的发送日期和时间。",
@@ -89,13 +98,20 @@ export default async function AdminNotificationsPage({
     : params?.mode === "automated"
       ? "automated"
       : "immediate";
-  const [students, templates, notifications, unreadCount, scheduledJobs, automationRules] = await Promise.all([
-    activeTab === "send" && sendMode !== "automated"
+  const deliveryTab = activeTab === "email" || activeTab === "send";
+  const activeChannel = activeTab === "email" ? "email" : "in_app";
+  const [students, templates, emailJobs, notifications, unreadCount, scheduledJobs, automationRules] = await Promise.all([
+    deliveryTab && sendMode !== "automated"
       ? prisma.user.findMany({
-          where: { role: "student", status: "active" },
+          where: {
+            role: "student",
+            status: "active",
+            ...(activeTab === "email" ? { email: { not: null } } : {})
+          },
           orderBy: { username: "asc" },
           select: {
             id: true,
+            email: true,
             username: true,
             studentProfile: {
               select: {
@@ -106,10 +122,20 @@ export default async function AdminNotificationsPage({
           }
         })
       : Promise.resolve([]),
-    activeTab === "send" || activeTab === "templates"
+    deliveryTab || activeTab === "templates"
       ? prisma.notificationTemplate.findMany({
           orderBy: { updatedAt: "desc" },
           include: { author: { select: { username: true } } }
+        })
+      : Promise.resolve([]),
+    activeTab === "records"
+      ? prisma.notificationDispatchJob.findMany({
+          where: { channel: "email" },
+          orderBy: { createdAt: "desc" },
+          include: {
+            author: { select: { username: true } },
+            recipients: { orderBy: { usernameSnapshot: "asc" } }
+          }
         })
       : Promise.resolve([]),
     activeTab === "records"
@@ -131,9 +157,10 @@ export default async function AdminNotificationsPage({
     activeTab === "records"
       ? prisma.notificationRecipient.count({ where: { readAt: null, notification: { status: "sent" } } })
       : Promise.resolve(0),
-    activeTab === "send" && sendMode === "scheduled"
+    deliveryTab && sendMode === "scheduled"
       ? prisma.notificationDispatchJob.findMany({
           where: {
+            channel: activeChannel,
             type: "scheduled",
             status: { in: ["pending", "processing", "failed", "cancelled"] }
           },
@@ -145,8 +172,9 @@ export default async function AdminNotificationsPage({
           }
         })
       : Promise.resolve([]),
-    activeTab === "send" && sendMode === "automated"
+    deliveryTab && sendMode === "automated"
       ? prisma.notificationAutomationRule.findMany({
+          where: { channel: activeChannel },
           orderBy: { createdAt: "desc" },
           include: {
             template: { select: { name: true } },
@@ -166,8 +194,12 @@ export default async function AdminNotificationsPage({
       : Promise.resolve([])
   ]);
   const selectedTemplate = params?.templateId ? templates.find((template) => template.id === params.templateId) : null;
-  const studentOptions: NotificationRecipientOption[] = students.map((student) => ({
+  const eligibleStudents = activeTab === "email"
+    ? students.filter((student) => isValidEmail(normalizeEmail(student.email || "")))
+    : students;
+  const studentOptions: NotificationRecipientOption[] = eligibleStudents.map((student) => ({
     id: student.id,
+    email: student.email || "",
     username: student.username,
     province: student.studentProfile?.region?.province || "",
     studySystem: student.studentProfile?.region?.studySystem || "",
@@ -175,6 +207,10 @@ export default async function AdminNotificationsPage({
   }));
   const notice = params?.notice === "sent"
     ? `通知已发送给 ${params.count || 0} 名学生。`
+    : params?.notice === "email-queued"
+      ? `已提交 ${params.count || 0} 封邮件，系统将在后台发送。`
+    : params?.notice === "email-scheduled"
+      ? `已为 ${params.count || 0} 名学生创建邮件定时发送计划。`
     : params?.notice === "scheduled"
       ? `已为 ${params.count || 0} 名学生创建定时发送计划。`
     : params?.notice
@@ -207,8 +243,9 @@ export default async function AdminNotificationsPage({
       {notice ? <div className="rounded border border-teal/20 bg-teal/10 p-3 text-sm font-semibold text-teal">{notice}</div> : null}
       {error ? <div className="rounded border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</div> : null}
 
-      {activeTab === "send" ? (
+      {deliveryTab ? (
         <NotificationSendSection
+          channel={activeChannel}
           scheduledJobs={scheduledJobs}
           automationRules={automationRules}
           selectedTemplate={selectedTemplate}
@@ -221,7 +258,7 @@ export default async function AdminNotificationsPage({
         <NotificationTemplatesSection selectedTemplate={selectedTemplate} templates={templates} />
       ) : null}
       {activeTab === "records" ? (
-        <NotificationRecordsSection notifications={notifications} unreadCount={unreadCount} />
+        <NotificationRecordsSection emailJobs={emailJobs} notifications={notifications} unreadCount={unreadCount} />
       ) : null}
     </main>
   );
@@ -229,12 +266,14 @@ export default async function AdminNotificationsPage({
 
 function NotificationSendSection({
   automationRules,
+  channel,
   scheduledJobs,
   selectedTemplate,
   sendMode,
   students,
   templates
 }: {
+  channel: "email" | "in_app";
   automationRules: Array<{
     id: string;
     name: string;
@@ -257,6 +296,8 @@ function NotificationSendSection({
     lastError: string | null;
     template: { name: string } | null;
     recipients: Array<{
+      deliveryStatus: string;
+      emailSnapshot: string | null;
       id: string;
       usernameSnapshot: string;
       provinceSnapshot: string | null;
@@ -269,22 +310,29 @@ function NotificationSendSection({
   students: NotificationRecipientOption[];
   templates: Array<{ id: string; name: string; title: string; contentHtml: string }>;
 }) {
+  const isEmail = channel === "email";
+  const tab = isEmail ? "email" : "send";
+  const immediateAction = isEmail ? sendEmailNotification : sendNotification;
+  const scheduledAction = isEmail ? scheduleEmailNotification : scheduleNotification;
+
   return (
     <div className="space-y-4">
       <section className="border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
           <div>
-            <h2 className="text-lg font-black text-ink">通知发送</h2>
+            <h2 className="text-lg font-black text-ink">{isEmail ? "邮件发送" : "通知发送"}</h2>
             <p className="mt-1 text-sm font-semibold text-slate-500">
               {sendMode === "scheduled"
-                ? "选择通知模板、发送时间和学生名单，创建定时发送计划。"
+                ? `选择通知模板、发送时间和学生名单，创建定时${isEmail ? "邮件" : "通知"}计划。`
                 : sendMode === "automated"
-                  ? "配置业务场景触发规则，由系统自动向事件对应的学生发送通知。"
-                  : "立即发送自定义通知，通知发送后长期保留。"}
+                  ? `配置业务场景触发规则，由系统自动向事件对应的学生发送${isEmail ? "邮件" : "通知"}。`
+                  : isEmail
+                    ? "编辑邮件主题和富文本正文，提交后由后台任务逐封发送。"
+                    : "立即发送自定义通知，通知发送后长期保留。"}
             </p>
           </div>
           {sendMode === "immediate" && selectedTemplate ? (
-            <Link className="secondary-button rounded-none px-3 py-2 text-xs" href="/admin/notifications?tab=send&mode=immediate">
+            <Link className="secondary-button rounded-none px-3 py-2 text-xs" href={`/admin/notifications?tab=${tab}&mode=immediate`}>
               <Undo2 size={15} />
               清除模板
             </Link>
@@ -294,21 +342,21 @@ function NotificationSendSection({
         <div className="mt-4 inline-flex border border-slate-200 bg-slate-50 p-1 text-sm font-bold">
           <Link
             className={cn("flex min-h-10 items-center gap-2 px-4 transition", sendMode === "immediate" ? "bg-teal text-white" : "text-slate-600 hover:bg-white")}
-            href="/admin/notifications?tab=send&mode=immediate"
+            href={`/admin/notifications?tab=${tab}&mode=immediate`}
           >
             <Send size={16} />
             立即发送
           </Link>
           <Link
             className={cn("flex min-h-10 items-center gap-2 px-4 transition", sendMode === "scheduled" ? "bg-teal text-white" : "text-slate-600 hover:bg-white")}
-            href="/admin/notifications?tab=send&mode=scheduled"
+            href={`/admin/notifications?tab=${tab}&mode=scheduled`}
           >
             <CalendarClock size={16} />
             定时发送
           </Link>
           <Link
             className={cn("flex min-h-10 items-center gap-2 px-4 transition", sendMode === "automated" ? "bg-teal text-white" : "text-slate-600 hover:bg-white")}
-            href="/admin/notifications?tab=send&mode=automated"
+            href={`/admin/notifications?tab=${tab}&mode=automated`}
           >
             <Bot size={16} />
             自动发送
@@ -322,9 +370,9 @@ function NotificationSendSection({
                 已载入模板：{selectedTemplate.name}
               </div>
             ) : null}
-            <form action={sendNotification} className="mt-5 grid gap-5">
+            <form action={immediateAction} className="mt-5 grid gap-5">
               <label>
-                <span className="label">通知标题</span>
+                <span className="label">{isEmail ? "邮件主题" : "通知标题"}</span>
                 <input
                   className="input rounded-none"
                   defaultValue={selectedTemplate?.title || ""}
@@ -336,28 +384,28 @@ function NotificationSendSection({
               </label>
 
               <div>
-                <span className="label">通知内容</span>
+                <span className="label">{isEmail ? "邮件正文" : "通知内容"}</span>
                 <RichTextEditor initialHtml={selectedTemplate?.contentHtml} name="contentHtml" />
               </div>
 
               <fieldset>
                 <legend className="label">接收学生</legend>
-                <NotificationRecipientPicker students={students} />
+                <NotificationRecipientPicker showEmail={isEmail} students={students} />
               </fieldset>
 
               <div className="flex justify-end border-t border-slate-100 pt-5">
                 <button className="primary-button rounded-none min-w-36" disabled={students.length === 0} type="submit">
                   <Send size={18} />
-                  立即发送
+                  {isEmail ? "提交发送" : "立即发送"}
                 </button>
               </div>
             </form>
           </>
         ) : sendMode === "scheduled" ? (
-          <form action={scheduleNotification} className="mt-5 grid gap-5">
+          <form action={scheduledAction} className="mt-5 grid gap-5">
             <div className="grid gap-5 lg:grid-cols-2">
               <label>
-                <span className="label">通知模板</span>
+                <span className="label">{isEmail ? "邮件模板" : "通知模板"}</span>
                 <select className="input rounded-none" name="templateId" required>
                   <option value="">请选择通知模板</option>
                   {templates.map((template) => <option key={template.id} value={template.id}>{template.name} · {template.title}</option>)}
@@ -376,24 +424,24 @@ function NotificationSendSection({
               </label>
             </div>
             <div className="border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold leading-6 text-blue-800">
-              创建计划后会冻结当前模板内容和已选学生名单。之后修改模板、新增学生或更改学生资料，不会影响该计划。
+              创建计划后会冻结当前模板内容、学生资料{isEmail ? "和邮箱地址" : ""}。之后修改模板或学生资料，不会影响该计划。
             </div>
             <fieldset>
               <legend className="label">接收学生</legend>
-              <NotificationRecipientPicker students={students} />
+              <NotificationRecipientPicker showEmail={isEmail} students={students} />
             </fieldset>
             <div className="flex justify-end border-t border-slate-100 pt-5">
               <button className="primary-button rounded-none min-w-40" disabled={students.length === 0 || templates.length === 0} type="submit">
                 <CalendarClock size={18} />
-                创建定时计划
+                创建定时{isEmail ? "邮件" : "通知"}计划
               </button>
             </div>
           </form>
         ) : null}
       </section>
 
-      {sendMode === "scheduled" ? <ScheduledNotificationPlans jobs={scheduledJobs} /> : null}
-      {sendMode === "automated" ? <NotificationAutomationSection rules={automationRules} templates={templates} /> : null}
+      {sendMode === "scheduled" ? <ScheduledNotificationPlans channel={channel} jobs={scheduledJobs} /> : null}
+      {sendMode === "automated" ? <NotificationAutomationSection channel={channel} rules={automationRules} templates={templates} /> : null}
     </div>
   );
 }
@@ -441,6 +489,7 @@ function NotificationTemplatesSection({
             <span className="label">通知内容</span>
             <RichTextEditor initialHtml={selectedTemplate?.contentHtml} minHeightClassName="min-h-[280px]" name="contentHtml" />
           </div>
+          <NotificationTemplateVariables />
           <div className="flex justify-end border-t border-slate-100 pt-5">
             <button className="primary-button rounded-none" type="submit">
               <Save size={17} />
@@ -473,7 +522,11 @@ function NotificationTemplatesSection({
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Link className="secondary-button rounded-none px-3 py-2 text-xs" href={`/admin/notifications?tab=send&templateId=${template.id}`}>
                     <Send size={14} />
-                    使用
+                    用于通知
+                  </Link>
+                  <Link className="secondary-button rounded-none px-3 py-2 text-xs" href={`/admin/notifications?tab=email&templateId=${template.id}`}>
+                    <Mail size={14} />
+                    用于邮件
                   </Link>
                   <Link className="secondary-button rounded-none px-3 py-2 text-xs" href={`/admin/notifications?tab=templates&templateId=${template.id}`}>
                     编辑
@@ -499,9 +552,60 @@ function NotificationTemplatesSection({
   );
 }
 
+function NotificationTemplateVariables() {
+  const variables = [
+    { code: "{{username}}", meaning: "学生用户名", scope: "通知和邮件的立即、定时、自动发送" },
+    { code: "{{email}}", meaning: "学生邮箱", scope: "邮件的立即、定时、自动发送" },
+    { code: "{{province}}", meaning: "学生所属省份", scope: "通知定时发送；邮件全部发送方式" },
+    { code: "{{studySystem}}", meaning: "学生学制", scope: "通知定时发送；邮件全部发送方式" },
+    { code: "{{majorName}}", meaning: "学生专业名称", scope: "通知定时发送；邮件全部发送方式" },
+    { code: "{{occurredAt}}", meaning: "业务事件触发时间", scope: "自动发送" },
+    { code: "{{amount}}", meaning: "钻石变更数量", scope: "后台添加钻石自动通知" },
+    { code: "{{balanceAfter}}", meaning: "变更后的钻石余额", scope: "后台添加钻石自动通知" },
+    { code: "{{note}}", meaning: "钻石变更说明", scope: "后台添加钻石自动通知" },
+    { code: "{{actorUsername}}", meaning: "执行操作的管理员用户名", scope: "后台添加钻石自动通知" }
+  ];
+
+  return (
+    <section className="border-y border-slate-200 bg-slate-50 px-4 py-4" aria-labelledby="notification-template-variables-title">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 id="notification-template-variables-title" className="text-sm font-black text-ink">可用模板变量</h3>
+        <p className="text-xs font-semibold text-slate-500">可用于通知标题和通知内容</p>
+      </div>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full min-w-[680px] border-collapse text-left text-xs">
+          <thead>
+            <tr className="text-slate-500">
+              <th className="border-b border-slate-200 py-2 pr-4 font-semibold">变量</th>
+              <th className="border-b border-slate-200 py-2 pr-4 font-semibold">内容</th>
+              <th className="border-b border-slate-200 py-2 font-semibold">适用范围</th>
+            </tr>
+          </thead>
+          <tbody>
+            {variables.map((variable) => (
+              <tr key={variable.code} className="text-slate-700">
+                <td className="border-b border-slate-200/70 py-2.5 pr-4">
+                  <code className="font-bold text-[#0872b9]">{variable.code}</code>
+                </td>
+                <td className="border-b border-slate-200/70 py-2.5 pr-4 font-semibold">{variable.meaning}</td>
+                <td className="border-b border-slate-200/70 py-2.5 text-slate-500">{variable.scope}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-3 text-xs font-semibold leading-5 text-slate-500">
+        未设置的学生资料会替换为空；变量名称区分大小写，无法识别的变量会保留原文，便于检查拼写。
+      </p>
+    </section>
+  );
+}
+
 function ScheduledNotificationPlans({
+  channel,
   jobs
 }: {
+  channel: "email" | "in_app";
   jobs: Array<{
     id: string;
     status: string;
@@ -509,6 +613,8 @@ function ScheduledNotificationPlans({
     lastError: string | null;
     template: { name: string } | null;
     recipients: Array<{
+      deliveryStatus: string;
+      emailSnapshot: string | null;
       id: string;
       usernameSnapshot: string;
       provinceSnapshot: string | null;
@@ -517,17 +623,21 @@ function ScheduledNotificationPlans({
     }>;
   }>;
 }) {
+  const isEmail = channel === "email";
+  const cancelAction = isEmail ? cancelScheduledEmail : cancelScheduledNotification;
+  const rescheduleAction = isEmail ? rescheduleEmailNotification : rescheduleNotification;
+
   return (
     <section className="border border-slate-200 bg-white p-5 shadow-sm">
       <div className="border-b border-slate-100 pb-4">
         <h2 className="text-lg font-black text-ink">待发送计划</h2>
-        <p className="mt-1 text-sm font-semibold text-slate-500">查看、改期或取消尚未发送的定时通知。</p>
+        <p className="mt-1 text-sm font-semibold text-slate-500">查看、改期或取消尚未完成的定时{isEmail ? "邮件" : "通知"}。</p>
       </div>
       <div className="mt-5 overflow-x-auto">
         <table className="w-full min-w-[980px] border-separate border-spacing-0 text-left text-sm">
           <thead>
             <tr className="text-slate-500">
-              <th className="border-b border-slate-200 py-3 pr-4 font-semibold">通知模板</th>
+              <th className="border-b border-slate-200 py-3 pr-4 font-semibold">{isEmail ? "邮件模板" : "通知模板"}</th>
               <th className="border-b border-slate-200 py-3 pr-4 font-semibold">计划时间</th>
               <th className="border-b border-slate-200 py-3 pr-4 font-semibold">学生名单</th>
               <th className="border-b border-slate-200 py-3 pr-4 font-semibold">状态</th>
@@ -548,8 +658,9 @@ function ScheduledNotificationPlans({
                     <summary className="cursor-pointer font-semibold text-teal">查看 {job.recipients.length} 名学生</summary>
                     <div className="mt-2 max-h-44 w-[420px] overflow-auto border border-slate-200 bg-slate-50">
                       {job.recipients.map((recipient) => (
-                        <div key={recipient.id} className="grid grid-cols-[1fr_1fr_1fr_1fr] gap-2 border-b border-slate-100 px-3 py-2 text-xs">
+                        <div key={recipient.id} className={cn("grid gap-2 border-b border-slate-100 px-3 py-2 text-xs", isEmail ? "grid-cols-[1fr_1.5fr_0.8fr_0.8fr_0.8fr]" : "grid-cols-[1fr_1fr_1fr_1fr]")}>
                           <span className="font-bold text-ink">{recipient.usernameSnapshot}</span>
+                          {isEmail ? <span className="truncate">{recipient.emailSnapshot || "未设置"}</span> : null}
                           <span>{recipient.provinceSnapshot || "未设置"}</span>
                           <span>{recipient.studySystemSnapshot || "未设置"}</span>
                           <span>{recipient.majorNameSnapshot || "未设置"}</span>
@@ -565,7 +676,7 @@ function ScheduledNotificationPlans({
                 <td className="border-b border-slate-100 py-4">
                   <div className="flex min-w-[310px] flex-wrap gap-2">
                     {job.status !== "processing" ? (
-                      <form action={rescheduleNotification} className="flex gap-2">
+                      <form action={rescheduleAction} className="flex gap-2">
                         <input name="id" type="hidden" value={job.id} />
                         <input
                           className="input min-h-9 w-44 rounded-none py-1 text-xs"
@@ -579,7 +690,7 @@ function ScheduledNotificationPlans({
                       </form>
                     ) : null}
                     {job.status !== "processing" && job.status !== "cancelled" ? (
-                      <form action={cancelScheduledNotification}>
+                      <form action={cancelAction}>
                         <input name="id" type="hidden" value={job.id} />
                         <button className="secondary-button min-h-9 rounded-none px-3 py-1 text-xs text-red-600 hover:border-red-300 hover:text-red-700" type="submit">
                           取消
@@ -598,9 +709,11 @@ function ScheduledNotificationPlans({
 }
 
 function NotificationAutomationSection({
+  channel,
   rules,
   templates
 }: {
+  channel: "email" | "in_app";
   rules: Array<{
     id: string;
     name: string;
@@ -618,14 +731,17 @@ function NotificationAutomationSection({
   }>;
   templates: Array<{ id: string; name: string; title: string; contentHtml: string }>;
 }) {
+  const isEmail = channel === "email";
+  const createAction = isEmail ? createEmailAutomationRule : createNotificationAutomationRule;
+
   return (
     <div className="grid gap-4 xl:grid-cols-[380px_minmax(0,1fr)]">
       <section className="border border-slate-200 bg-white p-5 shadow-sm">
         <div className="border-b border-slate-100 pb-4">
-          <h2 className="text-lg font-black text-ink">新建自动通知规则</h2>
-          <p className="mt-1 text-sm font-semibold leading-6 text-slate-500">业务场景发生后，系统自动套用模板通知触发该事件的学生。</p>
+          <h2 className="text-lg font-black text-ink">新建自动{isEmail ? "邮件" : "通知"}规则</h2>
+          <p className="mt-1 text-sm font-semibold leading-6 text-slate-500">业务场景发生后，系统自动套用模板向触发该事件的学生发送{isEmail ? "邮件" : "通知"}。</p>
         </div>
-        <form action={createNotificationAutomationRule} className="mt-5 grid gap-4">
+        <form action={createAction} className="mt-5 grid gap-4">
           <label>
             <span className="label">规则名称</span>
             <input className="input rounded-none" maxLength={100} name="name" placeholder="例如：新用户欢迎通知" required />
@@ -640,7 +756,7 @@ function NotificationAutomationSection({
             </select>
           </label>
           <label>
-            <span className="label">通知模板</span>
+            <span className="label">{isEmail ? "邮件模板" : "通知模板"}</span>
             <select className="input rounded-none" name="templateId" required>
               <option value="">请选择通知模板</option>
               {templates.map((template) => <option key={template.id} value={template.id}>{template.name} · {template.title}</option>)}
@@ -656,25 +772,22 @@ function NotificationAutomationSection({
           </label>
           <button className="primary-button rounded-none" disabled={templates.length === 0} type="submit">
             <Bot size={17} />
-            创建自动通知规则
+            创建自动{isEmail ? "邮件" : "通知"}规则
           </button>
         </form>
-        <div className="mt-5 border border-blue-100 bg-blue-50 p-4 text-xs font-semibold leading-6 text-blue-800">
-          <p className="font-black">模板变量</p>
-          <p><code>{"{{username}}"}</code> 用户名，<code>{"{{occurredAt}}"}</code> 触发时间</p>
-          <p><code>{"{{amount}}"}</code> 钻石数量，<code>{"{{balanceAfter}}"}</code> 变更后余额，<code>{"{{note}}"}</code> 说明</p>
-          <p className="mt-2 text-blue-700">“钻石充值成功”规则已预留，待充值支付流程接入事件后自动生效。</p>
-        </div>
+        <p className="mt-4 text-xs font-semibold leading-5 text-slate-500">
+          “钻石充值成功”规则已预留，待充值支付流程接入事件后自动生效。模板变量请在“通知模板”页查看。
+        </p>
       </section>
 
       <section className="border border-slate-200 bg-white p-5 shadow-sm">
         <div className="border-b border-slate-100 pb-4">
-          <h2 className="text-lg font-black text-ink">自动通知规则</h2>
+          <h2 className="text-lg font-black text-ink">自动{isEmail ? "邮件" : "通知"}规则</h2>
           <p className="mt-1 text-sm font-semibold text-slate-500">共 {rules.length} 条规则，停用后不会处理后续新事件。</p>
         </div>
         <div className="mt-5 grid gap-4">
           {rules.length === 0 ? (
-            <div className="grid min-h-48 place-items-center bg-slate-50 text-sm font-semibold text-slate-500">暂无自动通知规则。</div>
+            <div className="grid min-h-48 place-items-center bg-slate-50 text-sm font-semibold text-slate-500">暂无自动{isEmail ? "邮件" : "通知"}规则。</div>
           ) : rules.map((rule) => {
             const deleteFormId = `delete-automation-rule-${rule.id}`;
             return (
@@ -702,7 +815,7 @@ function NotificationAutomationSection({
                     <ConfirmSubmitButton
                       className="secondary-button rounded-none px-3 py-2 text-xs text-red-600 hover:border-red-300 hover:text-red-700"
                       form={deleteFormId}
-                      message={`确定删除自动通知规则“${rule.name}”吗？`}
+                      message={`确定删除自动${isEmail ? "邮件" : "通知"}规则“${rule.name}”吗？`}
                     >
                       <Trash2 size={14} />
                       删除
@@ -734,45 +847,81 @@ function NotificationAutomationSection({
   );
 }
 
+type InAppNotificationRecord = {
+  id: string;
+  title: string;
+  contentHtml: string;
+  source: string;
+  status: string;
+  sentAt: Date | null;
+  createdAt: Date;
+  author: { username: string } | null;
+  recipients: Array<{ readAt: Date | null; user: { username: string } }>;
+};
+
+type EmailNotificationRecord = {
+  id: string;
+  type: string;
+  status: string;
+  titleSnapshot: string;
+  contentHtmlSnapshot: string;
+  scheduledAt: Date;
+  sentAt: Date | null;
+  createdAt: Date;
+  lastError: string | null;
+  author: { username: string } | null;
+  recipients: Array<{
+    id: string;
+    usernameSnapshot: string;
+    emailSnapshot: string | null;
+    deliveryStatus: string;
+    deliveryLastError: string | null;
+  }>;
+};
+
 function NotificationRecordsSection({
+  emailJobs,
   notifications,
   unreadCount
 }: {
-  notifications: Array<{
-    id: string;
-    title: string;
-    contentHtml: string;
-    source: string;
-    status: string;
-    sentAt: Date | null;
-    createdAt: Date;
-    author: { username: string } | null;
-    recipients: Array<{ readAt: Date | null; user: { username: string } }>;
-  }>;
+  emailJobs: EmailNotificationRecord[];
+  notifications: InAppNotificationRecord[];
   unreadCount: number;
 }) {
+  const records: Array<
+    | { channel: "email"; item: EmailNotificationRecord; recordAt: Date }
+    | { channel: "in_app"; item: InAppNotificationRecord; recordAt: Date }
+  > = [
+    ...notifications.map((item) => ({ channel: "in_app" as const, item, recordAt: item.sentAt || item.createdAt })),
+    ...emailJobs.map((item) => ({ channel: "email" as const, item, recordAt: item.sentAt || item.createdAt }))
+  ].sort((left, right) => right.recordAt.getTime() - left.recordAt.getTime());
   const sentCount = notifications.filter((notification) => notification.status === "sent").length;
   const withdrawnCount = notifications.filter((notification) => notification.status === "archived").length;
+  const emailSentCount = emailJobs.reduce((count, job) => count + job.recipients.filter((recipient) => recipient.deliveryStatus === "sent").length, 0);
+  const emailFailedCount = emailJobs.reduce((count, job) => count + job.recipients.filter((recipient) => recipient.deliveryStatus === "failed").length, 0);
 
   return (
     <section className="border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-4">
         <div>
           <h2 className="text-lg font-black text-ink">通知记录</h2>
-          <p className="mt-1 text-sm font-semibold text-slate-500">呈现全部已发送通知；撤回只停止学生端展示，不删除发送记录。</p>
+          <p className="mt-1 text-sm font-semibold text-slate-500">统一呈现站内通知和邮件任务，并保留每位收件人的投递结果。</p>
         </div>
         <div className="flex flex-wrap gap-2 text-sm">
           <span className="badge bg-teal/10 text-teal">展示中 {sentCount}</span>
           <span className="badge bg-slate-100 text-slate-600">已撤回 {withdrawnCount}</span>
           <span className="badge bg-coral/10 text-coral">未读 {unreadCount}</span>
+          <span className="badge bg-sky-50 text-sky-700">邮件成功 {emailSentCount}</span>
+          {emailFailedCount > 0 ? <span className="badge bg-red-50 text-red-700">邮件失败 {emailFailedCount}</span> : null}
         </div>
       </div>
 
       <div className="mt-5 overflow-x-auto">
-        <table className="w-full min-w-[1080px] border-separate border-spacing-0 text-left text-sm">
+        <table className="w-full min-w-[1220px] border-separate border-spacing-0 text-left text-sm">
           <thead>
             <tr className="text-slate-500">
-              <th className="border-b border-slate-200 py-3 pr-4 font-semibold">通知</th>
+              <th className="border-b border-slate-200 py-3 pr-4 font-semibold">渠道</th>
+              <th className="border-b border-slate-200 py-3 pr-4 font-semibold">标题与内容</th>
               <th className="border-b border-slate-200 py-3 pr-4 font-semibold">收件人</th>
               <th className="border-b border-slate-200 py-3 pr-4 font-semibold">来源</th>
               <th className="border-b border-slate-200 py-3 pr-4 font-semibold">状态</th>
@@ -781,16 +930,68 @@ function NotificationRecordsSection({
             </tr>
           </thead>
           <tbody>
-            {notifications.length === 0 ? (
+            {records.length === 0 ? (
               <tr>
-                <td className="py-14 text-center text-slate-500" colSpan={6}>暂无通知记录。</td>
+                <td className="py-14 text-center text-slate-500" colSpan={7}>暂无通知记录。</td>
               </tr>
-            ) : notifications.map((notification) => {
+            ) : records.map((record) => {
+              if (record.channel === "email") {
+                const job = record.item;
+                const sentRecipients = job.recipients.filter((recipient) => recipient.deliveryStatus === "sent").length;
+                const failedRecipients = job.recipients.filter((recipient) => recipient.deliveryStatus === "failed").length;
+                const pendingRecipients = job.recipients.filter((recipient) => recipient.deliveryStatus === "pending").length;
+                return (
+                  <tr key={`email-${job.id}`} className="align-top text-slate-700">
+                    <td className="border-b border-slate-100 py-4 pr-4">
+                      <span className="badge bg-sky-50 text-sky-700"><Mail size={13} />邮件通知</span>
+                    </td>
+                    <td className="border-b border-slate-100 py-4 pr-4">
+                      <p className="font-black text-ink">{job.titleSnapshot}</p>
+                      <p className="mt-1 max-h-10 max-w-md overflow-hidden text-xs font-semibold leading-5 text-slate-500">{stripNotificationHtml(job.contentHtmlSnapshot)}</p>
+                    </td>
+                    <td className="border-b border-slate-100 py-4 pr-4">
+                      <div className="flex items-center gap-2 font-semibold"><UsersRound size={16} />{job.recipients.length} 人</div>
+                      <p className="mt-1 max-w-72 truncate text-xs text-slate-400">{job.recipients.map((recipient) => recipient.emailSnapshot || recipient.usernameSnapshot).join("、") || "暂无"}</p>
+                      <p className="mt-1 text-xs text-slate-500">成功 {sentRecipients} · 失败 {failedRecipients} · 待处理 {pendingRecipients}</p>
+                    </td>
+                    <td className="border-b border-slate-100 py-4 pr-4">
+                      <span className={cn("badge", notificationSourceClass(job.type))}>{notificationSourceLabel(job.type)}</span>
+                    </td>
+                    <td className="border-b border-slate-100 py-4 pr-4">
+                      <span className={cn("badge", dispatchStatusClass(job.status))}>{dispatchStatusLabel(job.status)}</span>
+                      {job.lastError ? <p className="mt-2 max-w-64 text-xs leading-5 text-red-600">{job.lastError}</p> : null}
+                    </td>
+                    <td className="border-b border-slate-100 py-4 pr-4">
+                      <p>{formatDateTime(job.sentAt || job.scheduledAt)}</p>
+                      <p className="mt-1 text-xs text-slate-400">发送人 {job.author?.username || "系统"}</p>
+                    </td>
+                    <td className="border-b border-slate-100 py-4">
+                      <details className="max-w-80">
+                        <summary className="cursor-pointer font-semibold text-teal">投递详情</summary>
+                        <div className="mt-2 max-h-52 overflow-auto border border-slate-200 bg-slate-50 p-2 text-xs">
+                          {job.recipients.map((recipient) => (
+                            <div key={recipient.id} className="border-b border-slate-200 px-2 py-2 last:border-b-0">
+                              <p className="font-bold text-ink">{recipient.usernameSnapshot} · {recipient.emailSnapshot || "无邮箱"}</p>
+                              <p className="mt-1 text-slate-500">{deliveryStatusLabel(recipient.deliveryStatus)}</p>
+                              {recipient.deliveryLastError ? <p className="mt-1 text-red-600">{recipient.deliveryLastError}</p> : null}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    </td>
+                  </tr>
+                );
+              }
+
+              const notification = record.item;
               const readCount = notification.recipients.filter((recipient) => recipient.readAt).length;
               const recipientNames = notification.recipients.map((recipient) => recipient.user.username);
               const withdrawn = notification.status === "archived";
               return (
-                <tr key={notification.id} className="align-top text-slate-700">
+                <tr key={`in-app-${notification.id}`} className="align-top text-slate-700">
+                  <td className="border-b border-slate-100 py-4 pr-4">
+                    <span className="badge bg-teal/10 text-teal"><Send size={13} />站内通知</span>
+                  </td>
                   <td className="border-b border-slate-100 py-4 pr-4">
                     <p className="font-black text-ink">{notification.title}</p>
                     <p className="mt-1 max-h-10 max-w-md overflow-hidden text-xs font-semibold leading-5 text-slate-500">{stripNotificationHtml(notification.contentHtml)}</p>
@@ -891,6 +1092,15 @@ function dispatchStatusClass(status: string) {
   }[status] || "bg-slate-100 text-slate-600";
 }
 
+function deliveryStatusLabel(status: string) {
+  return {
+    failed: "发送失败",
+    pending: "等待发送",
+    sent: "发送成功",
+    skipped: "已跳过"
+  }[status] || status;
+}
+
 function automationEventLabel(eventType: string) {
   return {
     admin_diamond_added: "后台添加钻石成功",
@@ -902,6 +1112,7 @@ function automationEventLabel(eventType: string) {
 function notificationSourceLabel(source: string) {
   return {
     automated: "自动发送",
+    immediate: "立即发送",
     manual: "立即发送",
     scheduled: "定时发送"
   }[source] || source;
@@ -910,6 +1121,7 @@ function notificationSourceLabel(source: string) {
 function notificationSourceClass(source: string) {
   return {
     automated: "bg-violet-50 text-violet-700",
+    immediate: "bg-sky-50 text-sky-700",
     manual: "bg-sky-50 text-sky-700",
     scheduled: "bg-amber-50 text-amber-700"
   }[source] || "bg-slate-100 text-slate-600";

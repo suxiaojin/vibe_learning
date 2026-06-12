@@ -4,6 +4,7 @@ import { CheckCheck, Search, SlidersHorizontal, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 export type NotificationRecipientOption = {
+  email?: string;
   id: string;
   majorName: string;
   province: string;
@@ -25,7 +26,13 @@ const emptyFilters: RecipientFilters = {
   studySystem: ""
 };
 
-export function NotificationRecipientPicker({ students }: { students: NotificationRecipientOption[] }) {
+export function NotificationRecipientPicker({
+  showEmail = false,
+  students
+}: {
+  showEmail?: boolean;
+  students: NotificationRecipientOption[];
+}) {
   const [draftFilters, setDraftFilters] = useState<RecipientFilters>(emptyFilters);
   const [filters, setFilters] = useState<RecipientFilters>(emptyFilters);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -35,7 +42,7 @@ export function NotificationRecipientPicker({ students }: { students: Notificati
   const filteredStudents = useMemo(() => {
     const keyword = filters.keyword.trim().toLowerCase();
     return students.filter((student) =>
-      (!keyword || student.username.toLowerCase().includes(keyword))
+      (!keyword || student.username.toLowerCase().includes(keyword) || student.email?.toLowerCase().includes(keyword))
       && (!filters.province || student.province === filters.province)
       && (!filters.studySystem || student.studySystem === filters.studySystem)
       && (!filters.majorName || student.majorName === filters.majorName)
@@ -87,7 +94,7 @@ export function NotificationRecipientPicker({ students }: { students: Notificati
       <div className="border border-slate-200 bg-slate-50 p-4">
         <div className="grid gap-3 xl:grid-cols-[minmax(220px,1.2fr)_repeat(3,minmax(150px,0.8fr))_auto_auto] xl:items-end">
           <label>
-            <span className="label">用户名搜索</span>
+            <span className="label">{showEmail ? "用户名 / 邮箱搜索" : "用户名搜索"}</span>
             <span className="relative block">
               <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
               <input
@@ -99,7 +106,7 @@ export function NotificationRecipientPicker({ students }: { students: Notificati
                     applyFilters();
                   }
                 }}
-                placeholder="输入用户名"
+                placeholder={showEmail ? "输入用户名或邮箱" : "输入用户名"}
                 value={draftFilters.keyword}
               />
             </span>
@@ -134,7 +141,7 @@ export function NotificationRecipientPicker({ students }: { students: Notificati
       </div>
 
       <div className="mt-3 max-h-[420px] overflow-auto border border-slate-200">
-        <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+        <table className={showEmail ? "w-full min-w-[940px] border-collapse text-left text-sm" : "w-full min-w-[760px] border-collapse text-left text-sm"}>
           <thead className="sticky top-0 z-10 bg-[#f5fafc] text-slate-600">
             <tr>
               <th className="w-14 border-b border-slate-200 px-4 py-3">
@@ -147,6 +154,7 @@ export function NotificationRecipientPicker({ students }: { students: Notificati
                 />
               </th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">用户名</th>
+              {showEmail ? <th className="border-b border-slate-200 px-4 py-3 font-semibold">邮箱</th> : null}
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">省份</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">学制</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">专业名称</th>
@@ -155,7 +163,7 @@ export function NotificationRecipientPicker({ students }: { students: Notificati
           <tbody>
             {filteredStudents.length === 0 ? (
               <tr>
-                <td className="px-4 py-12 text-center font-semibold text-slate-500" colSpan={5}>没有符合筛选条件的学生。</td>
+                <td className="px-4 py-12 text-center font-semibold text-slate-500" colSpan={showEmail ? 6 : 5}>没有符合筛选条件的学生。</td>
               </tr>
             ) : filteredStudents.map((student) => (
               <tr key={student.id} className="text-slate-700 hover:bg-sky-50/60">
@@ -169,6 +177,7 @@ export function NotificationRecipientPicker({ students }: { students: Notificati
                   />
                 </td>
                 <td className="border-b border-slate-100 px-4 py-3 font-bold text-ink">{student.username}</td>
+                {showEmail ? <td className="border-b border-slate-100 px-4 py-3">{student.email || "未设置"}</td> : null}
                 <td className="border-b border-slate-100 px-4 py-3">{student.province || "未设置"}</td>
                 <td className="border-b border-slate-100 px-4 py-3">{student.studySystem || "未设置"}</td>
                 <td className="border-b border-slate-100 px-4 py-3">{student.majorName || "未设置"}</td>

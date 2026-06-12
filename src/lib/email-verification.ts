@@ -45,7 +45,7 @@ function getEmailCodeServiceUrl() {
   return (process.env.EMAIL_CODE_SERVICE_URL || "http://172.18.255.14:8002").replace(/\/+$/, "");
 }
 
-async function sendEmailMail(input: { email: string; code: string; purpose: EmailMailPurpose; expiresInMinutes: number }) {
+async function postEmailService(path: string, payload: Record<string, unknown>) {
   const controller = new AbortController();
   const timeoutMs = Number(process.env.EMAIL_CODE_SERVICE_TIMEOUT_MS || 10000);
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -59,16 +59,11 @@ async function sendEmailMail(input: { email: string; code: string; purpose: Emai
       headers.Authorization = `Bearer ${token}`;
     }
 
-    const response = await fetch(`${getEmailCodeServiceUrl()}/send-email-code`, {
+    const response = await fetch(`${getEmailCodeServiceUrl()}${path}`, {
       method: "POST",
       headers,
       signal: controller.signal,
-      body: JSON.stringify({
-        email: input.email,
-        code: input.code,
-        purpose: input.purpose,
-        expiresInMinutes: input.expiresInMinutes
-      })
+      body: JSON.stringify(payload)
     });
 
     if (!response.ok) {
@@ -78,6 +73,15 @@ async function sendEmailMail(input: { email: string; code: string; purpose: Emai
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function sendEmailMail(input: { email: string; code: string; purpose: EmailMailPurpose; expiresInMinutes: number }) {
+  return postEmailService("/send-email-code", {
+    email: input.email,
+    code: input.code,
+    purpose: input.purpose,
+    expiresInMinutes: input.expiresInMinutes
+  });
 }
 
 export async function sendEmailCodeMail(input: { email: string; code: string; purpose: EmailVerificationPurpose; expiresInMinutes: number }) {
@@ -90,5 +94,23 @@ export async function sendPasswordResetMail(input: { email: string; password: st
     code: input.password,
     purpose: emailPurposePasswordReset,
     expiresInMinutes: 0
+  });
+}
+
+export async function sendNotificationEmail(input: { email: string; subject: string; html: string }) {
+  const email = normalizeEmail(input.email);
+  if (!isValidEmail(email)) {
+    throw new Error(`Invalid recipient email: ${input.email}`);
+  }
+
+  const subject = input.subject.trim().slice(0, 120);
+  if (!subject) {
+    throw new Error("Email subject is required.");
+  }
+
+  return postEmailService("/send-email", {
+    email,
+    subject,
+    html: input.html
   });
 }

@@ -97,6 +97,41 @@ export function stripNotificationHtml(value: string) {
     .trim();
 }
 
+export function hasNotificationTemplateVariables(value: string) {
+  return /{{\s*[a-zA-Z0-9_]+\s*}}/.test(value);
+}
+
+export function renderNotificationTemplateText(template: string, variables: Record<string, string>) {
+  return replaceNotificationTemplateVariables(template, variables, false);
+}
+
+export function renderNotificationTemplateHtml(template: string, variables: Record<string, string>) {
+  return replaceNotificationTemplateVariables(template, variables, true);
+}
+
+function replaceNotificationTemplateVariables(
+  template: string,
+  variables: Record<string, string>,
+  escapeValues: boolean
+) {
+  return template.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (placeholder, key: string) => {
+    if (!(key in variables)) {
+      return placeholder;
+    }
+    const value = variables[key] || "";
+    return escapeValues ? escapeHtml(value) : value;
+  });
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function extractSafeHref(tag: string) {
   const href = extractAttribute(tag, "href").trim();
   if (!href) {
