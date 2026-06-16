@@ -1,5 +1,6 @@
 import { getStudentFoundationProfile } from "@/lib/foundation";
 import { prisma } from "@/lib/prisma";
+import { isRealQuestionBankTitle } from "@/lib/question-bank-source";
 
 export type LearningOwnerType = "public_subject" | "major";
 export type SyllabusPathStatus = "locked" | "unlocked" | "passed";
@@ -182,13 +183,37 @@ async function getQuestionCountsByDisplaySection(shape: SyllabusShape) {
     },
     select: {
       syllabusItemId: true,
-      questionId: true
+      questionId: true,
+      question: {
+        select: {
+          paperQuestions: {
+            where: {
+              paper: { status: "published" }
+            },
+            select: {
+              paper: {
+                select: {
+                  courseId: true,
+                  title: true
+                }
+              }
+            }
+          }
+        }
+      }
     }
   });
 
   for (const tag of tags) {
     const displaySectionId = shape.displaySectionIdByItemId.get(tag.syllabusItemId);
     if (!displaySectionId) {
+      continue;
+    }
+    const displaySection = shape.itemById.get(displaySectionId);
+    const hasRealQuestionBank = tag.question.paperQuestions.some(
+      (paperQuestion) => paperQuestion.paper.courseId === displaySection?.courseId && isRealQuestionBankTitle(paperQuestion.paper.title)
+    );
+    if (!hasRealQuestionBank) {
       continue;
     }
     const questionIds = questionIdsBySectionId.get(displaySectionId) || new Set<string>();
@@ -481,6 +506,11 @@ export async function getSyllabusSectionQuestionsForStudent(userId: string, sect
   const seenQuestionIds = new Set<string>();
   const questions = tags
     .map((tag) => tag.question)
+    .map((question) => ({
+      ...question,
+      paperQuestions: question.paperQuestions.filter((paperQuestion) => isRealQuestionBankTitle(paperQuestion.paper.title))
+    }))
+    .filter((question) => question.paperQuestions.length > 0)
     .filter((question) => {
       if (seenQuestionIds.has(question.id)) {
         return false;

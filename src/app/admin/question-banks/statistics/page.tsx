@@ -7,6 +7,7 @@ import {
 import { requireAdmin } from "@/lib/auth";
 import { ensureDefaultQuestionBankCatalog, type QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 import { prisma } from "@/lib/prisma";
+import { isAiGeneratedQuestionBankTitle, isRealQuestionBankTitle } from "@/lib/question-bank-source";
 import { questionBankTypeDefaultLabels } from "@/lib/question-bank-types";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +21,7 @@ type SearchParams = {
   scopeId?: string;
   syllabusItemId?: string;
   source?: string;
+  bankSource?: string;
   questionType?: string;
 };
 
@@ -80,6 +82,8 @@ type CourseNode = {
 };
 
 type SourceFilter = "all" | "ai" | "manual";
+type BankSourceFilter = "all" | "ai_generated" | "real_exam";
+type BankSource = "ai_generated" | "real_exam" | "other";
 type TagSource = "ai" | "manual";
 
 type ScopeType = QuestionBankStatisticsScopeType;
@@ -101,6 +105,7 @@ type QuestionRow = {
   stem: string;
   type: string;
   source: TagSource;
+  bankSource: BankSource;
 };
 
 type SelectedScope = {
@@ -132,6 +137,10 @@ function isOwnerType(value?: string): value is QuestionBankOwnerType {
 
 function isSourceFilter(value?: string): value is SourceFilter {
   return value === "ai" || value === "manual" || value === "all";
+}
+
+function isBankSourceFilter(value?: string): value is BankSourceFilter {
+  return value === "ai_generated" || value === "real_exam" || value === "all";
 }
 
 function isScopeType(value?: string): value is ScopeType {
@@ -174,6 +183,7 @@ function statisticsHref(params: {
   scopeType?: ScopeType;
   scopeId?: string;
   source?: SourceFilter;
+  bankSource?: BankSourceFilter;
   questionType?: string;
 }) {
   const query = new URLSearchParams({
@@ -187,6 +197,9 @@ function statisticsHref(params: {
   }
   if (params.source && params.source !== "all") {
     query.set("source", params.source);
+  }
+  if (params.bankSource && params.bankSource !== "all") {
+    query.set("bankSource", params.bankSource);
   }
   if (params.questionType) {
     query.set("questionType", params.questionType);
@@ -472,6 +485,26 @@ function sourceFilterLabel(source: SourceFilter) {
   return "全部题目";
 }
 
+function bankSourceForTitle(title: string): BankSource {
+  if (isAiGeneratedQuestionBankTitle(title)) {
+    return "ai_generated";
+  }
+  if (isRealQuestionBankTitle(title)) {
+    return "real_exam";
+  }
+  return "other";
+}
+
+function bankSourceFilterLabel(source: BankSourceFilter) {
+  if (source === "ai_generated") {
+    return "AI生成题库";
+  }
+  if (source === "real_exam") {
+    return "历年真题";
+  }
+  return "全部题库来源";
+}
+
 function challengeStatus(count: number) {
   if (count <= 0) {
     return { label: "无题", className: "border-[#e5e7eb] bg-[#f8fafc] text-[#64748b]" };
@@ -530,6 +563,35 @@ function MetricCard({
   return <div className={cn("rounded-lg border p-4 shadow-sm", metricToneClass(tone, active))}>{content}</div>;
 }
 
+function BankSourceFilterChip({
+  label,
+  count,
+  href,
+  active,
+  tone
+}: {
+  label: string;
+  count: number;
+  href: string;
+  active: boolean;
+  tone: "cyan" | "blue";
+}) {
+  const className =
+    tone === "cyan"
+      ? active
+        ? "border-[#06b6d4] bg-[#06b6d4] text-white shadow-sm shadow-[#06b6d4]/30"
+        : "border-[#67e8f9] bg-[#ecfeff] text-[#0e7490]"
+      : active
+        ? "border-[#3562ff] bg-[#3562ff] text-white shadow-sm shadow-[#3562ff]/25"
+        : "border-[#93c5fd] bg-[#eff6ff] text-[#1d4ed8]";
+
+  return (
+    <Link className={cn("inline-flex h-8 items-center rounded border px-3 text-xs font-black transition hover:brightness-[0.97]", className)} href={href}>
+      {count}道{label}
+    </Link>
+  );
+}
+
 export default async function QuestionBankKnowledgeStatisticsPage({
   searchParams
 }: {
@@ -540,6 +602,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
 
   const params = await searchParams;
   const sourceFilter: SourceFilter = isSourceFilter(params?.source) ? params.source : "all";
+  const bankSourceFilter: BankSourceFilter = isBankSourceFilter(params?.bankSource) ? params.bankSource : "all";
   const [regions, publicSubjects, majors] = await Promise.all([
     prisma.region.findMany({
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
@@ -721,7 +784,8 @@ export default async function QuestionBankKnowledgeStatisticsPage({
         questionId: paperQuestion.question.id,
         stem: stripHtml(paperQuestion.question.stem),
         type: paperQuestion.question.type,
-        source
+        source,
+        bankSource: bankSourceForTitle(paperQuestion.paper.title)
       });
       rowsBySection.set(sectionId, rows);
     });
@@ -738,7 +802,17 @@ export default async function QuestionBankKnowledgeStatisticsPage({
   const selectedScopeRows = selectedScope ? rowsForSectionIds(rowsBySection, selectedScope.sectionIds) : [];
   const selectedStats = statsFromRows(selectedScopeRows);
   const sourceFilteredRows = selectedScopeRows.filter((row) => sourceFilter === "all" || row.source === sourceFilter);
-  const questionTypeCounts = sourceFilteredRows.reduce<Map<string, number>>((counts, row) => {
+  const bankSourceCounts = sourceFilteredRows.reduce<Record<Exclude<BankSourceFilter, "all">, number>>(
+    (counts, row) => {
+      if (row.bankSource === "ai_generated" || row.bankSource === "real_exam") {
+        counts[row.bankSource] += 1;
+      }
+      return counts;
+    },
+    { ai_generated: 0, real_exam: 0 }
+  );
+  const bankSourceFilteredRows = sourceFilteredRows.filter((row) => bankSourceFilter === "all" || row.bankSource === bankSourceFilter);
+  const questionTypeCounts = bankSourceFilteredRows.reduce<Map<string, number>>((counts, row) => {
     counts.set(row.type, (counts.get(row.type) || 0) + 1);
     return counts;
   }, new Map());
@@ -748,7 +822,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
   });
   const selectedQuestionType = params?.questionType && questionTypeCounts.has(params.questionType) ? params.questionType : "";
   const selectedRows = selectedScope
-    ? sourceFilteredRows
+    ? bankSourceFilteredRows
         .filter((row) => !selectedQuestionType || row.type === selectedQuestionType)
         .sort((left, right) => {
           const yearCompare = (right.paperYear || 0) - (left.paperYear || 0);
@@ -765,16 +839,17 @@ export default async function QuestionBankKnowledgeStatisticsPage({
             { label: "题库", href: ownerQuestionBankHref(selectedOwner), active: false },
             {
               label: "知识点题目统计",
-              href: statisticsHref({
-                province: selectedProvince,
-                examType: selectedExamType,
-                owner: selectedOwner,
-                scopeType: selectedScope?.type,
-                scopeId: selectedScope?.id,
-                source: sourceFilter
-              }),
-              active: true
-            },
+                href: statisticsHref({
+                  province: selectedProvince,
+                  examType: selectedExamType,
+                  owner: selectedOwner,
+                  scopeType: selectedScope?.type,
+                  scopeId: selectedScope?.id,
+                  source: sourceFilter,
+                  bankSource: bankSourceFilter
+                }),
+                active: true
+              },
             { label: "知识点", href: ownerKnowledgeMapHref(selectedOwner), active: false }
           ].map((tab) => (
             <Link
@@ -854,7 +929,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                   icon={<Sparkles size={15} />}
                   active={sourceFilter === "ai"}
                   tone="cyan"
-                  href={selectedScope ? statisticsHref({ province: selectedProvince, examType: selectedExamType, owner: selectedOwner, scopeType: selectedScope.type, scopeId: selectedScope.id, source: "ai" }) : undefined}
+                  href={selectedScope ? statisticsHref({ province: selectedProvince, examType: selectedExamType, owner: selectedOwner, scopeType: selectedScope.type, scopeId: selectedScope.id, source: "ai", bankSource: bankSourceFilter }) : undefined}
                 />
                 <MetricCard
                   label="人工打标"
@@ -862,7 +937,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                   icon={<UserCheck size={15} />}
                   active={sourceFilter === "manual"}
                   tone="amber"
-                  href={selectedScope ? statisticsHref({ province: selectedProvince, examType: selectedExamType, owner: selectedOwner, scopeType: selectedScope.type, scopeId: selectedScope.id, source: "manual" }) : undefined}
+                  href={selectedScope ? statisticsHref({ province: selectedProvince, examType: selectedExamType, owner: selectedOwner, scopeType: selectedScope.type, scopeId: selectedScope.id, source: "manual", bankSource: bankSourceFilter }) : undefined}
                 />
               </div>
 
@@ -870,43 +945,74 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                 <div>
                   <h3 className="text-sm font-black">题目列表</h3>
                   <p className="mt-1 text-xs text-[#64748b]">
-                    当前显示：{sourceFilterLabel(sourceFilter)}{selectedQuestionType ? ` / ${questionTypeLabel(selectedQuestionType)}` : ""}，共 {selectedRows.length} 道。
+                    当前显示：{sourceFilterLabel(sourceFilter)} / {bankSourceFilterLabel(bankSourceFilter)}{selectedQuestionType ? ` / ${questionTypeLabel(selectedQuestionType)}` : ""}，共 {selectedRows.length} 道。
                   </p>
                 </div>
-                {selectedScope && (sourceFilter !== "all" || selectedQuestionType) ? (
+                {selectedScope && (sourceFilter !== "all" || bankSourceFilter !== "all" || selectedQuestionType) ? (
                   <Link className="rounded border border-[#cfd8e6] px-3 py-1.5 text-xs font-bold text-[#3562ff] hover:bg-[#eff6ff]" href={statisticsHref({ province: selectedProvince, examType: selectedExamType, owner: selectedOwner, scopeType: selectedScope.type, scopeId: selectedScope.id })}>
                     查看全部
                   </Link>
                 ) : null}
               </div>
 
-              {questionTypeEntries.length > 0 ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  {questionTypeEntries.map(([type, count]) => {
-                    const active = selectedQuestionType === type;
-                    return (
-                      <Link
-                        key={type}
-                        className={cn(
-                          "inline-flex h-8 items-center rounded border px-3 text-xs font-black transition hover:brightness-[0.97]",
-                          questionTypeChipClass(type, active)
-                        )}
-                        href={statisticsHref({
-                          province: selectedProvince,
-                          examType: selectedExamType,
-                          owner: selectedOwner,
-                          scopeType: selectedScope?.type,
-                          scopeId: selectedScope?.id,
-                          source: sourceFilter,
-                          questionType: active ? undefined : type
-                        })}
-                      >
-                        {count}道{questionTypeLabel(type)}
-                      </Link>
-                    );
+              <div className="flex flex-wrap items-center gap-2">
+                {questionTypeEntries.map(([type, count]) => {
+                  const active = selectedQuestionType === type;
+                  return (
+                    <Link
+                      key={type}
+                      className={cn(
+                        "inline-flex h-8 items-center rounded border px-3 text-xs font-black transition hover:brightness-[0.97]",
+                        questionTypeChipClass(type, active)
+                      )}
+                      href={statisticsHref({
+                        province: selectedProvince,
+                        examType: selectedExamType,
+                        owner: selectedOwner,
+                        scopeType: selectedScope?.type,
+                        scopeId: selectedScope?.id,
+                        source: sourceFilter,
+                        bankSource: bankSourceFilter,
+                        questionType: active ? undefined : type
+                      })}
+                    >
+                      {count}道{questionTypeLabel(type)}
+                    </Link>
+                  );
+                })}
+                <BankSourceFilterChip
+                  active={bankSourceFilter === "ai_generated"}
+                  count={bankSourceCounts.ai_generated}
+                  href={statisticsHref({
+                    province: selectedProvince,
+                    examType: selectedExamType,
+                    owner: selectedOwner,
+                    scopeType: selectedScope?.type,
+                    scopeId: selectedScope?.id,
+                    source: sourceFilter,
+                    bankSource: bankSourceFilter === "ai_generated" ? undefined : "ai_generated",
+                    questionType: selectedQuestionType || undefined
                   })}
-                </div>
-              ) : null}
+                  label="AI生成"
+                  tone="cyan"
+                />
+                <BankSourceFilterChip
+                  active={bankSourceFilter === "real_exam"}
+                  count={bankSourceCounts.real_exam}
+                  href={statisticsHref({
+                    province: selectedProvince,
+                    examType: selectedExamType,
+                    owner: selectedOwner,
+                    scopeType: selectedScope?.type,
+                    scopeId: selectedScope?.id,
+                    source: sourceFilter,
+                    bankSource: bankSourceFilter === "real_exam" ? undefined : "real_exam",
+                    questionType: selectedQuestionType || undefined
+                  })}
+                  label="历年真题"
+                  tone="blue"
+                />
+              </div>
 
               <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-[#e2e8f0]">
                 <table className="w-full min-w-[980px] border-collapse text-left text-sm">

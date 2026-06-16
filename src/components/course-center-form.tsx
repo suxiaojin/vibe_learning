@@ -5,18 +5,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   BookOpenCheck,
-  CalendarDays,
   CheckCircle2,
   ChevronRight,
   Circle,
   Clock3,
   Loader2,
-  MapPin,
   Monitor,
   Save,
   Settings2,
   Sigma,
   Target,
+  Zap,
   X
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -153,6 +152,7 @@ export function CourseCenterForm({
   const selectedPublicSubject = options.publicSubjects.find((subject) => subject.id === publicSubjectId) || null;
   const selectedMajor = options.majors.find((major) => major.id === majorId) || null;
   const displayProfile = savedProfile || currentProfile;
+  const savedPlanLabel = formatSavedPlanLabel(displayProfile);
   const canSave = Boolean(selectedRegionId && publicSubjectId && majorId && !loadingOptions && !saving);
 
   useEffect(() => {
@@ -313,7 +313,7 @@ export function CourseCenterForm({
       <header className="flex flex-wrap items-start justify-between gap-5">
         <div>
           <h1 className="text-3xl font-black tracking-tight text-ink lg:text-4xl">课程中心</h1>
-          <p className="mt-2 text-sm font-semibold text-slate-500 lg:text-base">选择课程，按自己的节奏开始学习</p>
+          <p className="mt-2 text-sm font-semibold text-slate-500 lg:text-base">{savedPlanLabel || "请先保存学习方案"}</p>
         </div>
         <button
           className="secondary-button border-sky-300 px-5 text-sky-600 hover:border-sky-500 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
@@ -324,22 +324,6 @@ export function CourseCenterForm({
           调整学习方案
         </button>
       </header>
-
-      <section className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-2">
-          <span className="flex items-center gap-2 text-base font-black text-ink lg:text-lg">
-            <MapPin className="text-sky-500" size={22} />
-            {displayProfile?.regionName || `${displayProfile?.province || "尚未选择"}专转本`} · {displayProfile?.studySystem || "待设置"}
-          </span>
-          <span className="text-sm font-semibold text-slate-500">
-            当前课程：<strong className="font-black text-slate-700">{displayProfile?.publicSubjectName || "未选择"} + {displayProfile?.majorName || "未选择"}</strong>
-          </span>
-        </div>
-        <span className="flex items-center gap-2 text-sm font-bold text-teal">
-          <CheckCircle2 size={18} />
-          {displayProfile ? "已保存" : "待设置"}
-        </span>
-      </section>
 
       {overview.courses.length > 0 ? (
         <section className="mt-5 grid gap-5 xl:grid-cols-2">
@@ -357,8 +341,6 @@ export function CourseCenterForm({
           </button>
         </section>
       )}
-
-      <LearningPlan overview={overview} />
 
       {drawerOpen ? (
         <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/45" role="presentation" onMouseDown={closeDrawer}>
@@ -528,7 +510,7 @@ function CourseCard({ course }: { course: CourseCenterOverview["courses"][number
         </Link>
       </div>
 
-      <div className="pt-5">
+      <div className="pt-5 border-b border-slate-100 pb-5">
         <p className="text-sm font-black text-slate-500">即将学习</p>
         {course.upcomingSections.length > 0 ? (
           <div className="mt-3 space-y-1">
@@ -564,77 +546,84 @@ function CourseCard({ course }: { course: CourseCenterOverview["courses"][number
           查看全部 {course.sectionCount} 个知识点 <ChevronRight size={16} />
         </Link>
       </div>
+
+      <div className="mt-5 grid gap-3">
+        <PracticeTestAction
+          buttonLabel="开始测试"
+          description="从当前已通过范围随机抽题"
+          href={`/mock-tests/quick?course=${course.key}`}
+          icon="quick"
+          isMajor={isMajor}
+          title="快速测试"
+        />
+        <PracticeTestAction
+          buttonLabel="选择知识点"
+          description="选择已通过知识点练一组"
+          href={`/mock-tests/special?course=${course.key}`}
+          icon="target"
+          isMajor={isMajor}
+          title="专项测试"
+        />
+      </div>
     </article>
   );
 }
 
-function LearningPlan({ overview }: { overview: CourseCenterOverview }) {
+function PracticeTestAction({
+  title,
+  description,
+  buttonLabel,
+  href,
+  icon,
+  isMajor
+}: {
+  title: string;
+  description: string;
+  buttonLabel: string;
+  href: string;
+  icon: "quick" | "target";
+  isMajor: boolean;
+}) {
+  const Icon = icon === "quick" ? Zap : Target;
+
   return (
-    <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-black text-ink">学习计划</h2>
-          <p className="mt-1 text-sm font-semibold text-slate-500">根据本周真实学习记录自动更新</p>
-        </div>
-        <CalendarDays className="text-sky-500" size={24} />
-      </div>
-
-      <div className="mt-6 grid gap-6 xl:grid-cols-[1.05fr_.9fr_1.05fr] xl:divide-x xl:divide-slate-200">
-        <div className="xl:pr-6">
-          <p className="text-sm font-black text-slate-600">本周学习分布</p>
-          <div className="mt-4 grid grid-cols-7 gap-2">
-            {overview.week.days.map((day) => (
-              <div key={day.key} className={cn("rounded-xl border px-2 py-3 text-center", day.isToday ? "border-sky-400 bg-sky-50" : "border-slate-200 bg-slate-50/70")}>
-                <p className={cn("text-xs font-black", day.isToday ? "text-sky-600" : "text-slate-500")}>{day.label}</p>
-                <span className={cn("mx-auto mt-3 grid size-7 place-items-center rounded-full text-xs font-black", day.count > 0 ? "bg-teal text-white" : "bg-slate-200 text-slate-400")}>
-                  {day.count > 0 ? day.count : "-"}
-                </span>
-              </div>
-            ))}
-          </div>
-          <p className="mt-4 text-sm font-semibold text-slate-500">本周已有 {overview.week.activeDays} 天完成学习，保持稳定节奏效果更好。</p>
-        </div>
-
-        <div className="xl:px-6">
-          <p className="text-sm font-black text-slate-600">本周完成</p>
-          <div className="mt-4 flex items-center gap-4">
-            <span className="grid size-20 shrink-0 place-items-center rounded-full border-[8px] border-teal/20 text-2xl font-black text-teal">{overview.week.completedCount}</span>
-            <div>
-              <p className="text-lg font-black text-ink">个知识点</p>
-              <p className="mt-1 text-xs font-semibold leading-5 text-slate-400">持续积累，学习进度会同步更新</p>
-            </div>
-          </div>
-          <Link className="mt-5 inline-flex items-center gap-1 text-sm font-black text-sky-600 hover:text-sky-700" href="/learn">
-            查看学习地图 <ChevronRight size={16} />
-          </Link>
-        </div>
-
-        <div className="xl:pl-6">
-          <p className="text-sm font-black text-slate-600">最近学习动态</p>
-          {overview.recentActivities.length > 0 ? (
-            <div className="mt-3 divide-y divide-slate-100">
-              {overview.recentActivities.map((activity) => (
-                <div key={activity.id} className="flex items-center justify-between gap-4 py-3 first:pt-0">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-emerald-50 text-teal"><CheckCircle2 size={18} /></span>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-black text-ink">完成了 {activity.title}</p>
-                      <p className="mt-0.5 truncate text-xs font-semibold text-slate-400">{activity.courseTitle}</p>
-                    </div>
-                  </div>
-                  <time className="shrink-0 text-xs font-semibold text-slate-400" dateTime={activity.completedAt}>{formatActivityTime(activity.completedAt)}</time>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="mt-4 flex items-start gap-3 rounded-xl bg-slate-50 px-4 py-4">
-              <Target className="shrink-0 text-sky-500" size={20} />
-              <p className="text-sm font-semibold leading-6 text-slate-500">完成第一个知识点后，这里会展示你的最近学习动态。</p>
-            </div>
+    <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-gradient-to-r from-white to-slate-50/70 px-4 py-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+      <div className="flex min-w-0 items-center gap-4">
+        <span
+          className={cn(
+            "grid size-11 shrink-0 place-items-center rounded-full text-white shadow-sm",
+            icon === "quick"
+              ? isMajor
+                ? "bg-gradient-to-br from-teal to-emerald-500"
+                : "bg-gradient-to-br from-sky-400 to-blue-600"
+              : isMajor
+                ? "bg-teal/90"
+                : "bg-sky-500"
           )}
+        >
+          <Icon size={24} />
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-lg font-black text-ink">{title}</p>
+          <p className="mt-0.5 truncate text-sm font-semibold text-slate-500">{description}</p>
         </div>
       </div>
-    </section>
+      <Link
+        className={cn(
+          "inline-flex min-h-12 shrink-0 items-center justify-center rounded-xl px-6 text-sm font-black transition focus-visible:outline-none focus-visible:ring-2",
+          icon === "quick"
+            ? isMajor
+              ? "bg-teal text-white shadow-sm shadow-teal/15 focus-visible:ring-teal/30"
+              : "bg-blue-600 text-white shadow-sm shadow-blue-500/20 focus-visible:ring-blue-300"
+            : isMajor
+              ? "border border-teal/35 bg-white text-teal focus-visible:ring-teal/25"
+              : "border border-blue-400 bg-white text-blue-600 focus-visible:ring-blue-300"
+        )}
+        href={href}
+      >
+        {buttonLabel}
+      </Link>
+    </div>
   );
 }
 
@@ -668,23 +657,21 @@ function SelectField({
   );
 }
 
-function formatActivityTime(value: string) {
-  const date = new Date(value);
-  const datePart = new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    month: "numeric",
-    day: "numeric"
-  }).format(date);
-  const timePart = new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  }).format(date);
-
-  return `${datePart} ${timePart}`;
-}
-
 function uniqueValues(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
+}
+
+function formatSavedPlanLabel(profile: CurrentProfile) {
+  if (!profile) {
+    return "";
+  }
+
+  const regionPart = [profile.province, profile.studySystem].filter(Boolean).join("");
+  const coursePart = [profile.publicSubjectName, profile.majorName].filter(Boolean).join("+");
+
+  if (regionPart && coursePart) {
+    return `${regionPart}-${coursePart}`;
+  }
+
+  return regionPart || coursePart;
 }
