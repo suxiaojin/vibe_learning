@@ -557,12 +557,12 @@ function CourseCard({ course }: { course: CourseCenterOverview["courses"][number
           title="快速测试"
         />
         <PracticeTestAction
-          buttonLabel="选择知识点"
-          description="选择已通过知识点练一组"
+          buttonLabel="开始练习"
+          description="按已通过知识点专项练习"
           href={`/mock-tests/special?course=${course.key}`}
           icon="target"
           isMajor={isMajor}
-          title="专项测试"
+          title="专项练习"
         />
       </div>
     </article>

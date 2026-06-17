@@ -209,9 +209,8 @@ async function getQuestionCountsByDisplaySection(shape: SyllabusShape) {
     if (!displaySectionId) {
       continue;
     }
-    const displaySection = shape.itemById.get(displaySectionId);
     const hasRealQuestionBank = tag.question.paperQuestions.some(
-      (paperQuestion) => paperQuestion.paper.courseId === displaySection?.courseId && isRealQuestionBankTitle(paperQuestion.paper.title)
+      (paperQuestion) => isRealQuestionBankTitle(paperQuestion.paper.title)
     );
     if (!hasRealQuestionBank) {
       continue;
@@ -483,7 +482,7 @@ export async function getSyllabusSectionQuestionsForStudent(userId: string, sect
           difficulty: true,
           createdAt: true,
           paperQuestions: {
-            where: { paper: { courseId: access.course.id, status: "published" } },
+            where: { paper: { status: "published" } },
             select: {
               sortOrder: true,
               paper: {

@@ -119,6 +119,8 @@ type QuestionTypeMeta = {
 const optionKeys = ["A", "B", "C", "D"] as const;
 const alphabetOptionKeys = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 const layoutStorageKey = "question-bank-detail-column-layout";
+const toolColumnWidth = 90;
+const resizeHandleWidth = 6;
 const defaultColumnLayout = {
   editor: 820,
   list: 385,
@@ -129,6 +131,7 @@ const minColumnLayout = {
   list: 280,
   attributes: 380
 };
+const fixedColumnLayoutWidth = toolColumnWidth + resizeHandleWidth * 2;
 
 const questionTypeStyles: Record<string, QuestionTypeMeta> = {
   single_choice: {
@@ -258,6 +261,78 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+function columnLayoutTotal(layout: typeof defaultColumnLayout) {
+  return layout.editor + layout.list + layout.attributes;
+}
+
+function sanitizeColumnLayout(layout: Partial<typeof defaultColumnLayout>) {
+  return {
+    editor: Math.max(Number(layout.editor) || defaultColumnLayout.editor, minColumnLayout.editor),
+    list: Math.max(Number(layout.list) || defaultColumnLayout.list, minColumnLayout.list),
+    attributes: Math.max(Number(layout.attributes) || defaultColumnLayout.attributes, minColumnLayout.attributes)
+  };
+}
+
+function fitColumnLayout(layout: typeof defaultColumnLayout, containerWidth: number) {
+  const safeLayout = sanitizeColumnLayout(layout);
+  const availableWidth = Math.floor(containerWidth || 0) - fixedColumnLayoutWidth;
+  if (availableWidth <= 0) {
+    return safeLayout;
+  }
+
+  const minTotal = columnLayoutTotal(minColumnLayout);
+  if (availableWidth <= minTotal) {
+    const editor = Math.max(1, Math.floor((availableWidth * minColumnLayout.editor) / minTotal));
+    const list = Math.max(1, Math.floor((availableWidth * minColumnLayout.list) / minTotal));
+
+    return {
+      editor,
+      list,
+      attributes: Math.max(1, availableWidth - editor - list)
+    };
+  }
+
+  const safeTotal = columnLayoutTotal(safeLayout);
+  if (safeTotal <= availableWidth) {
+    return safeLayout;
+  }
+
+  const extraWidth = availableWidth - minTotal;
+  const extraLayout = {
+    editor: safeLayout.editor - minColumnLayout.editor,
+    list: safeLayout.list - minColumnLayout.list,
+    attributes: safeLayout.attributes - minColumnLayout.attributes
+  };
+  const extraTotal = Math.max(1, columnLayoutTotal(extraLayout));
+  const editor = minColumnLayout.editor + Math.floor((extraWidth * extraLayout.editor) / extraTotal);
+  const list = minColumnLayout.list + Math.floor((extraWidth * extraLayout.list) / extraTotal);
+
+  return {
+    editor,
+    list,
+    attributes: Math.max(minColumnLayout.attributes, availableWidth - editor - list)
+  };
+}
+
+function getResizeMinimums(left: "editor" | "list", right: "list" | "attributes", startLayout: typeof defaultColumnLayout) {
+  const pairTotal = startLayout[left] + startLayout[right];
+  const requestedMinTotal = minColumnLayout[left] + minColumnLayout[right];
+
+  if (pairTotal >= requestedMinTotal) {
+    return {
+      left: minColumnLayout[left],
+      right: minColumnLayout[right]
+    };
+  }
+
+  const leftMin = Math.max(1, Math.floor((pairTotal * minColumnLayout[left]) / requestedMinTotal));
+
+  return {
+    left: leftMin,
+    right: Math.max(1, pairTotal - leftMin)
+  };
+}
+
 function readColumnLayout() {
   if (typeof window === "undefined") {
     return defaultColumnLayout;
@@ -269,11 +344,7 @@ function readColumnLayout() {
       return defaultColumnLayout;
     }
     const parsed = JSON.parse(saved) as Partial<typeof defaultColumnLayout>;
-    return {
-      editor: Math.max(Number(parsed.editor) || defaultColumnLayout.editor, minColumnLayout.editor),
-      list: Math.max(Number(parsed.list) || defaultColumnLayout.list, minColumnLayout.list),
-      attributes: Math.max(Number(parsed.attributes) || defaultColumnLayout.attributes, minColumnLayout.attributes)
-    };
+    return sanitizeColumnLayout(parsed);
   } catch {
     return defaultColumnLayout;
   }
@@ -1013,6 +1084,9 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
   const orderInputRef = useRef<HTMLInputElement | null>(null);
   const reorderFormRef = useRef<HTMLFormElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const workbenchRef = useRef<HTMLElement | null>(null);
+  const [workbenchWidth, setWorkbenchWidth] = useState(() => (typeof window === "undefined" ? 0 : window.innerWidth));
+  const fittedColumnLayout = fitColumnLayout(columnLayout, workbenchWidth);
   const selectedQuestion = orderedQuestions.find((question) => question.id === selectedQuestionId) || null;
   const selectedKnowledgeTagIds = selectedQuestion?.knowledgeTagIds || [];
   const selectedKnowledgeLabels = selectedQuestion?.knowledgeTagLabels || [];
@@ -1048,6 +1122,27 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
   }, [questions]);
 
   useEffect(() => {
+    const updateWorkbenchWidth = () => {
+      setWorkbenchWidth(workbenchRef.current?.clientWidth || window.innerWidth);
+    };
+
+    updateWorkbenchWidth();
+    window.addEventListener("resize", updateWorkbenchWidth);
+
+    if (typeof ResizeObserver === "undefined" || !workbenchRef.current) {
+      return () => window.removeEventListener("resize", updateWorkbenchWidth);
+    }
+
+    const observer = new ResizeObserver(updateWorkbenchWidth);
+    observer.observe(workbenchRef.current);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateWorkbenchWidth);
+    };
+  }, []);
+
+  useEffect(() => {
     const hashQuestionId = typeof window === "undefined" ? "" : window.location.hash.replace(/^#paper-question-/, "");
     const targetQuestionId = focusedQuestionId || hashQuestionId;
     if (!targetQuestionId || focusedQuestionIdRef.current === targetQuestionId) {
@@ -1061,7 +1156,7 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
     setActiveEditorType(null);
     setSelectedQuestionId(targetQuestionId);
     window.requestAnimationFrame(() => {
-      document.getElementById(`paper-question-${targetQuestionId}`)?.scrollIntoView({ block: "center" });
+      document.getElementById(`paper-question-${targetQuestionId}`)?.scrollIntoView({ block: "center", inline: "nearest" });
     });
   }, [focusedQuestionId, orderedQuestions]);
 
@@ -1112,7 +1207,7 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
     setActiveEditorType(null);
     setSelectedQuestionId(question.id);
     window.requestAnimationFrame(() => {
-      document.getElementById(`paper-question-${question.id}`)?.scrollIntoView({ block: "center" });
+      document.getElementById(`paper-question-${question.id}`)?.scrollIntoView({ block: "center", inline: "nearest" });
     });
   }
 
@@ -1228,7 +1323,8 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
 
   const resizeColumns = (left: "editor" | "list", right: "list" | "attributes", startX: number, startLayout: typeof defaultColumnLayout, clientX: number) => {
     const dx = clientX - startX;
-    const safeDx = clamp(dx, minColumnLayout[left] - startLayout[left], startLayout[right] - minColumnLayout[right]);
+    const resizeMinimums = getResizeMinimums(left, right, startLayout);
+    const safeDx = clamp(dx, resizeMinimums.left - startLayout[left], startLayout[right] - resizeMinimums.right);
     const nextLayout = {
       ...startLayout,
       [left]: startLayout[left] + safeDx,
@@ -1240,7 +1336,7 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
   const startResize = (left: "editor" | "list", right: "list" | "attributes"): PointerEventHandler<HTMLDivElement> => (event) => {
     event.preventDefault();
     const startX = event.clientX;
-    const startLayout = { ...columnLayout };
+    const startLayout = { ...fittedColumnLayout };
     const handleMove = (moveEvent: PointerEvent) => resizeColumns(left, right, startX, startLayout, moveEvent.clientX);
     const handleUp = () => {
       window.removeEventListener("pointermove", handleMove);
@@ -1306,9 +1402,10 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
       ) : null}
 
       <section
-        className="grid h-[calc(100vh-38px)] min-w-[1280px]"
+        ref={workbenchRef}
+        className="grid h-[calc(100vh-38px)] w-full min-w-0"
         style={{
-          gridTemplateColumns: `90px ${columnLayout.editor}px 6px ${columnLayout.list}px 6px minmax(${columnLayout.attributes}px, 1fr)`
+          gridTemplateColumns: `${toolColumnWidth}px ${fittedColumnLayout.editor}px ${resizeHandleWidth}px ${fittedColumnLayout.list}px ${resizeHandleWidth}px minmax(${fittedColumnLayout.attributes}px, 1fr)`
         }}
       >
         <aside className="border-r border-[#d7dee8] bg-white">
