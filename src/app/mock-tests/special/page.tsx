@@ -1,12 +1,8 @@
 import Link from "next/link";
 import {
   EmptyMockTestState,
-  GentleNote,
-  MockTestHeader,
   MockTestPageFrame,
-  QuestionList,
-  RuleStrip,
-  SourceBadge
+  QuestionList
 } from "@/app/mock-tests/mock-test-components";
 import { requireUser } from "@/lib/auth";
 import {
@@ -30,20 +26,9 @@ export default async function SpecialMockTestPage({
   const selectedSections = context.passedSections.filter((section) => selectedSectionIds.includes(section.id));
   const selectedQuestions = context.group && selectedSections.length > 0 ? await getAiGeneratedQuestionsForSections(context.group, selectedSections) : [];
   const questions = pickRandomMockQuestions(selectedQuestions, 10);
-  const courseTitle = context.group?.name || (courseKey === "public_subject" ? "公共课" : "专业课");
 
   return (
     <MockTestPageFrame>
-      <MockTestHeader
-        courseKey={courseKey}
-        courseTitle={courseTitle}
-        mode="special"
-        subtitle="只选择已经闯关通过的知识点，做一组更聚焦的小测试。"
-        title="专项测试"
-      />
-
-      <RuleStrip passedCount={context.passedSections.length} questionCount={selectedQuestions.length} />
-
       {!context.group ? (
         <EmptyMockTestState description="请先回到课程中心保存公共课和专业课，系统会按你的课程生成测试入口。" title="还没有可用课程" />
       ) : context.passedSections.length === 0 ? (
@@ -56,17 +41,7 @@ export default async function SpecialMockTestPage({
           ) : questions.length === 0 ? (
             <EmptyMockTestState description="所选知识点下还没有发布到 AI生成题库 的题目。系统不会混用真题闯关题。" title="暂无可用测试题" />
           ) : (
-            <>
-              <div className="mt-5 flex justify-end">
-                <SourceBadge />
-              </div>
-              <QuestionList
-                description={`已选择 ${selectedSections.length} 个知识点，每次最多抽 10 道。`}
-                questions={questions}
-                title="本次专项测试"
-              />
-              <GentleNote />
-            </>
+            <QuestionList className="mt-5" questions={questions} />
           )}
         </>
       )}

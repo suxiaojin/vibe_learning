@@ -10,6 +10,7 @@ export type MockTestQuestion = {
   difficulty: string;
   source: string;
   sourceYear: number | null;
+  knowledgePointTitle: string;
   questionBank: {
     id: string;
     title: string;
@@ -71,6 +72,11 @@ export async function getAiGeneratedQuestionsForSections(group: SyllabusPathGrou
       question: { status: "published" }
     },
     select: {
+      syllabusItem: {
+        select: {
+          title: true
+        }
+      },
       question: {
         select: {
           id: true,
@@ -127,6 +133,7 @@ export async function getAiGeneratedQuestionsForSections(group: SyllabusPathGrou
       difficulty: tag.question.difficulty,
       source: tag.question.source,
       sourceYear: tag.question.sourceYear,
+      knowledgePointTitle: tag.syllabusItem.title,
       createdAt: tag.question.createdAt,
       sortOrder: firstPaperQuestion.sortOrder,
       questionBank: {
