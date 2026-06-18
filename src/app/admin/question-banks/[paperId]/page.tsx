@@ -254,6 +254,7 @@ export default async function QuestionBankDetailPage({
           options: toQuestionOptions(item.question.options),
           answer: toAnswerList(item.question.answer),
           analysis: item.question.analysis,
+          aiDoubtAnswer: item.question.aiDoubtAnswer || "",
           knowledgePointTitle: item.question.knowledgePoint.title,
           chapterTitle: item.question.knowledgePoint.chapter.title,
           knowledgeTagIds,

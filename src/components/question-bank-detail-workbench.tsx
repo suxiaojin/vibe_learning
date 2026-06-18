@@ -13,6 +13,8 @@ import {
   FileText,
   Image,
   ListChecks,
+  Loader2,
+  Save,
   Search,
   Sigma,
   Sparkles,
@@ -58,6 +60,7 @@ type QuestionRow = {
   options: QuestionOption[];
   answer: string[];
   analysis: string;
+  aiDoubtAnswer: string;
   knowledgePointTitle: string;
   chapterTitle: string;
   knowledgeTagIds: string[];
@@ -119,8 +122,6 @@ type QuestionTypeMeta = {
 const optionKeys = ["A", "B", "C", "D"] as const;
 const alphabetOptionKeys = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 const layoutStorageKey = "question-bank-detail-column-layout";
-const toolColumnWidth = 90;
-const resizeHandleWidth = 6;
 const defaultColumnLayout = {
   editor: 820,
   list: 385,
@@ -131,7 +132,6 @@ const minColumnLayout = {
   list: 280,
   attributes: 380
 };
-const fixedColumnLayoutWidth = toolColumnWidth + resizeHandleWidth * 2;
 
 const questionTypeStyles: Record<string, QuestionTypeMeta> = {
   single_choice: {
@@ -261,78 +261,6 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-function columnLayoutTotal(layout: typeof defaultColumnLayout) {
-  return layout.editor + layout.list + layout.attributes;
-}
-
-function sanitizeColumnLayout(layout: Partial<typeof defaultColumnLayout>) {
-  return {
-    editor: Math.max(Number(layout.editor) || defaultColumnLayout.editor, minColumnLayout.editor),
-    list: Math.max(Number(layout.list) || defaultColumnLayout.list, minColumnLayout.list),
-    attributes: Math.max(Number(layout.attributes) || defaultColumnLayout.attributes, minColumnLayout.attributes)
-  };
-}
-
-function fitColumnLayout(layout: typeof defaultColumnLayout, containerWidth: number) {
-  const safeLayout = sanitizeColumnLayout(layout);
-  const availableWidth = Math.floor(containerWidth || 0) - fixedColumnLayoutWidth;
-  if (availableWidth <= 0) {
-    return safeLayout;
-  }
-
-  const minTotal = columnLayoutTotal(minColumnLayout);
-  if (availableWidth <= minTotal) {
-    const editor = Math.max(1, Math.floor((availableWidth * minColumnLayout.editor) / minTotal));
-    const list = Math.max(1, Math.floor((availableWidth * minColumnLayout.list) / minTotal));
-
-    return {
-      editor,
-      list,
-      attributes: Math.max(1, availableWidth - editor - list)
-    };
-  }
-
-  const safeTotal = columnLayoutTotal(safeLayout);
-  if (safeTotal <= availableWidth) {
-    return safeLayout;
-  }
-
-  const extraWidth = availableWidth - minTotal;
-  const extraLayout = {
-    editor: safeLayout.editor - minColumnLayout.editor,
-    list: safeLayout.list - minColumnLayout.list,
-    attributes: safeLayout.attributes - minColumnLayout.attributes
-  };
-  const extraTotal = Math.max(1, columnLayoutTotal(extraLayout));
-  const editor = minColumnLayout.editor + Math.floor((extraWidth * extraLayout.editor) / extraTotal);
-  const list = minColumnLayout.list + Math.floor((extraWidth * extraLayout.list) / extraTotal);
-
-  return {
-    editor,
-    list,
-    attributes: Math.max(minColumnLayout.attributes, availableWidth - editor - list)
-  };
-}
-
-function getResizeMinimums(left: "editor" | "list", right: "list" | "attributes", startLayout: typeof defaultColumnLayout) {
-  const pairTotal = startLayout[left] + startLayout[right];
-  const requestedMinTotal = minColumnLayout[left] + minColumnLayout[right];
-
-  if (pairTotal >= requestedMinTotal) {
-    return {
-      left: minColumnLayout[left],
-      right: minColumnLayout[right]
-    };
-  }
-
-  const leftMin = Math.max(1, Math.floor((pairTotal * minColumnLayout[left]) / requestedMinTotal));
-
-  return {
-    left: leftMin,
-    right: Math.max(1, pairTotal - leftMin)
-  };
-}
-
 function readColumnLayout() {
   if (typeof window === "undefined") {
     return defaultColumnLayout;
@@ -344,7 +272,11 @@ function readColumnLayout() {
       return defaultColumnLayout;
     }
     const parsed = JSON.parse(saved) as Partial<typeof defaultColumnLayout>;
-    return sanitizeColumnLayout(parsed);
+    return {
+      editor: Math.max(Number(parsed.editor) || defaultColumnLayout.editor, minColumnLayout.editor),
+      list: Math.max(Number(parsed.list) || defaultColumnLayout.list, minColumnLayout.list),
+      attributes: Math.max(Number(parsed.attributes) || defaultColumnLayout.attributes, minColumnLayout.attributes)
+    };
   } catch {
     return defaultColumnLayout;
   }
@@ -383,6 +315,7 @@ function questionSearchText(question: QuestionRow) {
   return [
     stripHtml(question.title),
     stripHtml(question.analysis),
+    question.aiDoubtAnswer,
     question.options.map((option) => `${option.key} ${option.text}`).join(" ")
   ].join(" ").toLowerCase();
 }
@@ -910,6 +843,7 @@ function ChoiceQuestionForm({
       <EditorShell title="解答详情">
         <RichTextEditor name="analysis" defaultValue={question?.analysis || ""} />
       </EditorShell>
+      {question ? <AiDoubtReviewPanel paperId={paperId} question={question} /> : null}
     </form>
   );
 }
@@ -965,6 +899,7 @@ function TrueFalseQuestionForm({ paperId, question }: { paperId: string; questio
       <EditorShell title="解答详情">
         <RichTextEditor name="analysis" defaultValue={question?.analysis || ""} />
       </EditorShell>
+      {question ? <AiDoubtReviewPanel paperId={paperId} question={question} /> : null}
     </form>
   );
 }
@@ -1002,6 +937,7 @@ function FillBlankQuestionForm({ paperId, question }: { paperId: string; questio
       <EditorShell title="解答详情">
         <RichTextEditor name="analysis" defaultValue={question?.analysis || ""} />
       </EditorShell>
+      {question ? <AiDoubtReviewPanel paperId={paperId} question={question} /> : null}
     </form>
   );
 }
@@ -1025,11 +961,12 @@ function RichAnswerQuestionForm({ paperId, question, type }: { paperId: string; 
       <EditorShell title="解答详情">
         <RichTextEditor name="analysis" defaultValue={question?.analysis || ""} />
       </EditorShell>
+      {question ? <AiDoubtReviewPanel paperId={paperId} question={question} /> : null}
     </form>
   );
 }
 
-function ReadonlyQuestionPreview({ question }: { question: QuestionRow }) {
+function ReadonlyQuestionPreview({ paperId, question }: { paperId: string; question: QuestionRow }) {
   return (
     <>
       <EditorShell title="题干">
@@ -1061,7 +998,126 @@ function ReadonlyQuestionPreview({ question }: { question: QuestionRow }) {
       <EditorShell title="解答详情">
         <RichTextDisplay value={question.analysis} />
       </EditorShell>
+      <AiDoubtReviewPanel paperId={paperId} question={question} />
     </>
+  );
+}
+
+function AiDoubtReviewPanel({ paperId, question }: { paperId: string; question: QuestionRow }) {
+  const router = useRouter();
+  const [answer, setAnswer] = useState(question.aiDoubtAnswer || "");
+  const [generating, setGenerating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const endpoint = `/api/admin/question-banks/${encodeURIComponent(paperId)}/questions/${encodeURIComponent(question.questionId)}/ai-doubt`;
+
+  useEffect(() => {
+    setAnswer(question.aiDoubtAnswer || "");
+    setMessage("");
+  }, [question.aiDoubtAnswer, question.questionId]);
+
+  async function generateAiDoubt() {
+    if (generating || saving) {
+      return;
+    }
+    if (answer.trim()) {
+      const confirmed = window.confirm("重新生成会覆盖当前文本框内容，但不会自动保存到数据库。是否继续？");
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    setGenerating(true);
+    setMessage("正在调用 AI 生成答疑草稿...");
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+      const payload = (await response.json().catch(() => null)) as { answer?: string; error?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.error || "AI 答疑生成失败。");
+      }
+
+      setAnswer(payload?.answer || "");
+      setMessage("AI 答疑草稿已生成，请审核后保存。");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "AI 答疑生成失败。");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function saveAiDoubt() {
+    if (generating || saving) {
+      return;
+    }
+
+    setSaving(true);
+    setMessage("正在保存 AI 答疑...");
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answer })
+      });
+      const payload = (await response.json().catch(() => null)) as { answer?: string; error?: string } | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.error || "AI 答疑保存失败。");
+      }
+
+      setAnswer(payload?.answer || "");
+      setMessage(payload?.answer ? "AI 答疑已保存，学生端将优先使用该内容。" : "AI 答疑已清空，学生端会实时生成兜底。");
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "AI 答疑保存失败。");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section>
+      <div className="flex h-10 items-center justify-between border-b border-[#d4dae4] bg-[#eef3f9] px-3">
+        <h2 className="text-sm font-black text-[#111827]">AI答疑</h2>
+        <div className="flex items-center gap-2">
+          <button
+            className="inline-flex h-7 items-center gap-1 rounded border border-[#c4b5fd] bg-[#f5f3ff] px-2.5 text-xs font-bold text-[#6d28d9] hover:border-[#8b5cf6] disabled:cursor-wait disabled:opacity-60"
+            disabled={generating || saving}
+            type="button"
+            onClick={generateAiDoubt}
+          >
+            {generating ? <Loader2 className="animate-spin" size={14} /> : <Sparkles size={14} />}
+            {generating ? "生成中" : "AI答疑"}
+          </button>
+          <button
+            className="inline-flex h-7 items-center gap-1 rounded border border-[#86efac] bg-[#f0fdf4] px-2.5 text-xs font-bold text-[#15803d] hover:border-[#22c55e] disabled:cursor-wait disabled:opacity-60"
+            disabled={generating || saving}
+            type="button"
+            onClick={saveAiDoubt}
+          >
+            {saving ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
+            {saving ? "保存中" : "保存AI答疑"}
+          </button>
+        </div>
+      </div>
+      <div className="bg-[#eef3f8] p-4">
+        <textarea
+          className="min-h-[220px] w-full resize-y border border-[#c6d3e6] bg-[#d9e5fb] px-4 py-3 text-sm leading-7 text-[#071b38] outline-none focus:border-[#8b5cf6] focus:ring-2 focus:ring-[#8b5cf6]/20"
+          placeholder="点击 AI答疑 生成草稿，审核修改后保存。保存后学生端默认 AI 答疑会优先使用这里的内容。"
+          value={answer}
+          onChange={(event) => setAnswer(event.target.value)}
+        />
+        <div className="mt-2 flex items-center justify-between gap-3 text-xs">
+          <p className="font-medium text-[#64748b]">{message || "未保存时不会影响学生端；保存为空表示清空后台审核答疑。"}</p>
+          <span className="shrink-0 text-[#94a3b8]">{answer.trim().length} 字</span>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -1084,9 +1140,6 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
   const orderInputRef = useRef<HTMLInputElement | null>(null);
   const reorderFormRef = useRef<HTMLFormElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const workbenchRef = useRef<HTMLElement | null>(null);
-  const [workbenchWidth, setWorkbenchWidth] = useState(() => (typeof window === "undefined" ? 0 : window.innerWidth));
-  const fittedColumnLayout = fitColumnLayout(columnLayout, workbenchWidth);
   const selectedQuestion = orderedQuestions.find((question) => question.id === selectedQuestionId) || null;
   const selectedKnowledgeTagIds = selectedQuestion?.knowledgeTagIds || [];
   const selectedKnowledgeLabels = selectedQuestion?.knowledgeTagLabels || [];
@@ -1122,27 +1175,6 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
   }, [questions]);
 
   useEffect(() => {
-    const updateWorkbenchWidth = () => {
-      setWorkbenchWidth(workbenchRef.current?.clientWidth || window.innerWidth);
-    };
-
-    updateWorkbenchWidth();
-    window.addEventListener("resize", updateWorkbenchWidth);
-
-    if (typeof ResizeObserver === "undefined" || !workbenchRef.current) {
-      return () => window.removeEventListener("resize", updateWorkbenchWidth);
-    }
-
-    const observer = new ResizeObserver(updateWorkbenchWidth);
-    observer.observe(workbenchRef.current);
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", updateWorkbenchWidth);
-    };
-  }, []);
-
-  useEffect(() => {
     const hashQuestionId = typeof window === "undefined" ? "" : window.location.hash.replace(/^#paper-question-/, "");
     const targetQuestionId = focusedQuestionId || hashQuestionId;
     if (!targetQuestionId || focusedQuestionIdRef.current === targetQuestionId) {
@@ -1156,7 +1188,7 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
     setActiveEditorType(null);
     setSelectedQuestionId(targetQuestionId);
     window.requestAnimationFrame(() => {
-      document.getElementById(`paper-question-${targetQuestionId}`)?.scrollIntoView({ block: "center", inline: "nearest" });
+      document.getElementById(`paper-question-${targetQuestionId}`)?.scrollIntoView({ block: "center" });
     });
   }, [focusedQuestionId, orderedQuestions]);
 
@@ -1207,7 +1239,7 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
     setActiveEditorType(null);
     setSelectedQuestionId(question.id);
     window.requestAnimationFrame(() => {
-      document.getElementById(`paper-question-${question.id}`)?.scrollIntoView({ block: "center", inline: "nearest" });
+      document.getElementById(`paper-question-${question.id}`)?.scrollIntoView({ block: "center" });
     });
   }
 
@@ -1323,8 +1355,7 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
 
   const resizeColumns = (left: "editor" | "list", right: "list" | "attributes", startX: number, startLayout: typeof defaultColumnLayout, clientX: number) => {
     const dx = clientX - startX;
-    const resizeMinimums = getResizeMinimums(left, right, startLayout);
-    const safeDx = clamp(dx, resizeMinimums.left - startLayout[left], startLayout[right] - resizeMinimums.right);
+    const safeDx = clamp(dx, minColumnLayout[left] - startLayout[left], startLayout[right] - minColumnLayout[right]);
     const nextLayout = {
       ...startLayout,
       [left]: startLayout[left] + safeDx,
@@ -1336,7 +1367,7 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
   const startResize = (left: "editor" | "list", right: "list" | "attributes"): PointerEventHandler<HTMLDivElement> => (event) => {
     event.preventDefault();
     const startX = event.clientX;
-    const startLayout = { ...fittedColumnLayout };
+    const startLayout = { ...columnLayout };
     const handleMove = (moveEvent: PointerEvent) => resizeColumns(left, right, startX, startLayout, moveEvent.clientX);
     const handleUp = () => {
       window.removeEventListener("pointermove", handleMove);
@@ -1402,10 +1433,9 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
       ) : null}
 
       <section
-        ref={workbenchRef}
-        className="grid h-[calc(100vh-38px)] w-full min-w-0"
+        className="grid h-[calc(100vh-38px)] min-w-[1280px]"
         style={{
-          gridTemplateColumns: `${toolColumnWidth}px ${fittedColumnLayout.editor}px ${resizeHandleWidth}px ${fittedColumnLayout.list}px ${resizeHandleWidth}px minmax(${fittedColumnLayout.attributes}px, 1fr)`
+          gridTemplateColumns: `90px ${columnLayout.editor}px 6px ${columnLayout.list}px 6px minmax(${columnLayout.attributes}px, 1fr)`
         }}
       >
         <aside className="border-r border-[#d7dee8] bg-white">
@@ -1451,7 +1481,7 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
           ) : selectedQuestion && selectedEditableType && isRichAnswerQuestionType(selectedEditableType) ? (
             <RichAnswerQuestionForm key={`edit-${selectedQuestion.id}`} paperId={paperId} question={selectedQuestion} type={selectedEditableType} />
           ) : selectedQuestion ? (
-            <ReadonlyQuestionPreview question={selectedQuestion} />
+            <ReadonlyQuestionPreview paperId={paperId} question={selectedQuestion} />
           ) : (
             <EmptyQuestionCanvas />
           )}
