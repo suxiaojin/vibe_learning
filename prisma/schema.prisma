@@ -60,6 +60,14 @@ enum NotificationDispatchType {
   automated
 }
 
+enum NotificationDispatchStatus {
+  pending
+  processing
+  sent
+  cancelled
+  failed
+}
+
 enum NotificationChannel {
   in_app
   email
@@ -70,14 +78,6 @@ enum NotificationDeliveryStatus {
   sent
   failed
   skipped
-}
-
-enum NotificationDispatchStatus {
-  pending
-  processing
-  sent
-  cancelled
-  failed
 }
 
 enum NotificationAutomationEventType {
@@ -591,6 +591,7 @@ model Question {
   options          Json
   answer           Json
   analysis         String
+  aiDoubtAnswer    String?
   source           String            @default("人工录入")
   sourceType       QuestionSourceType @default(manual)
   sourceYear       Int?
@@ -759,11 +760,14 @@ model AiConversation {
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   questionId String
   question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  purpose    String   @default("general")
   messages   Json
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   @@index([userId, questionId])
+  @@index([userId, questionId, purpose])
+  @@index([questionId, purpose])
   @@map("ai_conversations")
 }
 
@@ -896,8 +900,8 @@ model NotificationDispatchJob {
   updatedAt          DateTime                   @updatedAt
 
   @@unique([automationRuleId, eventId])
-  @@index([status, scheduledAt])
   @@index([channel, status, scheduledAt])
+  @@index([status, scheduledAt])
   @@index([type, createdAt])
   @@index([templateId])
   @@index([automationRuleId])
@@ -907,22 +911,22 @@ model NotificationDispatchJob {
 }
 
 model NotificationDispatchRecipient {
-  id                   String                     @id @default(cuid())
-  jobId                String
-  job                  NotificationDispatchJob    @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  userId               String?
-  user                 User?                      @relation(fields: [userId], references: [id], onDelete: SetNull)
-  usernameSnapshot     String
-  emailSnapshot        String?
-  provinceSnapshot     String?
-  studySystemSnapshot  String?
-  majorNameSnapshot    String?
-  deliveryStatus       NotificationDeliveryStatus @default(pending)
-  deliveredAt          DateTime?
-  failedAt             DateTime?
-  deliveryAttemptCount Int                        @default(0)
-  deliveryLastError    String?
-  createdAt            DateTime                   @default(now())
+  id                  String                  @id @default(cuid())
+  jobId               String
+  job                 NotificationDispatchJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  userId              String?
+  user                User?                   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  usernameSnapshot    String
+  provinceSnapshot    String?
+  studySystemSnapshot String?
+  majorNameSnapshot   String?
+  emailSnapshot       String?
+  deliveryStatus      NotificationDeliveryStatus @default(pending)
+  deliveredAt         DateTime?
+  failedAt            DateTime?
+  deliveryAttemptCount Int                    @default(0)
+  deliveryLastError   String?
+  createdAt           DateTime                @default(now())
 
   @@unique([jobId, userId])
   @@index([jobId])
@@ -933,8 +937,8 @@ model NotificationDispatchRecipient {
 model NotificationAutomationRule {
   id           String                          @id @default(cuid())
   name         String
+  channel      NotificationChannel             @default(in_app)
   eventType    NotificationAutomationEventType
-  channel      NotificationChannel              @default(in_app)
   templateId   String
   template     NotificationTemplate            @relation(fields: [templateId], references: [id], onDelete: Cascade)
   enabled      Boolean                         @default(true)

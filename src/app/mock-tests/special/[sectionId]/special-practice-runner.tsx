@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Bot, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Flag, Share2, Star } from "lucide-react";
+import { Bot, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Flag, Loader2, Send, Share2, Star, X } from "lucide-react";
 import { getQuestionBankTypeLabel } from "@/lib/question-bank-types";
 
 type PracticeQuestion = {
@@ -19,6 +19,12 @@ type PracticeOption = {
 };
 
 type AnswerState = "unanswered" | "correct" | "wrong";
+
+type AiMessage = {
+  id: string;
+  role: "assistant" | "user";
+  content: string;
+};
 
 type StoredPracticeState = {
   questionIdsSignature?: string;
@@ -51,10 +57,16 @@ export function SpecialPracticeRunner({
   const [answerStates, setAnswerStates] = useState<Record<string, AnswerState>>({});
   const [revealedQuestionIds, setRevealedQuestionIds] = useState<Record<string, boolean>>({});
   const [hydrated, setHydrated] = useState(false);
+  const [aiDialogOpen, setAiDialogOpen] = useState(false);
+  const [aiMessagesByQuestionId, setAiMessagesByQuestionId] = useState<Record<string, AiMessage[]>>({});
+  const [aiLoadingQuestionId, setAiLoadingQuestionId] = useState<string | null>(null);
+  const [followUpText, setFollowUpText] = useState("");
   const question = questions[currentIndex];
   const selected = answers[question.id] || [];
   const revealed = Boolean(revealedQuestionIds[question.id]);
   const judgedState = answerStates[question.id];
+  const aiMessages = aiMessagesByQuestionId[question.id] || [];
+  const aiLoading = aiLoadingQuestionId === question.id;
   const options = useMemo(() => normalizeOptions(question.options), [question.options]);
   const correctAnswer = normalizeAnswer(question.answer);
   const previousEnabled = currentIndex > 0;
@@ -158,6 +170,83 @@ export function SpecialPracticeRunner({
     setCurrentIndex((value) => value + 1);
   }
 
+  function openAiDoubt() {
+    setAiDialogOpen(true);
+    setFollowUpText("");
+    if (aiMessages.length === 0 && !aiLoading) {
+      void requestAiDoubt(question.id);
+    }
+  }
+
+  async function submitFollowUp() {
+    const prompt = followUpText.trim();
+    if (!prompt || aiLoading) {
+      return;
+    }
+    setFollowUpText("");
+    await requestAiDoubt(question.id, prompt);
+  }
+
+  async function requestAiDoubt(questionId: string, prompt?: string) {
+    const assistantMessageId = createClientId();
+    setAiLoadingQuestionId(questionId);
+    setAiMessagesByQuestionId((current) => {
+      const existing = current[questionId] || [];
+      const nextMessages = prompt
+        ? [...existing, { id: createClientId(), role: "user" as const, content: prompt }, { id: assistantMessageId, role: "assistant" as const, content: "" }]
+        : [...existing, { id: assistantMessageId, role: "assistant" as const, content: "" }];
+      return { ...current, [questionId]: nextMessages };
+    });
+
+    try {
+      const response = await fetch("/api/ai/question-doubt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionId, prompt })
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(String(payload?.error || "AI 服务暂时不可用，请稍后重试。"));
+      }
+
+      if (response.headers.get("content-type")?.includes("application/json")) {
+        const payload = (await response.json()) as { answer?: string };
+        replaceAiMessage(questionId, assistantMessageId, payload.answer || "暂时没有生成解释，请稍后重试。");
+        return;
+      }
+
+      if (!response.body) {
+        throw new Error("AI 服务暂时没有返回内容。");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let streamedAnswer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
+        }
+        const chunk = decoder.decode(value, { stream: true });
+        streamedAnswer += chunk;
+        replaceAiMessage(questionId, assistantMessageId, streamedAnswer);
+      }
+    } catch (error) {
+      replaceAiMessage(questionId, assistantMessageId, error instanceof Error ? error.message : "AI 服务暂时不可用，请稍后重试。");
+    } finally {
+      setAiLoadingQuestionId((current) => (current === questionId ? null : current));
+    }
+  }
+
+  function replaceAiMessage(questionId: string, messageId: string, content: string) {
+    setAiMessagesByQuestionId((current) => ({
+      ...current,
+      [questionId]: (current[questionId] || []).map((message) => (message.id === messageId ? { ...message, content } : message))
+    }));
+  }
+
   return (
     <main className="min-h-dvh bg-[#f2f3f7]">
       <div className="grid min-h-dvh gap-8 px-5 py-6 xl:grid-cols-[minmax(0,1fr)_380px]">
@@ -203,7 +292,7 @@ export function SpecialPracticeRunner({
             )}
 
             <div className="mt-8 flex flex-wrap items-center gap-8">
-              <button className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#c9b7ff] bg-[#eee7ff] px-4 text-base font-medium text-[#715aff]" type="button">
+              <button className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#c9b7ff] bg-[#eee7ff] px-4 text-base font-medium text-[#715aff]" type="button" onClick={openAiDoubt}>
                 <Bot size={19} />
                 AI答疑
               </button>
@@ -259,6 +348,16 @@ export function SpecialPracticeRunner({
           setCurrentIndex={goToQuestion}
         />
       </div>
+      {aiDialogOpen ? (
+        <AiDoubtDialog
+          followUpText={followUpText}
+          loading={aiLoading}
+          messages={aiMessages}
+          onChangeFollowUp={setFollowUpText}
+          onClose={() => setAiDialogOpen(false)}
+          onSubmitFollowUp={submitFollowUp}
+        />
+      ) : null}
     </main>
   );
 }
@@ -308,6 +407,251 @@ function AnswerCard({
       </div>
     </aside>
   );
+}
+
+function AiDoubtDialog({
+  followUpText,
+  loading,
+  messages,
+  onChangeFollowUp,
+  onClose,
+  onSubmitFollowUp
+}: {
+  followUpText: string;
+  loading: boolean;
+  messages: AiMessage[];
+  onChangeFollowUp: (value: string) => void;
+  onClose: () => void;
+  onSubmitFollowUp: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/35 px-5 py-6">
+      <section className="flex h-[min(900px,calc(100dvh-48px))] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <header className="relative bg-[#f6efff] px-16 py-4 text-center">
+          <h2 className="text-2xl font-medium text-black">AI答疑</h2>
+          <p className="mt-1 text-base text-slate-400">内容由AI生成</p>
+          <button
+            aria-label="关闭"
+            className="absolute right-7 top-6 grid size-9 place-items-center rounded-full text-black transition hover:bg-white/70"
+            type="button"
+            onClick={onClose}
+          >
+            <X size={28} />
+          </button>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-10 py-8">
+          <div className="mx-auto max-w-4xl space-y-6 text-lg leading-9 text-black">
+            {messages.length === 0 ? (
+              <p className="flex items-center gap-2 text-slate-500">
+                <Loader2 className="animate-spin" size={20} />
+                AI正在组织答案...
+              </p>
+            ) : (
+              messages.map((message) =>
+                message.role === "user" ? (
+                  <div key={message.id} className="flex justify-end">
+                    <p className="max-w-[78%] rounded-2xl bg-[#eef3fb] px-5 py-3 text-base leading-7 text-[#1f2937]">{message.content}</p>
+                  </div>
+                ) : (
+                  <div key={message.id} className="rounded-2xl bg-white text-black">
+                    {message.content ? <AiAnswerText content={message.content} /> : <StreamingPlaceholder />}
+                  </div>
+                )
+              )
+            )}
+          </div>
+        </div>
+
+        <footer className="border-t border-slate-100 bg-white px-8 py-7">
+          <div className="mx-auto flex min-h-20 max-w-4xl items-center gap-3 rounded-3xl border border-slate-200 bg-white px-5 shadow-[0_16px_48px_rgba(15,23,42,0.08)]">
+            <input
+              className="min-w-0 flex-1 bg-transparent text-lg text-black outline-none placeholder:text-slate-400"
+              disabled={loading}
+              maxLength={500}
+              placeholder="有问题尽管问"
+              value={followUpText}
+              onChange={(event) => onChangeFollowUp(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  onSubmitFollowUp();
+                }
+              }}
+            />
+            <button
+              aria-label="发送"
+              className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[#f8b4c0] text-white transition hover:bg-[#ef8fa0] disabled:cursor-not-allowed disabled:bg-slate-200"
+              disabled={loading || !followUpText.trim()}
+              type="button"
+              onClick={onSubmitFollowUp}
+            >
+              {loading ? <Loader2 className="animate-spin" size={22} /> : <Send size={22} />}
+            </button>
+          </div>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function StreamingPlaceholder() {
+  return (
+    <p className="flex items-center gap-2 text-slate-500">
+      <Loader2 className="animate-spin" size={20} />
+      AI正在组织答案...
+    </p>
+  );
+}
+
+function AiAnswerText({ content }: { content: string }) {
+  const blocks = parseAiAnswerBlocks(content);
+
+  return (
+    <div className="space-y-4">
+      {blocks.map((block, index) => {
+        if (block.type === "heading") {
+          return (
+            <h3 key={index} className="text-xl font-semibold leading-9 text-black">
+              {renderAiInline(block.text)}
+            </h3>
+          );
+        }
+        if (block.type === "ordered") {
+          return (
+            <ol key={index} className="list-decimal space-y-2 pl-6">
+              {block.items.map((item, itemIndex) => (
+                <li key={itemIndex} className="pl-1">
+                  {renderAiInline(item)}
+                </li>
+              ))}
+            </ol>
+          );
+        }
+        if (block.type === "unordered") {
+          return (
+            <ul key={index} className="list-disc space-y-2 pl-6">
+              {block.items.map((item, itemIndex) => (
+                <li key={itemIndex} className="pl-1">
+                  {renderAiInline(item)}
+                </li>
+              ))}
+            </ul>
+          );
+        }
+        return (
+          <p key={index} className="whitespace-pre-wrap">
+            {renderAiInline(block.text)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+type AiAnswerBlock =
+  | { type: "heading"; text: string }
+  | { type: "paragraph"; text: string }
+  | { type: "ordered"; items: string[] }
+  | { type: "unordered"; items: string[] };
+
+function parseAiAnswerBlocks(content: string): AiAnswerBlock[] {
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const blocks: AiAnswerBlock[] = [];
+  let paragraph: string[] = [];
+  let ordered: string[] = [];
+  let unordered: string[] = [];
+
+  function flushParagraph() {
+    if (paragraph.length > 0) {
+      blocks.push({ type: "paragraph", text: paragraph.join("\n") });
+      paragraph = [];
+    }
+  }
+
+  function flushLists() {
+    if (ordered.length > 0) {
+      blocks.push({ type: "ordered", items: ordered });
+      ordered = [];
+    }
+    if (unordered.length > 0) {
+      blocks.push({ type: "unordered", items: unordered });
+      unordered = [];
+    }
+  }
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      flushParagraph();
+      flushLists();
+      continue;
+    }
+
+    const heading = line.match(/^#{1,4}\s+(.+)$/) || line.match(/^(解析|解题步骤|答案|结论|具体来说)[:：]?$/);
+    if (heading) {
+      flushParagraph();
+      flushLists();
+      blocks.push({ type: "heading", text: normalizeAiMarkdownText(heading[1] || line) });
+      continue;
+    }
+
+    const orderedItem = line.match(/^\d+[.)、]\s*(.+)$/);
+    if (orderedItem) {
+      flushParagraph();
+      unordered = [];
+      ordered.push(normalizeAiMarkdownText(orderedItem[1]));
+      continue;
+    }
+
+    const unorderedItem = line.match(/^[-*]\s+(.+)$/);
+    if (unorderedItem) {
+      flushParagraph();
+      ordered = [];
+      unordered.push(normalizeAiMarkdownText(unorderedItem[1]));
+      continue;
+    }
+
+    flushLists();
+    paragraph.push(normalizeAiMarkdownText(line));
+  }
+
+  flushParagraph();
+  flushLists();
+  return blocks.length > 0 ? blocks : [{ type: "paragraph", text: normalizeAiMarkdownText(content) }];
+}
+
+function normalizeAiMarkdownText(value: string) {
+  return value
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^\s*>\s?/, "")
+    .trim();
+}
+
+function renderAiInline(value: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const pattern = /\*\*(.+?)\*\*/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(value))) {
+    if (match.index > lastIndex) {
+      nodes.push(value.slice(lastIndex, match.index));
+    }
+    nodes.push(
+      <strong key={`${match.index}-${match[1]}`} className="font-semibold text-black">
+        {match[1]}
+      </strong>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < value.length) {
+    nodes.push(value.slice(lastIndex));
+  }
+
+  return nodes.length > 0 ? nodes : [value];
 }
 
 function readStoredPracticeState(
@@ -438,6 +782,13 @@ function clampQuestionIndex(value: number | undefined, total: number, fallbackIn
   const fallback = Number.isFinite(fallbackIndex) ? fallbackIndex : 0;
   const parsed = Number.isFinite(value) ? Number(value) : fallback;
   return Math.min(Math.max(Math.trunc(parsed), 0), Math.max(total - 1, 0));
+}
+
+function createClientId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function IconTextButton({ icon, label }: { icon: ReactNode; label: string }) {
