@@ -9,6 +9,7 @@ import { BuddyShareCardView } from "@/components/buddy-share-card";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { HomeProfileEditor } from "@/components/home-profile-editor";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
+import { SocialMedalBadge } from "@/components/social-medal-badge";
 import { SocialPostActions } from "@/components/social-post-actions";
 import { SocialPostAuthorHeader } from "@/components/social-post-author-header";
 import { StudentSidebar } from "@/components/student-sidebar";
@@ -16,7 +17,7 @@ import { requireUser } from "@/lib/auth";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import { deleteBuddyPost, likeBuddyPost, listProfileBuddyPosts, repostBuddyPost, unlikeBuddyPost, unrepostBuddyPost } from "@/lib/buddy-posts";
 import { prisma } from "@/lib/prisma";
-import { getMedalLevel, getMedalRule, medalRules } from "@/lib/rewards";
+import { medalRules } from "@/lib/rewards";
 import { getSocialProfile } from "@/lib/social";
 import { cn } from "@/lib/utils";
 
@@ -119,14 +120,7 @@ export default async function MePage({
     ? fullUser.studentProfile?.avatarColor || "green"
     : "green";
   const avatarImage = fullUser.studentProfile?.avatarImage || "";
-  const medalLevel = getMedalLevel(totalAttempts);
-  const currentMedal = getMedalRule(medalLevel);
   const dailyAttempts = summarizeDailyAttempts(recentAttempts);
-  const joinedAt = fullUser.createdAt.toLocaleDateString("zh-CN", {
-    year: "numeric",
-    month: "long",
-    timeZone: "Asia/Shanghai"
-  });
 
   return (
     <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
@@ -134,23 +128,6 @@ export default async function MePage({
 
       <section className="min-w-0 px-5 py-8 lg:px-8">
         <div className="mx-auto max-w-6xl space-y-6">
-          <header className="rounded-[22px] border border-slate-200/80 bg-white px-6 py-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
-            <div className="flex items-center gap-5">
-              <Avatar name={nickname} color={avatarColor} image={avatarImage} size="header" />
-              <div className="min-w-0">
-                <div className="flex min-w-0 items-center gap-3">
-                  <h1 className="truncate text-[32px] font-bold leading-tight text-ink">{nickname}</h1>
-                  <CurrentMedalBadge gender={fullUser.studentProfile?.gender || ""} level={currentMedal.level} label={currentMedal.label} />
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-medium text-slate-500">
-                  <span className="whitespace-nowrap">用户名：{fullUser.username}</span>
-                  <span className="text-slate-300">|</span>
-                  <span className="whitespace-nowrap">{joinedAt} 加入</span>
-                </div>
-              </div>
-            </div>
-          </header>
-
           <ProfileTabs activeTab={activeTab} />
 
           <Message type={query?.profile} successText="资料已保存" />
@@ -499,11 +476,16 @@ function MyHomePagePanel({
           </div>
 
           <div className="mt-4">
-            <h2 className="text-[32px] font-bold leading-tight text-ink">{profile.user.nickname}</h2>
+            <div className="flex min-w-0 items-center gap-3">
+              <h2 className="truncate text-[32px] font-bold leading-tight text-ink">{profile.user.nickname}</h2>
+              <SocialMedalBadge gender={profile.user.gender} label={profile.user.medalLabel} level={profile.user.medalLevel} />
+            </div>
+            <p className="mt-1 text-sm font-semibold text-slate-500">@{profile.user.username}</p>
             <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-slate-500">
               <span>{formatJoinedMonth(profile.user.joinedAt)} 加入</span>
               <span>{profileMeta || "省份 - 学制 - 专业未填写"}</span>
             </div>
+            {profile.user.bio ? <p className="mt-3 max-w-2xl whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-600">{profile.user.bio}</p> : null}
             <div className="mt-5 flex flex-wrap gap-5 text-sm">
               <StatValue label="粉丝" value={profile.stats.followerCount} />
               <StatValue label="获赞" value={profile.stats.likedCount} />
@@ -956,21 +938,6 @@ function formatDateKey(date: Date) {
   const month = `${date.getUTCMonth() + 1}`.padStart(2, "0");
   const day = `${date.getUTCDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
-}
-
-function CurrentMedalBadge({ gender, level, label }: { gender: string; level: string; label: string }) {
-  const Icon = level === "scholar" ? Crown : level === "expert" ? Trophy : Medal;
-  const colorClass = gender === "female" ? "bg-pink-500 text-white ring-pink-100" : "bg-sky-500 text-white ring-sky-100";
-
-  return (
-    <span
-      aria-label={`${label}勋章`}
-      className={cn("inline-grid size-8 shrink-0 place-items-center rounded-full ring-4 shadow-sm", colorClass)}
-      title={`${label}勋章`}
-    >
-      <Icon size={17} />
-    </span>
-  );
 }
 
 function Message({ type, successText, errors = {} }: { type?: string; successText: string; errors?: Record<string, string> }) {

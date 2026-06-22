@@ -2,6 +2,7 @@ import { ArrowLeft, UserCheck, UserPlus } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { BuddyShareCardView } from "@/components/buddy-share-card";
+import { SocialMedalBadge } from "@/components/social-medal-badge";
 import { SocialPostActions } from "@/components/social-post-actions";
 import { SocialPostAuthorHeader } from "@/components/social-post-author-header";
 import { StudentSidebar } from "@/components/student-sidebar";
@@ -94,12 +95,16 @@ function ProfileHero({ profile }: { profile: SocialProfile }) {
         </div>
 
         <div className="mt-4">
-          <h1 className="text-[32px] font-bold leading-tight text-ink">{profile.user.nickname}</h1>
+          <div className="flex min-w-0 items-center gap-3">
+            <h1 className="truncate text-[32px] font-bold leading-tight text-ink">{profile.user.nickname}</h1>
+            <SocialMedalBadge gender={profile.user.gender} label={profile.user.medalLabel} level={profile.user.medalLevel} />
+          </div>
           <p className="mt-1 text-sm font-semibold text-slate-500">@{profile.user.username}</p>
           <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-slate-500">
             <span>{formatJoinedMonth(profile.user.joinedAt)} 加入</span>
             <span>{profileMeta || "省份 - 学制 - 专业未填写"}</span>
           </div>
+          {profile.user.bio ? <p className="mt-3 max-w-2xl whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-600">{profile.user.bio}</p> : null}
           <div className="mt-5 flex flex-wrap gap-5 text-sm">
             <StatValue label="粉丝" value={profile.stats.followerCount} />
             <StatValue label="获赞" value={profile.stats.likedCount} />
