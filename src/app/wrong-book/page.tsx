@@ -254,18 +254,18 @@ export default async function WrongBookPage() {
   const groups = groupWrongQuestions(wrongQuestions);
 
   return (
-    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
+    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
       <StudentSidebar active="wrong-book" />
 
       <section className="mx-auto w-full max-w-5xl px-5 py-8 lg:px-8">
-        <section className="rounded-3xl bg-ink p-6 text-white shadow-soft">
+        <section className="rounded-[22px] border border-slate-200/80 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <p className="text-sm font-semibold text-honey">错题本</p>
-              <h1 className="mt-1 text-3xl font-bold">按课程、章和节复习错题</h1>
-              <p className="mt-2 text-slate-300">先看正确答案和解析，再用 AI 把卡住的点讲透。</p>
+              <p className="text-sm font-semibold text-teal">错题本</p>
+              <h1 className="mt-1 text-[32px] font-bold leading-tight text-ink">按课程、章和节复习错题</h1>
+              <p className="mt-2 text-sm font-medium leading-6 text-slate-500">先看正确答案和解析，再用 AI 把卡住的点讲透。</p>
             </div>
-            <span className="badge bg-coral text-white">{wrongQuestions.length} 道待掌握</span>
+            <span className="badge bg-coral/10 text-coral">{wrongQuestions.length} 道待掌握</span>
           </div>
         </section>
 
@@ -301,7 +301,7 @@ export default async function WrongBookPage() {
                           </div>
                           <span className="badge bg-slate-100 text-slate-600">最近错题：{formatDate(item.lastWrongAt)}</span>
                         </div>
-                        <p className="mt-3 inline-flex max-w-full rounded-full bg-sky-50 px-3 py-1 text-xs font-black text-sky-600">
+                        <p className="mt-3 inline-flex max-w-full rounded-full bg-teal/10 px-3 py-1 text-xs font-semibold text-teal">
                           <span className="truncate">题库：{questionBankTitle(item)}</span>
                         </p>
 

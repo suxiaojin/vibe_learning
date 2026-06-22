@@ -94,7 +94,7 @@ export default async function LearnPage({
     : null;
 
   return (
-    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[240px_minmax(0,1fr)_340px]">
+    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[260px_minmax(0,1fr)_340px]">
       <StudentSidebar active="learn" />
 
       <section className="min-w-0 px-5 py-8 lg:px-8">
@@ -118,7 +118,7 @@ export default async function LearnPage({
 
       <aside className="hidden border-l border-slate-100 bg-mist/60 px-5 py-8 xl:block">
         <div className="sticky top-8 space-y-4">
-          <div className="flex items-center justify-end gap-4 px-3 py-2 text-sm font-black text-slate-700">
+          <div className="flex items-center justify-end gap-4 px-3 py-2 text-sm font-semibold text-slate-700">
             <span className="flex items-center gap-2"><Gem className="text-sky-500" size={24} />{diamondAccount.balance}</span>
             <NotificationBell
               notifications={notificationBellData.notifications}
@@ -140,7 +140,7 @@ function Avatar({ name, image }: { name: string; image: string }) {
   }
 
   return (
-    <span className="grid size-12 place-items-center rounded-full bg-[#58cc02] text-lg font-black text-white shadow-sm">
+    <span className="grid size-12 place-items-center rounded-full bg-[#58cc02] text-lg font-semibold text-white shadow-sm">
       {name.slice(0, 1).toUpperCase()}
     </span>
   );

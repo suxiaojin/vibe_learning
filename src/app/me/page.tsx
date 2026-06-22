@@ -129,20 +129,20 @@ export default async function MePage({
   });
 
   return (
-    <main className="min-h-dvh bg-mist/60 lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
+    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
       <StudentSidebar active="me" />
 
       <section className="min-w-0 px-5 py-8 lg:px-8">
         <div className="mx-auto max-w-6xl space-y-6">
-          <header className="border-b border-slate-200 bg-white px-6 py-6">
+          <header className="rounded-[22px] border border-slate-200/80 bg-white px-6 py-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
             <div className="flex items-center gap-5">
               <Avatar name={nickname} color={avatarColor} image={avatarImage} size="header" />
               <div className="min-w-0">
                 <div className="flex min-w-0 items-center gap-3">
-                  <h1 className="truncate text-3xl font-black text-ink">{nickname}</h1>
+                  <h1 className="truncate text-[32px] font-bold leading-tight text-ink">{nickname}</h1>
                   <CurrentMedalBadge gender={fullUser.studentProfile?.gender || ""} level={currentMedal.level} label={currentMedal.label} />
                 </div>
-                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-semibold text-slate-500">
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-medium text-slate-500">
                   <span className="whitespace-nowrap">用户名：{fullUser.username}</span>
                   <span className="text-slate-300">|</span>
                   <span className="whitespace-nowrap">{joinedAt} 加入</span>
@@ -217,7 +217,7 @@ function SectionFrame({
     <section className={meSectionClass}>
       <div className="flex items-center gap-3 border-b border-slate-200/80 px-5 py-4">
         {icon}
-        <h2 className="text-lg font-black text-ink">{title}</h2>
+        <h2 className="text-lg font-semibold text-ink">{title}</h2>
       </div>
       <div className={cn("p-5", bodyClassName)}>{children}</div>
     </section>
@@ -235,7 +235,7 @@ function ProfileTabs({ activeTab }: { activeTab: MeTab }) {
               key={tab.key}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "inline-flex shrink-0 items-center border-b-2 px-1 pt-1 text-sm font-black transition",
+                "inline-flex shrink-0 items-center border-b-2 px-1 pt-1 text-sm font-semibold transition",
                 active
                   ? "border-teal text-ink"
                   : "border-transparent text-slate-600 hover:border-slate-300 hover:text-ink"
@@ -416,7 +416,7 @@ function DiamondPanel({
         <div className="min-w-0 overflow-x-auto">
           <table className="w-full min-w-[520px] text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-xs font-black text-slate-400">
+              <tr className="border-b border-slate-200 text-xs font-semibold text-slate-400">
                 <th className="py-3 pr-4">时间</th>
                 <th className="py-3 pr-4">类型</th>
                 <th className="py-3 pr-4">数量</th>
@@ -436,7 +436,7 @@ function DiamondPanel({
                   <tr key={item.id} className="border-b border-slate-100 last:border-0">
                     <td className="py-3 pr-4 font-semibold text-slate-500">{formatDateTime(item.createdAt)}</td>
                     <td className="py-3 pr-4 font-bold text-ink">{transactionLabels[item.type] || item.type}</td>
-                    <td className={cn("py-3 pr-4 font-black", item.amount >= 0 ? "text-[#58cc02]" : "text-coral")}>
+                    <td className={cn("py-3 pr-4 font-semibold", item.amount >= 0 ? "text-[#58cc02]" : "text-coral")}>
                       {item.amount >= 0 ? "+" : ""}
                       {item.amount}
                     </td>
@@ -449,7 +449,7 @@ function DiamondPanel({
           </table>
         </div>
         <aside className="rounded-2xl border border-slate-200/70 bg-sky-50/50 p-5">
-          <h3 className="text-lg font-black text-ink">钻石充值</h3>
+          <h3 className="text-lg font-semibold text-ink">钻石充值</h3>
           <p className="mt-3 text-sm font-semibold leading-6 text-slate-500">充值功能即将上线，敬请关注~</p>
         </aside>
       </div>
@@ -499,7 +499,7 @@ function MyHomePagePanel({
           </div>
 
           <div className="mt-4">
-            <h2 className="text-3xl font-black text-ink">{profile.user.nickname}</h2>
+            <h2 className="text-[32px] font-bold leading-tight text-ink">{profile.user.nickname}</h2>
             <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-slate-500">
               <span>{formatJoinedMonth(profile.user.joinedAt)} 加入</span>
               <span>{profileMeta || "省份 - 学制 - 专业未填写"}</span>
@@ -527,7 +527,7 @@ function MyHomePagePanel({
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
         <div className="border-b border-slate-100 px-5 py-4">
-          <h3 className="text-base font-black text-ink">我的帖子</h3>
+          <h3 className="text-base font-semibold text-ink">我的帖子</h3>
         </div>
         <div className="divide-y divide-slate-100">
           {posts.length === 0 ? (

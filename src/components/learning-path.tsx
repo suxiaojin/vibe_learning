@@ -111,15 +111,15 @@ export function LearningPath({ course, chapter }: LearningPathProps) {
         <div className="rounded-2xl bg-[#58cc02] p-4 text-white shadow-[0_8px_0_rgba(69,160,0,0.22)]">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <Link className="mb-1 inline-flex max-w-full items-center gap-2 text-sm font-black text-white/80 hover:text-white" href={`/learn/stages?course=${course.courseType}`}>
+              <Link className="mb-1 inline-flex max-w-full items-center gap-2 text-sm font-semibold text-white/85 hover:text-white" href={`/learn/stages?course=${course.courseType}`}>
                 <ArrowLeft size={18} />
                 <span className="min-w-0 truncate">{course.title} / {chapter.title}</span>
               </Link>
-              <h1 className="max-w-full break-words text-2xl font-black leading-tight">{activePoint?.title || chapter.title}</h1>
+              <h1 className="max-w-full break-words text-2xl font-bold leading-tight">{activePoint?.title || chapter.title}</h1>
             </div>
             {activePoint ? (
               <Link
-                className="inline-flex min-h-14 shrink-0 items-center gap-2 rounded-2xl border-2 border-black/10 bg-white/10 px-4 text-sm font-black text-white shadow-[0_4px_0_rgba(0,0,0,0.16)] transition hover:-translate-y-0.5"
+                className="inline-flex min-h-14 shrink-0 items-center gap-2 rounded-2xl border-2 border-black/10 bg-white/10 px-4 text-sm font-semibold text-white shadow-[0_4px_0_rgba(0,0,0,0.16)] transition hover:-translate-y-0.5"
                 href={`/learn/${activePoint.id}/guide`}
               >
                 <BookOpenText size={22} />
@@ -134,8 +134,8 @@ export function LearningPath({ course, chapter }: LearningPathProps) {
         <div className="mb-8 flex items-center gap-4 text-slate-400">
           <div className="h-px flex-1 bg-slate-200" />
           <div className="text-center">
-            <p className="text-xs font-black uppercase text-slate-400">{course.title}</p>
-            <h2 className="mt-1 text-lg font-black text-slate-500">{chapter.title}</h2>
+            <p className="text-xs font-semibold uppercase text-slate-400">{course.title}</p>
+            <h2 className="mt-1 text-lg font-semibold text-slate-500">{chapter.title}</h2>
             <p className="mt-1 text-xs font-semibold">{chapter.passedCount}/{chapter.points.length} {text.passed}</p>
           </div>
           <div className="h-px flex-1 bg-slate-200" />
@@ -154,7 +154,7 @@ export function LearningPath({ course, chapter }: LearningPathProps) {
                 >
                   {point.status === "unlocked" ? (
                     <span
-                      className="mb-3 animate-bounce rounded-2xl border-2 border-slate-200 bg-white px-5 py-2 text-base font-black text-[#ff9600] shadow-[0_4px_0_rgba(148,163,184,0.28)]"
+                      className="mb-3 animate-bounce rounded-2xl border-2 border-slate-200 bg-white px-5 py-2 text-base font-semibold text-[#ff9600] shadow-[0_4px_0_rgba(148,163,184,0.28)]"
                       style={{ animationDuration: "1.8s" }}
                     >
                       {text.start}
@@ -171,7 +171,7 @@ export function LearningPath({ course, chapter }: LearningPathProps) {
                   >
                     {locked ? <Lock size={30} /> : point.status === "passed" ? <Check size={34} strokeWidth={4} /> : <Sparkles size={32} />}
                   </span>
-                  <span className="mt-3 max-w-56 rounded-2xl bg-white px-4 py-2 text-sm font-black text-ink shadow-sm ring-1 ring-slate-200">
+                  <span className="mt-3 max-w-56 rounded-2xl bg-white px-4 py-2 text-sm font-semibold text-ink shadow-sm ring-1 ring-slate-200">
                     {point.title}
                   </span>
                   <span className="mt-1 text-xs font-semibold text-slate-400">{point.questionCount} {text.questions}</span>
@@ -196,7 +196,7 @@ export function LearningCourseSwitcher({ activeCourseId, courses }: CourseSwitch
     <div className="group relative">
       <button
         aria-haspopup="menu"
-        className="inline-flex min-h-14 w-44 max-w-full items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:text-sky-600"
+        className="inline-flex min-h-14 w-44 max-w-full items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-teal/40 hover:text-teal"
         type="button"
         title={activeCourse.name}
       >
@@ -207,7 +207,7 @@ export function LearningCourseSwitcher({ activeCourseId, courses }: CourseSwitch
       <div className="invisible absolute left-0 top-full z-50 w-64 pt-2 opacity-0 transition duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white text-ink shadow-[0_12px_32px_rgba(15,23,42,0.2)]">
           <div className="border-b border-slate-200 px-5 py-3">
-            <p className="text-sm font-black text-slate-500">{text.myCourses}</p>
+            <p className="text-sm font-semibold text-slate-500">{text.myCourses}</p>
           </div>
           <div className="py-2">
             {courses.map((course) => {
@@ -216,13 +216,13 @@ export function LearningCourseSwitcher({ activeCourseId, courses }: CourseSwitch
                 <Link
                   key={course.id}
                   className={cn(
-                    "flex min-h-14 items-center gap-3 px-5 py-3 text-left transition hover:bg-sky-50",
-                    active && "bg-sky-50 text-sky-600"
+                    "flex min-h-14 items-center gap-3 px-5 py-3 text-left transition hover:bg-teal/5",
+                    active && "bg-teal/5 text-teal"
                   )}
                   href={`/learn?course=${encodeURIComponent(course.id)}`}
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-black">{course.name}</span>
+                    <span className="block truncate text-sm font-semibold">{course.name}</span>
                   </span>
                   {active ? <Check className="shrink-0" size={18} strokeWidth={4} /> : null}
                 </Link>

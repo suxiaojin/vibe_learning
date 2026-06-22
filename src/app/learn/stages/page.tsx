@@ -49,11 +49,11 @@ export default async function StagesPage({
   const currentChapterId = getCurrentChapterId(group);
 
   return (
-    <main className="min-h-dvh bg-white lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
+    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
       <StudentSidebar active="learn" />
 
       <section className="mx-auto w-full max-w-3xl px-5 py-8">
-        <Link className="inline-flex items-center gap-2 text-lg font-black text-slate-400 transition hover:text-slate-600" href={group ? `/learn?course=${group.key}` : "/learn"}>
+        <Link className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-teal" href={group ? `/learn?course=${group.key}` : "/learn"}>
           <ArrowLeft size={22} />
           {text.back}
         </Link>
@@ -64,8 +64,8 @@ export default async function StagesPage({
             {group?.courses.map((course) => (
               <section key={course.id} className="space-y-3">
                 <div className="px-1">
-                  <p className="text-xs font-black text-sky-500">{text.course}</p>
-                  <h1 className="mt-1 text-2xl font-black text-ink">{course.title}</h1>
+                  <p className="text-xs font-semibold text-teal">{text.course}</p>
+                  <h1 className="mt-1 text-2xl font-semibold text-ink">{course.title}</h1>
                 </div>
                 {course.chapters.map((chapter) => {
                   const passedCount = chapter.sections.filter((section) => section.status === "passed").length;
@@ -78,14 +78,14 @@ export default async function StagesPage({
                     <section key={chapter.id} className={`overflow-hidden rounded-2xl border border-slate-200 ${current ? "bg-sky-100" : completed ? "bg-white" : "bg-slate-50"}`}>
                       <div className="p-5">
                         <div>
-                          <h2 className="text-xl font-black text-ink">{chapter.title}</h2>
+                          <h2 className="text-xl font-semibold text-ink">{chapter.title}</h2>
                           <p className="mt-1 text-sm font-semibold text-slate-500">{chapter.sections.length} {text.pieces}</p>
                           <div className="mt-5 flex items-center gap-3">
                             {locked ? <Lock className="shrink-0 text-slate-400" size={18} /> : <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#58cc02] text-white">{completed ? <Trophy size={16} /> : <Sparkles size={16} />}</span>}
                             <div className="h-3 flex-1 rounded-full bg-slate-100">
                               <div className="h-3 rounded-full bg-[#58cc02]" style={{ width: `${percent}%` }} />
                             </div>
-                            <span className="w-10 text-right text-xs font-black text-slate-400">{percent}%</span>
+                            <span className="w-10 text-right text-xs font-semibold text-slate-400">{percent}%</span>
                           </div>
                           <div className="mt-7">
                             {completed ? (

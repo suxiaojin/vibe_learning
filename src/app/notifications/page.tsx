@@ -261,7 +261,7 @@ function NotificationShell({
   const baseHref = `/notifications?tab=${activeTab}&page=${currentPage}`;
 
   return (
-    <main className="min-h-dvh bg-mist/70 lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
+    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
       <StudentSidebar active="notifications" />
 
       <section className="min-w-0 px-5 py-7 lg:px-8">
@@ -272,7 +272,7 @@ function NotificationShell({
             <span className="text-slate-700">消息中心</span>
           </nav>
 
-          <section className="overflow-hidden border border-slate-200 bg-white shadow-sm">
+          <section className="overflow-hidden rounded-[22px] border border-slate-200/80 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
             <header className="border-b border-slate-200 px-6 pt-6">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
@@ -281,7 +281,7 @@ function NotificationShell({
                       <Bell size={22} />
                     </span>
                     <div>
-                      <h1 className="text-2xl font-black text-ink">消息中心</h1>
+                      <h1 className="text-2xl font-semibold text-ink">消息中心</h1>
                     </div>
                   </div>
                 </div>
@@ -291,7 +291,7 @@ function NotificationShell({
                     <input name="tab" type="hidden" value={activeTab} />
                     <input name="page" type="hidden" value={currentPage} />
                     <button
-                      className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-600 transition hover:border-teal/40 hover:text-teal disabled:cursor-not-allowed disabled:opacity-40"
+                      className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 transition hover:border-teal/40 hover:text-teal disabled:cursor-not-allowed disabled:opacity-40"
                       disabled={unreadTotal === 0}
                       type="submit"
                     >
@@ -301,7 +301,7 @@ function NotificationShell({
                   </form>
                   <Link
                     className={cn(
-                      "inline-flex min-h-10 items-center gap-2 rounded-lg border px-3 text-sm font-bold transition",
+                      "inline-flex min-h-10 items-center gap-2 rounded-lg border px-3 text-sm font-semibold transition",
                       manageMode
                         ? "border-sky-300 bg-sky-50 text-sky-600"
                         : "border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:text-sky-600"
@@ -321,7 +321,7 @@ function NotificationShell({
                     <Link
                       key={tab.key}
                       className={cn(
-                        "relative inline-flex min-h-12 items-center gap-2 border-b-2 px-1 text-sm font-black transition",
+                        "relative inline-flex min-h-12 items-center gap-2 border-b-2 px-1 text-sm font-semibold transition",
                         activeTab === tab.key
                           ? "border-sky-500 text-sky-600"
                           : "border-transparent text-slate-500 hover:text-ink"
@@ -330,7 +330,7 @@ function NotificationShell({
                     >
                       {tab.label}
                       {unread > 0 ? (
-                        <span className="min-w-5 rounded-full bg-coral px-1.5 py-0.5 text-center text-[11px] font-black leading-none text-white">
+                        <span className="min-w-5 rounded-full bg-coral px-1.5 py-0.5 text-center text-[11px] font-semibold leading-none text-white">
                           {unread > 99 ? "99+" : unread}
                         </span>
                       ) : null}
@@ -496,7 +496,7 @@ function NotificationListItem({
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           {unread ? <span aria-label="未读" className="size-2 shrink-0 rounded-full bg-coral" title="未读" /> : null}
-          <p className={cn("truncate text-sm text-ink", unread ? "font-black" : "font-bold")}>{title}</p>
+          <p className={cn("truncate text-sm text-ink", unread ? "font-semibold" : "font-medium")}>{title}</p>
         </div>
         <time className="shrink-0 text-xs font-semibold tabular-nums text-slate-400">{time}</time>
       </div>
@@ -576,7 +576,7 @@ function NotificationDetailPanel({
         <div className="flex items-start gap-4">
           <span className={cn("grid size-11 shrink-0 place-items-center rounded-lg", iconClassName || "bg-sky-50 text-sky-600")}>{icon}</span>
           <div className="min-w-0">
-            <h2 className="break-words text-2xl font-black leading-9 text-ink">{title}</h2>
+            <h2 className="break-words text-2xl font-semibold leading-9 text-ink">{title}</h2>
             <time className="mt-2 block text-sm font-semibold tabular-nums text-slate-400" dateTime={sentAt.toISOString()}>
               {formatDateTime(sentAt)}
             </time>
@@ -586,7 +586,7 @@ function NotificationDetailPanel({
       <div className="px-8 py-8">
         {content || (
           <div
-            className="notification-rich-text max-w-none break-words text-base leading-8 text-slate-700 [&_a]:font-semibold [&_a]:text-teal [&_blockquote]:border-l-4 [&_blockquote]:border-slate-300 [&_blockquote]:pl-4 [&_h1]:text-2xl [&_h1]:font-black [&_h2]:text-xl [&_h2]:font-black [&_h3]:text-lg [&_h3]:font-bold [&_img]:my-4 [&_img]:h-auto [&_img]:max-w-full [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-2 [&_ul]:list-disc"
+            className="notification-rich-text max-w-none break-words text-base leading-8 text-slate-700 [&_a]:font-semibold [&_a]:text-teal [&_blockquote]:border-l-4 [&_blockquote]:border-slate-300 [&_blockquote]:pl-4 [&_h1]:text-2xl [&_h1]:font-semibold [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:text-lg [&_h3]:font-semibold [&_img]:my-4 [&_img]:h-auto [&_img]:max-w-full [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-2 [&_ul]:list-disc"
             dangerouslySetInnerHTML={{ __html: contentHtml || "" }}
           />
         )}
@@ -681,8 +681,8 @@ function BuddyActorLine({
       {actorId ? <Link href={`/students/${actorId}`}>{avatar}</Link> : avatar}
       <p className="min-w-0">
         {actorId ? (
-          <Link className="font-black text-teal hover:underline" href={`/students/${actorId}`}>{label}</Link>
-        ) : <span className="font-black text-slate-700">{label}</span>}
+          <Link className="font-semibold text-teal hover:underline" href={`/students/${actorId}`}>{label}</Link>
+        ) : <span className="font-semibold text-slate-700">{label}</span>}
         <span> {action}</span>
       </p>
     </div>
@@ -713,7 +713,7 @@ function NotificationActorAvatar({
   };
   return (
     <span className={cn(
-      "grid shrink-0 place-items-center rounded-full font-black text-white shadow-sm",
+      "grid shrink-0 place-items-center rounded-full font-semibold text-white shadow-sm",
       avatarColorClasses[avatarColor || "green"] || avatarColorClasses.green,
       sizeClass
     )}>
@@ -800,14 +800,14 @@ function BuddyNotificationActions({ notification, userId }: { notification: Budd
     <div className="flex flex-wrap items-center gap-3">
       <form action={acceptRequestFromNotification}>
         <input name="requestId" type="hidden" value={request.id} />
-        <button className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-teal px-4 text-sm font-black text-white transition hover:bg-teal/90" type="submit">
+        <button className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-teal px-4 text-sm font-semibold text-white transition hover:bg-teal/90" type="submit">
           <UserCheck size={17} />
           接受申请
         </button>
       </form>
       <form action={rejectRequestFromNotification}>
         <input name="requestId" type="hidden" value={request.id} />
-        <button className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-coral/30 bg-white px-4 text-sm font-black text-coral transition hover:bg-coral/10" type="submit">
+        <button className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-coral/30 bg-white px-4 text-sm font-semibold text-coral transition hover:bg-coral/10" type="submit">
           <UserX size={17} />
           拒绝
         </button>

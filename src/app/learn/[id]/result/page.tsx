@@ -100,8 +100,8 @@ export default async function QuizResultPage({
     return (
       <main className="mx-auto max-w-5xl px-4 py-8">
         <section className="panel">
-          <h1 className="text-2xl font-black text-ink">暂无答题记录</h1>
-          <p className="mt-2 text-sm font-semibold text-slate-500">完成一次答题后，这里会展示每次作答的对题和错题。</p>
+          <h1 className="text-2xl font-semibold text-ink">暂无答题记录</h1>
+          <p className="mt-2 text-sm font-medium text-slate-500">完成一次答题后，这里会展示每次作答的对题和错题。</p>
           <div className="mt-5 flex flex-wrap gap-3">
             <Link className="primary-button bg-[#58cc02] hover:bg-[#58cc02]/90" href={`/learn/${id}?restart=1`}>开始答题</Link>
             <Link className="secondary-button" href={`/learn?course=${access.group.key}&chapter=${access.chapter.id}`}>返回学习路线</Link>
@@ -134,13 +134,13 @@ export default async function QuizResultPage({
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
-      <section className={passed ? "overflow-hidden rounded-3xl border border-[#58cc02] bg-white shadow-soft" : "overflow-hidden rounded-3xl border border-coral bg-white shadow-soft"}>
+      <section className={passed ? "overflow-hidden rounded-[22px] border border-[#58cc02]/50 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]" : "overflow-hidden rounded-[22px] border border-coral/50 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]"}>
         <div className={passed ? "bg-[#58cc02] p-6 text-white" : "bg-coral p-6 text-white"}>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-sm font-black text-white/80">{access.course.title} / {access.chapter.title} / {access.section.title}</p>
-              <h1 className="mt-2 text-4xl font-black">{passed ? "闯关成功" : "还差一点"}</h1>
-              <p className="mt-2 text-sm font-semibold text-white/90">做题日期：{formatDateTime(submittedAt)}</p>
+              <p className="text-sm font-medium text-white/85">{access.course.title} / {access.chapter.title} / {access.section.title}</p>
+              <h1 className="mt-2 text-[32px] font-bold leading-tight">{passed ? "闯关成功" : "还差一点"}</h1>
+              <p className="mt-2 text-sm font-medium text-white/90">做题日期：{formatDateTime(submittedAt)}</p>
             </div>
             <span className="grid size-16 place-items-center rounded-2xl border-2 border-white/20 bg-white/15">
               {passed ? <Trophy size={34} /> : <RotateCcw size={34} />}
@@ -184,7 +184,7 @@ export default async function QuizResultPage({
       <section className="mt-6 space-y-5">
         <div className="flex items-center gap-2 text-ink">
           <CheckCircle2 className="text-teal" size={20} />
-          <h2 className="text-xl font-black">历史答题记录</h2>
+          <h2 className="text-xl font-semibold">历史答题记录</h2>
         </div>
         {sessions.map((session) => {
           const correctAttempts = session.attempts.filter((attempt) => attempt.isCorrect);
@@ -193,7 +193,7 @@ export default async function QuizResultPage({
             <article key={session.id} className="panel">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
                 <div>
-                  <h3 className="text-lg font-black text-ink">{formatDateTime(session.completedAt || session.updatedAt)}</h3>
+                  <h3 className="text-lg font-semibold text-ink">{formatDateTime(session.completedAt || session.updatedAt)}</h3>
                   <p className="mt-1 text-sm font-semibold text-slate-500">正确 {correctAttempts.length} 题，错误 {wrongAttempts.length} 题</p>
                 </div>
                 <span className={cn("badge", (session.score || 0) >= 80 ? "bg-[#58cc02]/10 text-[#45a000]" : "bg-coral/10 text-coral")}>
@@ -216,10 +216,10 @@ function AttemptGroup({ attempts, title, tone }: { attempts: AttemptWithQuestion
     <section className="mt-5">
       <div className={cn("flex items-center gap-2", tone === "correct" ? "text-[#45a000]" : "text-coral")}>
         {tone === "correct" ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
-        <h4 className="font-black">{title}</h4>
+        <h4 className="font-semibold">{title}</h4>
       </div>
       {attempts.length === 0 ? (
-        <p className="mt-3 rounded-2xl bg-mist px-4 py-3 text-sm font-semibold text-slate-500">暂无</p>
+        <p className="mt-3 rounded-2xl bg-mist px-4 py-3 text-sm font-medium text-slate-500">暂无</p>
       ) : (
         <div className="mt-3 space-y-4">
           {attempts.map((attempt, index) => (
@@ -347,7 +347,7 @@ function ResultMetric({
       <span className={`grid size-11 shrink-0 place-items-center rounded-xl ${toneClass}`}>{icon}</span>
       <div>
         <p className="text-xs font-bold text-slate-400">{label}</p>
-        <p className="mt-1 text-lg font-black text-ink">{value}</p>
+        <p className="mt-1 text-lg font-semibold text-ink">{value}</p>
       </div>
     </div>
   );

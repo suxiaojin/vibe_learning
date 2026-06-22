@@ -42,12 +42,12 @@ export default async function StudentProfilePage({
   ]);
 
   return (
-    <main className="min-h-dvh bg-mist/60 lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
+    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
       <StudentSidebar active="buddy-circle" />
 
       <section className="min-w-0 px-5 py-8 lg:px-8">
         <div className="mx-auto max-w-5xl space-y-5">
-          <a className="inline-flex items-center gap-2 text-sm font-black text-slate-500 hover:text-teal" href="/buddy-circle">
+          <a className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-teal" href="/buddy-circle">
             <ArrowLeft size={17} />
             返回搭子圈
           </a>
@@ -62,7 +62,7 @@ export default async function StudentProfilePage({
 
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
             <div className="border-b border-slate-100 px-5 py-4">
-              <h2 className="text-base font-black text-ink">帖子</h2>
+              <h2 className="text-base font-semibold text-ink">帖子</h2>
             </div>
             <div className="divide-y divide-slate-100">
               {posts.items.length === 0 ? (
@@ -94,7 +94,7 @@ function ProfileHero({ profile }: { profile: SocialProfile }) {
         </div>
 
         <div className="mt-4">
-          <h1 className="text-3xl font-black text-ink">{profile.user.nickname}</h1>
+          <h1 className="text-[32px] font-bold leading-tight text-ink">{profile.user.nickname}</h1>
           <p className="mt-1 text-sm font-semibold text-slate-500">@{profile.user.username}</p>
           <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-slate-500">
             <span>{formatJoinedMonth(profile.user.joinedAt)} 加入</span>

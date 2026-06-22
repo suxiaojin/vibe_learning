@@ -288,22 +288,22 @@ export function QuizRunner({
             <div className="h-full rounded-full bg-[#58cc02] transition-all" style={{ width: `${progressPercent}%` }} />
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2 text-sm font-black text-coral">
+        <div className="flex shrink-0 items-center gap-2 text-sm font-semibold text-coral">
           <Heart className="fill-coral" size={22} />
           {correctCount}/{totalQuestions}
         </div>
       </div>
 
       <article className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center overflow-y-auto px-5 py-5">
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-black text-[#b76cff]">
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-semibold text-teal">
           <span>{text.question} {currentIndex + 1} / {totalQuestions} · {questionTypeLabel}</span>
           {sourceTitle ? (
-            <span className="max-w-full truncate rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-500" title={sourceTitle}>
+            <span className="max-w-full truncate rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500" title={sourceTitle}>
               {text.source}{sourceTitle}
             </span>
           ) : null}
         </p>
-        <h3 className="mt-3 text-2xl font-black leading-snug text-ink">{current.stem}</h3>
+        <h3 className="mt-3 text-[22px] font-semibold leading-snug text-ink">{current.stem}</h3>
 
         {current.type === "fill_blank" || isQuestionBankRichAnswerQuestionType(current.type) ? (
           <div className="mt-6">
@@ -365,7 +365,7 @@ export function QuizRunner({
                 {checkState === "correct" ? <CheckCircle2 size={26} /> : <XCircle size={26} />}
               </span>
               <div className="min-w-0">
-                <p className="text-lg font-black">{checkState === "correct" ? text.correct : text.wrong}</p>
+                <p className="text-lg font-semibold">{checkState === "correct" ? text.correct : text.wrong}</p>
                 {checkState === "wrong" ? <p className="truncate text-sm font-semibold">{text.rightAnswer}{answerText(correctAnswer)}</p> : null}
               </div>
             </div>
@@ -386,7 +386,7 @@ export function QuizRunner({
 
             {checkState === "idle" ? (
               <button
-                className="inline-flex min-h-12 w-36 items-center justify-center gap-2 rounded-2xl border-b-4 border-[#45a000] bg-[#58cc02] px-5 py-2 text-sm font-black text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-400"
+                className="inline-flex min-h-12 w-36 items-center justify-center gap-2 rounded-2xl border-b-4 border-[#45a000] bg-[#58cc02] px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-400"
                 type="button"
                 disabled={!canCheck}
                 onClick={checkAnswer}
@@ -396,7 +396,7 @@ export function QuizRunner({
               </button>
             ) : (
               <button
-                className="inline-flex min-h-12 w-36 items-center justify-center gap-2 rounded-2xl border-b-4 border-[#45a000] bg-[#58cc02] px-5 py-2 text-sm font-black text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-400"
+                className="inline-flex min-h-12 w-36 items-center justify-center gap-2 rounded-2xl border-b-4 border-[#45a000] bg-[#58cc02] px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-400"
                 type="button"
                 disabled={loading}
                 onClick={nextQuestion}

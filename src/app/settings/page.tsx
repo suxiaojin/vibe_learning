@@ -30,13 +30,13 @@ export default async function SettingsPage({
   const blockedUsers = await listBlockedUsers(user.id);
 
   return (
-    <main className="min-h-dvh bg-mist/60 lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
+    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
       <StudentSidebar active="settings" />
 
       <section className="min-w-0 px-5 py-8 lg:px-8">
         <div className="mx-auto max-w-5xl space-y-6">
-          <header className="border-b border-slate-200 bg-white px-6 py-6">
-            <h1 className="text-3xl font-black text-ink">设置</h1>
+          <header className="rounded-[22px] border border-slate-200/80 bg-white px-6 py-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
+            <h1 className="text-[32px] font-bold leading-tight text-ink">设置</h1>
           </header>
 
           <nav aria-label="设置分类" className="border-b border-slate-200">
@@ -48,7 +48,7 @@ export default async function SettingsPage({
                     key={tab.key}
                     aria-current={active ? "page" : undefined}
                     className={cn(
-                      "inline-flex shrink-0 items-center border-b-2 px-1 pt-1 text-sm font-black transition",
+                      "inline-flex shrink-0 items-center border-b-2 px-1 pt-1 text-sm font-semibold transition",
                       active ? "border-teal text-ink" : "border-transparent text-slate-600 hover:border-slate-300 hover:text-ink"
                     )}
                     href={`/settings?tab=${tab.key}`}
@@ -62,7 +62,7 @@ export default async function SettingsPage({
 
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
             <div className="border-b border-slate-100 px-5 py-4">
-              <h2 className="text-base font-black text-ink">屏蔽用户</h2>
+              <h2 className="text-base font-semibold text-ink">屏蔽用户</h2>
             </div>
             <div className="divide-y divide-slate-100">
               {blockedUsers.items.length === 0 ? (
@@ -73,7 +73,7 @@ export default async function SettingsPage({
                     <a className="flex min-w-0 items-center gap-3" href={`/students/${blockedUser.id}`}>
                       <SettingsAvatar user={blockedUser} />
                       <span className="min-w-0">
-                        <span className="block truncate text-sm font-black text-ink">{blockedUser.nickname}</span>
+                        <span className="block truncate text-sm font-semibold text-ink">{blockedUser.nickname}</span>
                         <span className="mt-1 block truncate text-xs font-semibold text-slate-500">
                           {[blockedUser.province, blockedUser.studySystem, blockedUser.majorName].filter(Boolean).join(" · ") || `@${blockedUser.username}`}
                         </span>
@@ -106,7 +106,7 @@ function SettingsAvatar({
     return <img alt={`${user.nickname} 的头像`} className="size-12 shrink-0 rounded-full object-cover shadow-sm" src={user.avatarImage} />;
   }
   return (
-    <span className="grid size-12 shrink-0 place-items-center rounded-full bg-[#58cc02] text-lg font-black text-white shadow-sm">
+    <span className="grid size-12 shrink-0 place-items-center rounded-full bg-[#58cc02] text-lg font-semibold text-white shadow-sm">
       {user.nickname.slice(0, 1).toUpperCase()}
     </span>
   );
