@@ -546,7 +546,7 @@ function CourseCard({ course }: { course: CourseCenterOverview["courses"][number
         ) : (
           <p className="mt-3 text-sm font-medium text-slate-400">{course.sectionCount === 0 ? "暂无已发布的课程内容" : "已完成当前课程的全部知识点"}</p>
         )}
-        <Link className={cn("mt-4 inline-flex items-center gap-1 text-sm font-semibold", isMajor ? "text-teal" : "text-sky-600")} href={`/learn?course=${course.key}`}>
+        <Link className={cn("mt-4 inline-flex items-center gap-1 text-sm font-semibold", isMajor ? "text-teal" : "text-sky-600")} href={`/course-center/knowledge-map?course=${course.key}`}>
           查看全部 {course.sectionCount} 个知识点 <ChevronRight size={16} />
         </Link>
       </div>
