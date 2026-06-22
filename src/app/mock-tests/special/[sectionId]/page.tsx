@@ -25,11 +25,11 @@ export default async function SpecialPracticeQuestionPage({
 
   if (questions.length === 0) {
     return (
-      <main className="grid min-h-dvh place-items-center bg-[#f2f3f7] px-5">
-        <section className="w-full max-w-xl rounded-3xl bg-white px-6 py-12 text-center shadow-sm">
-          <h1 className="text-2xl font-black text-ink">暂无可练习题目</h1>
-          <p className="mt-3 text-sm font-semibold leading-6 text-slate-500">这个知识点下还没有发布到 AI生成题库 的题目。</p>
-          <Link className="danger-button mt-6 bg-[#ef233c] hover:bg-[#d91f35]" href={`/mock-tests/special?course=${courseKey}`}>
+      <main className="grid min-h-dvh place-items-center bg-mist px-5">
+        <section className="w-full max-w-xl rounded-[22px] border border-slate-200/80 bg-white px-6 py-12 text-center shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
+          <h1 className="text-2xl font-semibold text-ink">暂无可练习题目</h1>
+          <p className="mt-3 text-sm font-medium leading-6 text-slate-500">这个知识点下还没有发布到 AI生成题库 的题目。</p>
+          <Link className="primary-button mt-6 px-6 text-[15px] font-semibold" href={`/mock-tests/special?course=${courseKey}`}>
             返回专项练习
           </Link>
         </section>

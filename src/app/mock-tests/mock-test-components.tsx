@@ -14,7 +14,7 @@ export const questionTypeLabels: Record<string, string> = {
 
 export function MockTestPageFrame({ children }: { children: ReactNode }) {
   return (
-    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
+    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
       <StudentSidebar active="course-center" />
       <section className="min-w-0 px-5 py-8 lg:px-8 xl:px-10">
         <div className="mx-auto w-full max-w-[1180px]">{children}</div>
@@ -31,10 +31,10 @@ export function EmptyMockTestState({
   description: string;
 }) {
   return (
-    <section className="mt-5 rounded-3xl border border-dashed border-sky-300 bg-white px-6 py-12 text-center shadow-sm">
-      <BookOpenCheck className="mx-auto text-sky-500" size={36} />
-      <h2 className="mt-4 text-xl font-black text-ink">{title}</h2>
-      <p className="mx-auto mt-2 max-w-xl text-sm font-semibold leading-6 text-slate-500">{description}</p>
+    <section className="mt-5 rounded-[22px] border border-dashed border-teal/30 bg-white px-6 py-12 text-center shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
+      <BookOpenCheck className="mx-auto text-teal" size={36} />
+      <h2 className="mt-4 text-xl font-semibold text-ink">{title}</h2>
+      <p className="mx-auto mt-2 max-w-xl text-sm font-medium leading-6 text-slate-500">{description}</p>
     </section>
   );
 }
@@ -47,7 +47,7 @@ export function QuestionList({
   className?: string;
 }) {
   return (
-    <section className={cn("rounded-3xl border border-slate-200 bg-white p-6 shadow-sm", className)}>
+    <section className={cn("rounded-[22px] border border-slate-200/80 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)]", className)}>
       <div className="divide-y divide-slate-100">
         {questions.map((question, index) => (
           <QuestionCard key={question.id} index={index + 1} question={question} />
@@ -62,24 +62,24 @@ function QuestionCard({ question, index }: { question: MockTestQuestion; index: 
 
   return (
     <article className="py-6 first:pt-0 last:pb-0">
-      <div className="flex flex-wrap items-center gap-2 text-xs font-black text-slate-400">
-        <span className="rounded-full bg-sky-50 px-3 py-1 text-sky-600">第{index}题</span>
+      <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-400">
+        <span className="rounded-full bg-teal/10 px-3 py-1 text-teal">第{index}题</span>
         <span>{questionTypeLabels[question.type] || question.type}</span>
         <span className="min-w-0 truncate">知识点：{question.knowledgePointTitle}</span>
       </div>
-      <h3 className="mt-3 text-base font-black leading-7 text-ink">{question.stem}</h3>
+      <h3 className="mt-3 text-base font-semibold leading-7 text-ink">{question.stem}</h3>
       {options.length > 0 ? (
         <div className="mt-4 grid gap-2">
           {options.map((option) => (
-            <label key={`${question.id}-${option.key || option.text}`} className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-sky-300 hover:bg-sky-50">
-              <input className="mt-1 accent-sky-500" name={`question-${question.id}`} type={question.type === "multiple_choice" ? "checkbox" : "radio"} />
-              <span className="font-black text-slate-500">{option.key}</span>
+            <label key={`${question.id}-${option.key || option.text}`} className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-teal/30 hover:bg-teal/5">
+              <input className="mt-1 accent-teal" name={`question-${question.id}`} type={question.type === "multiple_choice" ? "checkbox" : "radio"} />
+              <span className="font-semibold text-slate-500">{option.key}</span>
               <span className="min-w-0 flex-1">{option.text}</span>
             </label>
           ))}
         </div>
       ) : (
-        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500">
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-500">
           这道题暂无可展示选项，后续提交页会按题型处理。
         </div>
       )}

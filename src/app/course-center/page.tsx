@@ -33,11 +33,11 @@ export default async function CourseCenterPage() {
   const overview = buildCourseCenterOverview(learningPath.groups);
 
   return (
-    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
+    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
       <StudentSidebar active="course-center" />
 
       <section className="min-w-0 px-5 py-8 lg:px-8 xl:px-10">
-        <div className="mx-auto w-full max-w-[1240px]">
+        <div className="mx-auto w-full max-w-[1280px]">
           <CourseCenterForm initialOptions={options} currentProfile={currentProfile} overview={overview} />
         </div>
       </section>

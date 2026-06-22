@@ -15,7 +15,6 @@ import {
   Settings2,
   Sigma,
   Target,
-  Zap,
   X
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -312,11 +311,11 @@ export function CourseCenterForm({
     <>
       <header className="flex flex-wrap items-start justify-between gap-5">
         <div>
-          <h1 className="text-3xl font-black tracking-tight text-ink lg:text-4xl">课程中心</h1>
-          <p className="mt-2 text-sm font-semibold text-slate-500 lg:text-base">{savedPlanLabel || "请先保存学习方案"}</p>
+          <h1 className="text-[32px] font-bold leading-tight text-ink">课程中心</h1>
+          <p className="mt-2 text-[15px] font-medium leading-6 text-slate-500">{savedPlanLabel || "请先保存学习方案"}</p>
         </div>
         <button
-          className="secondary-button border-sky-300 px-5 text-sky-600 hover:border-sky-500 hover:text-sky-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+          className="secondary-button border-teal/30 px-5 text-[15px] font-semibold text-teal hover:border-teal/60 hover:text-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/25"
           type="button"
           onClick={() => setDrawerOpen(true)}
         >
@@ -326,17 +325,17 @@ export function CourseCenterForm({
       </header>
 
       {overview.courses.length > 0 ? (
-        <section className="mt-5 grid gap-5 xl:grid-cols-2">
+        <section className="mt-6 grid gap-5 xl:grid-cols-2">
           {overview.courses.map((course) => (
             <CourseCard key={course.key} course={course} />
           ))}
         </section>
       ) : (
-        <section className="mt-5 rounded-2xl border border-dashed border-sky-300 bg-white px-6 py-12 text-center shadow-sm">
-          <BookOpenCheck className="mx-auto text-sky-500" size={34} />
-          <h2 className="mt-4 text-xl font-black text-ink">先完成学习方案设置</h2>
-          <p className="mt-2 text-sm font-semibold text-slate-500">保存地区、公共课和专业课后，这里会展示你的课程与真实学习进度。</p>
-          <button className="primary-button mt-5 px-6" type="button" onClick={() => setDrawerOpen(true)}>
+        <section className="mt-6 rounded-[22px] border border-dashed border-teal/30 bg-white px-6 py-12 text-center shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
+          <BookOpenCheck className="mx-auto text-teal" size={34} />
+          <h2 className="mt-4 text-xl font-semibold text-ink">先完成学习方案设置</h2>
+          <p className="mt-2 text-sm font-medium leading-6 text-slate-500">保存地区、公共课和专业课后，这里会展示你的课程与真实学习进度。</p>
+          <button className="primary-button mt-5 px-6 text-[15px] font-semibold" type="button" onClick={() => setDrawerOpen(true)}>
             设置学习方案
           </button>
         </section>
@@ -353,8 +352,8 @@ export function CourseCenterForm({
           >
             <header className="flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-6 py-5">
               <div>
-                <h2 className="text-2xl font-black text-ink" id="course-plan-title">调整学习方案</h2>
-                <p className="mt-1 text-sm font-semibold text-slate-500">课程调整后，已完成的学习记录不会被清除。</p>
+                <h2 className="text-2xl font-semibold text-ink" id="course-plan-title">调整学习方案</h2>
+                <p className="mt-1 text-sm font-medium leading-6 text-slate-500">课程调整后，已完成的学习记录不会被清除。</p>
               </div>
               <button
                 aria-label="关闭调整学习方案"
@@ -368,8 +367,8 @@ export function CourseCenterForm({
 
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
               <div className="space-y-5">
-                <fieldset className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <legend className="px-2 text-sm font-black text-slate-500">{text.regionTitle}</legend>
+                <fieldset className="rounded-[22px] border border-slate-200/80 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+                  <legend className="px-2 text-sm font-semibold text-slate-600">{text.regionTitle}</legend>
                   <div className="mt-1 grid gap-4 sm:grid-cols-2">
                     <SelectField
                       disabled={options.regions.length === 0 || loadingOptions}
@@ -390,8 +389,8 @@ export function CourseCenterForm({
                   </div>
                 </fieldset>
 
-                <fieldset className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <legend className="px-2 text-sm font-black text-slate-500">{text.courseTitle}</legend>
+                <fieldset className="rounded-[22px] border border-slate-200/80 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+                  <legend className="px-2 text-sm font-semibold text-slate-600">{text.courseTitle}</legend>
                   <div className="mt-1 grid gap-4 sm:grid-cols-2">
                     <SelectField
                       disabled={options.publicSubjects.length === 0 || loadingOptions}
@@ -412,16 +411,16 @@ export function CourseCenterForm({
                   </div>
                 </fieldset>
 
-                <div className="rounded-2xl border border-sky-200 bg-sky-50 px-5 py-4">
-                  <p className="text-xs font-black uppercase tracking-wider text-sky-600">调整后的学习方案</p>
-                  <p className="mt-2 font-black text-ink">{selectedRegion?.name || selectedRegion?.province || "待选择"} · {selectedRegion?.studySystem || "待选择"}</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-600">{selectedPublicSubject?.name || "待选择公共课"} + {selectedMajor?.name || "待选择专业课"}</p>
+                <div className="rounded-[22px] border border-teal/20 bg-teal/5 px-5 py-4">
+                  <p className="text-xs font-semibold uppercase text-teal">调整后的学习方案</p>
+                  <p className="mt-2 font-semibold text-ink">{selectedRegion?.name || selectedRegion?.province || "待选择"} · {selectedRegion?.studySystem || "待选择"}</p>
+                  <p className="mt-1 text-sm font-medium text-slate-600">{selectedPublicSubject?.name || "待选择公共课"} + {selectedMajor?.name || "待选择专业课"}</p>
                 </div>
 
                 {feedback ? (
                   <div
                     className={cn(
-                      "flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-bold",
+                      "flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold",
                       feedback.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
                     )}
                     role="status"
@@ -432,8 +431,8 @@ export function CourseCenterForm({
                 ) : null}
 
                 {loadingOptions ? (
-                  <p className="flex items-center gap-2 text-sm font-bold text-slate-500">
-                    <Loader2 className="animate-spin text-sky-500" size={18} />
+                  <p className="flex items-center gap-2 text-sm font-semibold text-slate-500">
+                    <Loader2 className="animate-spin text-teal" size={18} />
                     {text.loading}
                   </p>
                 ) : null}
@@ -442,19 +441,19 @@ export function CourseCenterForm({
 
             <footer className="border-t border-slate-200 bg-white px-6 py-5">
               {redirectSeconds !== null ? (
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-sky-50 px-4 py-3 text-sm font-black text-slate-600">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-teal/5 px-4 py-3 text-sm font-semibold text-slate-600">
                   <span className="flex items-center gap-2">
-                    <Loader2 className="animate-spin text-sky-500" size={18} />
-                    {text.redirecting} <span className="text-sky-600">{redirectSeconds} 秒</span>
+                    <Loader2 className="animate-spin text-teal" size={18} />
+                    {text.redirecting} <span className="text-teal">{redirectSeconds} 秒</span>
                   </span>
-                  <button className="font-black text-sky-600 hover:text-sky-700" type="button" onClick={() => setRedirectSeconds(null)}>
+                  <button className="font-semibold text-teal hover:text-teal/80" type="button" onClick={() => setRedirectSeconds(null)}>
                     {text.cancelRedirect}
                   </button>
                 </div>
               ) : null}
               <div className="flex justify-end gap-3">
-                <button className="secondary-button min-w-24" type="button" onClick={closeDrawer}>{text.cancel}</button>
-                <button className="primary-button min-w-40" type="button" disabled={!canSave} onClick={saveSelection}>
+                <button className="secondary-button min-w-24 text-[15px] font-semibold" type="button" onClick={closeDrawer}>{text.cancel}</button>
+                <button className="primary-button min-w-40 text-[15px] font-semibold" type="button" disabled={!canSave} onClick={saveSelection}>
                   {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
                   {saving ? text.saving : text.save}
                 </button>
@@ -472,7 +471,12 @@ function CourseCard({ course }: { course: CourseCenterOverview["courses"][number
   const href = course.currentSection?.href || `/learn?course=${course.key}`;
 
   return (
-    <article className={cn("rounded-2xl border bg-white p-6 shadow-sm", isMajor ? "border-teal/45" : "border-slate-200")}>
+    <article
+      className={cn(
+        "rounded-[22px] border bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)]",
+        isMajor ? "border-teal/35" : "border-slate-200/80"
+      )}
+    >
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 items-center gap-4">
           <span className={cn("grid size-16 shrink-0 place-items-center rounded-2xl border", isMajor ? "border-teal/25 bg-teal/10 text-teal" : "border-sky-200 bg-sky-50 text-sky-600")}>
@@ -480,38 +484,38 @@ function CourseCard({ course }: { course: CourseCenterOverview["courses"][number
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="truncate text-2xl font-black text-ink">{course.title}</h2>
+              <h2 className="truncate text-2xl font-semibold text-ink">{course.title}</h2>
               <span className={cn("badge", isMajor ? "bg-teal/10 text-teal" : "bg-sky-50 text-sky-600")}>
                 {isMajor ? "专业课" : "公共课"}
               </span>
             </div>
-            <p className="mt-1 text-sm font-semibold text-slate-500">{course.chapterCount} 章 · {course.sectionCount} 个知识点</p>
+            <p className="mt-1 text-sm font-medium text-slate-500">{course.chapterCount} 章 · {course.sectionCount} 个知识点</p>
           </div>
         </div>
         <div className="shrink-0 text-right">
-          <p className={cn("text-3xl font-black", isMajor ? "text-teal" : "text-sky-600")}>{course.progressPercent}<span className="ml-0.5 text-base">%</span></p>
-          <p className="mt-1 text-xs font-bold text-slate-400">学习进度</p>
+          <p className={cn("text-[34px] font-bold leading-none", isMajor ? "text-teal" : "text-sky-600")}>{course.progressPercent}<span className="ml-0.5 text-base">%</span></p>
+          <p className="mt-1 text-xs font-semibold text-slate-400">学习进度</p>
         </div>
       </div>
 
-      <div className="mt-6 h-2 overflow-hidden rounded-full bg-slate-100" aria-label={`${course.title}学习进度 ${course.progressPercent}%`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={course.progressPercent}>
+      <div className="mt-6 h-2.5 overflow-hidden rounded-full bg-slate-100" aria-label={`${course.title}学习进度 ${course.progressPercent}%`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={course.progressPercent}>
         <div className={cn("h-full rounded-full", isMajor ? "bg-teal" : "bg-sky-500")} style={{ width: `${course.progressPercent}%` }} />
       </div>
 
       <div className="mt-6 flex flex-wrap items-end justify-between gap-4 border-b border-slate-100 pb-5">
         <div className="min-w-0">
-          <p className="flex items-center gap-2 text-sm font-bold text-slate-400"><Clock3 size={17} />当前学习</p>
-          <p className="mt-2 truncate text-base font-black text-ink">{course.currentSection?.title || "课程内容准备中"}</p>
-          {course.currentSection?.chapterTitle ? <p className="mt-1 truncate text-xs font-semibold text-slate-400">{course.currentSection.chapterTitle}</p> : null}
+          <p className="flex items-center gap-2 text-sm font-medium text-slate-400"><Clock3 size={17} />当前学习</p>
+          <p className="mt-2 truncate text-base font-semibold text-ink">{course.currentSection?.title || "课程内容准备中"}</p>
+          {course.currentSection?.chapterTitle ? <p className="mt-1 truncate text-xs font-medium text-slate-400">{course.currentSection.chapterTitle}</p> : null}
         </div>
-        <Link className={cn(isMajor ? "primary-button" : "secondary-button border-sky-400 text-sky-600 hover:border-sky-500 hover:text-sky-700", "min-w-32 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300")} href={href}>
+        <Link className={cn(isMajor ? "primary-button" : "secondary-button border-sky-300 text-sky-600 hover:border-sky-500 hover:text-sky-700", "min-w-32 text-[15px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/25")} href={href}>
           {isMajor ? "继续学习" : "进入课程"}
           <ChevronRight size={17} />
         </Link>
       </div>
 
-      <div className="pt-5 border-b border-slate-100 pb-5">
-        <p className="text-sm font-black text-slate-500">即将学习</p>
+      <div className="border-b border-slate-100 pb-5 pt-5">
+        <p className="text-sm font-semibold text-slate-500">即将学习</p>
         {course.upcomingSections.length > 0 ? (
           <div className="mt-3 space-y-1">
             {course.upcomingSections.map((section) => {
@@ -529,38 +533,29 @@ function CourseCard({ course }: { course: CourseCenterOverview["courses"][number
               );
 
               return section.status === "locked" ? (
-                <div key={section.id} className="flex min-h-10 items-center justify-between gap-3 rounded-lg px-1 text-sm font-semibold text-slate-500">
+                <div key={section.id} className="flex min-h-10 items-center justify-between gap-3 rounded-lg px-1 text-sm font-medium text-slate-500">
                   {content}
                 </div>
               ) : (
-                <Link key={section.id} className="flex min-h-10 items-center justify-between gap-3 rounded-lg px-1 text-sm font-semibold text-slate-700 transition hover:text-teal" href={section.href}>
+                <Link key={section.id} className="flex min-h-10 items-center justify-between gap-3 rounded-lg px-1 text-sm font-medium text-slate-700 transition hover:text-teal" href={section.href}>
                   {content}
                 </Link>
               );
             })}
           </div>
         ) : (
-          <p className="mt-3 text-sm font-semibold text-slate-400">{course.sectionCount === 0 ? "暂无已发布的课程内容" : "已完成当前课程的全部知识点"}</p>
+          <p className="mt-3 text-sm font-medium text-slate-400">{course.sectionCount === 0 ? "暂无已发布的课程内容" : "已完成当前课程的全部知识点"}</p>
         )}
-        <Link className={cn("mt-4 inline-flex items-center gap-1 text-sm font-black", isMajor ? "text-teal" : "text-sky-600")} href={`/learn?course=${course.key}`}>
+        <Link className={cn("mt-4 inline-flex items-center gap-1 text-sm font-semibold", isMajor ? "text-teal" : "text-sky-600")} href={`/learn?course=${course.key}`}>
           查看全部 {course.sectionCount} 个知识点 <ChevronRight size={16} />
         </Link>
       </div>
 
       <div className="mt-5 grid gap-3">
         <PracticeTestAction
-          buttonLabel="开始测试"
-          description="从当前已通过范围随机抽题"
-          href={`/mock-tests/quick?course=${course.key}`}
-          icon="quick"
-          isMajor={isMajor}
-          title="快速测试"
-        />
-        <PracticeTestAction
           buttonLabel="开始练习"
           description="按已通过知识点专项练习"
           href={`/mock-tests/special?course=${course.key}`}
-          icon="target"
           isMajor={isMajor}
           title="专项练习"
         />
@@ -574,50 +569,36 @@ function PracticeTestAction({
   description,
   buttonLabel,
   href,
-  icon,
   isMajor
 }: {
   title: string;
   description: string;
   buttonLabel: string;
   href: string;
-  icon: "quick" | "target";
   isMajor: boolean;
 }) {
-  const Icon = icon === "quick" ? Zap : Target;
-
   return (
-    <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-gradient-to-r from-white to-slate-50/70 px-4 py-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+    <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200/80 bg-white px-4 py-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
       <div className="flex min-w-0 items-center gap-4">
         <span
           className={cn(
-            "grid size-11 shrink-0 place-items-center rounded-full text-white shadow-sm",
-            icon === "quick"
-              ? isMajor
-                ? "bg-gradient-to-br from-teal to-emerald-500"
-                : "bg-gradient-to-br from-sky-400 to-blue-600"
-              : isMajor
-                ? "bg-teal/90"
-                : "bg-sky-500"
+            "grid size-11 shrink-0 place-items-center rounded-full",
+            isMajor ? "bg-teal/10 text-teal" : "bg-sky-50 text-sky-600"
           )}
         >
-          <Icon size={24} />
+          <Target size={24} />
         </span>
         <div className="min-w-0">
-          <p className="truncate text-lg font-black text-ink">{title}</p>
-          <p className="mt-0.5 truncate text-sm font-semibold text-slate-500">{description}</p>
+          <p className="truncate text-lg font-semibold text-ink">{title}</p>
+          <p className="mt-0.5 truncate text-sm font-medium text-slate-500">{description}</p>
         </div>
       </div>
       <Link
         className={cn(
-          "inline-flex min-h-12 shrink-0 items-center justify-center rounded-xl px-6 text-sm font-black transition focus-visible:outline-none focus-visible:ring-2",
-          icon === "quick"
-            ? isMajor
-              ? "bg-teal text-white shadow-sm shadow-teal/15 focus-visible:ring-teal/30"
-              : "bg-blue-600 text-white shadow-sm shadow-blue-500/20 focus-visible:ring-blue-300"
-            : isMajor
-              ? "border border-teal/35 bg-white text-teal focus-visible:ring-teal/25"
-              : "border border-blue-400 bg-white text-blue-600 focus-visible:ring-blue-300"
+          "inline-flex min-h-12 shrink-0 items-center justify-center rounded-xl px-6 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2",
+          isMajor
+            ? "border border-teal/35 bg-white text-teal focus-visible:ring-teal/25"
+            : "border border-sky-300 bg-white text-sky-600 focus-visible:ring-sky-200"
         )}
         href={href}
       >
@@ -644,8 +625,8 @@ function SelectField({
 }) {
   return (
     <label className="block">
-      <span className="label font-bold">{label}</span>
-      <select className="input min-h-12 cursor-pointer font-semibold disabled:cursor-not-allowed disabled:bg-slate-50" disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)}>
+      <span className="label font-semibold">{label}</span>
+      <select className="input min-h-12 cursor-pointer text-[15px] font-medium disabled:cursor-not-allowed disabled:bg-slate-50" disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)}>
         {options.length === 0 ? <option value="">{emptyLabel}</option> : null}
         {options.map((option) => (
           <option key={option.id} value={option.id}>

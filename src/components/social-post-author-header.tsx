@@ -27,14 +27,14 @@ export function SocialPostAuthorHeader({
 
   return (
     <div className={cn("min-w-0", className)}>
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-base">
         <SocialMedalBadge gender={author.gender} label={author.medalLabel} level={author.medalLevel} />
-        <a className="font-black text-ink hover:text-teal" href={`/students/${author.id}`}>
+        <a className="font-semibold text-ink hover:text-teal" href={`/students/${author.id}`}>
           {author.nickname}
         </a>
-        <span className="font-semibold text-slate-400">@{author.username}</span>
+        <span className="text-sm font-medium text-slate-400">@{author.username}</span>
       </div>
-      <p className="mt-0.5 text-xs font-semibold text-slate-400">
+      <p className="mt-1 text-[13px] font-medium text-slate-500">
         {profileLabel} · {dateLabel}
       </p>
     </div>

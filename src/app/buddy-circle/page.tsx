@@ -100,17 +100,17 @@ export default async function BuddyCirclePage({
   const returnTo = buildCircleHref(params);
 
   return (
-    <main className="min-h-dvh bg-mist/60 lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
+    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
       <PostSuccessNoticeTrigger active={params?.notice === "post-sent"} />
       <StudentSidebar active="buddy-circle" />
 
-      <section className="min-w-0 px-5 py-8 lg:px-8">
-        <div className="mx-auto grid max-w-7xl gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="min-w-0 space-y-5">
+      <section className="min-w-0 px-5 py-8 lg:px-8 xl:px-10">
+        <div className="mx-auto grid max-w-[1520px] gap-7 xl:grid-cols-[minmax(640px,1fr)_360px]">
+          <div className="min-w-0 space-y-4">
             <FeedHeader params={params} scope={scope} sort={sort} />
 
             {params?.error ? (
-              <p className="rounded-xl bg-coral/10 px-4 py-3 text-sm font-bold text-coral">
+              <p className="rounded-2xl bg-coral/10 px-4 py-3 text-sm font-semibold text-coral">
                 {errorText[params.error] || errorText.UNKNOWN}
               </p>
             ) : null}
@@ -121,7 +121,7 @@ export default async function BuddyCirclePage({
 
             <section className="space-y-4">
               {feed.items.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm font-semibold text-slate-500">
+                <div className="rounded-[22px] border border-dashed border-slate-300 bg-white p-10 text-center text-sm font-medium text-slate-500 shadow-[0_14px_34px_rgba(24,32,47,0.05)]">
                   {scope === "following" ? "你关注的人还没有发帖。" : "暂时没有符合条件的帖子。"}
                 </div>
               ) : (
@@ -161,8 +161,8 @@ function FeedHeader({
   sort: BuddyFeedSort;
 }) {
   return (
-    <section className="sticky top-0 z-30 overflow-visible rounded-2xl border border-slate-200 bg-white/95 shadow-sm backdrop-blur">
-      <div className="grid min-h-16 grid-cols-2">
+    <section className="sticky top-0 z-30 overflow-visible rounded-[22px] border border-slate-200/80 bg-white/95 shadow-[0_14px_34px_rgba(24,32,47,0.06)] backdrop-blur">
+      <div className="grid min-h-[64px] grid-cols-2">
         <FeedTab active={scope === "discover"} label="发现" params={params} sort={sort} tab="discover" />
         <FeedTab active={scope === "following"} label="关注" params={params} sort={sort} tab="following" />
       </div>
@@ -191,27 +191,27 @@ function FeedTab({
   return (
     <div
       className={cn(
-        "group relative grid min-h-16 place-items-center border-b-2 text-sm font-black transition",
-        active ? "border-sky-500 text-ink" : "border-transparent text-slate-500 hover:bg-slate-50 hover:text-ink"
+        "group relative grid min-h-[64px] place-items-center border-b-2 text-base font-semibold transition",
+        active ? "border-teal text-ink" : "border-transparent text-slate-500 hover:bg-slate-50/80 hover:text-ink"
       )}
     >
       <a
         aria-current={active ? "page" : undefined}
-        className="inline-flex min-h-12 items-center justify-center gap-1 px-8 outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+        className="inline-flex min-h-12 items-center justify-center gap-1 px-8 outline-none focus-visible:ring-2 focus-visible:ring-teal/30"
         href={`/buddy-circle?tab=${tab}`}
       >
         {label}
         <ChevronDown className="transition group-hover:rotate-180 group-focus-within:rotate-180" size={16} />
       </a>
-      <div className="invisible absolute top-full z-40 w-36 overflow-hidden rounded-xl border border-slate-200 bg-white py-2 opacity-0 shadow-[0_12px_32px_rgba(15,23,42,0.18)] transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+      <div className="invisible absolute top-full z-40 w-36 overflow-hidden rounded-2xl border border-slate-200 bg-white py-2 opacity-0 shadow-[0_12px_32px_rgba(15,23,42,0.14)] transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
         {options.map((option) => (
           <a
             key={option.key}
-            className="flex items-center justify-between px-4 py-3 text-sm font-black text-slate-700 hover:bg-slate-50"
+            className="flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
             href={buildCircleHref(params, { sort: option.key, tab })}
           >
             {option.label}
-            {active && sort === option.key ? <Check className="text-sky-500" size={17} /> : null}
+            {active && sort === option.key ? <Check className="text-teal" size={17} /> : null}
           </a>
         ))}
       </div>
@@ -221,18 +221,18 @@ function FeedTab({
 
 function PostComposer({ returnTo }: { returnTo: string }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
-      <form action={publishPost} className="space-y-4">
+    <section className="rounded-[22px] border border-slate-200/80 bg-white p-5 shadow-[0_14px_34px_rgba(24,32,47,0.06)]">
+      <form action={publishPost} className="space-y-3.5">
         <input name="returnTo" type="hidden" value={returnTo} />
         <textarea
-          className="input min-h-28 resize-y border-0 bg-slate-50 text-base leading-7 shadow-none"
+          className="input min-h-28 resize-y rounded-2xl border-0 bg-slate-50/90 px-4 py-3 text-[15px] font-medium leading-7 text-ink shadow-none placeholder:text-slate-400"
           name="content"
           placeholder="有什么新鲜事？"
         />
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs font-semibold text-slate-400">仅支持文字和表情，不能包含超链接、图片、视频或音频。</p>
-          <button className="primary-button" type="submit">
-            <Send size={18} />
+          <p className="text-[13px] font-medium text-slate-500">仅支持文字和表情，不能包含超链接、图片、视频或音频。</p>
+          <button className="primary-button min-h-12 rounded-2xl px-5 text-[15px]" type="submit">
+            <Send size={17} />
             发帖
           </button>
         </div>
@@ -253,16 +253,16 @@ function SearchPanel({
   sort: BuddyFeedSort;
 }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-soft">
+    <section className="rounded-[22px] border border-slate-200/80 bg-white p-4 shadow-[0_14px_34px_rgba(24,32,47,0.06)]">
       <form className="relative" method="get">
         <input name="tab" type="hidden" value={scope} />
         <input name="sort" type="hidden" value={sort} />
         {params?.province ? <input name="province" type="hidden" value={params.province} /> : null}
         {params?.studySystem ? <input name="studySystem" type="hidden" value={params.studySystem} /> : null}
         {params?.majorId ? <input name="majorId" type="hidden" value={params.majorId} /> : null}
-        <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+        <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={19} />
         <input
-          className="input min-h-12 rounded-full pl-11"
+          className="input min-h-14 rounded-2xl pl-11 text-[15px]"
           name="q"
           defaultValue={query}
           placeholder="搜索昵称"
@@ -289,39 +289,39 @@ function FeedFilters({
   const studySystems = Array.from(new Set(regions.map((region) => region.studySystem))).filter(Boolean);
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
-      <div className="mb-4 flex items-center gap-2 text-lg font-black text-ink">
-        <SlidersHorizontal className="text-sky-500" size={20} />
+    <section className="rounded-[22px] border border-slate-200/80 bg-white p-5 shadow-[0_14px_34px_rgba(24,32,47,0.06)]">
+      <div className="mb-5 flex items-center gap-2 text-xl font-semibold text-ink">
+        <SlidersHorizontal className="text-teal" size={20} />
         筛选条件
       </div>
-      <form className="space-y-3" method="get">
+      <form className="space-y-4" method="get">
         <input name="tab" type="hidden" value={scope} />
         <input name="sort" type="hidden" value={sort} />
         {params?.q ? <input name="q" type="hidden" value={params.q} /> : null}
         <label className="block">
           <span className="label">省份</span>
-          <select className="input" name="province" defaultValue={params?.province || ""}>
+          <select className="input min-h-14 rounded-2xl text-[15px]" name="province" defaultValue={params?.province || ""}>
             <option value="">全部省份</option>
             {provinces.map((province) => <option key={province} value={province}>{province}</option>)}
           </select>
         </label>
         <label className="block">
           <span className="label">学制</span>
-          <select className="input" name="studySystem" defaultValue={params?.studySystem || ""}>
+          <select className="input min-h-14 rounded-2xl text-[15px]" name="studySystem" defaultValue={params?.studySystem || ""}>
             <option value="">全部学制</option>
             {studySystems.map((studySystem) => <option key={studySystem} value={studySystem}>{studySystem}</option>)}
           </select>
         </label>
         <label className="block">
           <span className="label">专业</span>
-          <select className="input" name="majorId" defaultValue={params?.majorId || ""}>
+          <select className="input min-h-14 rounded-2xl text-[15px]" name="majorId" defaultValue={params?.majorId || ""}>
             <option value="">全部专业</option>
             {majors.map((major) => <option key={major.id} value={major.id}>{major.name}</option>)}
           </select>
         </label>
         <div className="flex gap-2 pt-1">
-          <button className="primary-button flex-1" type="submit">筛选</button>
-          <a className="secondary-button min-h-11 px-4" href={`/buddy-circle?tab=${scope}`}>重置</a>
+          <button className="primary-button min-h-12 flex-1 rounded-2xl text-[15px]" type="submit">筛选</button>
+          <a className="secondary-button min-h-12 rounded-2xl px-5 text-[15px]" href={`/buddy-circle?tab=${scope}`}>重置</a>
         </div>
       </form>
     </section>
@@ -330,25 +330,25 @@ function FeedFilters({
 
 function RecommendedFollowPanel({ returnTo, users }: { returnTo: string; users: SocialRecommendation[] }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
-      <h2 className="text-lg font-black text-ink">推荐关注</h2>
+    <section className="rounded-[22px] border border-slate-200/80 bg-white p-5 shadow-[0_14px_34px_rgba(24,32,47,0.06)]">
+      <h2 className="text-xl font-semibold text-ink">推荐关注</h2>
       <div className="mt-4 space-y-4">
         {users.length === 0 ? (
-          <p className="rounded-xl bg-slate-50 px-4 py-6 text-center text-sm font-semibold text-slate-500">暂时没有同条件推荐。</p>
+          <p className="rounded-2xl bg-slate-50 px-4 py-7 text-center text-sm font-medium text-slate-500">暂时没有同条件推荐。</p>
         ) : (
           users.map((user) => (
             <div key={user.id} className="flex items-center justify-between gap-3">
               <a className="flex min-w-0 items-center gap-3" href={`/students/${user.id}`}>
                 <ProfileAvatar user={user} />
                 <span className="min-w-0">
-                  <span className="block truncate text-sm font-black text-ink">{user.nickname}</span>
-                  <span className="block truncate text-xs font-semibold text-slate-500">@{user.username}</span>
+                  <span className="block truncate text-[15px] font-semibold text-ink">{user.nickname}</span>
+                  <span className="block truncate text-[13px] font-medium text-slate-500">@{user.username}</span>
                 </span>
               </a>
               <form action={followFromCircle}>
                 <input name="targetId" type="hidden" value={user.id} />
                 <input name="returnTo" type="hidden" value={returnTo} />
-                <button className="min-h-10 rounded-full bg-ink px-5 text-sm font-black text-white transition hover:bg-slate-700" type="submit">
+                <button className="min-h-10 rounded-full bg-ink px-5 text-sm font-semibold text-white transition hover:bg-slate-700" type="submit">
                   关注
                 </button>
               </form>
@@ -370,19 +370,19 @@ function UserSearchResults({
   users: SocialUserSearchResult[];
 }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
-      <h2 className="text-base font-black text-ink">昵称搜索：{query}</h2>
+    <section className="rounded-[22px] border border-slate-200/80 bg-white p-5 shadow-[0_14px_34px_rgba(24,32,47,0.06)]">
+      <h2 className="text-lg font-semibold text-ink">昵称搜索：{query}</h2>
       <div className="mt-4 space-y-3">
         {users.length === 0 ? (
-          <p className="rounded-xl bg-slate-50 px-4 py-6 text-center text-sm font-semibold text-slate-500">没有找到匹配昵称的用户。</p>
+          <p className="rounded-2xl bg-slate-50 px-4 py-6 text-center text-sm font-medium text-slate-500">没有找到匹配昵称的用户。</p>
         ) : (
           users.map((user) => (
             <div key={user.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 p-4">
               <a className="flex min-w-0 items-center gap-3" href={`/students/${user.id}`}>
                 <ProfileAvatar user={user} />
                 <span className="min-w-0">
-                  <span className="block truncate text-sm font-black text-ink">{user.nickname}</span>
-                  <span className="mt-1 block truncate text-xs font-semibold text-slate-500">
+                  <span className="block truncate text-[15px] font-semibold text-ink">{user.nickname}</span>
+                  <span className="mt-1 block truncate text-[13px] font-medium text-slate-500">
                     {[user.province, user.studySystem, user.majorName].filter(Boolean).join(" · ") || user.bio || "暂未填写简介"}
                   </span>
                 </span>
@@ -390,7 +390,7 @@ function UserSearchResults({
               <form action={user.isFollowing ? unfollowFromCircle : followFromCircle}>
                 <input name="targetId" type="hidden" value={user.id} />
                 <input name="returnTo" type="hidden" value={returnTo} />
-                <button className={user.isFollowing ? "secondary-button min-h-10 px-4 text-xs" : "primary-button min-h-10 px-4 text-xs"} type="submit">
+                <button className={user.isFollowing ? "secondary-button min-h-10 rounded-xl px-4 text-sm" : "primary-button min-h-10 rounded-xl px-4 text-sm"} type="submit">
                   {user.isFollowing ? <UserCheck size={16} /> : <UserPlus size={16} />}
                   {user.isFollowing ? "已关注" : "关注"}
                 </button>
@@ -405,8 +405,8 @@ function UserSearchResults({
 
 function BuddyPostCard({ post, returnTo, scope }: { post: BuddyFeedItem; returnTo: string; scope: BuddyFeedScope }) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
-      <div className="flex items-start gap-3">
+    <article className="rounded-[22px] border border-slate-200/80 bg-white p-5 shadow-[0_14px_34px_rgba(24,32,47,0.06)]">
+      <div className="flex items-start gap-4">
         <a href={`/students/${post.author.id}`}>
           <ProfileAvatar user={post.author} />
         </a>
@@ -420,7 +420,7 @@ function BuddyPostCard({ post, returnTo, scope }: { post: BuddyFeedItem; returnT
             <PostBody content={post.content} sharePayload={post.sharePayload} />
           ) : (
             <div className="mt-4 space-y-3">
-              {post.content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p> : null}
+              {post.content ? <p className="whitespace-pre-wrap text-base font-medium leading-7 text-ink/85">{post.content}</p> : null}
               <RepostSourceCard originalPost={post.originalPost} sourceState={post.sourceState} />
             </div>
           )}
@@ -495,7 +495,7 @@ function RepostSourceCard({
 function PostBody({ compact = false, content, sharePayload }: { compact?: boolean; content: string; sharePayload: BuddyFeedItem["sharePayload"] }) {
   return (
     <div className={cn(compact ? "mt-2" : "mt-4", "space-y-3")}>
-      {content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{content}</p> : null}
+      {content ? <p className={cn("whitespace-pre-wrap font-medium leading-7 text-ink/85", compact ? "text-[15px]" : "text-base")}>{content}</p> : null}
       <BuddyShareCardView card={sharePayload} compact={compact} />
     </div>
   );
@@ -596,7 +596,7 @@ function MenuButton({
   label: string;
 }) {
   const className = cn(
-    "flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm font-black transition hover:bg-slate-50",
+    "flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm font-semibold transition hover:bg-slate-50",
     danger ? "text-coral" : "text-slate-700"
   );
 
@@ -622,10 +622,10 @@ function MenuButton({
 
 function ProfileAvatar({ user }: { user: { avatarColor?: string; avatarImage?: string; nickname: string } }) {
   if (user.avatarImage) {
-    return <img alt={`${user.nickname} 的头像`} className="size-12 shrink-0 rounded-full object-cover shadow-sm" src={user.avatarImage} />;
+    return <img alt={`${user.nickname} 的头像`} className="size-11 shrink-0 rounded-full object-cover shadow-sm ring-1 ring-slate-200/80" src={user.avatarImage} />;
   }
   return (
-    <span className={cn("grid size-12 shrink-0 place-items-center rounded-full text-lg font-black text-white shadow-sm", avatarColorClasses[user.avatarColor || "green"] || avatarColorClasses.green)}>
+    <span className={cn("grid size-11 shrink-0 place-items-center rounded-full text-base font-semibold text-white shadow-sm ring-1 ring-slate-200/80", avatarColorClasses[user.avatarColor || "green"] || avatarColorClasses.green)}>
       {user.nickname.slice(0, 1).toUpperCase()}
     </span>
   );

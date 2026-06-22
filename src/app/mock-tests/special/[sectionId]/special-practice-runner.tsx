@@ -248,23 +248,24 @@ export function SpecialPracticeRunner({
   }
 
   return (
-    <main className="min-h-dvh bg-[#f2f3f7]">
-      <div className="grid min-h-dvh gap-8 px-5 py-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <section className="flex min-h-[calc(100dvh-48px)] flex-col overflow-hidden rounded-t-2xl border border-[#f3c892] bg-[#fff4e4]">
-          <header className="grid min-h-20 place-items-center px-5 text-center">
-            <h1 className="text-2xl font-black text-black">【专项练习】 {sectionTitle}</h1>
+    <main className="min-h-dvh bg-mist">
+      <div className="grid min-h-dvh gap-6 px-5 py-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <section className="flex min-h-[calc(100dvh-48px)] flex-col overflow-hidden rounded-[22px] border border-slate-200/80 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
+          <header className="border-b border-slate-100 bg-white px-7 py-5">
+            <p className="text-sm font-medium text-teal">专项练习</p>
+            <h1 className="mt-1 text-2xl font-semibold leading-8 text-ink">{sectionTitle}</h1>
           </header>
 
-          <article className="min-h-0 flex-1 overflow-y-auto rounded-t-2xl bg-white px-7 py-8">
-            <span className="inline-flex rounded-lg bg-[#eef3fb] px-2.5 py-1.5 text-base font-medium text-[#1f2937]">
+          <article className="min-h-0 flex-1 overflow-y-auto bg-white px-7 py-8">
+            <span className="inline-flex rounded-lg bg-teal/10 px-2.5 py-1.5 text-sm font-semibold text-teal">
               {formatQuestionType(question.type)}
             </span>
-            <h2 className="mt-6 text-xl font-medium leading-9 text-black">
+            <h2 className="mt-6 max-w-4xl text-lg font-semibold leading-8 text-ink">
               {currentIndex + 1}、{question.stem}
             </h2>
 
             {options.length > 0 ? (
-              <div className="mt-6 grid max-w-3xl gap-5">
+              <div className="mt-6 grid max-w-3xl gap-3">
                 {options.map((option) => {
                   const selectedOption = selected.includes(option.key);
                   const correctOption =
@@ -275,7 +276,7 @@ export function SpecialPracticeRunner({
                   return (
                     <button
                       key={`${question.id}-${option.key || option.text}`}
-                      className="flex cursor-pointer items-start gap-3 text-left text-xl leading-8 text-black"
+                      className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-left text-base font-medium leading-7 text-slate-700 transition hover:border-teal/30 hover:bg-teal/5"
                       type="button"
                       onClick={() => selectOption(option.key)}
                     >
@@ -286,13 +287,13 @@ export function SpecialPracticeRunner({
                 })}
               </div>
             ) : (
-              <div className="mt-6 max-w-3xl rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-base font-semibold text-slate-500">
+              <div className="mt-6 max-w-3xl rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-medium text-slate-500">
                 这道题暂无可展示选项，后续答题功能会按题型处理。
               </div>
             )}
 
-            <div className="mt-8 flex flex-wrap items-center gap-8">
-              <button className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#c9b7ff] bg-[#eee7ff] px-4 text-base font-medium text-[#715aff]" type="button" onClick={openAiDoubt}>
+            <div className="mt-8 flex flex-wrap items-center gap-5">
+              <button className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-teal/25 bg-teal/10 px-4 text-sm font-semibold text-teal transition hover:border-teal/40 hover:bg-teal/15" type="button" onClick={openAiDoubt}>
                 <Bot size={19} />
                 AI答疑
               </button>
@@ -303,22 +304,22 @@ export function SpecialPracticeRunner({
             </div>
 
             {revealed ? (
-              <section className="mt-4 max-w-3xl rounded-lg bg-slate-50 px-5 py-5 text-sm leading-7 text-black">
+              <section className="mt-5 max-w-3xl rounded-2xl border border-slate-200 bg-slate-50 px-5 py-5 text-sm leading-7 text-ink">
                 <p>
-                  <span className="font-black">参考答案：</span>
-                  <span className="ml-2 font-black text-[#21c7bd]">{answerText(correctAnswer) || "暂无"}</span>
+                  <span className="font-semibold">参考答案：</span>
+                  <span className="ml-2 font-semibold text-teal">{answerText(correctAnswer) || "暂无"}</span>
                 </p>
                 <p className="mt-3">
-                  <span className="font-black">文字解析：</span>
-                  <span className="text-[#475569]">{question.analysis || "暂无解析。"}</span>
+                  <span className="font-semibold">文字解析：</span>
+                  <span className="text-slate-600">{question.analysis || "暂无解析。"}</span>
                 </p>
               </section>
             ) : null}
           </article>
 
-          <footer className="grid min-h-16 grid-cols-3 items-center border-t border-slate-200 bg-white px-7 text-lg">
+          <footer className="grid min-h-16 grid-cols-3 items-center border-t border-slate-200 bg-white px-7 text-[15px] font-semibold">
             <button
-              className={previousEnabled ? "inline-flex items-center gap-1 text-slate-600 transition hover:text-[#ef233c]" : "inline-flex cursor-not-allowed items-center gap-1 text-slate-300"}
+              className={previousEnabled ? "inline-flex items-center gap-1 text-slate-600 transition hover:text-teal" : "inline-flex cursor-not-allowed items-center gap-1 text-slate-300"}
               disabled={!previousEnabled}
               type="button"
               onClick={goToPreviousQuestion}
@@ -326,12 +327,12 @@ export function SpecialPracticeRunner({
               <ChevronLeft size={22} />
               上一题
             </button>
-            <button className="justify-self-center inline-flex items-center gap-1 text-black" type="button" onClick={toggleAnswer}>
+            <button className="inline-flex items-center gap-1 justify-self-center text-ink transition hover:text-teal" type="button" onClick={toggleAnswer}>
               {revealed ? "收起答案/解析" : "查看答案/解析"}
               <ChevronDown className={revealed ? "rotate-180 transition" : "transition"} size={20} />
             </button>
             <button
-              className="justify-self-end inline-flex items-center gap-1 text-black transition hover:text-[#ef233c]"
+              className="inline-flex items-center gap-1 justify-self-end text-ink transition hover:text-teal"
               type="button"
               onClick={goToNextQuestion}
             >
@@ -376,15 +377,15 @@ function AnswerCard({
   const visibleQuestions = questions.slice(0, 50);
 
   return (
-    <aside className="self-start rounded-2xl bg-white px-5 py-7 shadow-sm">
+    <aside className="self-start rounded-[22px] border border-slate-200/80 bg-white px-5 py-7 shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <ClipboardList className="text-[#21c7bd]" size={30} />
-          <h2 className="text-2xl font-medium text-black">答题卡</h2>
+          <ClipboardList className="text-teal" size={28} />
+          <h2 className="text-xl font-semibold text-ink">答题卡</h2>
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-5 gap-4">
+      <div className="mt-6 grid grid-cols-5 gap-3">
         {visibleQuestions.map((question, index) => {
           const state = answerStates[question.id] || "unanswered";
           return (
@@ -400,9 +401,9 @@ function AnswerCard({
         })}
       </div>
 
-      <div className="mt-7 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-black">
-        <LegendDot className="bg-[#22c55e]" label="正确" />
-        <LegendDot className="bg-[#ef233c]" label="错误" />
+      <div className="mt-7 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-medium text-slate-600">
+        <LegendDot className="bg-emerald-500" label="正确" />
+        <LegendDot className="bg-red-500" label="错误" />
         <LegendDot className="bg-[#d1d5db]" label="未答" />
       </div>
     </aside>
@@ -425,23 +426,23 @@ function AiDoubtDialog({
   onSubmitFollowUp: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/35 px-5 py-6">
-      <section className="flex h-[min(900px,calc(100dvh-48px))] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <header className="relative bg-[#f6efff] px-16 py-4 text-center">
-          <h2 className="text-2xl font-medium text-black">AI答疑</h2>
-          <p className="mt-1 text-base text-slate-400">内容由AI生成</p>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 px-5 py-6">
+      <section className="flex h-[min(900px,calc(100dvh-48px))] w-full max-w-5xl flex-col overflow-hidden rounded-[22px] bg-white shadow-2xl">
+        <header className="relative bg-teal/5 px-16 py-5 text-center">
+          <h2 className="text-2xl font-semibold text-ink">AI答疑</h2>
+          <p className="mt-1 text-sm font-medium text-slate-500">内容由AI生成</p>
           <button
             aria-label="关闭"
-            className="absolute right-7 top-6 grid size-9 place-items-center rounded-full text-black transition hover:bg-white/70"
+            className="absolute right-7 top-6 grid size-9 place-items-center rounded-full text-slate-600 transition hover:bg-white"
             type="button"
             onClick={onClose}
           >
-            <X size={28} />
+            <X size={22} />
           </button>
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-10 py-8">
-          <div className="mx-auto max-w-4xl space-y-6 text-lg leading-9 text-black">
+          <div className="mx-auto max-w-4xl space-y-6 text-base leading-8 text-ink">
             {messages.length === 0 ? (
               <p className="flex items-center gap-2 text-slate-500">
                 <Loader2 className="animate-spin" size={20} />
@@ -451,10 +452,10 @@ function AiDoubtDialog({
               messages.map((message) =>
                 message.role === "user" ? (
                   <div key={message.id} className="flex justify-end">
-                    <p className="max-w-[78%] rounded-2xl bg-[#eef3fb] px-5 py-3 text-base leading-7 text-[#1f2937]">{message.content}</p>
+                    <p className="max-w-[78%] rounded-2xl bg-teal/10 px-5 py-3 text-base leading-7 text-ink">{message.content}</p>
                   </div>
                 ) : (
-                  <div key={message.id} className="rounded-2xl bg-white text-black">
+                  <div key={message.id} className="rounded-2xl bg-white text-ink">
                     {message.content ? <AiAnswerText content={message.content} /> : <StreamingPlaceholder />}
                   </div>
                 )
@@ -463,10 +464,10 @@ function AiDoubtDialog({
           </div>
         </div>
 
-        <footer className="border-t border-slate-100 bg-white px-8 py-7">
-          <div className="mx-auto flex min-h-20 max-w-4xl items-center gap-3 rounded-3xl border border-slate-200 bg-white px-5 shadow-[0_16px_48px_rgba(15,23,42,0.08)]">
+        <footer className="border-t border-slate-100 bg-white px-8 py-6">
+          <div className="mx-auto flex min-h-16 max-w-4xl items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 shadow-[0_14px_36px_rgba(15,23,42,0.07)]">
             <input
-              className="min-w-0 flex-1 bg-transparent text-lg text-black outline-none placeholder:text-slate-400"
+              className="min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-slate-400"
               disabled={loading}
               maxLength={500}
               placeholder="有问题尽管问"
@@ -481,7 +482,7 @@ function AiDoubtDialog({
             />
             <button
               aria-label="发送"
-              className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[#f8b4c0] text-white transition hover:bg-[#ef8fa0] disabled:cursor-not-allowed disabled:bg-slate-200"
+              className="grid size-11 shrink-0 place-items-center rounded-xl bg-teal text-white transition hover:bg-teal/90 disabled:cursor-not-allowed disabled:bg-slate-200"
               disabled={loading || !followUpText.trim()}
               type="button"
               onClick={onSubmitFollowUp}
@@ -512,7 +513,7 @@ function AiAnswerText({ content }: { content: string }) {
       {blocks.map((block, index) => {
         if (block.type === "heading") {
           return (
-            <h3 key={index} className="text-xl font-semibold leading-9 text-black">
+            <h3 key={index} className="text-lg font-semibold leading-8 text-ink">
               {renderAiInline(block.text)}
             </h3>
           );
@@ -640,7 +641,7 @@ function renderAiInline(value: string): ReactNode[] {
       nodes.push(value.slice(lastIndex, match.index));
     }
     nodes.push(
-      <strong key={`${match.index}-${match[1]}`} className="font-semibold text-black">
+      <strong key={`${match.index}-${match[1]}`} className="font-semibold text-ink">
         {match[1]}
       </strong>
     );
@@ -793,7 +794,7 @@ function createClientId() {
 
 function IconTextButton({ icon, label }: { icon: ReactNode; label: string }) {
   return (
-    <button className="inline-flex items-center gap-2 text-lg font-medium text-[#666] transition hover:text-[#ef233c]" type="button">
+    <button className="inline-flex min-h-10 items-center gap-2 rounded-lg px-1 text-sm font-medium text-slate-500 transition hover:text-teal" type="button">
       {icon}
       {label}
     </button>
@@ -857,27 +858,27 @@ function optionBadgeClassName({
   wrongOption: boolean;
 }) {
   if (correctOption) {
-    return "mt-1 grid size-8 shrink-0 place-items-center rounded-full bg-[#22c55e] text-lg font-black text-white";
+    return "mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-emerald-500 text-sm font-semibold text-white";
   }
   if (wrongOption) {
-    return "mt-1 grid size-8 shrink-0 place-items-center rounded-full bg-[#ef233c] text-lg font-black text-white";
+    return "mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-red-500 text-sm font-semibold text-white";
   }
   if (selectedOption) {
-    return "mt-1 grid size-8 shrink-0 place-items-center rounded-full bg-[#21c7bd] text-lg font-black text-white";
+    return "mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-teal text-sm font-semibold text-white";
   }
-  return "mt-1 grid size-8 shrink-0 place-items-center rounded-full bg-[#f1f2f4] text-lg font-black text-[#667085]";
+  return "mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-slate-100 text-sm font-semibold text-slate-500";
 }
 
 function answerCardButtonClassName({ active, state }: { active: boolean; state: AnswerState }) {
-  const base = "grid size-10 place-items-center rounded-full text-base font-black transition";
-  const activeRing = active ? " ring-2 ring-offset-2 ring-[#21c7bd]" : "";
+  const base = "grid size-10 place-items-center rounded-full text-sm font-semibold transition";
+  const activeRing = active ? " ring-2 ring-offset-2 ring-teal" : "";
   if (state === "correct") {
-    return `${base} bg-[#22c55e] text-white${activeRing}`;
+    return `${base} bg-emerald-500 text-white${activeRing}`;
   }
   if (state === "wrong") {
-    return `${base} bg-[#ef233c] text-white${activeRing}`;
+    return `${base} bg-red-500 text-white${activeRing}`;
   }
-  return `${base} bg-[#f3f3f3] text-[#626b78] hover:bg-slate-200${activeRing}`;
+  return `${base} bg-slate-100 text-slate-500 hover:bg-teal/10 hover:text-teal${activeRing}`;
 }
 
 function formatQuestionType(type: string) {

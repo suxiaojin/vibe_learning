@@ -23,18 +23,18 @@ const text = {
 
 export function StudentSidebar({ active }: { active: StudentNavKey }) {
   return (
-    <aside className="hidden border-r border-slate-200 bg-white lg:block">
-      <div className="sticky top-0 flex min-h-dvh flex-col p-4">
-        <div className="mb-6 px-3">
-          <p className="text-2xl font-black text-teal">Vibe Learning</p>
-          <p className="mt-1 text-xs font-semibold text-slate-500">{text.subtitle}</p>
+    <aside className="hidden border-r border-slate-200/80 bg-white lg:block">
+      <div className="sticky top-0 flex min-h-dvh flex-col px-5 py-6">
+        <div className="mb-8 px-2">
+          <p className="text-[28px] font-bold leading-tight text-teal">Vibe Learning</p>
+          <p className="mt-1 text-[13px] font-medium text-slate-500">{text.subtitle}</p>
         </div>
-        <nav className="space-y-2">
-          <StudentNavItem active={active === "learn"} href="/learn" icon={<GraduationCap size={24} />} label={text.learn} />
-          <StudentNavItem active={active === "course-center"} href="/course-center" icon={<BookMarked size={24} />} label={text.courseCenter} />
-          <StudentNavItem active={active === "wrong-book"} href="/wrong-book" icon={<Target size={24} />} label={text.review} />
-          <StudentNavItem active={active === "buddy-circle"} href="/buddy-circle" icon={<UsersRound size={24} />} label={text.buddyCircle} />
-          <StudentNavItem active={active === "me"} href="/me" icon={<UserRound size={24} />} label={text.profile} />
+        <nav className="space-y-2.5">
+          <StudentNavItem active={active === "learn"} href="/learn" icon={<GraduationCap size={22} />} label={text.learn} />
+          <StudentNavItem active={active === "course-center"} href="/course-center" icon={<BookMarked size={22} />} label={text.courseCenter} />
+          <StudentNavItem active={active === "wrong-book"} href="/wrong-book" icon={<Target size={22} />} label={text.review} />
+          <StudentNavItem active={active === "buddy-circle"} href="/buddy-circle" icon={<UsersRound size={22} />} label={text.buddyCircle} />
+          <StudentNavItem active={active === "me"} href="/me" icon={<UserRound size={22} />} label={text.profile} />
           <MoreMenu active={active === "notifications" || active === "settings"} />
         </nav>
       </div>
@@ -57,11 +57,11 @@ function StudentNavItem({
     <Link
       href={href}
       className={cn(
-        "flex min-h-14 items-center gap-3 rounded-xl border-2 px-4 text-sm font-black transition",
-        active ? "border-sky-300 bg-sky-50 text-sky-600" : "border-transparent text-slate-600 hover:bg-slate-100"
+        "flex min-h-[52px] items-center gap-3 rounded-2xl border px-4 text-base font-semibold transition",
+        active ? "border-teal/30 bg-teal/10 text-teal shadow-[0_10px_26px_rgba(31,157,138,0.10)]" : "border-transparent text-slate-600 hover:bg-slate-100 hover:text-ink"
       )}
     >
-      <span>{icon}</span>
+      <span className="grid size-7 place-items-center">{icon}</span>
       {label}
     </Link>
   );
@@ -72,12 +72,12 @@ function MoreMenu({ active }: { active: boolean }) {
     <div className="group relative">
       <button
         className={cn(
-          "flex min-h-14 w-full items-center gap-3 rounded-xl border-2 px-4 text-left text-sm font-black transition group-hover:bg-slate-100",
-          active ? "border-sky-300 bg-sky-50 text-sky-600" : "border-transparent text-slate-600 hover:bg-slate-100"
+          "flex min-h-[52px] w-full items-center gap-3 rounded-2xl border px-4 text-left text-base font-semibold transition group-hover:bg-slate-100",
+          active ? "border-teal/30 bg-teal/10 text-teal shadow-[0_10px_26px_rgba(31,157,138,0.10)]" : "border-transparent text-slate-600 hover:bg-slate-100 hover:text-ink"
         )}
         type="button"
       >
-        <span className="grid size-7 place-items-center rounded-full bg-violet-400 text-white">
+        <span className="grid size-7 place-items-center">
           <MoreHorizontal size={20} />
         </span>
         {text.more}
@@ -86,23 +86,23 @@ function MoreMenu({ active }: { active: boolean }) {
       <div className="invisible absolute bottom-0 left-full z-40 w-56 translate-x-2 pl-2 opacity-0 transition duration-150 group-hover:visible group-hover:translate-x-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-x-0 group-focus-within:opacity-100">
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white py-2 shadow-[0_8px_28px_rgba(15,23,42,0.16)]">
           <div className="border-b border-slate-200 px-5 py-3">
-            <p className="text-sm font-black text-slate-700">{text.moreTitle}</p>
-            <p className="mt-1 text-xs font-semibold text-slate-400">{text.moreHint}</p>
+            <p className="text-sm font-semibold text-slate-700">{text.moreTitle}</p>
+            <p className="mt-1 text-xs font-medium text-slate-400">{text.moreHint}</p>
           </div>
-          <Link className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-black text-slate-600 hover:bg-slate-50" href="/notifications">
+          <Link className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-semibold text-slate-600 hover:bg-slate-50" href="/notifications">
             <Bell size={18} />
             {text.notifications}
           </Link>
-          <Link className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-black text-slate-500 hover:bg-slate-50" href="/settings?tab=blocked-users">
+          <Link className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-semibold text-slate-500 hover:bg-slate-50" href="/settings?tab=blocked-users">
             <Settings size={18} />
             {text.settings}
           </Link>
-          <button className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-black text-slate-500 hover:bg-slate-50" type="button">
+          <button className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-semibold text-slate-500 hover:bg-slate-50" type="button">
             <HelpCircle size={18} />
             {text.help}
           </button>
           <form action="/api/auth/logout" method="post">
-            <button className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-black text-slate-500 hover:bg-slate-50" type="submit">
+            <button className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-semibold text-slate-500 hover:bg-slate-50" type="submit">
               <LogOut size={18} />
               {text.logout}
             </button>

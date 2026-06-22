@@ -112,11 +112,11 @@ export function SocialPostActions({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-8">
+    <div className="flex flex-wrap items-center gap-6">
       <button
         aria-label={liked ? "取消点赞" : "点赞"}
         className={cn(
-          "inline-flex min-h-9 min-w-16 items-center gap-2 rounded-full px-2 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-60",
+          "inline-flex min-h-10 min-w-16 items-center gap-2 rounded-full px-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60",
           liked ? "text-pink-500" : "text-slate-400 hover:text-pink-500"
         )}
         disabled={busy === "like" || (!canLike && !liked)}
@@ -131,7 +131,7 @@ export function SocialPostActions({
         reposted ? (
           <button
             aria-label="取消转帖"
-            className="inline-flex min-h-9 min-w-16 items-center gap-2 rounded-full px-2 text-sm font-black text-teal transition hover:text-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex min-h-10 min-w-16 items-center gap-2 rounded-full px-2 text-sm font-medium text-teal transition hover:text-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
             disabled={busy === "repost"}
             type="button"
             onClick={cancelRepost}
@@ -143,7 +143,7 @@ export function SocialPostActions({
           <>
             <button
               aria-label="转帖"
-              className="inline-flex min-h-9 min-w-16 items-center gap-2 rounded-full px-2 text-sm font-black text-slate-400 transition hover:text-teal disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex min-h-10 min-w-16 items-center gap-2 rounded-full px-2 text-sm font-medium text-slate-400 transition hover:text-teal disabled:cursor-not-allowed disabled:opacity-60"
               disabled={busy === "repost" || !canRepost}
               type="button"
               onClick={() => setRepostOpen(true)}
@@ -165,7 +165,7 @@ export function SocialPostActions({
                       <X size={22} />
                     </button>
                     <button
-                      className="min-h-10 rounded-full bg-ink px-6 text-sm font-black text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                      className="min-h-10 rounded-full bg-ink px-6 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
                       disabled={busy === "repost"}
                       type="button"
                       onClick={submitRepost}
@@ -174,16 +174,16 @@ export function SocialPostActions({
                     </button>
                   </div>
                   <textarea
-                    className="mt-5 min-h-56 w-full resize-y border-0 text-xl font-semibold leading-8 text-ink outline-none placeholder:text-slate-400"
+                    className="mt-5 min-h-56 w-full resize-y border-0 text-lg font-medium leading-8 text-ink outline-none placeholder:text-slate-400"
                     maxLength={300}
                     placeholder="添加评论"
                     value={repostContent}
                     onChange={(event) => setRepostContent(event.target.value)}
                   />
                   <div className="mt-4 rounded-2xl border border-slate-200 p-4">
-                    <p className="text-sm font-black text-ink">{repostSource.authorName}</p>
-                    <p className="mt-1 text-xs font-semibold text-slate-400">@{repostSource.username} · {repostSource.createdAtLabel}</p>
-                    <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{repostSource.content}</p>
+                    <p className="text-sm font-semibold text-ink">{repostSource.authorName}</p>
+                    <p className="mt-1 text-xs font-medium text-slate-400">@{repostSource.username} · {repostSource.createdAtLabel}</p>
+                    <p className="mt-3 whitespace-pre-wrap text-sm font-medium leading-7 text-slate-700">{repostSource.content}</p>
                   </div>
                 </div>
               </div>

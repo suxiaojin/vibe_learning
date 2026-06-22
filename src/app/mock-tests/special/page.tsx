@@ -54,10 +54,10 @@ function SpecialPracticeTable({
   totalSections: number;
 }) {
   return (
-    <section className="overflow-hidden rounded-[18px] bg-white shadow-sm">
+    <section className="overflow-hidden rounded-[22px] border border-slate-200/80 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
       <div className="overflow-x-auto">
         <div className="min-w-[860px]">
-          <div className="grid min-h-[70px] grid-cols-[minmax(300px,1fr)_130px_150px_120px] items-center rounded-[18px] bg-[#f5f5f5] px-5 text-lg font-medium text-slate-600">
+          <div className="grid min-h-[64px] grid-cols-[minmax(300px,1fr)_120px_140px_124px] items-center bg-slate-50/90 px-5 text-sm font-semibold text-slate-500">
             <div>知识点</div>
             <div className="text-center">正确率</div>
             <div className="text-center">进度</div>
@@ -72,14 +72,14 @@ function SpecialPracticeTable({
         </div>
       </div>
 
-      <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-4 text-sm font-semibold text-slate-500">
+      <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-4 text-sm font-medium text-slate-500">
         <span>共 {totalSections} 个已通过知识点</span>
         {totalPages > 1 ? (
           <nav className="flex items-center gap-2" aria-label="专项练习分页">
             <PageLink courseKey={courseKey} disabled={currentPage <= 1} page={currentPage - 1}>
               上一页
             </PageLink>
-            <span className="px-2 font-black text-slate-700">
+            <span className="px-2 font-semibold text-slate-700">
               {currentPage} / {totalPages}
             </span>
             <PageLink courseKey={courseKey} disabled={currentPage >= totalPages} page={currentPage + 1}>
@@ -94,16 +94,16 @@ function SpecialPracticeTable({
 
 function SpecialPracticeRow({ courseKey, section }: { courseKey: "public_subject" | "major"; section: MockTestSection }) {
   return (
-    <div className="grid min-h-[70px] grid-cols-[minmax(300px,1fr)_130px_150px_120px] items-center px-5 text-lg text-[#3f4a5a] transition hover:bg-slate-50">
+    <div className="grid min-h-[68px] grid-cols-[minmax(300px,1fr)_120px_140px_124px] items-center border-t border-slate-100 px-5 text-[15px] text-slate-600 transition hover:bg-teal/5">
       <div className="flex min-w-0 items-center gap-2 pr-4">
-        <CircleMinus className="shrink-0 text-[#ef233c]" size={24} strokeWidth={3} />
-        <span className="truncate font-medium text-black">{section.title}</span>
+        <CircleMinus className="shrink-0 text-teal" size={22} strokeWidth={2.5} />
+        <span className="truncate font-semibold text-ink">{section.title}</span>
       </div>
       <div className="text-center font-medium">0%</div>
       <div className="text-center font-medium">已答0道</div>
       <div className="text-right">
         <Link
-          className="inline-flex min-h-10 items-center justify-center rounded-lg bg-[#ef233c] px-4 text-base font-medium text-white transition hover:bg-[#d91f35] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
+          className="inline-flex min-h-11 items-center justify-center rounded-xl bg-teal px-4 text-sm font-semibold text-white transition hover:bg-teal/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/25"
           href={buildPracticeHref(courseKey, section.id)}
         >
           开始答题
@@ -132,7 +132,7 @@ function PageLink({
     <span className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-slate-300">{children}</span>
   ) : (
     <Link
-      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-600 transition hover:border-[#ef233c] hover:text-[#ef233c]"
+      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-600 transition hover:border-teal/40 hover:text-teal"
       href={buildPageHref(courseKey, page)}
     >
       {children}
