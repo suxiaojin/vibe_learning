@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 import { SpecialPracticeRunner } from "@/app/mock-tests/special/[sectionId]/special-practice-runner";
 import { getAiGeneratedQuestionsForSections, getMockTestContext, normalizeMockTestCourseKey } from "@/lib/mock-tests";
 import { requireUser } from "@/lib/auth";
@@ -30,6 +31,7 @@ export default async function SpecialPracticeQuestionPage({
           <h1 className="text-2xl font-semibold text-ink">暂无可练习题目</h1>
           <p className="mt-3 text-sm font-medium leading-6 text-slate-500">这个知识点下还没有发布到 AI生成题库 的题目。</p>
           <Link className="primary-button mt-6 px-6 text-[15px] font-semibold" href={`/mock-tests/special?course=${courseKey}`}>
+            <ArrowLeft size={18} />
             返回专项练习
           </Link>
         </section>
@@ -39,6 +41,7 @@ export default async function SpecialPracticeQuestionPage({
 
   return (
     <SpecialPracticeRunner
+      courseKey={courseKey}
       initialIndex={initialIndex}
       questions={questions}
       sectionId={section.id}

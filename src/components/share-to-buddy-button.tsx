@@ -40,6 +40,7 @@ export type ShareCopySuggestion = {
 
 export function ShareToBuddyButton({
   buttonClassName,
+  buttonIconSize = 17,
   buttonLabel = "分享到搭子圈",
   contentSuggestions = [],
   copyContext,
@@ -48,6 +49,7 @@ export function ShareToBuddyButton({
   sourceLabel = "学习动态"
 }: {
   buttonClassName?: string;
+  buttonIconSize?: number;
   buttonLabel?: string;
   contentSuggestions?: ShareCopySuggestion[];
   copyContext?: ShareCopyContext;
@@ -159,7 +161,7 @@ export function ShareToBuddyButton({
           setOpen(true);
         }}
       >
-        {shared ? <CheckCircle2 size={17} /> : <Share2 size={17} />}
+        {shared ? <CheckCircle2 size={buttonIconSize} /> : <Share2 size={buttonIconSize} />}
         {shared ? "已分享" : buttonLabel}
       </button>
 

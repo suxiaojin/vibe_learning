@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Bot, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Flag, Loader2, Send, Share2, Star, X } from "lucide-react";
+import Link from "next/link";
+import { Bot, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Loader2, Send, X } from "lucide-react";
+import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
+import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import { getQuestionBankTypeLabel } from "@/lib/question-bank-types";
 
 type PracticeQuestion = {
@@ -11,6 +14,13 @@ type PracticeQuestion = {
   options: unknown;
   answer: unknown;
   analysis: string;
+  source?: string;
+  questionBank?: {
+    id: string;
+    title: string;
+    year: number | null;
+    paperType: string;
+  } | null;
 };
 
 type PracticeOption = {
@@ -42,11 +52,13 @@ type HydratedPracticeState = {
 };
 
 export function SpecialPracticeRunner({
+  courseKey,
   initialIndex,
   questions,
   sectionId,
   sectionTitle
 }: {
+  courseKey: "public_subject" | "major";
   initialIndex: number;
   questions: PracticeQuestion[];
   sectionId: string;
@@ -74,6 +86,22 @@ export function SpecialPracticeRunner({
   const questionIds = useMemo(() => questions.map((item) => item.id), [questions]);
   const questionIdsSignature = useMemo(() => questionIds.join("|"), [questionIds]);
   const storageKey = useMemo(() => `vibe-special-practice:${sectionId}`, [sectionId]);
+  const questionTypeLabel = formatQuestionType(question.type);
+  const shareShowsAnswer = Boolean(judgedState || revealed);
+  const shareWasCorrect = shareShowsAnswer && isAnswerCorrect(selected, correctAnswer);
+  const questionShareCard = buildQuestionShareCard({
+    correctAnswer: shareShowsAnswer ? correctAnswer : ["答题后显示"],
+    currentIndex,
+    options,
+    questionTypeLabel,
+    selected,
+    sourceTitle: question.questionBank?.title || question.source || sectionTitle,
+    stem: question.stem,
+    totalQuestions: questions.length,
+    wasCorrect: shareWasCorrect
+  });
+  const questionShareContent = shareWasCorrect ? "这道题我做对了，考点挺典型。" : "这道题我想听听大家怎么理解。";
+  const questionShareSuggestions = getQuestionShareSuggestions(shareWasCorrect);
 
   useEffect(() => {
     try {
@@ -251,14 +279,17 @@ export function SpecialPracticeRunner({
     <main className="min-h-dvh bg-mist">
       <div className="grid min-h-dvh gap-6 px-5 py-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <section className="flex min-h-[calc(100dvh-48px)] flex-col overflow-hidden rounded-[22px] border border-slate-200/80 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
-          <header className="border-b border-slate-100 bg-white px-7 py-5">
-            <p className="text-sm font-medium text-teal">专项练习</p>
-            <h1 className="mt-1 text-2xl font-semibold leading-8 text-ink">{sectionTitle}</h1>
+          <header className="relative border-b border-orange-100 bg-[#fff4e3] px-7 py-7 text-center">
+            <Link className="absolute left-5 top-1/2 inline-flex -translate-y-1/2 items-center gap-1.5 rounded-full px-2.5 py-2 text-sm font-semibold text-slate-500 transition hover:bg-white/70 hover:text-teal" href={`/mock-tests/special?course=${courseKey}`}>
+              <ChevronLeft size={22} />
+              <span className="hidden sm:inline">返回</span>
+            </Link>
+            <h1 className="px-12 text-2xl font-black leading-8 text-ink">【专项练习】 {sectionTitle}</h1>
           </header>
 
           <article className="min-h-0 flex-1 overflow-y-auto bg-white px-7 py-8">
             <span className="inline-flex rounded-lg bg-teal/10 px-2.5 py-1.5 text-sm font-semibold text-teal">
-              {formatQuestionType(question.type)}
+              {questionTypeLabel}
             </span>
             <h2 className="mt-6 max-w-4xl text-lg font-semibold leading-8 text-ink">
               {currentIndex + 1}、{question.stem}
@@ -292,15 +323,22 @@ export function SpecialPracticeRunner({
               </div>
             )}
 
-            <div className="mt-8 flex flex-wrap items-center gap-5">
-              <button className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-teal/25 bg-teal/10 px-4 text-sm font-semibold text-teal transition hover:border-teal/40 hover:bg-teal/15" type="button" onClick={openAiDoubt}>
-                <Bot size={19} />
+            <div className="mt-8 flex max-w-3xl flex-wrap items-center justify-end gap-5">
+              <div className="hidden h-px flex-1 border-t border-dashed border-slate-200 md:block" />
+              <button className="inline-flex min-h-10 items-center gap-2 rounded-lg px-1 text-sm font-medium text-violet-600 transition hover:text-violet-700" type="button" onClick={openAiDoubt}>
+                <Bot size={22} />
                 AI答疑
               </button>
-              <div className="hidden h-px flex-1 border-t border-dashed border-slate-200 md:block" />
-              <IconTextButton icon={<Share2 size={24} />} label="分享" />
-              <IconTextButton icon={<Flag size={24} />} label="纠错" />
-              <IconTextButton icon={<Star size={25} />} label="收藏" />
+              <ShareToBuddyButton
+                buttonClassName="!min-h-10 !rounded-lg !border-0 !bg-transparent !px-1 !py-0 !font-medium !text-slate-500 hover:!border-transparent hover:!bg-transparent hover:!text-teal disabled:!border-0"
+                buttonIconSize={24}
+                buttonLabel="分享"
+                contentSuggestions={questionShareSuggestions}
+                copyContext={shareWasCorrect ? "question_correct" : "question_wrong"}
+                defaultContent={questionShareContent}
+                shareCard={questionShareCard}
+                sourceLabel={`题 ${currentIndex + 1} / ${questions.length}`}
+              />
             </div>
 
             {revealed ? (
@@ -385,7 +423,7 @@ function AnswerCard({
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-5 gap-3">
+      <div className="mt-6 grid grid-cols-5 gap-2.5">
         {visibleQuestions.map((question, index) => {
           const state = answerStates[question.id] || "unanswered";
           return (
@@ -792,15 +830,6 @@ function createClientId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function IconTextButton({ icon, label }: { icon: ReactNode; label: string }) {
-  return (
-    <button className="inline-flex min-h-10 items-center gap-2 rounded-lg px-1 text-sm font-medium text-slate-500 transition hover:text-teal" type="button">
-      {icon}
-      {label}
-    </button>
-  );
-}
-
 function LegendDot({ className, label }: { className: string; label: string }) {
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -848,6 +877,66 @@ function isAnswerCorrect(selected: string[], correctAnswer: string[]) {
   return JSON.stringify([...selected].sort()) === JSON.stringify(correctAnswer);
 }
 
+function buildQuestionShareCard({
+  correctAnswer,
+  currentIndex,
+  options,
+  questionTypeLabel,
+  selected,
+  sourceTitle,
+  stem,
+  totalQuestions,
+  wasCorrect
+}: {
+  correctAnswer: string[];
+  currentIndex: number;
+  options: PracticeOption[];
+  questionTypeLabel: string;
+  selected: string[];
+  sourceTitle: string;
+  stem: string;
+  totalQuestions: number;
+  wasCorrect: boolean;
+}): BuddyShareCard {
+  return {
+    type: "question_card",
+    correctAnswer: answerDetailText(correctAnswer, options) || "未记录",
+    indexLabel: `题 ${currentIndex + 1}/${totalQuestions}`,
+    questionTypeLabel,
+    selectedAnswer: selected.length > 0 ? answerDetailText(selected, options) : "未答",
+    sourceTitle: sourceTitle ? clipShareText(sourceTitle, 42) : undefined,
+    title: clipShareText(stem, 92),
+    wasCorrect
+  };
+}
+
+function answerDetailText(answer: string[], options: PracticeOption[]) {
+  const optionTextByKey = new Map(options.map((option) => [option.key, option.text]));
+  return normalizeAnswer(answer)
+    .map((item) => optionTextByKey.get(item) || item)
+    .join("；");
+}
+
+function getQuestionShareSuggestions(wasCorrect: boolean): ShareCopySuggestion[] {
+  if (wasCorrect) {
+    return [
+      { label: "考点典型", content: "这道题我做对了，考点挺典型。" },
+      { label: "高频收藏", content: "刷到一道高频感很强的题，分享给大家一起记。" },
+      { label: "复习提醒", content: "这个知识点容易混，顺手做个复习标记。" }
+    ];
+  }
+  return [
+    { label: "求助讨论", content: "这道题我想听听大家怎么理解。" },
+    { label: "错题复盘", content: "这题踩坑了，先发出来做个错题复盘。" },
+    { label: "想听思路", content: "我的思路可能偏了，有没有同学讲讲这题怎么想？" }
+  ];
+}
+
+function clipShareText(value: string, maxLength: number) {
+  const textValue = value.replace(/\s+/g, " ").trim();
+  return textValue.length > maxLength ? `${textValue.slice(0, maxLength)}...` : textValue;
+}
+
 function optionBadgeClassName({
   correctOption,
   selectedOption,
@@ -870,8 +959,8 @@ function optionBadgeClassName({
 }
 
 function answerCardButtonClassName({ active, state }: { active: boolean; state: AnswerState }) {
-  const base = "grid size-10 place-items-center rounded-full text-sm font-semibold transition";
-  const activeRing = active ? " ring-2 ring-offset-2 ring-teal" : "";
+  const base = "grid size-9 place-items-center rounded-full text-xs font-semibold transition";
+  const activeRing = active ? " ring-2 ring-offset-2 ring-teal/70" : "";
   if (state === "correct") {
     return `${base} bg-emerald-500 text-white${activeRing}`;
   }

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import { ArrowLeft, CheckCircle2, ChevronRight, Lock, Maximize2, Minimize2, Sparkles, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, ChevronUp, Lock, Maximize2, Minimize2, Sparkles, ZoomIn, ZoomOut } from "lucide-react";
 import type { SyllabusPathGroup, SyllabusPathStatus } from "@/lib/syllabus-learning";
 import { cn } from "@/lib/utils";
 
@@ -238,6 +238,8 @@ export function CourseKnowledgeMap({ selectedGroup }: CourseKnowledgeMapProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set());
   const root = useMemo(() => (selectedGroup ? buildMapRoot(selectedGroup) : null), [selectedGroup]);
+  const courseNodeIds = useMemo(() => root?.children.filter((node) => node.kind === "course").map((node) => node.id) || [], [root]);
+  const collapsedToCourseLevel = courseNodeIds.length > 0 && courseNodeIds.every((nodeId) => collapsedIds.has(nodeId));
 
   useEffect(() => {
     function updateFullscreenState() {
@@ -262,6 +264,10 @@ export function CourseKnowledgeMap({ selectedGroup }: CourseKnowledgeMapProps) {
       }
       return next;
     });
+  }
+
+  function toggleMapDepth() {
+    setCollapsedIds(collapsedToCourseLevel ? new Set() : new Set(courseNodeIds));
   }
 
   async function toggleFullscreen() {
@@ -361,6 +367,15 @@ export function CourseKnowledgeMap({ selectedGroup }: CourseKnowledgeMapProps) {
             <span className="w-12 text-center text-xs font-black text-slate-500">{Math.round(zoom * 100)}%</span>
             <button className="icon-button size-9" type="button" aria-label="放大" onClick={() => zoomBy(0.08)}>
               <ZoomIn size={18} />
+            </button>
+            <button
+              className="inline-flex min-h-9 shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 shadow-sm transition hover:border-teal/30 hover:text-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/20"
+              type="button"
+              aria-label={collapsedToCourseLevel ? "展开全部" : "收缩至课程"}
+              onClick={toggleMapDepth}
+            >
+              {collapsedToCourseLevel ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+              <span>{collapsedToCourseLevel ? "展开全部" : "收缩至课程"}</span>
             </button>
             <button className="icon-button size-9" type="button" aria-label={isFullscreen ? "退出全屏" : "全屏查看"} onClick={() => void toggleFullscreen()}>
               {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}

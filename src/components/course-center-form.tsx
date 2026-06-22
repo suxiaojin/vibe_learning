@@ -473,7 +473,7 @@ function CourseCard({ course }: { course: CourseCenterOverview["courses"][number
   return (
     <article
       className={cn(
-        "rounded-[22px] border bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)]",
+        "flex flex-col rounded-[22px] border bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)]",
         isMajor ? "border-teal/35" : "border-slate-200/80"
       )}
     >
@@ -551,10 +551,9 @@ function CourseCard({ course }: { course: CourseCenterOverview["courses"][number
         </Link>
       </div>
 
-      <div className="mt-5 grid gap-3">
+      <div className="mt-auto grid gap-3 pt-5">
         <PracticeTestAction
           buttonLabel="开始练习"
-          description="按已通过知识点专项练习"
           href={`/mock-tests/special?course=${course.key}`}
           isMajor={isMajor}
           title="专项练习"
@@ -566,13 +565,11 @@ function CourseCard({ course }: { course: CourseCenterOverview["courses"][number
 
 function PracticeTestAction({
   title,
-  description,
   buttonLabel,
   href,
   isMajor
 }: {
   title: string;
-  description: string;
   buttonLabel: string;
   href: string;
   isMajor: boolean;
@@ -590,7 +587,6 @@ function PracticeTestAction({
         </span>
         <div className="min-w-0">
           <p className="truncate text-lg font-semibold text-ink">{title}</p>
-          <p className="mt-0.5 truncate text-sm font-medium text-slate-500">{description}</p>
         </div>
       </div>
       <Link
