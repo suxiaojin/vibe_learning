@@ -13,7 +13,17 @@ const text = {
   followUp: "\u8ffd\u95ee"
 };
 
-export function WrongQuestionAi({ questionId }: { questionId: string }) {
+export function WrongQuestionAi({
+  questionId,
+  buttonClassName = "secondary-button",
+  buttonText = text.button,
+  containerClassName = "mt-4"
+}: {
+  questionId: string;
+  buttonClassName?: string;
+  buttonText?: string;
+  containerClassName?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [answer, setAnswer] = useState("");
@@ -60,10 +70,10 @@ export function WrongQuestionAi({ questionId }: { questionId: string }) {
   }
 
   return (
-    <div className="mt-4">
-      <button className="secondary-button" type="button" onClick={toggleExplanation}>
+    <div className={containerClassName}>
+      <button className={buttonClassName} type="button" onClick={toggleExplanation}>
         <HelpCircle size={18} />
-        {text.button}
+        {buttonText}
       </button>
       {open ? (
         <div className="mt-4 rounded-2xl bg-mist p-4">
