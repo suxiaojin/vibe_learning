@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  Activity,
   Bot,
   BrainCircuit,
   CircleDollarSign,
@@ -289,13 +290,20 @@ export default async function DashboardPage({
         </div>
       </header>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-[repeat(7,minmax(0,1fr))]">
         <MetricCard
           title="总用户数"
           value={overview.totalUsers}
           description="role 为 student 的全部注册账号。"
           icon={UsersRound}
           tone="#334155"
+        />
+        <MetricCard
+          title="在线用户数"
+          value={overview.onlineUsers}
+          description="最近 15 分钟访问过系统的正常学生账号。"
+          icon={Activity}
+          tone="#16a34a"
         />
         <MetricCard
           title="新注册用户"

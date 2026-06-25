@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { recordDailyActiveDiamondBonus } from "@/lib/rewards";
 
 const cookieName = "vl_session";
+const activityUpdateIntervalMs = 60 * 1000;
 
 function getSecret() {
   const secret = process.env.AUTH_SECRET;
@@ -41,6 +42,18 @@ export async function clearSession() {
   cookieStore.delete(cookieName);
 }
 
+async function recordUserActivity(user: { id: string; lastActiveAt: Date | null }) {
+  const now = new Date();
+  if (user.lastActiveAt && now.getTime() - user.lastActiveAt.getTime() < activityUpdateIntervalMs) {
+    return;
+  }
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { lastActiveAt: now }
+  });
+}
+
 export async function getCurrentUser() {
   const cookieStore = await cookies();
   const token = cookieStore.get(cookieName)?.value;
@@ -62,7 +75,8 @@ export async function getCurrentUser() {
         role: true,
         status: true,
         createdAt: true,
-        lastLoginAt: true
+        lastLoginAt: true,
+        lastActiveAt: true
       }
     });
 
@@ -72,9 +86,10 @@ export async function getCurrentUser() {
 
     if (user?.role === "student") {
       try {
+        await recordUserActivity(user);
         await recordDailyActiveDiamondBonus(user.id);
       } catch (error) {
-        console.error("Failed to record daily active diamond bonus", error);
+        console.error("Failed to record student activity", error);
       }
     }
 

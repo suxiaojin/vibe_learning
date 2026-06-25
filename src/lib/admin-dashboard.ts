@@ -22,6 +22,7 @@ export type DashboardTrendKind = "registrations" | "activeUsers" | "answerUsers"
 
 export type DashboardOverview = {
   totalUsers: number;
+  onlineUsers: number;
   registrations: PeriodCounts;
   loginUsers: PeriodCounts;
   activeUsers: PeriodCounts;
@@ -145,9 +146,17 @@ function countDailyUsers(rows: DailyUserRow[], keys: { today: string; sevenDays:
 
 export async function getDashboardOverview(): Promise<DashboardOverview> {
   const ranges = currentPeriodRanges();
+  const onlineSince = new Date(Date.now() - 15 * 60 * 1000);
 
-  const [totalUsers, registrationToday, registrationSevenDays, registrationThirtyDays, loginRows, activeRows, aiRows] = await Promise.all([
+  const [totalUsers, onlineUsers, registrationToday, registrationSevenDays, registrationThirtyDays, loginRows, activeRows, aiRows] = await Promise.all([
     prisma.user.count({ where: { role: "student" } }),
+    prisma.user.count({
+      where: {
+        role: "student",
+        status: "active",
+        lastActiveAt: { gte: onlineSince }
+      }
+    }),
     prisma.user.count({
       where: {
         role: "student",
@@ -203,6 +212,7 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
 
   return {
     totalUsers,
+    onlineUsers,
     registrations: {
       today: registrationToday,
       "7d": registrationSevenDays,

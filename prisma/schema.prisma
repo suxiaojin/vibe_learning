@@ -228,6 +228,7 @@ model User {
   adminRemark     String?
   createdAt       DateTime          @default(now())
   lastLoginAt     DateTime?
+  lastActiveAt    DateTime?
   disabledAt      DateTime?
   disabledReason  String?
   studentProfile  StudentProfile?
@@ -264,6 +265,7 @@ model User {
   userEventNotificationsActed UserEventNotification[] @relation("UserEventNotificationActor")
 
   @@index([role, status, createdAt])
+  @@index([role, status, lastActiveAt])
   @@map("users")
 }
 
