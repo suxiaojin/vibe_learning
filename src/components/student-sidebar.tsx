@@ -1,6 +1,11 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Bell, BookMarked, GraduationCap, HelpCircle, LogOut, MoreHorizontal, Settings, Target, UserRound, UsersRound } from "lucide-react";
+import { Bell, BookMarked, Gem, GraduationCap, HelpCircle, LogOut, MoreHorizontal, Settings, Target, UserRound, UsersRound } from "lucide-react";
+import { NotificationBell } from "@/components/notification-bell";
+import { requireUser } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { ensureDiamondAccount } from "@/lib/rewards";
+import { getNotificationBellData } from "@/lib/user-event-notifications";
 import { cn } from "@/lib/utils";
 
 type StudentNavKey = "learn" | "course-center" | "wrong-book" | "buddy-circle" | "me" | "notifications" | "settings";
@@ -21,7 +26,9 @@ const text = {
   logout: "\u9000\u51fa\u767b\u5f55"
 };
 
-export function StudentSidebar({ active }: { active: StudentNavKey }) {
+export async function StudentSidebar({ active }: { active: StudentNavKey }) {
+  const footer = await getStudentSidebarAccount();
+
   return (
     <aside className="hidden border-r border-slate-200/80 bg-white lg:block">
       <div className="sticky top-0 flex min-h-dvh flex-col px-5 py-6">
@@ -37,8 +44,59 @@ export function StudentSidebar({ active }: { active: StudentNavKey }) {
           <StudentNavItem active={active === "me"} href="/me" icon={<UserRound size={22} />} label={text.profile} />
           <MoreMenu active={active === "notifications" || active === "settings"} />
         </nav>
+        <div className="mt-auto px-1 pt-6">{footer}</div>
       </div>
     </aside>
+  );
+}
+
+async function getStudentSidebarAccount() {
+  const user = await requireUser();
+  const [diamondAccount, fullUser, notificationBellData] = await Promise.all([
+    ensureDiamondAccount(user.id),
+    prisma.user.findUnique({
+      where: { id: user.id },
+      include: { studentProfile: true }
+    }),
+    getNotificationBellData(user.id)
+  ]);
+  const displayName = fullUser?.studentProfile?.nickname || user.username;
+  const avatarImage = fullUser?.studentProfile?.avatarImage || "";
+
+  return (
+    <div className="flex items-center gap-5">
+      <SidebarAvatar image={avatarImage} name={displayName} />
+      <Link
+        aria-label={`我的钻石，${diamondAccount.balance} 个`}
+        className="relative grid size-11 place-items-center rounded-full text-sky-500 transition hover:text-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-200"
+        href="/me?tab=diamonds"
+        title="我的钻石"
+      >
+        <Gem size={28} />
+        <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-coral px-1.5 py-0.5 text-center text-[11px] font-black leading-none text-white shadow-sm">
+          {diamondAccount.balance > 999 ? "999+" : diamondAccount.balance}
+        </span>
+      </Link>
+      <NotificationBell
+        notifications={notificationBellData.notifications}
+        panelPlacement="top-start"
+        triggerStyle="plain"
+        unreadCount={notificationBellData.unreadCount}
+      />
+    </div>
+  );
+}
+
+function SidebarAvatar({ image, name }: { image: string; name: string }) {
+  const className = "size-14 rounded-full object-cover shadow-sm";
+  if (image) {
+    return <Link href="/me?tab=homepage"><img alt={`${name} 的头像`} className={className} src={image} /></Link>;
+  }
+
+  return (
+    <Link className="grid size-14 place-items-center rounded-full bg-[#58cc02] text-xl font-semibold text-white shadow-sm" href="/me?tab=homepage">
+      {name.slice(0, 1).toUpperCase()}
+    </Link>
   );
 }
 

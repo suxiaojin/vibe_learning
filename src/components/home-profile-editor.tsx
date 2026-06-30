@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, Check, X } from "lucide-react";
+import { Camera, Check, ChevronDown, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_AVATARS } from "@/lib/default-avatars";
 import { cn } from "@/lib/utils";
@@ -36,6 +36,7 @@ export function HomeProfileEditor({
   const [avatarPreview, setAvatarPreview] = useState("");
   const [coverPreview, setCoverPreview] = useState("");
   const [selectedPresetAvatar, setSelectedPresetAvatar] = useState("");
+  const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const activeAvatar = avatarPreview || selectedPresetAvatar || avatarImage;
   const activeCover = coverPreview || coverImage;
 
@@ -88,74 +89,95 @@ export function HomeProfileEditor({
             />
           </label>
 
-          <div className="mt-5 grid gap-5 md:grid-cols-[180px_minmax(0,1fr)]">
-            <label className="cursor-pointer">
+          <div className="mt-5 grid gap-5 md:grid-cols-[190px_minmax(0,1fr)]">
+            <div>
               <span className="label">头像</span>
-              <span className="relative block w-fit">
+              <label className="relative block w-fit cursor-pointer">
                 <EditorAvatar color={avatarColor} image={activeAvatar} name={name} />
                 <span className="absolute inset-0 grid place-items-center rounded-full bg-black/20 text-white">
                   <Camera size={22} />
                 </span>
-              </span>
-              <span className="mt-2 block text-xs font-semibold leading-5 text-slate-400">建议 400 x 400，最大 800KB。</span>
-              <input
-                ref={avatarInputRef}
-                accept="image/jpeg,image/png,image/webp"
-                className="sr-only"
-                name="avatarImage"
-                type="file"
-                onChange={(event) => {
-                  const nextUrl = createPreviewUrl(event.currentTarget.files?.[0]);
-                  setSelectedPresetAvatar("");
-                  setAvatarPreview((current) => {
-                    if (current) URL.revokeObjectURL(current);
-                    return nextUrl;
-                  });
-                }}
-              />
-            </label>
-            <div className="space-y-4">
-              <div>
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <span className="label mb-0">系统头像</span>
-                  <span className="text-xs font-semibold text-slate-400">选择后点击保存生效</span>
-                </div>
-                <div className="grid grid-cols-4 gap-3 sm:grid-cols-6">
-                  {DEFAULT_AVATARS.map((avatar) => {
-                    const active = activeAvatar === avatar.src;
-
-                    return (
-                      <button
-                        aria-label={`选择${avatar.label}`}
-                        className={cn(
-                          "relative rounded-full p-0.5 outline-none ring-offset-2 transition hover:scale-[1.04] focus-visible:ring-2 focus-visible:ring-teal",
-                          active ? "ring-2 ring-teal" : "ring-1 ring-slate-200 hover:ring-teal/40"
-                        )}
-                        key={avatar.id}
-                        title={avatar.label}
-                        type="button"
-                        onClick={() => {
-                          if (avatarInputRef.current) {
-                            avatarInputRef.current.value = "";
-                          }
-                          setSelectedPresetAvatar(avatar.src);
-                          setAvatarPreview((current) => {
-                            if (current) URL.revokeObjectURL(current);
-                            return "";
-                          });
-                        }}
-                      >
-                        <img alt={avatar.label} className="size-12 rounded-full object-cover" src={avatar.src} />
-                        {active ? (
-                          <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-teal text-white shadow-sm">
-                            <Check size={13} />
-                          </span>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
+                <input
+                  ref={avatarInputRef}
+                  accept="image/jpeg,image/png,image/webp"
+                  className="sr-only"
+                  name="avatarImage"
+                  type="file"
+                  onChange={(event) => {
+                    const nextUrl = createPreviewUrl(event.currentTarget.files?.[0]);
+                    setSelectedPresetAvatar("");
+                    setAvatarPreview((current) => {
+                      if (current) URL.revokeObjectURL(current);
+                      return nextUrl;
+                    });
+                  }}
+                />
+              </label>
+              <div className="mt-3 grid gap-2">
+                <button
+                  className="secondary-button min-h-10 justify-center rounded-xl px-4 text-sm"
+                  type="button"
+                  onClick={() => avatarInputRef.current?.click()}
+                >
+                  <Upload size={16} />
+                  上传头像
+                </button>
+                <button
+                  aria-expanded={presetPickerOpen}
+                  className="secondary-button min-h-10 justify-center rounded-xl px-4 text-sm"
+                  type="button"
+                  onClick={() => setPresetPickerOpen((open) => !open)}
+                >
+                  系统头像
+                  <ChevronDown className={cn("transition", presetPickerOpen ? "rotate-180" : "")} size={16} />
+                </button>
               </div>
+              <span className="mt-2 block text-xs font-semibold leading-5 text-slate-400">建议 400 x 400，最大 800KB。</span>
+            </div>
+            <div className="space-y-4">
+              {presetPickerOpen ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <span className="label mb-0">系统头像</span>
+                    <span className="text-xs font-semibold text-slate-400">选择后点击保存生效</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-3 sm:grid-cols-6">
+                    {DEFAULT_AVATARS.map((avatar) => {
+                      const active = activeAvatar === avatar.src;
+
+                      return (
+                        <button
+                          aria-label={`选择${avatar.label}`}
+                          className={cn(
+                            "relative rounded-full p-0.5 outline-none ring-offset-2 transition hover:scale-[1.04] focus-visible:ring-2 focus-visible:ring-teal",
+                            active ? "ring-2 ring-teal" : "ring-1 ring-slate-200 hover:ring-teal/40"
+                          )}
+                          key={avatar.id}
+                          title={avatar.label}
+                          type="button"
+                          onClick={() => {
+                            if (avatarInputRef.current) {
+                              avatarInputRef.current.value = "";
+                            }
+                            setSelectedPresetAvatar(avatar.src);
+                            setAvatarPreview((current) => {
+                              if (current) URL.revokeObjectURL(current);
+                              return "";
+                            });
+                          }}
+                        >
+                          <img alt={avatar.label} className="size-12 rounded-full object-cover" src={avatar.src} />
+                          {active ? (
+                            <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-teal text-white shadow-sm">
+                              <Check size={13} />
+                            </span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
               <label>
                 <span className="label">昵称</span>
                 <input className="input" maxLength={30} name="nickname" defaultValue={name} />

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Bell } from "lucide-react";
 import { stripNotificationHtml } from "@/lib/notifications";
+import { cn } from "@/lib/utils";
 
 type BellNotification = {
   id: string;
@@ -11,18 +12,26 @@ type BellNotification = {
 
 export function NotificationBell({
   notifications,
+  panelPlacement = "bottom-end",
+  triggerStyle = "default",
   unreadCount
 }: {
   notifications: BellNotification[];
+  panelPlacement?: "bottom-end" | "top-start";
+  triggerStyle?: "default" | "plain";
   unreadCount: number;
 }) {
   const badgeText = unreadCount > 99 ? "99+" : String(unreadCount);
+  const panelPositionClass = panelPlacement === "top-start" ? "bottom-full left-0 pb-2" : "right-0 top-full pt-2";
+  const triggerClassName = triggerStyle === "plain"
+    ? "relative grid size-11 place-items-center rounded-full text-slate-700 transition hover:text-teal focus:outline-none focus:ring-2 focus:ring-teal/20"
+    : "relative grid size-11 place-items-center rounded-xl text-slate-700 transition hover:bg-white hover:text-teal focus:outline-none focus:ring-2 focus:ring-teal/20";
 
   return (
     <div className="group relative">
       <Link
         aria-label={`通知，${unreadCount} 条未读`}
-        className="relative grid size-11 place-items-center rounded-xl text-slate-700 transition hover:bg-white hover:text-teal focus:outline-none focus:ring-2 focus:ring-teal/20"
+        className={triggerClassName}
         href="/notifications"
         title="通知"
       >
@@ -34,7 +43,12 @@ export function NotificationBell({
         ) : null}
       </Link>
 
-      <div className="pointer-events-none invisible absolute right-0 top-full z-50 w-80 pt-2 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:opacity-100">
+      <div
+        className={cn(
+          "pointer-events-none invisible absolute z-50 w-80 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:visible group-focus-within:opacity-100",
+          panelPositionClass
+        )}
+      >
         <div className="rounded-xl border border-slate-200 bg-white p-3 text-left shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <p className="text-sm font-black text-ink">未读通知</p>

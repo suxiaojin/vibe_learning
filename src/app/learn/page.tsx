@@ -1,11 +1,6 @@
-import { Gem } from "lucide-react";
 import { LearningCourseSwitcher, LearningPath, type PathCourse } from "@/components/learning-path";
-import { NotificationBell } from "@/components/notification-bell";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { requireUser } from "@/lib/auth";
-import { getNotificationBellData } from "@/lib/user-event-notifications";
-import { prisma } from "@/lib/prisma";
-import { ensureDiamondAccount } from "@/lib/rewards";
 import { getStudentLearningPath, type SyllabusPathGroup } from "@/lib/syllabus-learning";
 
 const text = {
@@ -44,20 +39,10 @@ export default async function LearnPage({
 }) {
   const user = await requireUser();
   const params = await searchParams;
-  const [pathState, diamondAccount, fullUser, notificationBellData] = await Promise.all([
-    getStudentLearningPath(user.id, params?.course),
-    ensureDiamondAccount(user.id),
-    prisma.user.findUnique({
-      where: { id: user.id },
-      include: { studentProfile: true }
-    }),
-    getNotificationBellData(user.id)
-  ]);
+  const pathState = await getStudentLearningPath(user.id, params?.course);
 
   const currentGroup = pathState.selectedGroup;
   const currentContext = selectLearningContext(currentGroup, params?.chapter);
-  const displayName = fullUser?.studentProfile?.nickname || user.username;
-  const avatarImage = fullUser?.studentProfile?.avatarImage || "";
 
   const coursePath = currentContext
     ? {
@@ -94,7 +79,7 @@ export default async function LearnPage({
     : null;
 
   return (
-    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[260px_minmax(0,1fr)_340px]">
+    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
       <StudentSidebar active="learn" />
 
       <section className="min-w-0 px-5 py-8 lg:px-8">
@@ -116,32 +101,6 @@ export default async function LearnPage({
         </div>
       </section>
 
-      <aside className="hidden border-l border-slate-100 bg-mist/60 px-5 py-8 xl:block">
-        <div className="sticky top-8 space-y-4">
-          <div className="flex items-center justify-end gap-4 px-3 py-2 text-sm font-semibold text-slate-700">
-            <span className="flex items-center gap-2"><Gem className="text-sky-500" size={24} />{diamondAccount.balance}</span>
-            <NotificationBell
-              notifications={notificationBellData.notifications}
-              unreadCount={notificationBellData.unreadCount}
-            />
-            <Avatar name={displayName} image={avatarImage} />
-          </div>
-        </div>
-      </aside>
     </main>
-  );
-}
-
-function Avatar({ name, image }: { name: string; image: string }) {
-  if (image) {
-    return (
-      <img alt={`${name} 的头像`} className="size-12 rounded-full object-cover shadow-sm" src={image} />
-    );
-  }
-
-  return (
-    <span className="grid size-12 place-items-center rounded-full bg-[#58cc02] text-lg font-semibold text-white shadow-sm">
-      {name.slice(0, 1).toUpperCase()}
-    </span>
   );
 }
