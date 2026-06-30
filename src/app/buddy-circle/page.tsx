@@ -227,7 +227,7 @@ function PostComposer({ returnTo }: { returnTo: string }) {
         <textarea
           className="input min-h-28 resize-y rounded-2xl border-0 bg-slate-50/90 px-4 py-3 text-[15px] font-medium leading-7 text-ink shadow-none placeholder:text-slate-400"
           name="content"
-          placeholder="有什么新鲜事？"
+          placeholder="有什么想分享？"
         />
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-[13px] font-medium text-slate-500">仅支持文字和表情，不能包含超链接、图片、视频或音频。</p>

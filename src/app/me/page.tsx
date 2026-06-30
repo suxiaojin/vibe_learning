@@ -16,6 +16,7 @@ import { StudentSidebar } from "@/components/student-sidebar";
 import { requireUser } from "@/lib/auth";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import { deleteBuddyPost, likeBuddyPost, listProfileBuddyPosts, repostBuddyPost, unlikeBuddyPost, unrepostBuddyPost } from "@/lib/buddy-posts";
+import { isDefaultAvatarSrc } from "@/lib/default-avatars";
 import { prisma } from "@/lib/prisma";
 import { medalRules } from "@/lib/rewards";
 import { getSocialProfile } from "@/lib/social";
@@ -264,7 +265,7 @@ function ProfilePanel({
     <SectionFrame icon={<UserRound className="text-teal" size={22} />} title="我的信息">
       <div>
         <span className="label">头像</span>
-        <AvatarUploadForm action={updateAvatar} errorText={avatarError}>
+        <AvatarUploadForm action={updateAvatar} currentAvatarImage={avatarImage} errorText={avatarError}>
           <Avatar name={nickname} color={avatarColor} image={avatarImage} size="md" />
         </AvatarUploadForm>
       </div>
@@ -1020,11 +1021,15 @@ async function updateHomeProfile(formData: FormData) {
   const nickname = nicknameInput.slice(0, 30) || user.username;
   const bioInput = String(formData.get("bio") || "").trim();
   const bio = bioInput ? bioInput.slice(0, 300) : null;
-  const avatarImage = await readUploadedImage(formData.get("avatarImage"), {
+  const uploadedAvatarImage = await readUploadedImage(formData.get("avatarImage"), {
     maxBytes: avatarMaxBytes,
     sizeRedirect: "/me?tab=homepage&profile=avatar_size",
     typeRedirect: "/me?tab=homepage&profile=avatar_type"
   });
+  const presetAvatarImage = uploadedAvatarImage
+    ? null
+    : readPresetAvatarImage(formData.get("presetAvatarImage"), "/me?tab=homepage&profile=avatar_type");
+  const avatarImage = uploadedAvatarImage || presetAvatarImage;
   const coverImage = await readUploadedImage(formData.get("coverImage"), {
     maxBytes: coverMaxBytes,
     sizeRedirect: "/me?tab=homepage&profile=cover_size",
@@ -1181,7 +1186,11 @@ async function updateAvatar(formData: FormData) {
   "use server";
 
   const user = await requireUser();
-  const avatarImage = await readAvatarImage(formData.get("avatarImage"));
+  const uploadedAvatarImage = await readAvatarImage(formData.get("avatarImage"));
+  const presetAvatarImage = uploadedAvatarImage
+    ? null
+    : readPresetAvatarImage(formData.get("presetAvatarImage"), "/me?tab=profile&profile=avatar_type");
+  const avatarImage = uploadedAvatarImage || presetAvatarImage;
 
   if (!avatarImage) {
     redirect("/me?tab=profile");
@@ -1198,6 +1207,7 @@ async function updateAvatar(formData: FormData) {
   });
 
   revalidatePath("/me");
+  revalidatePath(`/students/${user.id}`);
   redirect("/me?tab=profile&profile=updated");
 }
 
@@ -1207,6 +1217,19 @@ async function readAvatarImage(value: FormDataEntryValue | null) {
     sizeRedirect: "/me?tab=profile&profile=avatar_size",
     typeRedirect: "/me?tab=profile&profile=avatar_type"
   });
+}
+
+function readPresetAvatarImage(value: FormDataEntryValue | null, typeRedirect: string) {
+  const avatarImage = String(value || "").trim();
+  if (!avatarImage) {
+    return null;
+  }
+
+  if (!isDefaultAvatarSrc(avatarImage)) {
+    redirect(typeRedirect);
+  }
+
+  return avatarImage;
 }
 
 async function readUploadedImage(

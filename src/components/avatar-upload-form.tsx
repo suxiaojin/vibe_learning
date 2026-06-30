@@ -1,7 +1,10 @@
 "use client";
 
+import { Check } from "lucide-react";
 import type { ReactNode } from "react";
 import { useRef, useState } from "react";
+import { DEFAULT_AVATARS } from "@/lib/default-avatars";
+import { cn } from "@/lib/utils";
 
 const avatarMaxBytes = 800 * 1024;
 const allowedAvatarTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -9,10 +12,12 @@ const allowedAvatarTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 export function AvatarUploadForm({
   action,
   children,
+  currentAvatarImage,
   errorText
 }: {
   action: (formData: FormData) => void | Promise<void>;
   children: ReactNode;
+  currentAvatarImage?: string;
   errorText?: string | null;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -21,48 +26,85 @@ export function AvatarUploadForm({
   const displayError = clientError || errorText || null;
 
   return (
-    <form action={action} ref={formRef}>
-      <button
-        aria-label="上传头像"
-        className="block rounded-full text-left outline-none ring-offset-4 transition hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-teal"
-        title="上传头像"
-        type="button"
-        onClick={() => inputRef.current?.click()}
-      >
-        {children}
-      </button>
-      <input
-        ref={inputRef}
-        className="sr-only"
-        name="avatarImage"
-        type="file"
-        accept="image/png,image/jpeg,image/webp"
-        onChange={() => {
-          const input = inputRef.current;
-          const file = input?.files?.[0];
-          if (!file) {
-            return;
-          }
+    <div>
+      <form action={action} ref={formRef}>
+        <button
+          aria-label="上传头像"
+          className="block rounded-full text-left outline-none ring-offset-4 transition hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-teal"
+          title="上传头像"
+          type="button"
+          onClick={() => inputRef.current?.click()}
+        >
+          {children}
+        </button>
+        <input
+          ref={inputRef}
+          className="sr-only"
+          name="avatarImage"
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          onChange={() => {
+            const input = inputRef.current;
+            const file = input?.files?.[0];
+            if (!file) {
+              return;
+            }
 
-          if (file.size > avatarMaxBytes) {
-            setClientError("上传失败，大小不超过 800KB");
-            input.value = "";
-            return;
-          }
+            if (file.size > avatarMaxBytes) {
+              setClientError("上传失败，大小不超过 800KB");
+              input.value = "";
+              return;
+            }
 
-          if (!allowedAvatarTypes.has(file.type)) {
-            setClientError("上传失败，仅支持 JPG、PNG、WebP");
-            input.value = "";
-            return;
-          }
+            if (!allowedAvatarTypes.has(file.type)) {
+              setClientError("上传失败，仅支持 JPG、PNG、WebP");
+              input.value = "";
+              return;
+            }
 
-          setClientError(null);
-          if (input.files?.length) {
-            formRef.current?.requestSubmit();
-          }
-        }}
-      />
-      {displayError ? <p className="mt-3 max-w-40 text-sm font-bold leading-5 text-coral">{displayError}</p> : null}
-    </form>
+            setClientError(null);
+            if (input.files?.length) {
+              formRef.current?.requestSubmit();
+            }
+          }}
+        />
+      </form>
+
+      <div className="mt-4">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm font-semibold text-slate-600">系统头像</span>
+          <span className="text-xs font-semibold text-slate-400">点击即保存</span>
+        </div>
+        <div className="mt-3 grid max-w-md grid-cols-4 gap-3 sm:grid-cols-6">
+          {DEFAULT_AVATARS.map((avatar) => {
+            const active = currentAvatarImage === avatar.src;
+
+            return (
+              <form action={action} key={avatar.id}>
+                <input name="presetAvatarImage" type="hidden" value={avatar.src} />
+                <button
+                  aria-label={`选择${avatar.label}`}
+                  className={cn(
+                    "relative block rounded-full p-0.5 outline-none ring-offset-2 transition hover:scale-[1.04] focus-visible:ring-2 focus-visible:ring-teal",
+                    active ? "ring-2 ring-teal" : "ring-1 ring-slate-200 hover:ring-teal/40"
+                  )}
+                  title={avatar.label}
+                  type="submit"
+                >
+                  <img alt={avatar.label} className="size-12 rounded-full object-cover" src={avatar.src} />
+                  {active ? (
+                    <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-teal text-white shadow-sm">
+                      <Check size={13} />
+                    </span>
+                  ) : null}
+                </button>
+              </form>
+            );
+          })}
+        </div>
+      </div>
+
+      {displayError ? <p className="mt-3 max-w-md text-sm font-bold leading-5 text-coral">{displayError}</p> : null}
+    </div>
   );
 }

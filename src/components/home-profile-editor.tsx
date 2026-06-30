@@ -1,7 +1,8 @@
 "use client";
 
-import { Camera, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Camera, Check, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { DEFAULT_AVATARS } from "@/lib/default-avatars";
 import { cn } from "@/lib/utils";
 
 const avatarColors = [
@@ -31,9 +32,11 @@ export function HomeProfileEditor({
   name: string;
   openInitially: boolean;
 }) {
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const [avatarPreview, setAvatarPreview] = useState("");
   const [coverPreview, setCoverPreview] = useState("");
-  const activeAvatar = avatarPreview || avatarImage;
+  const [selectedPresetAvatar, setSelectedPresetAvatar] = useState("");
+  const activeAvatar = avatarPreview || selectedPresetAvatar || avatarImage;
   const activeCover = coverPreview || coverImage;
 
   useEffect(() => () => {
@@ -46,6 +49,7 @@ export function HomeProfileEditor({
       <input className="peer sr-only" defaultChecked={openInitially} id={modalId} type="checkbox" />
       <div className="fixed inset-0 z-50 hidden overflow-y-auto bg-ink/35 px-4 py-8 peer-checked:block">
         <form action={action} className="relative mx-auto w-full max-w-3xl rounded-2xl bg-white p-5 shadow-[0_18px_60px_rgba(15,23,42,0.24)]" encType="multipart/form-data">
+          <input name="presetAvatarImage" type="hidden" value={selectedPresetAvatar} />
           <div className="mb-5 flex items-center justify-between gap-3">
             <label className="grid size-10 cursor-pointer place-items-center rounded-full text-ink hover:bg-slate-100" htmlFor={modalId}>
               <X size={24} />
@@ -95,12 +99,14 @@ export function HomeProfileEditor({
               </span>
               <span className="mt-2 block text-xs font-semibold leading-5 text-slate-400">建议 400 x 400，最大 800KB。</span>
               <input
+                ref={avatarInputRef}
                 accept="image/jpeg,image/png,image/webp"
                 className="sr-only"
                 name="avatarImage"
                 type="file"
                 onChange={(event) => {
                   const nextUrl = createPreviewUrl(event.currentTarget.files?.[0]);
+                  setSelectedPresetAvatar("");
                   setAvatarPreview((current) => {
                     if (current) URL.revokeObjectURL(current);
                     return nextUrl;
@@ -109,6 +115,47 @@ export function HomeProfileEditor({
               />
             </label>
             <div className="space-y-4">
+              <div>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <span className="label mb-0">系统头像</span>
+                  <span className="text-xs font-semibold text-slate-400">选择后点击保存生效</span>
+                </div>
+                <div className="grid grid-cols-4 gap-3 sm:grid-cols-6">
+                  {DEFAULT_AVATARS.map((avatar) => {
+                    const active = activeAvatar === avatar.src;
+
+                    return (
+                      <button
+                        aria-label={`选择${avatar.label}`}
+                        className={cn(
+                          "relative rounded-full p-0.5 outline-none ring-offset-2 transition hover:scale-[1.04] focus-visible:ring-2 focus-visible:ring-teal",
+                          active ? "ring-2 ring-teal" : "ring-1 ring-slate-200 hover:ring-teal/40"
+                        )}
+                        key={avatar.id}
+                        title={avatar.label}
+                        type="button"
+                        onClick={() => {
+                          if (avatarInputRef.current) {
+                            avatarInputRef.current.value = "";
+                          }
+                          setSelectedPresetAvatar(avatar.src);
+                          setAvatarPreview((current) => {
+                            if (current) URL.revokeObjectURL(current);
+                            return "";
+                          });
+                        }}
+                      >
+                        <img alt={avatar.label} className="size-12 rounded-full object-cover" src={avatar.src} />
+                        {active ? (
+                          <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-teal text-white shadow-sm">
+                            <Check size={13} />
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <label>
                 <span className="label">昵称</span>
                 <input className="input" maxLength={30} name="nickname" defaultValue={name} />
