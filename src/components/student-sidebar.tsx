@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Bell, BookMarked, Gem, GraduationCap, HelpCircle, LogOut, MoreHorizontal, Settings, Target, UserRound, UsersRound } from "lucide-react";
+import { Bell, BookMarked, Bot, Gem, GraduationCap, HelpCircle, LogOut, MoreHorizontal, Settings, Target, UserRound, UsersRound } from "lucide-react";
 import { NotificationBell } from "@/components/notification-bell";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -8,12 +8,13 @@ import { ensureDiamondAccount } from "@/lib/rewards";
 import { getNotificationBellData } from "@/lib/user-event-notifications";
 import { cn } from "@/lib/utils";
 
-type StudentNavKey = "learn" | "course-center" | "wrong-book" | "buddy-circle" | "me" | "notifications" | "settings";
+type StudentNavKey = "learn" | "course-center" | "study-buddy" | "wrong-book" | "buddy-circle" | "me" | "notifications" | "settings";
 
 const text = {
   subtitle: "\u4e13\u8f6c\u672c\u95ef\u5173\u5b66\u4e60",
   learn: "\u5b66\u4e60",
   courseCenter: "\u8bfe\u7a0b\u4e2d\u5fc3",
+  studyBuddy: "学习搭子",
   review: "\u590d\u4e60",
   buddyCircle: "搭子圈",
   profile: "\u4e2a\u4eba\u6863\u6848",
@@ -39,6 +40,7 @@ export async function StudentSidebar({ active }: { active: StudentNavKey }) {
         <nav className="space-y-2.5">
           <StudentNavItem active={active === "learn"} href="/learn" icon={<GraduationCap size={22} />} label={text.learn} />
           <StudentNavItem active={active === "course-center"} href="/course-center" icon={<BookMarked size={22} />} label={text.courseCenter} />
+          <StudentNavItem active={active === "study-buddy"} href="/study-buddy" icon={<Bot size={22} />} label={text.studyBuddy} />
           <StudentNavItem active={active === "wrong-book"} href="/wrong-book" icon={<Target size={22} />} label={text.review} />
           <StudentNavItem active={active === "buddy-circle"} href="/buddy-circle" icon={<UsersRound size={22} />} label={text.buddyCircle} />
           <StudentNavItem active={active === "me"} href="/me" icon={<UserRound size={22} />} label={text.profile} />

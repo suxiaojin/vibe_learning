@@ -26,3 +26,16 @@ services:
       - sh
       - -c
       - npx prisma migrate deploy && npm run worker:notifications
+
+  ai-study-worker:
+    build: .
+    container_name: vibelearning-ai-study-worker
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    command:
+      - sh
+      - -c
+      - npx prisma migrate deploy && npm run worker:ai-study
