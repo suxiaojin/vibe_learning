@@ -26,6 +26,10 @@ const updateProjectSchema = z.object({
   title: z.string().trim().min(1).max(35)
 });
 
+const updateNodeSchema = z.object({
+  title: z.string().trim().min(1).max(120)
+});
+
 const updateProgressSchema = z.object({
   status: progressStatusSchema
 });
@@ -488,6 +492,28 @@ export async function getAiStudyNodeDetail(ownerId: string, nodeId: string) {
     progress: progress[0] || null,
     sourceChunks
   };
+}
+
+export async function updateAiStudyNode(ownerId: string, nodeId: string, input: unknown) {
+  const parsed = parseAiStudyInput(updateNodeSchema, input, "知识节点参数不合法。");
+  const result = await prisma.aiStudyNode.updateMany({
+    where: {
+      id: nodeId,
+      project: {
+        ownerId,
+        deletedAt: null
+      }
+    },
+    data: {
+      title: parsed.title
+    }
+  });
+
+  if (result.count === 0) {
+    throw new AiStudyError("知识节点不存在。", 404, "AI_STUDY_NODE_NOT_FOUND");
+  }
+
+  return getAiStudyNodeDetail(ownerId, nodeId);
 }
 
 export async function updateAiStudyNodeProgress(ownerId: string, nodeId: string, input: unknown) {

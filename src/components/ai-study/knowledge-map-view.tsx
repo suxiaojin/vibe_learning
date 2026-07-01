@@ -1,8 +1,8 @@
 "use client";
 
 import { type MutableRefObject, type PointerEvent, type ReactNode, type WheelEvent, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
-import { LocateFixed, Maximize2, Minimize2, Network, Rows3, ZoomIn, ZoomOut } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { LocateFixed, Map as MapModeIcon, Maximize2, Menu, Minimize2, Network, PanelLeftClose, ZoomIn, ZoomOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type KnowledgeMapNode = {
@@ -35,34 +35,143 @@ type LayoutResult = {
   connectors: Connector[];
   width: number;
   height: number;
+  bounds: {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+  };
 };
 
 type KnowledgeMapViewProps = {
   nodes: KnowledgeMapNode[];
+  onCollapseSidebar?: () => void;
   projectId: string;
   selectedNodeId: string;
 };
 
+type MapViewMode = "mindmap" | "outline";
+
+type EditingNode = {
+  nodeId: string;
+  title: string;
+};
+
 const minZoom = 0.42;
 const maxZoom = 1.65;
+const defaultMapZoom = 0.7;
+const defaultMapViewMode: MapViewMode = "mindmap";
+const mapPreferenceKey = "vibe-ai-study-map-preferences:v1";
 
-export function KnowledgeMapView({ nodes, projectId, selectedNodeId }: KnowledgeMapViewProps) {
-  const [expanded, setExpanded] = useState(true);
+export function KnowledgeMapView({ nodes, onCollapseSidebar, projectId, selectedNodeId }: KnowledgeMapViewProps) {
+  const router = useRouter();
+  const [mapNodes, setMapNodes] = useState(nodes);
+  const [collapsedNodeIds, setCollapsedNodeIds] = useState<Set<string>>(() => new Set());
+  const [editingNode, setEditingNode] = useState<EditingNode | null>(null);
+  const [editingError, setEditingError] = useState("");
+  const [savingNodeId, setSavingNodeId] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [zoom, setZoom] = useState(0.78);
-  const [pan, setPan] = useState({ x: 60, y: 60 });
+  const [viewMode, setViewMode] = useState<MapViewMode>(defaultMapViewMode);
+  const [zoom, setZoom] = useState(defaultMapZoom);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
+  const [preferencesReady, setPreferencesReady] = useState(false);
   const dragRef = useRef({ pointerId: 0, startX: 0, startY: 0, panX: 0, panY: 0 });
   const dragMovedRef = useRef(false);
   const suppressNodeClickRef = useRef(false);
+  const nodeClickTimerRef = useRef<number | null>(null);
+  const skipNextBlurCommitRef = useRef(false);
   const viewportRef = useRef<HTMLDivElement>(null);
 
-  const layout = useMemo(() => layoutKnowledgeMap(nodes, expanded), [nodes, expanded]);
+  const layout = useMemo(() => layoutKnowledgeMap(mapNodes, collapsedNodeIds), [mapNodes, collapsedNodeIds]);
+  const layoutRef = useRef(layout);
+  const zoomRef = useRef(defaultMapZoom);
 
   useEffect(() => {
-    resetView();
+    setMapNodes(nodes);
+  }, [nodes]);
+
+  useEffect(() => {
+    return () => clearNodeClickTimer(nodeClickTimerRef);
+  }, []);
+
+  useEffect(() => {
+    layoutRef.current = layout;
+  }, [layout]);
+
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+
+  useEffect(() => {
+    let nextZoom = defaultMapZoom;
+    let nextViewMode = defaultMapViewMode;
+    try {
+      const saved = window.localStorage.getItem(mapPreferenceKey);
+      if (saved) {
+        const parsed = JSON.parse(saved) as { viewMode?: unknown; zoom?: unknown };
+        nextZoom = typeof parsed.zoom === "number" ? clampZoom(parsed.zoom) : defaultMapZoom;
+        nextViewMode = isMapViewMode(parsed.viewMode) ? parsed.viewMode : defaultMapViewMode;
+      }
+    } catch {
+      // Ignore unavailable or malformed localStorage preferences.
+    }
+    zoomRef.current = nextZoom;
+    setViewMode(nextViewMode);
+    setZoom(nextZoom);
+    window.requestAnimationFrame(() => centerView(nextZoom));
+    setPreferencesReady(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expanded, isFullscreen, layout.width, layout.height]);
+  }, []);
+
+  useEffect(() => {
+    if (!preferencesReady) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(mapPreferenceKey, JSON.stringify({ viewMode, zoom }));
+    } catch {
+      // Preference persistence is best-effort only.
+    }
+  }, [preferencesReady, viewMode, zoom]);
+
+  useEffect(() => {
+    if (viewMode !== "mindmap") {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => centerView(zoomRef.current));
+    return () => window.cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFullscreen, layout.width, layout.height, viewMode]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (viewMode !== "mindmap" || !viewport || !window.ResizeObserver) {
+      return;
+    }
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => centerView(zoomRef.current));
+    });
+    observer.observe(viewport);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode]);
+
+  useEffect(() => {
+    function handleFullscreenChange() {
+      setIsFullscreen(document.fullscreenElement === viewportRef.current);
+      window.requestAnimationFrame(() => centerView(zoomRef.current));
+    }
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!isFullscreen) {
@@ -71,7 +180,7 @@ export function KnowledgeMapView({ nodes, projectId, selectedNodeId }: Knowledge
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     function handleEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !document.fullscreenElement) {
         setIsFullscreen(false);
       }
     }
@@ -82,36 +191,66 @@ export function KnowledgeMapView({ nodes, projectId, selectedNodeId }: Knowledge
     };
   }, [isFullscreen]);
 
-  function resetView() {
+  function centerView(targetZoom = zoomRef.current) {
+    setPan(getCenteredPan(targetZoom));
+  }
+
+  function getCenteredPan(targetZoom = zoomRef.current, targetLayout = layoutRef.current) {
     const viewport = viewportRef.current;
-    const width = viewport?.clientWidth || 760;
-    const height = viewport?.clientHeight || 620;
-    const nextZoom = expanded ? (isFullscreen ? 0.78 : 0.66) : 1;
+    if (!viewport || targetLayout.nodes.length === 0) {
+      return { x: 0, y: 0 };
+    }
+    const contentWidth = (targetLayout.bounds.maxX - targetLayout.bounds.minX) * targetZoom;
+    const contentHeight = (targetLayout.bounds.maxY - targetLayout.bounds.minY) * targetZoom;
+    return {
+      x: Math.round((viewport.clientWidth - contentWidth) / 2 - targetLayout.bounds.minX * targetZoom),
+      y: Math.round((viewport.clientHeight - contentHeight) / 2 - targetLayout.bounds.minY * targetZoom)
+    };
+  }
+
+  function updateZoom(value: number) {
+    const nextZoom = clampZoom(value);
+    zoomRef.current = nextZoom;
     setZoom(nextZoom);
+    return nextZoom;
+  }
+
+  function zoomAroundPoint(value: number, anchorX: number, anchorY: number) {
+    const currentZoom = zoomRef.current;
+    const nextZoom = clampZoom(value);
+    const contentX = (anchorX - pan.x) / currentZoom;
+    const contentY = (anchorY - pan.y) / currentZoom;
+    updateZoom(nextZoom);
     setPan({
-      x: Math.max(28, width * 0.15),
-      y: Math.max(28, height / 2 - (layout.height * nextZoom) / 2)
+      x: anchorX - contentX * nextZoom,
+      y: anchorY - contentY * nextZoom
     });
   }
 
   function changeZoom(delta: number) {
-    setZoom((current) => clampZoom(current + delta));
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      updateZoom(zoomRef.current + delta);
+      return;
+    }
+    zoomAroundPoint(zoomRef.current + delta, viewport.clientWidth / 2, viewport.clientHeight / 2);
   }
 
   function handleWheel(event: WheelEvent<HTMLDivElement>) {
     event.preventDefault();
-    const nextZoom = clampZoom(zoom + (event.deltaY > 0 ? -0.08 : 0.08));
+    const currentZoom = zoomRef.current;
+    const nextZoom = clampZoom(currentZoom + (event.deltaY > 0 ? -0.08 : 0.08));
     const viewport = viewportRef.current;
     if (!viewport) {
-      setZoom(nextZoom);
+      updateZoom(nextZoom);
       return;
     }
     const rect = viewport.getBoundingClientRect();
     const cursorX = event.clientX - rect.left;
     const cursorY = event.clientY - rect.top;
-    const contentX = (cursorX - pan.x) / zoom;
-    const contentY = (cursorY - pan.y) / zoom;
-    setZoom(nextZoom);
+    const contentX = (cursorX - pan.x) / currentZoom;
+    const contentY = (cursorY - pan.y) / currentZoom;
+    updateZoom(nextZoom);
     setPan({
       x: cursorX - contentX * nextZoom,
       y: cursorY - contentY * nextZoom
@@ -162,148 +301,313 @@ export function KnowledgeMapView({ nodes, projectId, selectedNodeId }: Knowledge
     }
   }
 
+  function scheduleNodeNavigation(nodeId: string) {
+    clearNodeClickTimer(nodeClickTimerRef);
+    nodeClickTimerRef.current = window.setTimeout(() => {
+      router.push(`/study-buddy/${projectId}?node=${nodeId}`);
+    }, 300);
+  }
+
+  function startEditingNode(node: KnowledgeMapNode) {
+    clearNodeClickTimer(nodeClickTimerRef);
+    setEditingError("");
+    setEditingNode({ nodeId: node.id, title: node.title });
+  }
+
+  async function commitEditingNode() {
+    if (skipNextBlurCommitRef.current) {
+      skipNextBlurCommitRef.current = false;
+      return;
+    }
+    if (!editingNode || savingNodeId) {
+      return;
+    }
+    const nextTitle = editingNode.title.trim();
+    const originalTitle = findNodeTitle(mapNodes, editingNode.nodeId);
+    if (!nextTitle || nextTitle === originalTitle) {
+      setEditingNode(null);
+      setEditingError("");
+      return;
+    }
+
+    setSavingNodeId(editingNode.nodeId);
+    setEditingError("");
+    try {
+      const response = await fetch(`/api/ai-study/nodes/${editingNode.nodeId}`, {
+        body: JSON.stringify({ title: nextTitle }),
+        headers: { "Content-Type": "application/json" },
+        method: "PATCH"
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(String(payload?.error?.message || payload?.message || "rename_failed"));
+      }
+      const savedTitle = String(payload?.data?.node?.title || nextTitle);
+      setMapNodes((current) => updateNodeTitle(current, editingNode.nodeId, savedTitle));
+      setEditingNode(null);
+      router.refresh();
+    } catch {
+      setEditingError("重命名失败，请稍后重试。");
+    } finally {
+      setSavingNodeId(null);
+    }
+  }
+
+  function cancelEditingNode() {
+    skipNextBlurCommitRef.current = true;
+    setEditingNode(null);
+    setEditingError("");
+  }
+
+  function updateEditingTitle(title: string) {
+    setEditingNode((current) => (current ? { ...current, title } : current));
+  }
+
+  function toggleNodeCollapse(nodeId: string) {
+    setCollapsedNodeIds((current) => {
+      const next = new Set(current);
+      if (next.has(nodeId)) {
+        next.delete(nodeId);
+      } else {
+        next.add(nodeId);
+      }
+      return next;
+    });
+  }
+
+  function toggleAllNodes() {
+    if (collapsedNodeIds.size === 0) {
+      setCollapsedNodeIds(new Set(getCollapsibleNodeIds(mapNodes)));
+    } else {
+      setCollapsedNodeIds(new Set());
+    }
+  }
+
+  function handleCollapseSidebar() {
+    void exitFullscreenMode();
+    onCollapseSidebar?.();
+  }
+
+  async function exitFullscreenMode() {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => undefined);
+      return;
+    }
+    setIsFullscreen(false);
+  }
+
+  async function toggleFullscreen() {
+    const viewport = viewportRef.current;
+    if (document.fullscreenElement) {
+      await exitFullscreenMode();
+      return;
+    }
+    if (!viewport) {
+      return;
+    }
+    try {
+      if (document.fullscreenEnabled && viewport.requestFullscreen) {
+        await viewport.requestFullscreen();
+      } else {
+        setIsFullscreen(true);
+      }
+    } catch {
+      setIsFullscreen(true);
+    } finally {
+      window.requestAnimationFrame(() => centerView(zoomRef.current));
+    }
+  }
+
   return (
     <aside
       className={cn(
-        "min-w-0 overflow-hidden bg-white shadow-[0_12px_32px_rgba(16,24,40,0.05)]",
+        "relative min-w-0 overflow-hidden bg-white",
         isFullscreen
-          ? "fixed inset-0 z-[90] min-h-dvh rounded-none"
-          : "min-h-[calc(100dvh-112px)] rounded-[16px]"
+          ? "fixed inset-0 z-[90] min-h-dvh rounded-none shadow-none"
+          : "min-h-[calc(100dvh-112px)] rounded-[16px] shadow-[0_12px_32px_rgba(16,24,40,0.05)]"
       )}
     >
-      <div className="flex h-14 items-center justify-between border-b border-[#edf0f4] px-5">
+      <div className={cn("h-14 items-center justify-between border-b border-[#edf0f4] px-5", isFullscreen ? "hidden" : "flex")}>
         <h2 className="text-[17px] font-black text-[#101828]">知识框架</h2>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3" data-map-control>
           <div className="flex rounded-[12px] bg-[#f1f3f5] p-1">
-            <span className="grid size-8 place-items-center rounded-[9px] bg-white text-[#344054] shadow-sm">
-              <Network size={17} />
-            </span>
-            <span className="grid size-8 place-items-center rounded-[9px] text-[#667085]">
-              <Rows3 size={17} />
-            </span>
-          </div>
-          {isFullscreen ? (
-            <button
-              className="grid size-9 place-items-center rounded-full text-[#344054] transition hover:bg-[#f4f6f8]"
-              onClick={() => setIsFullscreen(false)}
-              title="退出全屏"
-              type="button"
+            <HeaderIconButton
+              active={viewMode === "mindmap"}
+              label="思维导图"
+              onClick={() => setViewMode("mindmap")}
             >
-              <Minimize2 size={18} />
-            </button>
-          ) : null}
+              <MapModeIcon size={17} />
+            </HeaderIconButton>
+            <HeaderIconButton
+              active={viewMode === "outline"}
+              label="文字大纲"
+              onClick={() => setViewMode("outline")}
+            >
+              <Menu size={18} />
+            </HeaderIconButton>
+          </div>
+          <span className="h-6 w-px bg-[#e4e8ee]" />
+          <HeaderIconButton label="收起侧栏" onClick={handleCollapseSidebar}>
+            <PanelLeftClose size={18} />
+          </HeaderIconButton>
         </div>
       </div>
 
-      <div
-        ref={viewportRef}
-        className={cn(
-          "relative overflow-hidden bg-white",
-          isFullscreen ? "h-[calc(100dvh-56px)]" : "h-[calc(100dvh-168px)]",
-          isDragging ? "cursor-grabbing" : "cursor-grab"
-        )}
-        onPointerCancel={stopDragging}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={stopDragging}
-        onWheel={handleWheel}
-      >
-        {layout.nodes.length > 0 ? (
-          <div
-            className="absolute left-0 top-0"
-            style={{
-              height: layout.height,
-              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-              transformOrigin: "0 0",
-              width: layout.width
-            }}
-          >
-            <svg
-              className="pointer-events-none absolute left-0 top-0"
-              height={layout.height}
-              viewBox={`0 0 ${layout.width} ${layout.height}`}
-              width={layout.width}
+      {viewMode === "mindmap" ? (
+        <div
+          ref={viewportRef}
+          className={cn(
+            "relative overflow-hidden bg-white",
+            isFullscreen ? "h-screen" : "h-[calc(100dvh-168px)]",
+            isDragging ? "cursor-grabbing" : "cursor-grab"
+          )}
+          onPointerCancel={stopDragging}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={stopDragging}
+          onWheel={handleWheel}
+        >
+          {layout.nodes.length > 0 ? (
+            <div
+              className="absolute left-0 top-0"
+              style={{
+                height: layout.height,
+                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                transformOrigin: "0 0",
+                width: layout.width
+              }}
             >
-              {layout.connectors.map((connector, index) => (
-                <path
-                  key={`${connector.fromX}-${connector.toX}-${index}`}
-                  d={buildConnectorPath(connector)}
-                  fill="none"
-                  stroke="#e4e8ee"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.8}
+              <svg
+                className="pointer-events-none absolute left-0 top-0"
+                height={layout.height}
+                viewBox={`0 0 ${layout.width} ${layout.height}`}
+                width={layout.width}
+              >
+                {layout.connectors.map((connector, index) => (
+                  <path
+                    key={`${connector.fromX}-${connector.toX}-${index}`}
+                    d={buildConnectorPath(connector)}
+                    fill="none"
+                    stroke="#e4e8ee"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.8}
+                  />
+                ))}
+              </svg>
+
+              {layout.nodes.map((node) => (
+                <MapNodePill
+                  collapsed={collapsedNodeIds.has(node.id)}
+                  editingNode={editingNode}
+                  key={node.id}
+                  node={node}
+                  onCancelEditing={cancelEditingNode}
+                  onCommitEditing={commitEditingNode}
+                  onNavigate={scheduleNodeNavigation}
+                  onStartEditing={startEditingNode}
+                  onToggleCollapse={toggleNodeCollapse}
+                  onUpdateEditingTitle={updateEditingTitle}
+                  saving={savingNodeId === node.id}
+                  selected={node.id === selectedNodeId}
+                  showCollapseControls={collapsedNodeIds.size > 0}
+                  suppressClickRef={suppressNodeClickRef}
                 />
               ))}
-            </svg>
+            </div>
+          ) : (
+            <MapEmptyState />
+          )}
 
-            {layout.nodes.map((node) => (
-              <MapNodePill
-                key={node.id}
-                node={node}
-                projectId={projectId}
-                selected={node.id === selectedNodeId}
-                suppressClickRef={suppressNodeClickRef}
-              />
-            ))}
+          <div className="absolute bottom-6 left-5 z-20 flex flex-col gap-3" data-map-control>
+            <MapControlButton
+              label={collapsedNodeIds.size === 0 ? "收起全部节点" : "展开全部节点"}
+              onClick={toggleAllNodes}
+              title="展开/收起全部节点"
+            >
+              <Network size={18} />
+            </MapControlButton>
+            <MapControlButton label="居中" onClick={() => centerView()} title="居中">
+              <LocateFixed size={18} />
+            </MapControlButton>
+            <MapControlButton
+              label={isFullscreen ? "退出全屏" : "全屏"}
+              onClick={() => {
+                void toggleFullscreen();
+              }}
+              title={isFullscreen ? "退出全屏" : "全屏"}
+            >
+              {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </MapControlButton>
+            <MapControlButton label="缩小" onClick={() => changeZoom(-0.12)} title="缩小">
+              <ZoomOut size={18} />
+            </MapControlButton>
+            <MapControlButton label="放大" onClick={() => changeZoom(0.12)} title="放大">
+              <ZoomIn size={18} />
+            </MapControlButton>
           </div>
-        ) : (
-          <div className="flex min-h-[420px] flex-col items-center justify-center px-8 text-center">
-            <span className="grid size-14 place-items-center rounded-[18px] bg-[#effaf0] text-[#16a329]">
-              <Network size={28} />
-            </span>
-            <h3 className="mt-4 text-lg font-black text-[#101828]">知识框架生成中</h3>
-            <p className="mt-2 max-w-sm text-sm leading-6 text-[#98a2b3]">AI 会把资料整理成最多四层的思维导图，完成后自动出现在这里。</p>
-          </div>
-        )}
-
-        <div className="absolute bottom-6 left-5 z-20 flex flex-col gap-3" data-map-control>
-          <MapControlButton
-            label={expanded ? "收起全部节点" : "展开全部节点"}
-            onClick={() => setExpanded((current) => !current)}
-            title="展开/收起全部节点"
-          >
-            <Network size={18} />
-          </MapControlButton>
-          <MapControlButton label="居中" onClick={resetView} title="居中">
-            <LocateFixed size={18} />
-          </MapControlButton>
-          <MapControlButton
-            label={isFullscreen ? "退出全屏" : "全屏"}
-            onClick={() => setIsFullscreen((current) => !current)}
-            title={isFullscreen ? "退出全屏" : "全屏"}
-          >
-            {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-          </MapControlButton>
-          <MapControlButton label="缩小" onClick={() => changeZoom(-0.12)} title="缩小">
-            <ZoomOut size={18} />
-          </MapControlButton>
-          <MapControlButton label="放大" onClick={() => changeZoom(0.12)} title="放大">
-            <ZoomIn size={18} />
-          </MapControlButton>
         </div>
-      </div>
+      ) : (
+        <MapOutlineView
+          collapsedNodeIds={collapsedNodeIds}
+          editingNode={editingNode}
+          nodes={mapNodes}
+          onCancelEditing={cancelEditingNode}
+          onCommitEditing={commitEditingNode}
+          onNavigate={scheduleNodeNavigation}
+          onStartEditing={startEditingNode}
+          onToggleCollapse={toggleNodeCollapse}
+          onUpdateEditingTitle={updateEditingTitle}
+          savingNodeId={savingNodeId}
+          selectedNodeId={selectedNodeId}
+          viewportClassName={isFullscreen ? "h-screen" : "h-[calc(100dvh-168px)]"}
+        />
+      )}
+      {editingError ? (
+        <div className="pointer-events-none absolute bottom-4 left-1/2 z-40 -translate-x-1/2 rounded-full bg-red-50 px-4 py-2 text-xs font-black text-red-600 shadow-sm ring-1 ring-red-100">
+          {editingError}
+        </div>
+      ) : null}
     </aside>
   );
 }
 
 function MapNodePill({
+  collapsed,
+  editingNode,
   node,
-  projectId,
+  onCancelEditing,
+  onCommitEditing,
+  onNavigate,
+  onStartEditing,
+  onToggleCollapse,
+  onUpdateEditingTitle,
+  saving,
   selected,
+  showCollapseControls,
   suppressClickRef
 }: {
+  collapsed: boolean;
+  editingNode: EditingNode | null;
   node: PositionedNode;
-  projectId: string;
+  onCancelEditing: () => void;
+  onCommitEditing: () => void;
+  onNavigate: (nodeId: string) => void;
+  onStartEditing: (node: KnowledgeMapNode) => void;
+  onToggleCollapse: (nodeId: string) => void;
+  onUpdateEditingTitle: (title: string) => void;
+  saving: boolean;
   selected: boolean;
+  showCollapseControls: boolean;
   suppressClickRef: MutableRefObject<boolean>;
 }) {
-  const isMastered = node.progressStatus === "mastered";
+  const editable = editingNode?.nodeId === node.id;
+  const canCollapse = node.depth > 0 && node.children.length > 0;
   return (
-    <Link
+    <div
       className={cn(
-        "absolute flex min-h-7 items-center justify-center gap-1.5 bg-transparent px-1 py-1 text-center text-[13px] font-black leading-5 text-[#101828] transition hover:text-[#0f8d25]",
-        node.depth === 0 ? "rounded-full border border-[#dde3ea] bg-white px-5 text-[18px] shadow-[0_8px_20px_rgba(16,24,40,0.035)]" : "",
+        "absolute flex min-h-8 items-center justify-center bg-transparent px-1 py-1 text-center text-[14px] font-black leading-[22px] text-[#101828]",
+        node.depth === 0 ? "rounded-full border border-[#dde3ea] bg-white px-5 text-[19px] shadow-[0_8px_20px_rgba(16,24,40,0.035)]" : "",
         selected && node.depth > 0 ? "rounded-full border border-[#16a329]/35 bg-white px-4 text-[#0f8d25] shadow-[0_8px_20px_rgba(16,24,40,0.04)] ring-4 ring-[#16a329]/8" : "",
         node.depth === 1 && !selected ? "text-[#f27420]" : "",
         node.depth >= 2 && !selected ? "border-b border-[#dfe4ea]" : "",
@@ -311,12 +615,6 @@ function MapNodePill({
       )}
       data-map-node
       draggable={false}
-      href={`/study-buddy/${projectId}?node=${node.id}`}
-      onClick={(event) => {
-        if (suppressClickRef.current) {
-          event.preventDefault();
-        }
-      }}
       style={{
         height: node.height,
         left: node.x,
@@ -324,16 +622,101 @@ function MapNodePill({
         width: node.width
       }}
     >
-      <span className={cn("grid size-3.5 shrink-0 place-items-center rounded-full", getDepthDotClass(node.depth))}>
-        {isMastered ? <span className="size-2 rounded-full bg-current" /> : <span className="size-1.5 rounded-full bg-current" />}
-      </span>
-      <span className="line-clamp-2 min-w-0">{node.title}</span>
-      {node.hasHiddenChildren ? (
-        <span className="absolute -right-4 top-1/2 grid size-4 -translate-y-1/2 place-items-center rounded-full border border-[#aeb6c2] bg-white text-[12px] font-black text-[#5f6977]">
-          +
-        </span>
+      {editable ? (
+        <input
+          autoFocus
+          className="min-w-0 flex-1 rounded-[8px] border border-[#16a329]/35 bg-white px-2 py-1 text-center text-[14px] font-black leading-5 text-[#101828] outline-none ring-4 ring-[#16a329]/10"
+          data-map-control
+          disabled={saving}
+          onBlur={onCommitEditing}
+          onChange={(event) => onUpdateEditingTitle(event.target.value)}
+          onClick={(event) => event.stopPropagation()}
+          onFocus={(event) => event.currentTarget.select()}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              onCommitEditing();
+            }
+            if (event.key === "Escape") {
+              event.preventDefault();
+              onCancelEditing();
+            }
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          value={editingNode?.title || ""}
+        />
+      ) : (
+        <button
+          className="line-clamp-2 min-w-0 cursor-pointer text-inherit transition hover:text-[#0f8d25] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16a329]"
+          data-map-control
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (suppressClickRef.current || event.detail > 1) {
+              return;
+            }
+            onNavigate(node.id);
+          }}
+          onDoubleClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onStartEditing(node);
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          title="双击修改名称"
+          type="button"
+        >
+          {node.title}
+        </button>
+      )}
+      {canCollapse && showCollapseControls ? (
+        <button
+          aria-label={collapsed ? "展开子节点" : "回收子节点"}
+          className="absolute -right-5 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded-full border border-[#aeb6c2] bg-white text-[13px] font-black leading-none text-[#5f6977] shadow-[0_4px_10px_rgba(16,24,40,0.05)] transition hover:border-[#667085] hover:text-[#101828]"
+          data-map-control
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onToggleCollapse(node.id);
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+          title={collapsed ? "展开子节点" : "回收子节点"}
+          type="button"
+        >
+          {collapsed ? "+" : "-"}
+        </button>
       ) : null}
-    </Link>
+    </div>
+  );
+}
+
+function HeaderIconButton({
+  active = false,
+  children,
+  label,
+  onClick
+}: {
+  active?: boolean;
+  children: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-label={label}
+      className={cn(
+        "group relative grid size-8 place-items-center rounded-[9px] text-[#667085] transition hover:bg-white hover:text-[#101828] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16a329]",
+        active ? "bg-white text-[#344054] shadow-sm" : ""
+      )}
+      onClick={onClick}
+      title={label}
+      type="button"
+    >
+      {children}
+      <span className="pointer-events-none absolute left-1/2 top-10 z-30 hidden -translate-x-1/2 whitespace-nowrap rounded-[7px] bg-[#111827] px-3 py-2 text-xs font-black text-white shadow-lg group-hover:block">
+        {label}
+      </span>
+    </button>
   );
 }
 
@@ -353,53 +736,273 @@ function MapControlButton({ children, label, onClick, title }: { children: React
   );
 }
 
-function layoutKnowledgeMap(nodes: KnowledgeMapNode[], expanded: boolean): LayoutResult {
+function MapOutlineView({
+  collapsedNodeIds,
+  editingNode,
+  nodes,
+  onCancelEditing,
+  onCommitEditing,
+  onNavigate,
+  onStartEditing,
+  onToggleCollapse,
+  onUpdateEditingTitle,
+  savingNodeId,
+  selectedNodeId,
+  viewportClassName
+}: {
+  collapsedNodeIds: Set<string>;
+  editingNode: EditingNode | null;
+  nodes: KnowledgeMapNode[];
+  onCancelEditing: () => void;
+  onCommitEditing: () => void;
+  onNavigate: (nodeId: string) => void;
+  onStartEditing: (node: KnowledgeMapNode) => void;
+  onToggleCollapse: (nodeId: string) => void;
+  onUpdateEditingTitle: (title: string) => void;
+  savingNodeId: string | null;
+  selectedNodeId: string;
+  viewportClassName: string;
+}) {
+  if (nodes.length === 0) {
+    return (
+      <div className={cn("overflow-hidden bg-white", viewportClassName)}>
+        <MapEmptyState />
+      </div>
+    );
+  }
+  return (
+    <div className={cn("overflow-y-auto bg-white px-4 py-4", viewportClassName)}>
+      <div className="space-y-1.5">
+        {nodes.map((node) => (
+          <OutlineNode
+            collapsedNodeIds={collapsedNodeIds}
+            editingNode={editingNode}
+            key={node.id}
+            node={node}
+            onCancelEditing={onCancelEditing}
+            onCommitEditing={onCommitEditing}
+            onNavigate={onNavigate}
+            onStartEditing={onStartEditing}
+            onToggleCollapse={onToggleCollapse}
+            onUpdateEditingTitle={onUpdateEditingTitle}
+            savingNodeId={savingNodeId}
+            selectedNodeId={selectedNodeId}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function OutlineNode({
+  collapsedNodeIds,
+  depth = 0,
+  editingNode,
+  node,
+  onCancelEditing,
+  onCommitEditing,
+  onNavigate,
+  onStartEditing,
+  onToggleCollapse,
+  onUpdateEditingTitle,
+  savingNodeId,
+  selectedNodeId
+}: {
+  collapsedNodeIds: Set<string>;
+  depth?: number;
+  editingNode: EditingNode | null;
+  node: KnowledgeMapNode;
+  onCancelEditing: () => void;
+  onCommitEditing: () => void;
+  onNavigate: (nodeId: string) => void;
+  onStartEditing: (node: KnowledgeMapNode) => void;
+  onToggleCollapse: (nodeId: string) => void;
+  onUpdateEditingTitle: (title: string) => void;
+  savingNodeId: string | null;
+  selectedNodeId: string;
+}) {
+  const selected = node.id === selectedNodeId;
+  const collapsed = collapsedNodeIds.has(node.id);
+  const editable = editingNode?.nodeId === node.id;
+  const canCollapse = node.depth > 0 && node.children.length > 0;
+  return (
+    <div>
+      <div
+        className="group/outline relative flex min-h-9 items-center py-1 pr-3"
+        style={{ paddingLeft: 12 + depth * 20 }}
+      >
+        {canCollapse ? (
+          <button
+            aria-label={collapsed ? "展开章节" : "收起章节"}
+            className="absolute top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded-[6px] text-[#2563ff] opacity-0 transition hover:bg-[#eef4ff] group-hover/outline:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563ff]"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onToggleCollapse(node.id);
+            }}
+            style={{ left: Math.max(4, 12 + depth * 20 - 21) }}
+            title={collapsed ? "展开章节" : "收起章节"}
+            type="button"
+          >
+            <span
+              className={cn(
+                "h-0 w-0 border-y-[5px] border-l-[7px] border-y-transparent border-l-current transition-transform",
+                collapsed ? "" : "rotate-90"
+              )}
+            />
+          </button>
+        ) : null}
+        {editable ? (
+          <input
+            autoFocus
+            className="min-w-0 flex-1 rounded-[8px] border border-[#16a329]/35 bg-white px-2 py-1 text-sm font-black leading-5 text-[#101828] outline-none ring-4 ring-[#16a329]/10"
+            disabled={savingNodeId === node.id}
+            onBlur={onCommitEditing}
+            onChange={(event) => onUpdateEditingTitle(event.target.value)}
+            onClick={(event) => event.stopPropagation()}
+            onFocus={(event) => event.currentTarget.select()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                onCommitEditing();
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                onCancelEditing();
+              }
+            }}
+            value={editingNode?.title || ""}
+          />
+        ) : (
+          <button
+            className={cn(
+              "min-w-0 flex-1 truncate text-left text-sm font-black leading-6 text-[#475467] transition hover:text-[#0f8d25] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16a329]",
+              selected ? "text-[#2563ff]" : "",
+              node.depth === 0 ? "text-[17px] text-[#101828]" : ""
+            )}
+            onClick={(event) => {
+              event.preventDefault();
+              if (event.detail > 1) {
+                return;
+              }
+              onNavigate(node.id);
+            }}
+            onDoubleClick={(event) => {
+              event.preventDefault();
+              onStartEditing(node);
+            }}
+            title="双击修改名称"
+            type="button"
+          >
+            {node.title}
+          </button>
+        )}
+      </div>
+      {node.children.length > 0 && !collapsed ? (
+        <div className="mt-1 space-y-1">
+          {node.children.map((child) => (
+            <OutlineNode
+              collapsedNodeIds={collapsedNodeIds}
+              key={child.id}
+              depth={depth + 1}
+              editingNode={editingNode}
+              node={child}
+              onCancelEditing={onCancelEditing}
+              onCommitEditing={onCommitEditing}
+              onNavigate={onNavigate}
+              onStartEditing={onStartEditing}
+              onToggleCollapse={onToggleCollapse}
+              onUpdateEditingTitle={onUpdateEditingTitle}
+              savingNodeId={savingNodeId}
+              selectedNodeId={selectedNodeId}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MapEmptyState() {
+  return (
+    <div className="flex min-h-[420px] flex-col items-center justify-center px-8 text-center">
+      <span className="grid size-14 place-items-center rounded-[18px] bg-[#effaf0] text-[#16a329]">
+        <Network size={28} />
+      </span>
+      <h3 className="mt-4 text-lg font-black text-[#101828]">知识框架生成中</h3>
+      <p className="mt-2 max-w-sm text-sm leading-6 text-[#98a2b3]">AI 会把资料整理成最多四层的思维导图，完成后自动出现在这里。</p>
+    </div>
+  );
+}
+
+function layoutKnowledgeMap(nodes: KnowledgeMapNode[], collapsedNodeIds: Set<string>): LayoutResult {
   const visibleRoots = nodes;
   const nodesOut: PositionedNode[] = [];
   const connectors: Connector[] = [];
-  const leftPadding = 72;
-  const topPadding = 54;
-  const levelGap = expanded ? 224 : 260;
-  const siblingGap = expanded ? 20 : 28;
+  const leftPadding = 66;
+  const topPadding = 48;
+  const columnGap = 72;
+  const siblingGap = 14;
 
   function nodeWidth(depth: number, title: string) {
     if (depth === 0) {
-      return Math.min(360, Math.max(280, title.length * 16 + 72));
+      return Math.min(380, Math.max(300, title.length * 17 + 76));
     }
     if (depth === 1) {
-      return Math.min(232, Math.max(170, title.length * 12 + 32));
+      return Math.min(250, Math.max(184, title.length * 13 + 36));
     }
     if (depth === 2) {
-      return Math.min(208, Math.max(150, title.length * 11 + 26));
+      return Math.min(226, Math.max(164, title.length * 12 + 30));
     }
-    return Math.min(178, Math.max(128, title.length * 10 + 22));
+    return Math.min(196, Math.max(140, title.length * 11 + 24));
   }
 
   function visibleChildren(node: KnowledgeMapNode) {
-    if (!expanded && node.depth >= 1) {
+    if (collapsedNodeIds.has(node.id)) {
       return [];
     }
     return node.children;
   }
 
+  const columnWidths: number[] = [];
+  function collectColumnWidths(node: KnowledgeMapNode) {
+    columnWidths[node.depth] = Math.max(columnWidths[node.depth] || 0, nodeWidth(node.depth, node.title));
+    for (const child of visibleChildren(node)) {
+      collectColumnWidths(child);
+    }
+  }
+
+  for (const root of visibleRoots) {
+    collectColumnWidths(root);
+  }
+
+  const columnX: number[] = [];
+  for (let depth = 0; depth < columnWidths.length; depth += 1) {
+    if (depth === 0) {
+      columnX[depth] = leftPadding;
+    } else {
+      columnX[depth] = (columnX[depth - 1] ?? leftPadding) + (columnWidths[depth - 1] || 0) + columnGap;
+    }
+  }
+
   function measure(node: KnowledgeMapNode): number {
     const children = visibleChildren(node);
     if (children.length === 0) {
-      return 48;
+      return 46;
     }
-    return Math.max(48, children.reduce((sum, child) => sum + measure(child), 0) + siblingGap * (children.length - 1));
+    return Math.max(46, children.reduce((sum, child) => sum + measure(child), 0) + siblingGap * (children.length - 1));
   }
 
   function layoutNode(node: KnowledgeMapNode, top: number): number {
     const children = visibleChildren(node);
     const subtreeHeight = measure(node);
     const width = nodeWidth(node.depth, node.title);
-    const height = node.depth === 0 ? 38 : selectedHeight(node.depth);
-    const x = leftPadding + node.depth * levelGap;
+    const height = node.depth === 0 ? 42 : selectedHeight(node.depth);
+    const x = columnX[node.depth] ?? leftPadding;
     const y = top + subtreeHeight / 2;
     const positioned: PositionedNode = {
       ...node,
-      hasHiddenChildren: !expanded && node.children.length > 0 && children.length === 0,
+      hasHiddenChildren: collapsedNodeIds.has(node.id) && node.children.length > 0 && children.length === 0,
       height,
       width,
       x,
@@ -414,7 +1017,7 @@ function layoutKnowledgeMap(nodes: KnowledgeMapNode[], expanded: boolean): Layou
       connectors.push({
         fromX: x + width,
         fromY: y,
-        toX: leftPadding + child.depth * levelGap,
+        toX: columnX[child.depth] ?? leftPadding,
         toY: childY
       });
       childTop += childSubtreeHeight + siblingGap;
@@ -429,9 +1032,13 @@ function layoutKnowledgeMap(nodes: KnowledgeMapNode[], expanded: boolean): Layou
     cursorTop += rootHeight + siblingGap;
   }
 
+  const minX = nodesOut.reduce((value, node) => Math.min(value, node.x), Number.POSITIVE_INFINITY);
+  const minY = nodesOut.reduce((value, node) => Math.min(value, node.y - node.height / 2), Number.POSITIVE_INFINITY);
   const maxX = nodesOut.reduce((value, node) => Math.max(value, node.x + node.width), 0);
-  const maxY = nodesOut.reduce((value, node) => Math.max(value, node.y + node.height), 0);
+  const maxY = nodesOut.reduce((value, node) => Math.max(value, node.y + node.height / 2), 0);
+  const bounds = nodesOut.length > 0 ? { minX, minY, maxX, maxY } : { minX: 0, minY: 0, maxX: 0, maxY: 0 };
   return {
+    bounds,
     connectors,
     height: Math.max(520, maxY + topPadding),
     nodes: nodesOut,
@@ -440,30 +1047,69 @@ function layoutKnowledgeMap(nodes: KnowledgeMapNode[], expanded: boolean): Layou
 }
 
 function buildConnectorPath(connector: Connector) {
-  const distance = Math.max(80, connector.toX - connector.fromX);
-  const curve = Math.min(132, Math.max(72, distance * 0.52));
-  const c1x = connector.fromX + curve;
-  const c2x = connector.toX - curve * 0.88;
-  return `M ${connector.fromX} ${connector.fromY} C ${c1x} ${connector.fromY}, ${c2x} ${connector.toY}, ${connector.toX} ${connector.toY}`;
+  const midX = connector.fromX + (connector.toX - connector.fromX) * 0.5;
+  return `M ${connector.fromX} ${connector.fromY} C ${midX} ${connector.fromY}, ${midX} ${connector.toY}, ${connector.toX} ${connector.toY}`;
 }
 
 function selectedHeight(depth: number) {
-  return depth <= 1 ? 30 : 28;
+  return depth <= 1 ? 32 : 30;
 }
 
 function clampZoom(value: number) {
   return Math.max(minZoom, Math.min(maxZoom, Number(value.toFixed(2))));
 }
 
-function getDepthDotClass(depth: number) {
-  if (depth === 0) {
-    return "text-[#101828]";
+function clearNodeClickTimer(timerRef: MutableRefObject<number | null>) {
+  if (timerRef.current !== null) {
+    window.clearTimeout(timerRef.current);
+    timerRef.current = null;
   }
-  if (depth === 1) {
-    return "text-[#f27420]";
+}
+
+function findNodeTitle(nodes: KnowledgeMapNode[], nodeId: string): string {
+  for (const node of nodes) {
+    if (node.id === nodeId) {
+      return node.title;
+    }
+    const childTitle = findNodeTitle(node.children, nodeId);
+    if (childTitle) {
+      return childTitle;
+    }
   }
-  if (depth === 2) {
-    return "text-[#16a329]";
+  return "";
+}
+
+function updateNodeTitle(nodes: KnowledgeMapNode[], nodeId: string, title: string): KnowledgeMapNode[] {
+  return nodes.map((node) => {
+    if (node.id === nodeId) {
+      return { ...node, title };
+    }
+    if (node.children.length === 0) {
+      return node;
+    }
+    return {
+      ...node,
+      children: updateNodeTitle(node.children, nodeId, title)
+    };
+  });
+}
+
+function getCollapsibleNodeIds(nodes: KnowledgeMapNode[]) {
+  const ids: string[] = [];
+  function walk(node: KnowledgeMapNode) {
+    if (node.depth > 0 && node.children.length > 0) {
+      ids.push(node.id);
+    }
+    for (const child of node.children) {
+      walk(child);
+    }
   }
-  return "text-[#667085]";
+  for (const node of nodes) {
+    walk(node);
+  }
+  return ids;
+}
+
+function isMapViewMode(value: unknown): value is MapViewMode {
+  return value === "mindmap" || value === "outline";
 }
