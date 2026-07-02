@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
 import {
   ArrowLeft,
   BookOpen,
@@ -18,8 +17,7 @@ import {
   formatAiStudyError,
   getAiStudyNodeDetail,
   getAiStudyProject,
-  listAiStudyProjectNodes,
-  updateAiStudyNodeProgress
+  listAiStudyProjectNodes
 } from "@/lib/ai-study";
 import { cn } from "@/lib/utils";
 
@@ -47,38 +45,7 @@ const taskTypeLabels = {
   quality_check: "质量检查"
 };
 
-const progressLabels = {
-  not_started: "待学习",
-  learning: "学习中",
-  review_needed: "待复习",
-  mastered: "已掌握"
-};
-
-const progressClasses = {
-  not_started: "bg-[#f1f3f6] text-[#7a8491]",
-  learning: "bg-[#fff1d6] text-[#c66b00]",
-  review_needed: "bg-[#fff4d6] text-[#a56800]",
-  mastered: "bg-[#e8f8e9] text-[#14a327]"
-};
-
 type NodeListItem = Awaited<ReturnType<typeof listAiStudyProjectNodes>>[number];
-
-async function updateProgress(formData: FormData) {
-  "use server";
-  const user = await requireUser();
-  const projectId = String(formData.get("projectId") || "");
-  const nodeId = String(formData.get("nodeId") || "");
-  const status = String(formData.get("status") || "");
-
-  try {
-    await updateAiStudyNodeProgress(user.id, nodeId, { status });
-  } catch {
-    redirect(`/study-buddy/${projectId}?node=${nodeId}&error=progress_failed`);
-  }
-
-  revalidatePath(`/study-buddy/${projectId}`);
-  redirect(`/study-buddy/${projectId}?node=${nodeId}`);
-}
 
 export default async function StudyBuddyProjectPage({
   params,
@@ -114,7 +81,6 @@ export default async function StudyBuddyProjectPage({
   const previousNode = selectedIndex > 0 ? orderedNodes[selectedIndex - 1] : null;
   const nextNode = selectedIndex >= 0 && selectedIndex < orderedNodes.length - 1 ? orderedNodes[selectedIndex + 1] : null;
   const nodeDetail = selectedNodeId ? await getAiStudyNodeDetail(user.id, selectedNodeId) : null;
-  const selectedProgress = nodeDetail?.progress?.status || "not_started";
   const card = nodeDetail?.card || null;
   const progressPercent = project.knowledgeCount > 0 ? Math.round((project.masteredCount / project.knowledgeCount) * 100) : 0;
   const generation = getGenerationProgress(project);
@@ -162,7 +128,7 @@ export default async function StudyBuddyProjectPage({
         left={<KnowledgeMapView nodes={tree} projectId={project.id} selectedNodeId={selectedNodeId} />}
       >
         <section className="min-h-[calc(100dvh-112px)] min-w-0 overflow-hidden rounded-[16px] bg-white shadow-[0_12px_32px_rgba(16,24,40,0.05)]">
-          <div className="flex h-14 items-center justify-between border-b border-[#edf0f4] px-5">
+          <div className="flex h-14 items-center justify-between border-b border-[#edf0f4] bg-[linear-gradient(96deg,#fff7e8_0%,#fffdf8_42%,#f8fbff_100%)] px-5">
             <h2 className="text-[17px] font-black text-[#101828]">知识卡片</h2>
             <div className="flex items-center gap-2">
               {previousNode ? (
@@ -189,26 +155,7 @@ export default async function StudyBuddyProjectPage({
           {nodeDetail ? (
             <article className="max-h-[calc(100dvh-168px)] overflow-y-auto px-6 py-6 md:px-8">
               <div className={cn("rounded-[14px] px-5 py-5", nodeDetail.depth === 0 ? "bg-[linear-gradient(110deg,#f6ffe9_0%,#f7fff5_44%,#effbff_100%)]" : "bg-white")}>
-                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                  <div className="min-w-0">
-                    <p className="text-sm font-black text-[#16a329]">
-                      {nodeDetail.depth === 0 ? "项目标题" : "章节标题"}
-                    </p>
-                    <h3 className="mt-2 text-[25px] font-black leading-tight tracking-normal text-[#07152f]">{nodeDetail.title}</h3>
-                    {nodeDetail.depth > 0 ? <p className="mt-2 text-sm font-semibold text-[#98a2b3]">{getLevelLabel(nodeDetail.depth)}</p> : null}
-                  </div>
-                  <span className={`inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-black ${progressClasses[selectedProgress]}`}>
-                    {progressLabels[selectedProgress]}
-                  </span>
-                </div>
-
-                <form action={updateProgress} className="mt-5 flex flex-wrap gap-2">
-                  <input name="projectId" type="hidden" value={project.id} />
-                  <input name="nodeId" type="hidden" value={nodeDetail.id} />
-                  <ProgressButton active={selectedProgress === "learning"} status="learning">开始学习</ProgressButton>
-                  <ProgressButton active={selectedProgress === "review_needed"} status="review_needed">待复习</ProgressButton>
-                  <ProgressButton active={selectedProgress === "mastered"} status="mastered">标记已掌握</ProgressButton>
-                </form>
+                <h3 className="text-[22px] font-black leading-tight tracking-normal text-[#07152f] md:text-[24px]">{nodeDetail.title}</h3>
               </div>
 
               {card ? (
@@ -296,22 +243,6 @@ function GenerationPanel({
         ))}
       </div>
     </div>
-  );
-}
-
-function ProgressButton({ active, children, status }: { active: boolean; children: ReactNode; status: string }) {
-  return (
-    <button
-      className={cn(
-        "inline-flex min-h-10 items-center justify-center rounded-[11px] border px-4 py-2 text-sm font-black transition",
-        active ? "border-[#101828] bg-[#101828] text-white" : "border-[#d7dde6] bg-white text-[#344054] hover:border-[#101828]"
-      )}
-      name="status"
-      type="submit"
-      value={status}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -434,19 +365,6 @@ function getGenerationProgress(project: Awaited<ReturnType<typeof getAiStudyProj
     return { percent: 18, text: "正在解析资料..." };
   }
   return { percent: 8, text: "搭子加急制作中..." };
-}
-
-function getLevelLabel(depth: number) {
-  if (depth === 0) {
-    return "项目总览";
-  }
-  if (depth === 1) {
-    return "具体章节";
-  }
-  if (depth === 2) {
-    return "章节核心内容";
-  }
-  return "具体知识点";
 }
 
 function getTaskStatusClass(status: keyof typeof taskStatusLabels) {
