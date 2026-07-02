@@ -2,9 +2,20 @@ import { z } from "zod";
 import type { AiStudyGenerationTask, AiStudyNode, AiStudySourceChunk } from "@prisma/client";
 import pdfParse from "pdf-parse";
 import { buildAiStudyTextChunks, markAiStudyTaskFailed, markAiStudyTaskSucceeded } from "@/lib/ai-study";
+import {
+  ackAiStudyQueuedTask,
+  aiStudyQueueTaskTypes,
+  claimStaleAiStudyQueuedTaskEntries,
+  enqueueAiStudyTask,
+  isAiStudyTaskQueueConfigured,
+  isSupportedAiStudyTaskType,
+  readAiStudyQueuedTaskEntries,
+  type AiStudyQueuedTaskEntry
+} from "@/lib/ai-study-task-queue";
 import { askQwen, type ChatMessage } from "@/lib/qwen";
 import { prisma } from "@/lib/prisma";
 import { downloadAiStudyObject } from "@/lib/ai-study-storage";
+import { refreshAiStudyProgressCache, writeAiStudyTaskProgressCache } from "@/lib/ai-study-progress-cache";
 
 const promptVersion = "ai-study-v2-four-level-map-2026-07-01";
 const outlineTimeoutMs = Number(process.env.AI_STUDY_OUTLINE_TIMEOUT_MS || 120_000);
@@ -13,6 +24,8 @@ const maxNodesPerProject = Number(process.env.AI_STUDY_MAX_NODES_PER_PROJECT || 
 const maxOutlineSourceChars = Number(process.env.AI_STUDY_OUTLINE_SOURCE_CHARS || 50_000);
 const maxCardSourceChars = Number(process.env.AI_STUDY_CARD_SOURCE_CHARS || 8_000);
 const maxParsedTextChars = Number(process.env.AI_STUDY_MAX_PARSED_TEXT_CHARS || 200_000);
+const queueFallbackScanMs = Number(process.env.AI_STUDY_QUEUE_FALLBACK_SCAN_MS || 60_000);
+let lastQueueFallbackScanAt = 0;
 
 const outlineNodeSchema = z.object({
   clientId: z.string().trim().min(1).max(80),
@@ -48,58 +61,124 @@ type GeneratedCard = z.infer<typeof cardSchema> & {
 };
 
 export async function runAiStudyWorkerCycle(batchSize = Number(process.env.AI_STUDY_WORKER_BATCH_SIZE || 1)) {
+  const normalizedBatchSize = Math.max(1, batchSize);
+  if (isAiStudyTaskQueueConfigured()) {
+    const entries = await readAiStudyQueuedTaskEntries(normalizedBatchSize);
+    if (entries.length > 0) {
+      return processQueuedAiStudyEntries(entries);
+    }
+
+    const staleEntries = await claimStaleAiStudyQueuedTaskEntries(normalizedBatchSize);
+    if (staleEntries.length > 0) {
+      return processQueuedAiStudyEntries(staleEntries);
+    }
+
+    if (!shouldRunQueueFallbackScan()) {
+      return { processed: 0 };
+    }
+  }
+
+  return runPostgresFallbackCycle(normalizedBatchSize);
+}
+
+async function processQueuedAiStudyEntries(entries: AiStudyQueuedTaskEntry[]) {
+  let processed = 0;
+  for (const entry of entries) {
+    if (await claimAndProcessAiStudyTask(entry.taskId)) {
+      processed += 1;
+    }
+    await ackAiStudyQueuedTask(entry.entryId);
+  }
+
+  return { processed };
+}
+
+async function runPostgresFallbackCycle(batchSize: number) {
   const tasks = await prisma.aiStudyGenerationTask.findMany({
     where: {
       status: "pending",
       type: {
-        in: ["parse_source", "generate_outline", "generate_cards"]
+        in: [...aiStudyQueueTaskTypes]
       }
     },
     orderBy: { createdAt: "asc" },
-    take: Math.max(1, batchSize)
+    take: batchSize
   });
 
   let processed = 0;
   for (const task of tasks) {
-    const claimed = await prisma.aiStudyGenerationTask.updateMany({
-      where: {
-        id: task.id,
-        status: "pending"
-      },
-      data: {
-        status: "running",
-        stage: "claimed",
-        startedAt: new Date(),
-        finishedAt: null,
-        errorMessage: null
-      }
-    });
-
-    if (claimed.count === 0) {
-      continue;
-    }
-
-    try {
-      await processAiStudyTask(task.id);
-      processed += 1;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "AI 学习搭子任务执行失败。";
-      await markAiStudyTaskFailed(task.id, message, "failed");
-      if (task.sourceId) {
-        await prisma.aiStudySource.updateMany({
-          where: { id: task.sourceId },
-          data: { status: "failed" }
-        });
-      }
-      await prisma.aiStudyProject.updateMany({
-        where: { id: task.projectId },
-        data: { status: "failed" }
-      });
+    if (await claimAndProcessAiStudyTask(task.id)) {
       processed += 1;
     }
   }
 
   return { processed };
+}
+
+async function claimAndProcessAiStudyTask(taskId: string) {
+  const task = await prisma.aiStudyGenerationTask.findUnique({
+    where: { id: taskId }
+  });
+
+  if (!task || task.status !== "pending" || !isSupportedAiStudyTaskType(task.type)) {
+    return false;
+  }
+
+  const claimed = await prisma.aiStudyGenerationTask.updateMany({
+    where: {
+      id: task.id,
+      status: "pending"
+    },
+    data: {
+      status: "running",
+      stage: "claimed",
+      startedAt: new Date(),
+      finishedAt: null,
+      errorMessage: null
+    }
+  });
+
+  if (claimed.count === 0) {
+    return false;
+  }
+
+  await writeAiStudyTaskProgressCache({
+    ...task,
+    status: "running",
+    stage: "claimed",
+    errorMessage: null,
+    updatedAt: new Date()
+  });
+
+  try {
+    await processAiStudyTask(task.id);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "AI 学习搭子任务执行失败。";
+    await markAiStudyTaskFailed(task.id, message, "failed");
+    if (task.sourceId) {
+      await prisma.aiStudySource.updateMany({
+        where: { id: task.sourceId },
+        data: { status: "failed" }
+      });
+    }
+    await prisma.aiStudyProject.updateMany({
+      where: { id: task.projectId },
+      data: { status: "failed" }
+    });
+    await refreshAiStudyProgressCache(task.projectId);
+  }
+
+  return true;
+}
+
+function shouldRunQueueFallbackScan() {
+  const now = Date.now();
+  if (now - lastQueueFallbackScanAt < queueFallbackScanMs) {
+    return false;
+  }
+
+  lastQueueFallbackScanAt = now;
+  return true;
 }
 
 async function processAiStudyTask(taskId: string) {
@@ -148,17 +227,11 @@ async function parseSource(task: AiStudyGenerationTask) {
     throw new Error("PDF 资料缺少 MinIO storageKey。");
   }
 
-  await prisma.aiStudyGenerationTask.update({
-    where: { id: task.id },
-    data: { stage: "downloading_pdf" }
-  });
+  await updateAiStudyTaskStage(task, "downloading_pdf");
 
   const object = await downloadAiStudyObject(source.storageKey);
 
-  await prisma.aiStudyGenerationTask.update({
-    where: { id: task.id },
-    data: { stage: "extracting_pdf_text" }
-  });
+  await updateAiStudyTaskStage(task, "extracting_pdf_text");
 
   const parsed = await pdfParse(object.body);
   const text = normalizeParsedText(parsed.text).slice(0, maxParsedTextChars);
@@ -168,6 +241,7 @@ async function parseSource(task: AiStudyGenerationTask) {
     throw new Error("PDF 未解析出可学习文本。");
   }
 
+  let nextTask: AiStudyGenerationTask | null = null;
   await prisma.$transaction(async (tx) => {
     await tx.aiStudySourceChunk.deleteMany({ where: { sourceId: source.id } });
     await tx.aiStudySourceChunk.createMany({
@@ -204,7 +278,7 @@ async function parseSource(task: AiStudyGenerationTask) {
       }
     });
 
-    await tx.aiStudyGenerationTask.create({
+    nextTask = await tx.aiStudyGenerationTask.create({
       data: {
         projectId: source.projectId,
         sourceId: source.id,
@@ -223,6 +297,9 @@ async function parseSource(task: AiStudyGenerationTask) {
       data: { status: "processing" }
     });
   });
+
+  await refreshAiStudyProgressCache(source.projectId);
+  await enqueueAiStudyTask(nextTask);
 }
 
 async function generateOutline(task: AiStudyGenerationTask) {
@@ -242,10 +319,7 @@ async function generateOutline(task: AiStudyGenerationTask) {
     throw new Error("学习项目没有可生成的原文片段。");
   }
 
-  await prisma.aiStudyGenerationTask.update({
-    where: { id: task.id },
-    data: { stage: "generating_outline" }
-  });
+  await updateAiStudyTaskStage(task, "generating_outline");
 
   const responseText = await askQwen(buildOutlineMessages(project.title, project.sourceChunks), {
     temperature: 0.2,
@@ -254,6 +328,7 @@ async function generateOutline(task: AiStudyGenerationTask) {
   const outline = parseJsonWithSchema(responseText, outlineSchema, "知识框架 JSON 格式不合法。");
   const preparedNodes = prepareOutlineNodes(outline.nodes, project.sourceChunks, project.title);
 
+  let nextTask: AiStudyGenerationTask | null = null;
   await prisma.$transaction(async (tx) => {
     await tx.aiStudyProgress.deleteMany({ where: { projectId: project.id } });
     await tx.aiStudyCard.deleteMany({ where: { projectId: project.id } });
@@ -299,7 +374,7 @@ async function generateOutline(task: AiStudyGenerationTask) {
       }
     });
 
-    await tx.aiStudyGenerationTask.create({
+    nextTask = await tx.aiStudyGenerationTask.create({
       data: {
         projectId: project.id,
         type: "generate_cards",
@@ -320,6 +395,9 @@ async function generateOutline(task: AiStudyGenerationTask) {
       }
     });
   });
+
+  await refreshAiStudyProgressCache(project.id);
+  await enqueueAiStudyTask(nextTask);
 }
 
 async function generateCards(task: AiStudyGenerationTask) {
@@ -346,6 +424,7 @@ async function generateCards(task: AiStudyGenerationTask) {
       where: { id: project.id },
       data: { status: "ready" }
     });
+    await refreshAiStudyProgressCache(project.id);
     return;
   }
 
@@ -353,10 +432,7 @@ async function generateCards(task: AiStudyGenerationTask) {
   const generatedCards: GeneratedCard[] = [];
 
   for (const [index, node] of nodes.entries()) {
-    await prisma.aiStudyGenerationTask.update({
-      where: { id: task.id },
-      data: { stage: `generating_card_${index + 1}_of_${nodes.length}` }
-    });
+    await updateAiStudyTaskStage(task, `generating_card_${index + 1}_of_${nodes.length}`);
 
     const sourceChunks = node.depth === 0 ? project.sourceChunks : getNodeSourceChunks(node, chunksById);
     const responseText = await askQwen(buildCardMessages(project.title, node, sourceChunks), {
@@ -412,6 +488,22 @@ async function generateCards(task: AiStudyGenerationTask) {
       where: { id: project.id },
       data: { status: "ready" }
     });
+  });
+
+  await refreshAiStudyProgressCache(project.id);
+}
+
+async function updateAiStudyTaskStage(task: AiStudyGenerationTask, stage: string) {
+  await prisma.aiStudyGenerationTask.update({
+    where: { id: task.id },
+    data: { stage }
+  });
+  await writeAiStudyTaskProgressCache({
+    ...task,
+    status: "running",
+    stage,
+    errorMessage: null,
+    updatedAt: new Date()
   });
 }
 

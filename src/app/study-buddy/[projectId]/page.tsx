@@ -229,7 +229,7 @@ function GenerationPanel({
         </div>
       </div>
       <div className="mt-7 grid gap-3 md:grid-cols-3">
-        {project.tasks.slice().reverse().map((task) => (
+        {(project.tasks || []).slice().reverse().map((task) => (
           <div key={task.id} className="rounded-[12px] border border-[#e5e9ef] bg-white px-4 py-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-black text-[#101828]">{taskTypeLabels[task.type]}</p>
@@ -328,6 +328,13 @@ function flattenTree(nodes: KnowledgeMapNode[]) {
 }
 
 function getGenerationProgress(project: Awaited<ReturnType<typeof getAiStudyProject>>) {
+  if (project.generationProgress) {
+    return {
+      percent: project.generationProgress.percent,
+      text: project.generationProgress.text
+    };
+  }
+
   if (project.status === "ready") {
     return { percent: 100, text: "知识图谱已生成" };
   }
@@ -338,9 +345,10 @@ function getGenerationProgress(project: Awaited<ReturnType<typeof getAiStudyProj
     return { percent: 0, text: "等待创建" };
   }
 
-  const parseTask = project.tasks.find((task) => task.type === "parse_source");
-  const outlineTask = project.tasks.find((task) => task.type === "generate_outline");
-  const cardTask = project.tasks.find((task) => task.type === "generate_cards");
+  const tasks = project.tasks || [];
+  const parseTask = tasks.find((task) => task.type === "parse_source");
+  const outlineTask = tasks.find((task) => task.type === "generate_outline");
+  const cardTask = tasks.find((task) => task.type === "generate_cards");
 
   if (cardTask?.status === "running") {
     const match = String(cardTask.stage || "").match(/generating_card_(\d+)_of_(\d+)/);

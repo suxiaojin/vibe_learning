@@ -115,6 +115,13 @@ function ProjectSection({
 }
 
 function getGenerationProgress(project: StudyProject) {
+  if ("generationProgress" in project && project.generationProgress) {
+    return {
+      percent: project.generationProgress.percent,
+      text: project.generationProgress.text
+    };
+  }
+
   if (project.status === "ready") {
     return { percent: 100, text: "知识图谱已生成" };
   }
@@ -125,7 +132,8 @@ function getGenerationProgress(project: StudyProject) {
     return { percent: 0, text: "等待创建" };
   }
 
-  const tasks = "tasks" in project ? project.tasks : [];
+  const tasks: Array<{ type: string; status: string; stage: string | null }> =
+    "tasks" in project && Array.isArray(project.tasks) ? project.tasks : [];
   const parseTask = tasks.find((task) => task.type === "parse_source");
   const outlineTask = tasks.find((task) => task.type === "generate_outline");
   const cardTask = tasks.find((task) => task.type === "generate_cards");

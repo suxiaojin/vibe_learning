@@ -1,5 +1,5 @@
 import { apiError, apiOk } from "@/lib/api-response";
-import { formatAiStudyError, listAiStudyProjectTasks } from "@/lib/ai-study";
+import { formatAiStudyError, getAiStudyProjectProgress, listAiStudyProjectTasks } from "@/lib/ai-study";
 import { getStudentApiUser } from "@/lib/student-api";
 
 export const runtime = "nodejs";
@@ -16,8 +16,11 @@ export async function GET(_request: Request, context: RouteContext) {
 
   try {
     const { projectId } = await context.params;
-    const tasks = await listAiStudyProjectTasks(user.id, projectId);
-    return apiOk({ tasks });
+    const [tasks, generationProgress] = await Promise.all([
+      listAiStudyProjectTasks(user.id, projectId),
+      getAiStudyProjectProgress(user.id, projectId)
+    ]);
+    return apiOk({ tasks, generationProgress });
   } catch (error) {
     return aiStudyApiError(error);
   }

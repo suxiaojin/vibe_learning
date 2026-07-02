@@ -1,8 +1,15 @@
 import { randomUUID } from "crypto";
 import { z } from "zod";
-import type { AiStudyProgressStatus, AiStudyTaskStatus } from "@prisma/client";
+import type { AiStudyGenerationTask, AiStudyProgressStatus, AiStudyTaskStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { uploadAiStudyObject } from "@/lib/ai-study-storage";
+import { enqueueAiStudyTask } from "@/lib/ai-study-task-queue";
+import {
+  attachAiStudyGenerationProgress,
+  clearAiStudyProgressCache,
+  getAiStudyProjectGenerationProgress,
+  writeAiStudyTaskProgressCache
+} from "@/lib/ai-study-progress-cache";
 
 const sourceTypeSchema = z.enum(["pdf", "document", "image", "text", "mixed"]);
 const learningGoalSchema = z.enum(["preview", "review", "sprint", "weak_point", "other"]);
@@ -57,7 +64,7 @@ export function formatAiStudyError(error: unknown) {
 
 export async function listAiStudyProjects(ownerId: string, input: unknown = {}) {
   const parsed = parseAiStudyInput(listProjectsSchema, input, "项目筛选参数不合法。");
-  return prisma.aiStudyProject.findMany({
+  const projects = await prisma.aiStudyProject.findMany({
     where: {
       ownerId,
       deletedAt: null,
@@ -65,19 +72,6 @@ export async function listAiStudyProjects(ownerId: string, input: unknown = {}) 
     },
     orderBy: [{ createdAt: "desc" }],
     include: {
-      tasks: {
-        orderBy: { createdAt: "desc" },
-        take: 5,
-        select: {
-          id: true,
-          type: true,
-          status: true,
-          stage: true,
-          errorMessage: true,
-          createdAt: true,
-          updatedAt: true
-        }
-      },
       _count: {
         select: {
           sources: true,
@@ -87,10 +81,11 @@ export async function listAiStudyProjects(ownerId: string, input: unknown = {}) 
       }
     }
   });
+  return attachAiStudyGenerationProgress(projects, { loadTasksOnMiss: true });
 }
 
 export async function listPublicAiStudyProjects(input: { take?: number } = {}) {
-  return prisma.aiStudyProject.findMany({
+  const projects = await prisma.aiStudyProject.findMany({
     where: {
       visibility: "public",
       deletedAt: null
@@ -117,6 +112,7 @@ export async function listPublicAiStudyProjects(input: { take?: number } = {}) {
       }
     }
   });
+  return attachAiStudyGenerationProgress(projects, { loadTasksOnMiss: false });
 }
 
 export async function createAiStudyProject(ownerId: string, input: unknown) {
@@ -128,8 +124,9 @@ export async function createAiStudyProject(ownerId: string, input: unknown) {
   const sourceType = parsed.sourceType ?? "text";
   const learningGoal = parsed.learningGoal ?? "review";
   const status = textContent ? "processing" : "draft";
+  let taskToQueue: AiStudyGenerationTask | null = null;
 
-  return prisma.$transaction(async (tx) => {
+  const project = await prisma.$transaction(async (tx) => {
     const project = await tx.aiStudyProject.create({
       data: {
         ownerId,
@@ -169,7 +166,7 @@ export async function createAiStudyProject(ownerId: string, input: unknown) {
       await tx.aiStudySourceChunk.createMany({ data: chunks });
     }
 
-    await tx.aiStudyGenerationTask.create({
+    taskToQueue = await tx.aiStudyGenerationTask.create({
       data: {
         projectId: project.id,
         sourceId: source.id,
@@ -185,6 +182,12 @@ export async function createAiStudyProject(ownerId: string, input: unknown) {
 
     return project;
   });
+
+  await enqueueAiStudyTask(taskToQueue);
+  if (taskToQueue) {
+    await writeAiStudyTaskProgressCache(taskToQueue);
+  }
+  return project;
 }
 
 export async function getAiStudyProject(ownerId: string, projectId: string) {
@@ -215,6 +218,7 @@ export async function getAiStudyProject(ownerId: string, projectId: string) {
         orderBy: { createdAt: "desc" },
         select: {
           id: true,
+          projectId: true,
           sourceId: true,
           type: true,
           status: true,
@@ -241,7 +245,8 @@ export async function getAiStudyProject(ownerId: string, projectId: string) {
     throw new AiStudyError("学习项目不存在。", 404, "AI_STUDY_PROJECT_NOT_FOUND");
   }
 
-  return project;
+  const [projectWithProgress] = await attachAiStudyGenerationProgress([project]);
+  return projectWithProgress;
 }
 
 export async function softDeleteAiStudyProject(ownerId: string, projectId: string) {
@@ -261,6 +266,7 @@ export async function softDeleteAiStudyProject(ownerId: string, projectId: strin
     throw new AiStudyError("学习项目不存在。", 404, "AI_STUDY_PROJECT_NOT_FOUND");
   }
 
+  await clearAiStudyProgressCache(projectId);
   return { deleted: true };
 }
 
@@ -306,7 +312,7 @@ export async function uploadAiStudySource(ownerId: string, projectId: string, in
     contentType: input.mimeType || "application/pdf"
   });
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const source = await tx.aiStudySource.create({
       data: {
         id: sourceId,
@@ -347,6 +353,10 @@ export async function uploadAiStudySource(ownerId: string, projectId: string, in
 
     return { source, task };
   });
+
+  await enqueueAiStudyTask(result.task);
+  await writeAiStudyTaskProgressCache(result.task);
+  return result;
 }
 
 export async function listAiStudyProjectTasks(ownerId: string, projectId: string) {
@@ -371,6 +381,11 @@ export async function listAiStudyProjectTasks(ownerId: string, projectId: string
       updatedAt: true
     }
   });
+}
+
+export async function getAiStudyProjectProgress(ownerId: string, projectId: string) {
+  await assertOwnedProject(ownerId, projectId);
+  return getAiStudyProjectGenerationProgress(projectId);
 }
 
 export async function listAiStudyProjectNodes(ownerId: string, projectId: string) {
