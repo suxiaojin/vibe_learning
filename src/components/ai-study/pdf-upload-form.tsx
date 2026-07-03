@@ -25,10 +25,7 @@ type CreateProjectResponse = {
   };
 };
 
-type UploadedFile = {
-  id: string;
-  name: string;
-};
+type UploadPhase = "idle" | "creating" | "uploading" | "uploaded" | "starting" | "submitted";
 
 type SelectedFile = {
   id: string;
@@ -40,26 +37,35 @@ type SelectedFile = {
 export function StudyMaterialImporter() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const activeUploadTokenRef = useRef("");
+  const uploadRequestRef = useRef<XMLHttpRequest | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
-  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [uploadedProjectId, setUploadedProjectId] = useState("");
+  const [uploadPhase, setUploadPhase] = useState<UploadPhase>("idle");
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState("");
 
   function openModal() {
+    resetUploadState();
     setError("");
     setIsOpen(true);
   }
 
-  function closeModal() {
-    if (isUploading) {
+  async function closeModal() {
+    if (isUploading || isStarting) {
       return;
+    }
+    if (uploadedProjectId && uploadPhase === "uploaded") {
+      await deleteDraftProject(uploadedProjectId);
+      router.refresh();
     }
     setIsOpen(false);
     setIsDragging(false);
-    setError("");
-    setSelectedFiles([]);
+    resetUploadState();
   }
 
   function openFilePicker() {
@@ -101,32 +107,115 @@ export function StudyMaterialImporter() {
       });
     }
 
-    setSelectedFiles(nextFiles.slice(0, 1));
-    setError(files.length > 1 ? "当前阶段一次只能创建 1 个 PDF 项目，已选中第一个文件。" : "");
+    const selectedFile = nextFiles[0];
+    const previousProjectId = uploadedProjectId;
+    if (previousProjectId) {
+      void deleteDraftProject(previousProjectId).then(() => router.refresh());
+    }
+    const uploadToken = `${selectedFile.id}-${Date.now()}`;
+    activeUploadTokenRef.current = uploadToken;
+    setSelectedFiles([selectedFile]);
+    setUploadedProjectId("");
+    setUploadPhase("idle");
+    setUploadProgress(0);
+    setError(files.length > 1 ? "当前阶段一次只能创建 1 个 PDF 项目，已自动上传第一个文件。" : "");
+    void uploadSelectedFile(selectedFile, uploadToken);
   }
 
-  async function createProject() {
-    if (selectedFiles.length === 0 || isUploading) {
+  async function uploadSelectedFile(selectedFile: SelectedFile, uploadToken: string) {
+    if (isUploading) {
       return;
     }
 
     setIsUploading(true);
+    setUploadPhase("creating");
+    setUploadProgress(1);
     setError("");
 
     try {
-      const created = await uploadOneFile(selectedFiles[0].file);
-      setUploadedFiles((current) => [{ id: created.projectId, name: selectedFiles[0].name }, ...current]);
-      setSelectedFiles([]);
-      setIsOpen(false);
-      router.refresh();
+      const created = await uploadOneFile(selectedFile.file, (progress) => {
+        if (activeUploadTokenRef.current !== uploadToken) {
+          return;
+        }
+        setUploadPhase("uploading");
+        setUploadProgress(progress);
+      }, uploadToken);
+      if (activeUploadTokenRef.current !== uploadToken) {
+        return;
+      }
+      setUploadProgress(100);
+      setUploadedProjectId(created.projectId);
+      setUploadPhase("uploaded");
     } catch (caught) {
+      if (activeUploadTokenRef.current !== uploadToken) {
+        return;
+      }
       setError(caught instanceof Error ? caught.message : "创建项目失败，请稍后重试。");
+      setUploadPhase("idle");
+      setUploadProgress(0);
     } finally {
-      setIsUploading(false);
+      if (activeUploadTokenRef.current === uploadToken) {
+        setIsUploading(false);
+      }
     }
   }
 
-  async function uploadOneFile(file: File) {
+  async function startProject() {
+    if (!uploadedProjectId || isUploading || isStarting) {
+      return;
+    }
+
+    setIsStarting(true);
+    setUploadPhase("starting");
+    setError("");
+    try {
+      await postJson(`/api/ai-study/projects/${uploadedProjectId}/start`, {});
+      setUploadPhase("submitted");
+      router.refresh();
+      window.setTimeout(() => {
+        setIsOpen(false);
+        resetUploadState();
+      }, 450);
+    } catch (caught) {
+      setUploadPhase("uploaded");
+      setError(caught instanceof Error ? caught.message : "创建项目失败，请稍后重试。");
+    } finally {
+      setIsStarting(false);
+    }
+  }
+
+  function resetUploadState() {
+    activeUploadTokenRef.current = "";
+    uploadRequestRef.current = null;
+    setSelectedFiles([]);
+    setUploadedProjectId("");
+    setUploadPhase("idle");
+    setUploadProgress(0);
+    setIsStarting(false);
+    setError("");
+  }
+
+  async function removeSelectedFile() {
+    const projectId = uploadedProjectId;
+    const request = uploadRequestRef.current;
+    activeUploadTokenRef.current = "";
+    uploadRequestRef.current = null;
+
+    if (request && request.readyState !== XMLHttpRequest.DONE) {
+      request.abort();
+    }
+
+    resetUploadState();
+    setIsUploading(false);
+    setIsStarting(false);
+
+    if (projectId) {
+      await deleteDraftProject(projectId);
+      router.refresh();
+    }
+  }
+
+  async function uploadOneFile(file: File, onProgress: (progress: number) => void, uploadToken: string) {
     const validationError = validatePdfFile(file);
     if (validationError) {
       throw new Error(validationError);
@@ -142,15 +231,32 @@ export function StudyMaterialImporter() {
         learningGoal: "review"
       });
       projectId = created.project.id;
+      onProgress(5);
+      if (activeUploadTokenRef.current !== uploadToken) {
+        throw new Error("已取消上传。");
+      }
 
       const uploadForm = new FormData();
       uploadForm.set("file", file);
-      await postForm(`/api/ai-study/projects/${projectId}/sources`, uploadForm);
+      uploadForm.set("startParsing", "false");
+      await postFormWithProgress(`/api/ai-study/projects/${projectId}/sources`, uploadForm, (progress) => {
+        onProgress(Math.max(5, Math.min(99, progress)));
+      }, (request) => {
+        if (activeUploadTokenRef.current === uploadToken) {
+          uploadRequestRef.current = request;
+          return;
+        }
+        request.abort();
+      });
+      if (uploadRequestRef.current?.readyState === XMLHttpRequest.DONE) {
+        uploadRequestRef.current = null;
+      }
 
       return { projectId };
     } catch (caught) {
+      uploadRequestRef.current = null;
       if (projectId) {
-        await fetch(`/api/ai-study/projects/${projectId}`, { method: "DELETE" }).catch(() => null);
+        await deleteDraftProject(projectId);
       }
       throw caught;
     }
@@ -218,28 +324,53 @@ export function StudyMaterialImporter() {
             </div>
 
             <section className="mt-6">
-              <h3 className="text-[18px] font-black text-[#1d2430]">已选择文件（{selectedFiles.length}）</h3>
+              <h3 className="text-[18px] font-black text-[#1d2430]">已上传文件（{selectedFiles.length}）</h3>
               <div className="mt-3 min-h-[38px] space-y-2">
                 {selectedFiles.map((file) => (
-                  <div key={file.id} className="flex items-center gap-2 rounded-[10px] border border-[#e7ebf0] bg-[#fbfcfd] px-3 py-2 text-sm font-semibold text-[#344054]">
-                    <FileText className="size-4 text-[#18a62a]" />
-                    <span className="min-w-0 truncate">{file.name}</span>
-                    <span className="ml-auto shrink-0 text-xs font-medium text-[#98a2b3]">{formatFileSize(file.size)}</span>
+                  <div key={file.id} className="relative w-[184px] rounded-[10px] bg-[#f3f4f6] px-3 py-2 pr-8">
+                    <button
+                      aria-label={`删除 ${file.name}`}
+                      className="absolute right-2 top-2 grid size-5 place-items-center rounded-full bg-[#8b949e] text-white transition hover:bg-[#667085] disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={isStarting}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void removeSelectedFile();
+                      }}
+                      title="删除资料"
+                      type="button"
+                    >
+                      <X size={12} strokeWidth={3} />
+                    </button>
+                    <div className="flex items-center gap-2 text-sm font-semibold text-[#344054]">
+                      <FileText className="size-5 shrink-0 text-[#ff5630]" />
+                      <span className="min-w-0 truncate">{file.name}</span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-2 text-xs font-medium text-[#667085]">
+                      {uploadPhase !== "idle" && !error ? (
+                        <>
+                          {uploadPhase === "uploaded" || uploadPhase === "submitted" ? (
+                            <CheckCircle2 className="size-3.5 text-[#16a329]" />
+                          ) : (
+                            <span className="inline-block size-3 animate-spin rounded-full border-2 border-[#cfd5dd] border-t-[#667085]" />
+                          )}
+                          <span>{getUploadStatusText(uploadPhase)}</span>
+                          <span className="ml-auto text-[#98a2b3]">{uploadProgress}%</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>{error ? "上传失败" : "等待上传"}</span>
+                          <span className="ml-auto text-[#98a2b3]">{formatFileSize(file.size)}</span>
+                        </>
+                      )}
+                    </div>
+                    {uploadPhase !== "idle" && !error ? (
+                      <div className="mt-2 h-1 overflow-hidden rounded-full bg-[#dbe1e8]">
+                        <span className="block h-full rounded-full bg-[#16a329]" style={{ width: `${uploadProgress}%` }} />
+                      </div>
+                    ) : null}
                   </div>
                 ))}
-                {selectedFiles.length === 0 ? <p className="text-sm font-medium text-[#98a2b3]">选择 PDF 后，点击“创建项目”开始解析。</p> : null}
-                {isUploading ? <p className="text-sm font-medium text-[#667085]">正在创建项目并上传资料，请稍候...</p> : null}
               </div>
-              {uploadedFiles.length > 0 ? (
-                <div className="mt-3 space-y-2">
-                  {uploadedFiles.slice(0, 2).map((file) => (
-                    <div key={file.id} className="flex items-center gap-2 rounded-[10px] border border-[#dcf2df] bg-[#f7fff8] px-3 py-2 text-sm font-semibold text-[#247a31]">
-                      <CheckCircle2 className="size-4 text-[#18a62a]" />
-                      <span className="min-w-0 truncate">{file.name} 已提交解析</span>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
             </section>
 
             {error ? <p className="mt-3 text-sm font-semibold text-[#d92d20]">{error}</p> : null}
@@ -252,7 +383,7 @@ export function StudyMaterialImporter() {
               <div className="flex shrink-0 items-center gap-3">
                 <button
                   className="h-10 rounded-[11px] border border-[#d8dee6] bg-white px-7 text-[15px] font-extrabold text-[#344054] transition hover:bg-[#f8fafc]"
-                  disabled={isUploading}
+                  disabled={isUploading || isStarting}
                   onClick={closeModal}
                   type="button"
                 >
@@ -260,11 +391,11 @@ export function StudyMaterialImporter() {
                 </button>
                 <button
                   className="h-10 rounded-[11px] bg-[linear-gradient(90deg,#111827_0%,#126324_100%)] px-7 text-[15px] font-extrabold text-white shadow-[0_10px_22px_rgba(18,99,36,0.18)] transition hover:translate-y-[-1px] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
-                  disabled={isUploading || selectedFiles.length === 0}
-                  onClick={createProject}
+                  disabled={isUploading || isStarting || !uploadedProjectId || uploadPhase !== "uploaded"}
+                  onClick={startProject}
                   type="button"
                 >
-                  {isUploading ? "创建中..." : "创建项目"}
+                  创建项目
                 </button>
               </div>
             </div>
@@ -286,14 +417,6 @@ async function postJson<T>(url: string, body: unknown) {
   return readApiResponse<T>(response);
 }
 
-async function postForm<T = unknown>(url: string, body: FormData) {
-  const response = await fetch(url, {
-    method: "POST",
-    body
-  });
-  return readApiResponse<T>(response);
-}
-
 async function readApiResponse<T>(response: Response) {
   const payload = await response.json().catch(() => null) as ApiEnvelope<T> | null;
   if (response.ok && payload?.ok) {
@@ -304,6 +427,53 @@ async function readApiResponse<T>(response: Response) {
     throw new Error(payload.error.message);
   }
   throw new Error(`请求失败：HTTP ${response.status}`);
+}
+
+function postFormWithProgress<T = unknown>(
+  url: string,
+  body: FormData,
+  onProgress: (progress: number) => void,
+  onRequest?: (request: XMLHttpRequest) => void
+) {
+  return new Promise<T>((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", url);
+    request.upload.onprogress = (event) => {
+      if (!event.lengthComputable) {
+        onProgress(50);
+        return;
+      }
+      onProgress(Math.round((event.loaded / event.total) * 100));
+    };
+    request.onload = () => {
+      const payload = parseApiEnvelope<T>(request.responseText);
+      if (request.status >= 200 && request.status < 300 && payload?.ok) {
+        resolve(payload.data);
+        return;
+      }
+      if (payload && !payload.ok && payload.error?.message) {
+        reject(new Error(payload.error.message));
+        return;
+      }
+      reject(new Error(`请求失败：HTTP ${request.status}`));
+    };
+    request.onabort = () => reject(new Error("已取消上传。"));
+    request.onerror = () => reject(new Error("上传失败，请检查网络后重试。"));
+    onRequest?.(request);
+    request.send(body);
+  });
+}
+
+async function deleteDraftProject(projectId: string) {
+  await fetch(`/api/ai-study/projects/${projectId}`, { method: "DELETE" }).catch(() => null);
+}
+
+function parseApiEnvelope<T>(value: string) {
+  try {
+    return JSON.parse(value) as ApiEnvelope<T>;
+  } catch {
+    return null;
+  }
 }
 
 function isPdfFile(file: File) {
@@ -328,4 +498,20 @@ function formatFileSize(size: number) {
     return `${(size / 1024 / 1024).toFixed(1)}MB`;
   }
   return `${Math.max(1, Math.round(size / 1024))}KB`;
+}
+
+function getUploadStatusText(phase: UploadPhase) {
+  if (phase === "creating") {
+    return "创建中";
+  }
+  if (phase === "uploaded") {
+    return "已上传";
+  }
+  if (phase === "starting") {
+    return "提交解析中";
+  }
+  if (phase === "submitted") {
+    return "已提交解析";
+  }
+  return "上传中";
 }

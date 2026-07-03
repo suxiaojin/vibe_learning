@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { KnowledgeMapView, type KnowledgeMapNode } from "@/components/ai-study/knowledge-map-view";
 import { ResizableStudyPanels } from "@/components/ai-study/resizable-study-panels";
+import { StudyBuddyDetailControls } from "@/components/ai-study/study-buddy-detail-controls";
 import { requireUser } from "@/lib/auth";
 import {
   formatAiStudyError,
@@ -20,14 +21,6 @@ import {
   listAiStudyProjectNodes
 } from "@/lib/ai-study";
 import { cn } from "@/lib/utils";
-
-const projectStatusLabels = {
-  draft: "待导入",
-  processing: "生成中",
-  ready: "可学习",
-  failed: "生成失败",
-  archived: "已归档"
-};
 
 const taskStatusLabels = {
   pending: "等待中",
@@ -78,40 +71,49 @@ export default async function StudyBuddyProjectPage({
   const orderedNodes = flattenTree(tree);
   const selectedNodeId = orderedNodes.find((node) => node.id === query?.node)?.id || orderedNodes[0]?.id || "";
   const selectedIndex = orderedNodes.findIndex((node) => node.id === selectedNodeId);
+  const selectedNode = selectedIndex >= 0 ? orderedNodes[selectedIndex] : null;
+  const selectedNodeRecord = nodes.find((node) => node.id === selectedNodeId) || null;
+  const hasExplicitNode = Boolean(query?.node && query.node === selectedNodeId);
   const previousNode = selectedIndex > 0 ? orderedNodes[selectedIndex - 1] : null;
   const nextNode = selectedIndex >= 0 && selectedIndex < orderedNodes.length - 1 ? orderedNodes[selectedIndex + 1] : null;
   const nodeDetail = selectedNodeId ? await getAiStudyNodeDetail(user.id, selectedNodeId) : null;
   const card = nodeDetail?.card || null;
   const progressPercent = project.knowledgeCount > 0 ? Math.round((project.masteredCount / project.knowledgeCount) * 100) : 0;
   const generation = getGenerationProgress(project);
+  const headerProgress = project.status === "processing" ? generation.percent : progressPercent;
+  const headerProgressText = project.status === "processing"
+    ? `${generation.percent}% ${generation.text}`
+    : `${project.masteredCount}/${project.knowledgeCount} 已掌握知识点`;
+  const selectedNodeTitle = nodeDetail?.title || selectedNode?.title || project.title;
+  const selectedNodeSummary = nodeDetail?.summary || selectedNodeRecord?.summary || "";
 
   return (
     <main className="min-h-dvh bg-[#f5f6f8] text-[#111827]">
-      <header className="sticky top-0 z-30 border-b border-[#e7eaef] bg-[#f5f6f8]/95 px-5 py-3 backdrop-blur md:px-7">
-        <div className="flex min-h-11 items-center justify-between gap-4">
+      <header className="sticky top-0 z-30 border-b border-[#e5e7eb] bg-[#f3f4f6] px-4 md:px-5">
+        <div className="flex h-14 items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-3">
-            <Link className="grid size-9 shrink-0 place-items-center rounded-full text-[#111827] transition hover:bg-white" href="/study-buddy" title="返回项目列表">
-              <ArrowLeft size={20} />
+            <Link className="grid size-8 shrink-0 place-items-center rounded-[8px] text-[#111827] transition hover:bg-white" href="/study-buddy" title="返回项目列表">
+              <ArrowLeft size={19} />
             </Link>
-            <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2">
-                <h1 className="truncate text-[18px] font-black tracking-normal text-[#06122b]">{project.title}</h1>
-                <span className="rounded-full bg-white px-2 py-0.5 text-xs font-bold text-[#7a8491]">{projectStatusLabels[project.status]}</span>
+            <div className="flex min-w-0 items-center gap-3">
+              <h1 className="max-w-[42vw] truncate text-[17px] font-semibold tracking-normal text-[#111827] md:max-w-[520px]">{project.title}</h1>
+              <div className="hidden h-[5px] w-40 overflow-hidden rounded-full bg-[#e2e5ea] sm:block">
+                <span className="block h-full rounded-full bg-[#22b535]" style={{ width: `${headerProgress}%` }} />
               </div>
-              <div className="mt-1 flex items-center gap-3">
-                <div className="h-[3px] w-40 overflow-hidden rounded-full bg-[#e4e8ee]">
-                  <span className="block h-full rounded-full bg-[#28b83e]" style={{ width: `${project.status === "processing" ? generation.percent : progressPercent}%` }} />
-                </div>
-                <p className="text-xs font-black text-[#10a825]">
-                  {project.status === "processing" ? `${generation.percent}% ${generation.text}` : `${project.masteredCount}/${project.knowledgeCount} 已掌握知识点`}
-                </p>
-              </div>
+              <p className="shrink-0 text-[13px] font-semibold text-[#10a825]">{headerProgressText}</p>
             </div>
           </div>
-          <div className="hidden items-center gap-2 md:flex">
-            <span className="rounded-full border border-[#e1e6ee] bg-white px-3 py-2 text-sm font-bold text-[#475467]">
-              共 {project.knowledgeCount || nodes.length} 个节点
-            </span>
+          <div className="flex shrink-0 items-center gap-2">
+            <StudyBuddyDetailControls
+              hasExplicitNode={hasExplicitNode}
+              nextNode={nextNode ? { id: nextNode.id, title: nextNode.title } : null}
+              previousNode={previousNode ? { id: previousNode.id, title: previousNode.title } : null}
+              projectId={project.id}
+              selectedNodeId={selectedNodeId}
+              selectedNodeSummary={selectedNodeSummary}
+              selectedNodeTitle={selectedNodeTitle}
+              validNodeIds={orderedNodes.map((node) => node.id)}
+            />
           </div>
         </div>
       </header>

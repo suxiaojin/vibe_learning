@@ -62,6 +62,7 @@ const maxZoom = 1.65;
 const defaultMapZoom = 0.7;
 const defaultMapViewMode: MapViewMode = "mindmap";
 const mapPreferenceKey = "vibe-ai-study-map-preferences:v1";
+const lastNodeStoragePrefix = "vibe-ai-study-last-node:v1:";
 
 export function KnowledgeMapView({ nodes, onCollapseSidebar, projectId, selectedNodeId }: KnowledgeMapViewProps) {
   const router = useRouter();
@@ -304,6 +305,7 @@ export function KnowledgeMapView({ nodes, onCollapseSidebar, projectId, selected
   function scheduleNodeNavigation(nodeId: string) {
     clearNodeClickTimer(nodeClickTimerRef);
     nodeClickTimerRef.current = window.setTimeout(() => {
+      rememberSelectedNode(`${lastNodeStoragePrefix}${projectId}`, nodeId);
       router.push(`/study-buddy/${projectId}?node=${nodeId}`);
     }, 300);
   }
@@ -876,9 +878,8 @@ function OutlineNode({
         ) : (
           <button
             className={cn(
-              "min-w-0 flex-1 truncate text-left text-sm font-black leading-6 text-[#475467] transition hover:text-[#0f8d25] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16a329]",
-              selected ? "text-[#2563ff]" : "",
-              node.depth === 0 ? "text-[17px] text-[#101828]" : ""
+              "min-w-0 flex-1 truncate text-left text-sm font-semibold leading-6 transition hover:text-[#2563ff] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563ff]",
+              selected ? "text-[#2563ff]" : node.depth === 0 ? "text-[17px] text-[#101828]" : "text-[#475467]"
             )}
             onClick={(event) => {
               event.preventDefault();
@@ -1063,6 +1064,14 @@ function clearNodeClickTimer(timerRef: MutableRefObject<number | null>) {
   if (timerRef.current !== null) {
     window.clearTimeout(timerRef.current);
     timerRef.current = null;
+  }
+}
+
+function rememberSelectedNode(storageKey: string, nodeId: string) {
+  try {
+    window.localStorage.setItem(storageKey, nodeId);
+  } catch {
+    // Local navigation memory is best-effort only.
   }
 }
 

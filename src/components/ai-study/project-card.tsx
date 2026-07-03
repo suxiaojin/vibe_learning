@@ -1,13 +1,21 @@
 "use client";
 
-import { type KeyboardEvent, type MouseEvent, useRef, useState } from "react";
+import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Clock3, MoreHorizontal, Pencil, Trash2, X } from "lucide-react";
+import { MoreHorizontal, Pencil, RotateCcw, Trash2, X } from "lucide-react";
+
+type ProjectStatus = "draft" | "processing" | "ready" | "failed" | "archived";
+
+type GenerationProgress = {
+  status?: ProjectStatus;
+  percent?: number;
+  text?: string;
+};
 
 type ProjectCardProps = {
   id: string;
   title: string;
-  status: "draft" | "processing" | "ready" | "failed" | "archived";
+  status: ProjectStatus;
   masteredCount: number;
   knowledgeCount: number;
   sourceCount: number;
@@ -16,6 +24,7 @@ type ProjectCardProps = {
   canManage?: boolean;
   generationPercent?: number;
   generationText?: string;
+  latestFailedRetryCount?: number;
 };
 
 const statusLabels = {
@@ -40,33 +49,135 @@ export function AiStudyProjectCard({
   status,
   masteredCount,
   knowledgeCount,
-  sourceCount,
-  ownerName,
-  learnerText,
   canManage = false,
   generationPercent,
-  generationText
+  generationText,
+  latestFailedRetryCount = 0
 }: ProjectCardProps) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
   const [currentTitle, setCurrentTitle] = useState(title);
   const [draftTitle, setDraftTitle] = useState(title.slice(0, 35));
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [isTitleOverflowing, setIsTitleOverflowing] = useState(false);
   const [error, setError] = useState("");
+  const [displayStatus, setDisplayStatus] = useState(status);
+  const [displayGeneration, setDisplayGeneration] = useState<GenerationProgress>({
+    percent: generationPercent,
+    text: generationText
+  });
+  const terminalRefreshRef = useRef<ProjectStatus | null>(status === "processing" ? null : status);
+
+  useEffect(() => {
+    setDisplayStatus(status);
+    setDisplayGeneration({
+      percent: generationPercent,
+      text: generationText
+    });
+    setIsRetrying(false);
+    terminalRefreshRef.current = status === "processing" ? null : status;
+  }, [generationPercent, generationText, status]);
+
+  useEffect(() => {
+    const titleElement = titleRef.current;
+    if (!titleElement) {
+      return;
+    }
+    const measuredTitleElement = titleElement;
+
+    function updateTitleOverflow() {
+      setIsTitleOverflowing(
+        measuredTitleElement.scrollHeight > measuredTitleElement.clientHeight + 1 ||
+          measuredTitleElement.scrollWidth > measuredTitleElement.clientWidth + 1
+      );
+    }
+
+    updateTitleOverflow();
+    window.addEventListener("resize", updateTitleOverflow);
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateTitleOverflow);
+    resizeObserver?.observe(measuredTitleElement);
+
+    return () => {
+      window.removeEventListener("resize", updateTitleOverflow);
+      resizeObserver?.disconnect();
+    };
+  }, [currentTitle]);
+
+  useEffect(() => {
+    if (status !== "processing") {
+      return;
+    }
+
+    let disposed = false;
+    let timer: number | null = null;
+
+    async function pollProgress() {
+      try {
+        const progress = await fetchAiStudyProjectProgress(id);
+        if (disposed) {
+          return;
+        }
+
+        setDisplayGeneration({
+          percent: progress.percent,
+          text: progress.text
+        });
+
+        if (progress.status) {
+          setDisplayStatus(progress.status);
+        }
+
+        if (progress.status === "ready" || progress.status === "failed") {
+          if (terminalRefreshRef.current !== progress.status) {
+            terminalRefreshRef.current = progress.status;
+            router.refresh();
+          }
+          return;
+        }
+      } catch {
+        // Keep the current card state; the next poll or a manual refresh can recover.
+      }
+
+      if (!disposed) {
+        timer = window.setTimeout(pollProgress, 3000);
+      }
+    }
+
+    void pollProgress();
+
+    return () => {
+      disposed = true;
+      if (timer) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [id, router, status]);
 
   const progressTotal = knowledgeCount || 0;
   const mastered = Math.min(masteredCount || 0, progressTotal);
   const percent = progressTotal > 0 ? Math.round((mastered / progressTotal) * 100) : 0;
-  const isGenerating = status === "processing";
-  const shownGenerationPercent = Math.max(1, Math.min(generationPercent || 8, 99));
+  const isGenerating = displayStatus === "processing";
+  const isFailed = displayStatus === "failed";
+  const canOpenProject = !isGenerating && !isFailed;
+  const isRetryLimitReached = isFailed && latestFailedRetryCount >= 3;
+  const failedDisplayText = isRetryLimitReached ? "无法解析此文档，请删除" : (displayGeneration.text || statusLabels.failed);
+  const shownGenerationPercent = Math.max(1, Math.min(displayGeneration.percent || 8, 99));
 
   function openProject() {
+    if (!canOpenProject) {
+      return;
+    }
     router.push(`/study-buddy/${id}`);
   }
 
   function handleCardClick(event: MouseEvent<HTMLElement>) {
+    if (!canOpenProject) {
+      return;
+    }
     if ((event.target as HTMLElement).closest("[data-card-action]")) {
       return;
     }
@@ -74,6 +185,9 @@ export function AiStudyProjectCard({
   }
 
   function handleCardKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (!canOpenProject) {
+      return;
+    }
     if (event.key !== "Enter" && event.key !== " ") {
       return;
     }
@@ -125,11 +239,7 @@ export function AiStudyProjectCard({
     setIsSaving(true);
     setError("");
     try {
-      const response = await fetch(`/api/ai-study/projects/${id}`, { method: "DELETE" });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
-        throw new Error(payload?.error?.message || `请求失败：HTTP ${response.status}`);
-      }
+      await deleteProjectRequest(id);
       setDeleteOpen(false);
       router.refresh();
     } catch (caught) {
@@ -138,94 +248,173 @@ export function AiStudyProjectCard({
     }
   }
 
+  async function cancelGeneratingProject(event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    if (!canManage || isSaving) {
+      return;
+    }
+
+    setIsSaving(true);
+    setError("");
+    try {
+      await deleteProjectRequest(id);
+      setDisplayStatus("archived");
+      router.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "取消失败，请稍后重试。");
+      setIsSaving(false);
+    }
+  }
+
+  async function retryProject(event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    if (!canManage || isRetrying || isRetryLimitReached) {
+      return;
+    }
+
+    setIsRetrying(true);
+    setError("");
+    try {
+      await postJson(`/api/ai-study/projects/${id}/retry`, {});
+      setDisplayStatus("processing");
+      setDisplayGeneration({
+        percent: displayGeneration.percent && displayGeneration.percent < 100 ? displayGeneration.percent : 8,
+        text: "正在重新生成..."
+      });
+      router.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "重新生成失败，请稍后重试。");
+      setIsRetrying(false);
+    }
+  }
+
   return (
     <>
       <article
-        aria-label={`查看 ${currentTitle}`}
-        className={`group relative min-h-[206px] cursor-pointer overflow-hidden rounded-[22px] border px-5 py-6 shadow-[0_18px_42px_rgba(16,24,40,0.04)] outline-none transition hover:-translate-y-0.5 hover:shadow-[0_20px_48px_rgba(16,24,40,0.08)] focus-visible:ring-4 focus-visible:ring-[#16a329]/20 ${
-        isGenerating
-          ? "border-[#6f786f] bg-[linear-gradient(135deg,#7b8477_0%,#5f625e_55%,#4e504e_100%)] text-white"
-          : "border-[#e5e9ef] bg-white"
-      }`}
+        aria-label={canOpenProject ? `查看 ${currentTitle}` : currentTitle}
+        className={`group relative h-[206px] w-full max-w-[284px] overflow-visible rounded-[24px] border p-5 shadow-[0_2px_30px_rgba(83,108,143,0.04)] outline-none transition focus-visible:ring-4 focus-visible:ring-[#16a329]/20 ${
+          isGenerating
+            ? "cursor-default border-[#6f786f] bg-[linear-gradient(135deg,#7b8477_0%,#5f625e_55%,#4e504e_100%)] text-white"
+            : canOpenProject
+              ? "cursor-pointer border-[#eeeeee] bg-white hover:-translate-y-0.5 hover:shadow-[0_8px_32px_rgba(83,108,143,0.08)]"
+              : "cursor-default border-[#eeeeee] bg-white"
+        }`}
         onClick={handleCardClick}
         onKeyDown={handleCardKeyDown}
-        role="link"
-        tabIndex={0}
+        role={canOpenProject ? "link" : "article"}
+        tabIndex={canOpenProject ? 0 : -1}
       >
         {isGenerating ? (
           <span className="absolute right-4 top-4 rounded-[10px] bg-[#1f2c16]/85 px-2.5 py-1 text-[13px] font-black text-[#d8ff60] shadow-[0_8px_18px_rgba(15,23,42,0.18)]">
             {shownGenerationPercent}%
           </span>
         ) : null}
-        <div className="relative z-10 flex min-h-[158px] flex-col">
-          <div className="flex items-start justify-between gap-4">
-            <h3 className={`line-clamp-2 pr-2 text-[19px] font-extrabold leading-[1.45] tracking-normal ${isGenerating ? "text-white" : "text-[#1d2430]"}`}>
-              {currentTitle}
-            </h3>
-            <img
-              alt=""
-              className={`mt-[52px] h-[60px] w-[43px] shrink-0 rounded-[5px] object-cover shadow-[0_2px_8px_rgba(16,24,40,0.12)] ${isGenerating ? "opacity-95" : ""}`}
-              height={60}
-              src="/ai-study/study-material-thumb.png"
-              width={43}
-            />
+        {isTitleOverflowing ? (
+          <div className="pointer-events-none invisible absolute -top-[52px] left-0 z-50 max-w-[340px] rounded-[4px] bg-[#111827] px-2.5 py-2 text-[12px] font-semibold leading-[1.45] text-white opacity-0 shadow-[0_10px_24px_rgba(15,23,42,0.22)] transition duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+            {currentTitle}
           </div>
+        ) : null}
+        <div className="relative z-10 h-full">
+          <h3 ref={titleRef} className={`line-clamp-2 pr-[74px] text-[19px] font-semibold leading-[1.45] tracking-normal ${isGenerating ? "text-white" : "text-[#1d2430]"}`}>
+            {currentTitle}
+          </h3>
+          <img
+            alt=""
+            className={`absolute bottom-[42px] right-0 h-[58px] w-[43px] rounded-[8px] border border-[#edf0f2] bg-white object-cover shadow-[0_3px_10px_rgba(16,24,40,0.10)] ${isGenerating ? "opacity-95" : ""}`}
+            height={60}
+            src="/ai-study/study-material-thumb.png"
+            width={43}
+          />
 
-          <div className="mt-2">
-            {status === "draft" ? (
-              <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-bold ${statusClasses[status]}`}>
-                {statusLabels[status]}
+          <div className="mt-3 w-[150px]">
+            {displayStatus === "draft" ? (
+              <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-bold ${statusClasses[displayStatus]}`}>
+                {statusLabels[displayStatus]}
               </span>
             ) : null}
             {isGenerating ? (
-              <p className="text-xs font-black text-white/90">
-                {generationText || "搭子加急制作中..."}
+              <p className="truncate text-[12px] font-black leading-4 text-white/90">
+                <AnimatedTrailingDotsText text={displayGeneration.text || "正在解析资料..."} />
               </p>
             ) : null}
-            {status !== "draft" && !isGenerating ? (
-              <p className={`text-xs font-bold ${status === "failed" ? "text-[#c93c3c]" : "text-[#10a825]"}`}>
+            {displayStatus === "failed" ? (
+              <div className="flex h-4 items-center gap-1.5">
+                <p className="min-w-0 truncate text-[12px] font-bold leading-4 text-[#f04438]">
+                  {failedDisplayText}
+                </p>
+                {canManage && !isRetryLimitReached ? (
+                  <div className="group/retry relative inline-flex h-6 items-center" data-card-action>
+                    <button
+                      aria-label="重新生成"
+                      className="grid size-6 place-items-center rounded-full border border-[#bdecc6] bg-white text-[#12a425] transition hover:border-[#12a425] hover:bg-[#effaf1] hover:text-[#0f8f20] disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={isRetrying}
+                      onClick={retryProject}
+                      title="重新生成"
+                      type="button"
+                    >
+                      <RotateCcw className={isRetrying ? "animate-spin" : ""} size={13} />
+                    </button>
+                    <span className="pointer-events-none absolute left-7 top-1/2 -translate-y-1/2 whitespace-nowrap text-[12px] font-bold text-[#12a425] opacity-0 transition-opacity duration-150 group-hover/retry:opacity-100 group-focus-within/retry:opacity-100">
+                      重新生成
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {displayStatus !== "draft" && displayStatus !== "failed" && !isGenerating ? (
+              <p className="truncate text-[12px] font-bold leading-4 text-[#10a825]">
                 {mastered}/{progressTotal} 已掌握知识点
               </p>
             ) : null}
-            <div className={`mt-2 h-[3px] w-[140px] overflow-hidden rounded-full ${isGenerating ? "bg-white/20" : "bg-[#edf0f2]"}`}>
+            <div className={`mt-2 h-[3px] w-full overflow-hidden rounded-full ${isGenerating ? "bg-white/20" : "bg-[#edf0f2]"}`}>
               <span className={`block h-full rounded-full ${isGenerating ? "bg-[#d8ff60]" : "bg-[#20b532]"}`} style={{ width: `${isGenerating ? shownGenerationPercent : percent}%` }} />
             </div>
           </div>
 
-          <div className={`mt-auto flex items-center justify-between gap-3 pt-5 text-[13px] ${isGenerating ? "text-white/72" : "text-[#98a2b3]"}`}>
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="min-w-0 truncate">{ownerName}</span>
-              <span className="shrink-0">{learnerText || `${sourceCount || 1}份资料`}</span>
-            </div>
-            {canManage ? (
-              <div
-                className="group/actions relative z-30 -m-3 cursor-default p-3"
-                data-card-action
-                onClick={(event) => event.stopPropagation()}
-                onKeyDown={(event) => event.stopPropagation()}
-              >
-                <button className="grid size-7 place-items-center rounded-full bg-[#eef1f4] text-[#9aa3ae] transition hover:bg-[#e4e8ee] hover:text-[#667085]" type="button">
-                  <MoreHorizontal size={18} />
-                </button>
-                <div className="invisible absolute bottom-10 right-3 z-40 w-[180px] translate-y-1 rounded-[12px] border border-[#edf0f4] bg-white py-2 opacity-0 shadow-[0_16px_42px_rgba(16,24,40,0.16)] transition group-hover/actions:visible group-hover/actions:translate-y-0 group-hover/actions:opacity-100 group-focus-within/actions:visible group-focus-within/actions:translate-y-0 group-focus-within/actions:opacity-100">
-                  <button className="flex h-11 w-full items-center gap-3 px-4 text-left text-[15px] font-medium text-[#1d2430] hover:bg-[#f7f8fa]" onClick={openRename} type="button">
-                    <Pencil size={17} />
-                    重命名
-                  </button>
-                  <button className="flex h-11 w-full items-center gap-3 px-4 text-left text-[15px] font-medium text-[#1d2430] hover:bg-[#fff4f4]" onClick={() => setDeleteOpen(true)} type="button">
-                    <Trash2 size={17} />
-                    删除项目
-                  </button>
-                </div>
+          {!isGenerating ? (
+            <div className="absolute bottom-0 left-0 right-0 flex h-7 items-center justify-between gap-3 text-[13px] leading-none text-[#98a2b3]">
+              <div className="min-w-0 pr-2">
+                <span className="block truncate">AI生成，注意核实</span>
               </div>
-            ) : null}
-          </div>
+              {canManage ? (
+                <div
+                  className="group/actions relative z-30 cursor-default"
+                  data-card-action
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  <button className="grid size-7 place-items-center rounded-full text-[#b5beca] transition hover:bg-[#f1f4f7] hover:text-[#667085]" type="button">
+                    <MoreHorizontal size={18} />
+                  </button>
+                  <div className="invisible absolute bottom-9 right-0 z-40 w-[180px] translate-y-1 rounded-[12px] border border-[#edf0f4] bg-white py-2 opacity-0 shadow-[0_16px_42px_rgba(16,24,40,0.16)] transition group-hover/actions:visible group-hover/actions:translate-y-0 group-hover/actions:opacity-100 group-focus-within/actions:visible group-focus-within/actions:translate-y-0 group-focus-within/actions:opacity-100">
+                    <button className="flex h-11 w-full items-center gap-3 px-4 text-left text-[15px] font-medium text-[#1d2430] hover:bg-[#f7f8fa]" onClick={openRename} type="button">
+                      <Pencil size={17} />
+                      重命名
+                    </button>
+                    <button className="flex h-11 w-full items-center gap-3 px-4 text-left text-[15px] font-medium text-[#1d2430] hover:bg-[#fff4f4]" onClick={() => setDeleteOpen(true)} type="button">
+                      <Trash2 size={17} />
+                      删除项目
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
         {isGenerating ? (
-          <span className="absolute bottom-5 left-5 inline-flex items-center gap-1 rounded-full border border-white/35 px-3 py-1 text-xs font-bold text-white/90">
-            <Clock3 size={12} />
-            生成中
-          </span>
+          <div className="absolute bottom-5 left-5 right-5 z-20">
+            {canManage ? (
+              <button
+                className="absolute bottom-0 right-0 z-30 h-8 min-w-[56px] rounded-[10px] border border-white/75 px-3 text-[12px] font-black text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                data-card-action
+                disabled={isSaving}
+                onClick={cancelGeneratingProject}
+                type="button"
+              >
+                {isSaving ? "取消中" : "取消"}
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </article>
 
@@ -288,8 +477,16 @@ export function AiStudyProjectCard({
 }
 
 async function patchJson(url: string, body: unknown) {
+  return sendJson("PATCH", url, body);
+}
+
+async function postJson(url: string, body: unknown) {
+  return sendJson("POST", url, body);
+}
+
+async function sendJson(method: "PATCH" | "POST", url: string, body: unknown) {
   const response = await fetch(url, {
-    method: "PATCH",
+    method,
     headers: {
       "Content-Type": "application/json"
     },
@@ -300,4 +497,54 @@ async function patchJson(url: string, body: unknown) {
     return payload;
   }
   throw new Error(payload?.error?.message || `请求失败：HTTP ${response.status}`);
+}
+
+async function deleteProjectRequest(projectId: string) {
+  const response = await fetch(`/api/ai-study/projects/${projectId}`, { method: "DELETE" });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
+    throw new Error(payload?.error?.message || `请求失败：HTTP ${response.status}`);
+  }
+}
+
+async function fetchAiStudyProjectProgress(projectId: string) {
+  const response = await fetch(`/api/ai-study/projects/${projectId}/progress`, {
+    cache: "no-store"
+  });
+  const payload = await response.json().catch(() => null) as {
+    ok?: boolean;
+    data?: { generationProgress?: GenerationProgress };
+    error?: { message?: string };
+  } | null;
+
+  if (response.ok && payload?.ok && payload.data?.generationProgress) {
+    return payload.data.generationProgress;
+  }
+
+  throw new Error(payload?.error?.message || `请求失败：HTTP ${response.status}`);
+}
+
+function AnimatedTrailingDotsText({ text }: { text: string }) {
+  const trimmedText = text.trim();
+  const match = trimmedText.match(/^(.*?)([.。…]{1,3})$/);
+  const baseText = match ? match[1].trimEnd() : trimmedText;
+
+  return (
+    <>
+      <span>{baseText}</span>
+      {match ? (
+        <span className="ml-0.5 inline-flex w-3 justify-between align-baseline" aria-hidden="true">
+          {[0, 1, 2].map((index) => (
+            <span
+              key={index}
+              className="inline-block animate-bounce leading-none"
+              style={{ animationDelay: `${index * 120}ms`, animationDuration: "900ms" }}
+            >
+              .
+            </span>
+          ))}
+        </span>
+      ) : null}
+    </>
+  );
 }

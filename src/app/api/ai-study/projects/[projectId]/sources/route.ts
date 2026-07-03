@@ -27,7 +27,8 @@ export async function POST(request: Request, context: RouteContext) {
       fileName: file.name,
       mimeType: file.type || "application/pdf",
       size: file.size,
-      body
+      body,
+      startParsing: shouldStartParsing(formData)
     });
 
     return apiOk(result, { status: 201 });
@@ -38,6 +39,11 @@ export async function POST(request: Request, context: RouteContext) {
 
 function isUploadFile(value: FormDataEntryValue | null): value is File {
   return Boolean(value && typeof value === "object" && "arrayBuffer" in value && "name" in value && "size" in value);
+}
+
+function shouldStartParsing(formData: FormData) {
+  const value = String(formData.get("startParsing") || "").toLowerCase();
+  return value !== "false" && value !== "0" && value !== "no";
 }
 
 function aiStudyApiError(error: unknown) {

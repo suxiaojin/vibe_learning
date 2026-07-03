@@ -79,13 +79,14 @@ function ProjectSection({
   return (
     <section className="mt-9">
       <h2 className="text-[22px] font-black tracking-normal text-[#101828]">{title}</h2>
-      <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
+      <div className="mt-5 grid grid-cols-1 justify-items-start gap-5 sm:grid-cols-[repeat(auto-fill,minmax(260px,284px))]">
         {projects.length > 0 ? (
           projects.map((project) => {
             const progressTotal = project.knowledgeCount || project._count.nodes || 0;
             const ownerName = "owner" in project ? (project.owner.studentProfile?.nickname || project.owner.username) : "由我创建";
             const learnerText = variant === "public" ? `${Math.max(project._count.sources, 1)}人学习` : `${project._count.sources || 1}份资料`;
             const generation = getGenerationProgress(project);
+            const latestFailedRetryCount = "latestFailedRetryCount" in project ? project.latestFailedRetryCount : 0;
 
             return (
               <AiStudyProjectCard
@@ -95,6 +96,7 @@ function ProjectSection({
                 generationText={generation.text}
                 id={project.id}
                 knowledgeCount={progressTotal}
+                latestFailedRetryCount={latestFailedRetryCount}
                 learnerText={learnerText}
                 masteredCount={project.masteredCount || 0}
                 ownerName={ownerName}
@@ -105,7 +107,7 @@ function ProjectSection({
             );
           })
         ) : (
-          <div className="flex min-h-[150px] items-center rounded-[22px] border border-dashed border-[#dfe5ec] bg-[#fbfcfd] px-6 text-sm font-medium text-[#98a2b3]">
+          <div className="flex min-h-[150px] w-full max-w-[620px] items-center rounded-[22px] border border-dashed border-[#dfe5ec] bg-[#fbfcfd] px-6 text-sm font-medium text-[#98a2b3] sm:col-span-full">
             {emptyText}
           </div>
         )}
