@@ -5,6 +5,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env.docker
+    volumes:
+      - ./config:/app/config:ro
     extra_hosts:
       - host.docker.internal:host-gateway
     ports:
@@ -20,6 +22,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env.docker
+    volumes:
+      - ./config:/app/config:ro
     extra_hosts:
       - host.docker.internal:host-gateway
     command:
@@ -33,6 +37,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env.docker
+    volumes:
+      - ./config:/app/config:ro
     extra_hosts:
       - host.docker.internal:host-gateway
     command:

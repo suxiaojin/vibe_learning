@@ -16,8 +16,8 @@ import { askQwen, type ChatMessage } from "@/lib/qwen";
 import { prisma } from "@/lib/prisma";
 import { downloadAiStudyObject } from "@/lib/ai-study-storage";
 import { refreshAiStudyProgressCache, writeAiStudyTaskProgressCache } from "@/lib/ai-study-progress-cache";
+import { getAiStudyPromptConfig, type AiStudyPromptConfig } from "@/lib/ai-study-prompts";
 
-const promptVersion = "ai-study-v2-four-level-map-2026-07-01";
 const outlineTimeoutMs = Number(process.env.AI_STUDY_OUTLINE_TIMEOUT_MS || 120_000);
 const cardTimeoutMs = Number(process.env.AI_STUDY_CARD_TIMEOUT_MS || 120_000);
 const maxNodesPerProject = Number(process.env.AI_STUDY_MAX_NODES_PER_PROJECT || 60);
@@ -321,7 +321,9 @@ async function generateOutline(task: AiStudyGenerationTask) {
 
   await updateAiStudyTaskStage(task, "generating_outline");
 
-  const responseText = await askQwen(buildOutlineMessages(project.title, project.sourceChunks), {
+  const promptConfig = await getAiStudyPromptConfig();
+  const promptVersion = promptConfig.version;
+  const responseText = await askQwen(buildOutlineMessages(project.title, project.sourceChunks, promptConfig), {
     temperature: 0.2,
     timeoutMs: outlineTimeoutMs
   });
@@ -418,6 +420,8 @@ async function generateCards(task: AiStudyGenerationTask) {
   }
 
   const nodes = project.nodes.filter((node) => node.cards.length === 0);
+  const promptConfig = await getAiStudyPromptConfig();
+  const promptVersion = promptConfig.version;
   if (nodes.length === 0) {
     await markAiStudyTaskSucceeded(task.id, { cardCount: 0, promptVersion });
     await prisma.aiStudyProject.update({
@@ -435,7 +439,7 @@ async function generateCards(task: AiStudyGenerationTask) {
     await updateAiStudyTaskStage(task, `generating_card_${index + 1}_of_${nodes.length}`);
 
     const sourceChunks = node.depth === 0 ? project.sourceChunks : getNodeSourceChunks(node, chunksById);
-    const responseText = await askQwen(buildCardMessages(project.title, node, sourceChunks), {
+    const responseText = await askQwen(buildCardMessages(project.title, node, sourceChunks, promptConfig), {
       temperature: 0.2,
       timeoutMs: cardTimeoutMs
     });
@@ -507,93 +511,62 @@ async function updateAiStudyTaskStage(task: AiStudyGenerationTask, stage: string
   });
 }
 
-function buildOutlineMessages(projectTitle: string, chunks: AiStudySourceChunk[]): ChatMessage[] {
+function buildOutlineMessages(
+  projectTitle: string,
+  chunks: AiStudySourceChunk[],
+  promptConfig: AiStudyPromptConfig
+): ChatMessage[] {
+  const sourceChunks = formatChunksForPrompt(chunks, maxOutlineSourceChars);
   return [
     {
       role: "system",
-      content: [
-        "你是面向中国学生的 AI 学习搭子资料解析助手。",
-        "你只能基于用户提供的原文片段生成知识图谱，不允许补充原文外知识。",
-        "目标不是照抄目录，而是把资料重组为学生可点击学习的思维导图。",
-        "最多四层：第1层=项目标题；第2层=具体章节；第3层=章节核心内容；第4层=具体知识点。",
-        "第1层必须只有一个根节点，根节点标题使用项目名称或资料主题。",
-        "如果原文内容不足四层，可以少于四层，但绝不能超过四层。",
-        "节点标题要短，适合展示在思维导图节点里；summary 要说明该节点覆盖什么内容。",
-        "必须输出严格 JSON，不要 Markdown，不要代码块，不要解释 JSON 之外的内容。",
-        "JSON 结构固定为：{\"nodes\":[{\"clientId\":\"n1\",\"parentClientId\":null,\"title\":\"标题\",\"summary\":\"概述\",\"sourceChunkIds\":[\"chunk_id\"]}]}。",
-        "每个节点必须至少引用 1 个真实 sourceChunkIds。最多输出 " + maxNodesPerProject + " 个节点。"
-      ].join("\n")
+      content: promptConfig.render("outline.system", { maxNodesPerProject })
     },
     {
       role: "user",
-      content: [
-        `项目名称：${projectTitle}`,
-        "请将资料拆成适合学习的四层以内知识图谱，父节点用 parentClientId 指向另一个 clientId。",
-        "推荐结构：项目标题 -> 单元/章节 -> 核心主题 -> 具体知识点。",
-        "具体知识点应聚焦可解释、可学习的概念、事件、制度、公式、方法或结论。",
-        "不要生成知识闪卡，不要生成测验题。",
-        "原文片段如下：",
-        formatChunksForPrompt(chunks, maxOutlineSourceChars)
-      ].join("\n\n")
+      content: promptConfig.render("outline.user", { projectTitle, sourceChunks })
     }
   ];
 }
 
-function buildCardMessages(projectTitle: string, node: AiStudyNode, chunks: AiStudySourceChunk[]): ChatMessage[] {
+function buildCardMessages(
+  projectTitle: string,
+  node: AiStudyNode,
+  chunks: AiStudySourceChunk[],
+  promptConfig: AiStudyPromptConfig
+): ChatMessage[] {
   const level = node.depth + 1;
-  const cardInstruction = getCardInstruction(level);
+  const cardInstruction = getCardInstruction(level, promptConfig);
+  const sourceChunks = formatChunksForPrompt(chunks, maxCardSourceChars);
   return [
     {
       role: "system",
-      content: [
-        "你是面向中国学生的 AI 学习搭子讲解助手。",
-        "你只能基于当前节点绑定的原文片段生成知识卡片，不允许编造来源外内容。",
-        "输出要适合学生直接阅读：清楚、具体、克制，能帮助学生理解资料。",
-        "知识闪卡功能暂不实现，flashcards 必须输出空数组。pitfalls 和 examples 也输出空数组。",
-        "必须输出严格 JSON，不要 Markdown，不要代码块，不要解释 JSON 之外的内容。",
-        "JSON 结构固定为：{\"overview\":\"...\",\"explanation\":\"...\",\"keyPoints\":[\"...\"],\"pitfalls\":[],\"examples\":[],\"flashcards\":[]}。"
-      ].join("\n")
+      content: promptConfig.render("card.system")
     },
     {
       role: "user",
-      content: [
-        `项目名称：${projectTitle}`,
-        `当前节点层级：第 ${level} 层`,
-        `当前节点标题：${node.title}`,
-        `当前节点概述：${node.summary}`,
+      content: promptConfig.render("card.user", {
+        projectTitle,
+        level,
+        nodeTitle: node.title,
+        nodeSummary: node.summary,
         cardInstruction,
-        "原文片段如下：",
-        formatChunksForPrompt(chunks, maxCardSourceChars)
-      ].join("\n\n")
+        sourceChunks
+      })
     }
   ];
 }
 
-function getCardInstruction(level: number) {
+function getCardInstruction(level: number, promptConfig: AiStudyPromptConfig) {
   if (level === 1) {
-    return [
-      "请生成项目总览卡片：",
-      "overview 字段写“内容概述”，总结整篇资料的主要内容。",
-      "keyPoints 字段写“你能学到啥”，提炼学习完本资料可以掌握的知识或能力，3-6 条。",
-      "explanation 字段输出空字符串。"
-    ].join("\n");
+    return promptConfig.render("card.instruction.level1");
   }
 
   if (level === 2 || level === 3) {
-    return [
-      "请生成章节/主题卡片：",
-      "overview 字段写“内容概述”，总结本章或本节内容。",
-      "keyPoints 字段写“本节知识点”，提炼本章或本节最重要的知识点，3-8 条。",
-      "explanation 字段输出空字符串。"
-    ].join("\n");
+    return promptConfig.render("card.instruction.level2_3");
   }
 
-  return [
-    "请生成具体知识点卡片：",
-    "overview 字段写“内容概述”，总结这个知识点在原文中的含义和范围。",
-    "explanation 字段写“AI详解”，用更容易理解的语言解释该知识点的背景、因果、关键词和考试记忆线索。",
-    "keyPoints 字段可以输出 0-3 条关键词，但前端本阶段不会展示。"
-  ].join("\n");
+  return promptConfig.render("card.instruction.level4");
 }
 
 function prepareOutlineNodes(nodes: z.infer<typeof outlineNodeSchema>[], chunks: AiStudySourceChunk[], projectTitle: string): OutlineNode[] {

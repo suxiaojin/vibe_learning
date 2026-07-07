@@ -4,6 +4,7 @@ export type ChatMessage = {
 };
 
 type AskQwenOptions = {
+  signal?: AbortSignal;
   temperature?: number;
   timeoutMs?: number;
 };
@@ -14,8 +15,16 @@ export async function askQwen(messages: ChatMessage[], options: AskQwenOptions =
     throw new Error("QWEN_API_BASE_URL is not configured.");
   }
 
-  const controller = options.timeoutMs ? new AbortController() : null;
-  const timeout = controller ? setTimeout(() => controller.abort(), options.timeoutMs) : null;
+  const controller = options.timeoutMs || options.signal ? new AbortController() : null;
+  const abortFromExternalSignal = () => controller?.abort(options.signal?.reason);
+  if (controller && options.signal) {
+    if (options.signal.aborted) {
+      controller.abort(options.signal.reason);
+    } else {
+      options.signal.addEventListener("abort", abortFromExternalSignal, { once: true });
+    }
+  }
+  const timeout = controller && options.timeoutMs ? setTimeout(() => controller.abort(), options.timeoutMs) : null;
 
   let response: Response;
   try {
@@ -38,6 +47,7 @@ export async function askQwen(messages: ChatMessage[], options: AskQwenOptions =
     }
     throw error;
   } finally {
+    options.signal?.removeEventListener("abort", abortFromExternalSignal);
     if (timeout) {
       clearTimeout(timeout);
     }
@@ -63,8 +73,16 @@ export async function streamQwen(
     throw new Error("QWEN_API_BASE_URL is not configured.");
   }
 
-  const controller = options.timeoutMs ? new AbortController() : null;
-  const timeout = controller ? setTimeout(() => controller.abort(), options.timeoutMs) : null;
+  const controller = options.timeoutMs || options.signal ? new AbortController() : null;
+  const abortFromExternalSignal = () => controller?.abort(options.signal?.reason);
+  if (controller && options.signal) {
+    if (options.signal.aborted) {
+      controller.abort(options.signal.reason);
+    } else {
+      options.signal.addEventListener("abort", abortFromExternalSignal, { once: true });
+    }
+  }
+  const timeout = controller && options.timeoutMs ? setTimeout(() => controller.abort(), options.timeoutMs) : null;
 
   let response: Response;
   try {
@@ -88,6 +106,7 @@ export async function streamQwen(
     }
     throw error;
   } finally {
+    options.signal?.removeEventListener("abort", abortFromExternalSignal);
     if (timeout) {
       clearTimeout(timeout);
     }

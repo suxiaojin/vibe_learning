@@ -337,6 +337,7 @@ model User {
   userEventNotificationsActed UserEventNotification[] @relation("UserEventNotificationActor")
   aiStudyProjects AiStudyProject[] @relation("AiStudyProjectOwner")
   aiStudyProgress AiStudyProgress[]
+  aiStudyChatMessages AiStudyChatMessage[]
 
   @@index([role, status, createdAt])
   @@index([role, status, lastActiveAt])
@@ -1231,6 +1232,7 @@ model AiStudyProject {
   cards          AiStudyCard[]
   progress       AiStudyProgress[]
   tasks          AiStudyGenerationTask[]
+  chatMessages   AiStudyChatMessage[]
 
   @@index([ownerId, status, updatedAt])
   @@index([ownerId, deletedAt, createdAt])
@@ -1296,6 +1298,7 @@ model AiStudyNode {
   children       AiStudyNode[]         @relation("AiStudyNodeChildren")
   cards          AiStudyCard[]
   progress       AiStudyProgress[]
+  chatMessages   AiStudyChatMessage[]
 
   @@index([projectId, parentId, sortOrder])
   @@index([projectId, status])
@@ -1343,6 +1346,23 @@ model AiStudyProgress {
   @@index([projectId, status])
   @@index([userId, projectId])
   @@map("ai_study_progress")
+}
+
+model AiStudyChatMessage {
+  id        String         @id @default(cuid())
+  userId    String         @map("user_id")
+  projectId String         @map("project_id")
+  nodeId    String?        @map("node_id")
+  role      String
+  content   String         @db.Text
+  createdAt DateTime       @default(now()) @map("created_at")
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   AiStudyProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  node      AiStudyNode?   @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+
+  @@index([userId, projectId, nodeId, createdAt], map: "ai_study_chat_messages_user_project_node_created_idx")
+  @@index([projectId, createdAt], map: "ai_study_chat_messages_project_created_idx")
+  @@map("ai_study_chat_messages")
 }
 
 model AiStudyGenerationTask {
