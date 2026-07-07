@@ -6,9 +6,8 @@ import {
   BookOpen,
   ChevronLeft,
   ChevronRight,
-  ListTree,
+  Footprints,
   Sparkles,
-  Target
 } from "lucide-react";
 import { KnowledgeMapView, type KnowledgeMapNode } from "@/components/ai-study/knowledge-map-view";
 import { ResizableStudyPanels } from "@/components/ai-study/resizable-study-panels";
@@ -78,12 +77,6 @@ export default async function StudyBuddyProjectPage({
   const nextNode = selectedIndex >= 0 && selectedIndex < orderedNodes.length - 1 ? orderedNodes[selectedIndex + 1] : null;
   const nodeDetail = selectedNodeId ? await getAiStudyNodeDetail(user.id, selectedNodeId) : null;
   const card = nodeDetail?.card || null;
-  const progressPercent = project.knowledgeCount > 0 ? Math.round((project.masteredCount / project.knowledgeCount) * 100) : 0;
-  const generation = getGenerationProgress(project);
-  const headerProgress = project.status === "processing" ? generation.percent : progressPercent;
-  const headerProgressText = project.status === "processing"
-    ? `${generation.percent}% ${generation.text}`
-    : `${project.masteredCount}/${project.knowledgeCount} 已掌握知识点`;
   const selectedNodeTitle = nodeDetail?.title || selectedNode?.title || project.title;
   const selectedNodeSummary = nodeDetail?.summary || selectedNodeRecord?.summary || "";
 
@@ -97,10 +90,6 @@ export default async function StudyBuddyProjectPage({
             </Link>
             <div className="flex min-w-0 items-center gap-3">
               <h1 className="max-w-[42vw] truncate text-[17px] font-semibold tracking-normal text-[#111827] md:max-w-[520px]">{project.title}</h1>
-              <div className="hidden h-[5px] w-40 overflow-hidden rounded-full bg-[#e2e5ea] sm:block">
-                <span className="block h-full rounded-full bg-[#22b535]" style={{ width: `${headerProgress}%` }} />
-              </div>
-              <p className="shrink-0 text-[13px] font-semibold text-[#10a825]">{headerProgressText}</p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -156,28 +145,30 @@ export default async function StudyBuddyProjectPage({
 
           {nodeDetail ? (
             <article className="max-h-[calc(100dvh-168px)] overflow-y-auto px-6 py-6 md:px-8">
-              <div className={cn("rounded-[14px] px-5 py-5", nodeDetail.depth === 0 ? "bg-[linear-gradient(110deg,#f6ffe9_0%,#f7fff5_44%,#effbff_100%)]" : "bg-white")}>
-                <h3 className="text-[22px] font-black leading-tight tracking-normal text-[#07152f] md:text-[24px]">{nodeDetail.title}</h3>
-              </div>
+              {nodeDetail.depth === 0 ? (
+                <div className="rounded-[14px] bg-[linear-gradient(110deg,#f6ffe9_0%,#f7fff5_44%,#effbff_100%)] px-5 py-5">
+                  <h3 className="text-[22px] font-black leading-tight tracking-normal text-[#07152f] md:text-[24px]">{nodeDetail.title}</h3>
+                </div>
+              ) : (
+                <NodeTitleBlock progressStatus={nodeDetail.progress?.status} title={nodeDetail.title} />
+              )}
 
               {card ? (
                 <div className="mt-6 space-y-7">
-                  <CardSection icon={<BookOpen size={18} />} title="内容概述">
+                  <CardSection title="内容概述">
                     <p className="text-[16px] leading-8 text-[#1f2937]">{card.overview}</p>
                   </CardSection>
 
                   {nodeDetail.depth === 0 ? (
-                    <CardList icon={<Target size={18} />} items={stringArray(card.keyPoints)} title="你能学到啥" />
+                    <CardList items={stringArray(card.keyPoints)} title="你能学到啥" />
                   ) : null}
 
                   {nodeDetail.depth === 1 || nodeDetail.depth === 2 ? (
-                    <CardList icon={<ListTree size={18} />} items={stringArray(card.keyPoints)} title="本节知识点" />
+                    <CardList items={stringArray(card.keyPoints)} title="本节知识点" />
                   ) : null}
 
                   {nodeDetail.depth >= 3 ? (
-                    <CardSection icon={<Sparkles size={18} />} title="AI详解">
-                      <p className="whitespace-pre-wrap text-[16px] leading-8 text-[#1f2937]">{card.explanation || card.overview}</p>
-                    </CardSection>
+                    <KnowledgePointDetail explanation={card.explanation || card.overview} />
                   ) : null}
                 </div>
               ) : (
@@ -248,34 +239,74 @@ function GenerationPanel({
   );
 }
 
-function CardSection({ children, icon, title }: { children: ReactNode; icon: ReactNode; title: string }) {
+function NodeTitleBlock({ progressStatus, title }: { progressStatus?: string; title: string }) {
+  const status = getNodeProgressStatus(progressStatus);
+  return (
+    <div>
+      <h3 className="text-[22px] font-black leading-tight tracking-normal text-[#07152f] md:text-[24px]">{title}</h3>
+      <div className={cn("mt-2 flex items-center gap-1.5 text-[13px] font-medium", status.className)}>
+        <Footprints size={15} strokeWidth={2} />
+        <span>{status.label}</span>
+      </div>
+    </div>
+  );
+}
+
+function CardSection({ children, title }: { children: ReactNode; title: string }) {
   return (
     <section>
-      <div className="flex items-center gap-2">
-        <span className="text-[#16a329]">{icon}</span>
-        <h4 className="text-[19px] font-black text-[#101828]">{title}</h4>
-      </div>
+      <h4 className="text-[19px] font-semibold text-[#101828]">{title}</h4>
       <div className="mt-4">{children}</div>
     </section>
   );
 }
 
-function CardList({ icon, items, title }: { icon: ReactNode; items: string[]; title: string }) {
+function CardList({ items, title }: { items: string[]; title: string }) {
   if (items.length === 0) {
     return null;
   }
   return (
-    <CardSection icon={icon} title={title}>
+    <CardSection title={title}>
       <ul className="space-y-3">
         {items.map((item, index) => (
           <li key={`${item}-${index}`} className="flex gap-3 text-[16px] leading-7 text-[#1f2937]">
-            <span className="mt-3 size-1.5 shrink-0 rounded-full bg-[#98a2b3]" />
+            <span className="mt-[11px] h-0 w-0 shrink-0 border-y-[4px] border-l-[6px] border-y-transparent border-l-[#98a2b3]" />
             <span>{item}</span>
           </li>
         ))}
       </ul>
     </CardSection>
   );
+}
+
+function KnowledgePointDetail({ explanation }: { explanation: string }) {
+  return (
+    <section>
+      <div className="flex items-center gap-8">
+        <h4 className="relative pb-2 text-[19px] font-black text-[#101828] after:absolute after:bottom-0 after:left-0 after:h-[3px] after:w-8 after:rounded-full after:bg-[#101828]">
+          AI详解
+        </h4>
+        <div className="flex items-center gap-1.5 pb-2 text-[18px] font-black text-[#9aa3af]">
+          <span>知识闪卡</span>
+          <span className="rounded-[3px] bg-[#eef1f5] px-1 text-[9px] font-black uppercase leading-4 text-[#98a2b3]">beta</span>
+        </div>
+      </div>
+      <p className="mt-4 whitespace-pre-wrap text-[16px] leading-8 text-[#1f2937]">{explanation}</p>
+    </section>
+  );
+}
+
+function getNodeProgressStatus(status?: string) {
+  if (status === "mastered") {
+    return { className: "text-[#16a329]", label: "已掌握" };
+  }
+  if (status === "learning") {
+    return { className: "text-[#2563ff]", label: "学习中" };
+  }
+  if (status === "review_needed") {
+    return { className: "text-[#f27420]", label: "待复习" };
+  }
+  return { className: "text-[#8a95a3]", label: "待学习" };
 }
 
 function buildNodeTree(nodes: NodeListItem[]) {

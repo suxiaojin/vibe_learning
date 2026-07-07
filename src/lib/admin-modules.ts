@@ -20,6 +20,7 @@ const defaultAdminModules: AdminModuleNavItem[] = [
   { key: "question-banks", label: "题库管理", href: "/admin/question-banks", icon: "database", status: "published", sortOrder: 5, builtIn: true },
   { key: "students", label: "学生管理", href: "/admin/students", icon: "users", status: "published", sortOrder: 6, builtIn: true },
   { key: "notifications", label: "通知管理", href: "/admin/notifications", icon: "bell", status: "published", sortOrder: 7, builtIn: true },
+  { key: "ai-study-projects", label: "项目管理", href: "/admin/ai-study-projects", icon: "project", status: "published", sortOrder: 8, builtIn: true },
   { key: "settings", label: "系统设置", href: "/admin/settings", icon: "settings", status: "published", sortOrder: 99, builtIn: true }
 ];
 

@@ -77,7 +77,7 @@ export function ResizableStudyPanels({ left, children }: ResizableStudyPanelsPro
   return (
     <section
       ref={containerRef}
-      className={`mx-auto grid max-w-[1780px] grid-cols-1 gap-4 px-5 py-4 md:px-7 ${
+      className={`grid w-full grid-cols-1 gap-4 px-4 py-4 md:px-5 xl:px-0 ${
         isSidebarCollapsed
           ? "xl:grid-cols-[48px_minmax(420px,1fr)] xl:gap-3"
           : "xl:grid-cols-[var(--study-left)_12px_minmax(420px,1fr)] xl:gap-0"

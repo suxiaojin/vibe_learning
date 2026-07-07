@@ -22,6 +22,7 @@ type ProjectCardProps = {
   ownerName: string;
   learnerText: string;
   canManage?: boolean;
+  contentOverview?: string;
   generationPercent?: number;
   generationText?: string;
   latestFailedRetryCount?: number;
@@ -47,8 +48,7 @@ export function AiStudyProjectCard({
   id,
   title,
   status,
-  masteredCount,
-  knowledgeCount,
+  contentOverview = "",
   canManage = false,
   generationPercent,
   generationText,
@@ -157,15 +157,13 @@ export function AiStudyProjectCard({
     };
   }, [id, router, status]);
 
-  const progressTotal = knowledgeCount || 0;
-  const mastered = Math.min(masteredCount || 0, progressTotal);
-  const percent = progressTotal > 0 ? Math.round((mastered / progressTotal) * 100) : 0;
   const isGenerating = displayStatus === "processing";
   const isFailed = displayStatus === "failed";
   const canOpenProject = !isGenerating && !isFailed;
   const isRetryLimitReached = isFailed && latestFailedRetryCount >= 3;
   const failedDisplayText = isRetryLimitReached ? "无法解析此文档，请删除" : (displayGeneration.text || statusLabels.failed);
   const shownGenerationPercent = Math.max(1, Math.min(displayGeneration.percent || 8, 99));
+  const overviewText = contentOverview.trim() || "暂无内容概述";
 
   function openProject() {
     if (!canOpenProject) {
@@ -326,7 +324,7 @@ export function AiStudyProjectCard({
             width={43}
           />
 
-          <div className="mt-3 w-[150px]">
+          <div className="mt-3 w-[172px]">
             {displayStatus === "draft" ? (
               <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-bold ${statusClasses[displayStatus]}`}>
                 {statusLabels[displayStatus]}
@@ -362,13 +360,15 @@ export function AiStudyProjectCard({
               </div>
             ) : null}
             {displayStatus !== "draft" && displayStatus !== "failed" && !isGenerating ? (
-              <p className="truncate text-[12px] font-bold leading-4 text-[#10a825]">
-                {mastered}/{progressTotal} 已掌握知识点
+              <p className="line-clamp-2 text-[13px] font-medium leading-[20px] text-[#667085] transition-all duration-150 group-hover:line-clamp-4">
+                {overviewText}
               </p>
             ) : null}
-            <div className={`mt-2 h-[3px] w-full overflow-hidden rounded-full ${isGenerating ? "bg-white/20" : "bg-[#edf0f2]"}`}>
-              <span className={`block h-full rounded-full ${isGenerating ? "bg-[#d8ff60]" : "bg-[#20b532]"}`} style={{ width: `${isGenerating ? shownGenerationPercent : percent}%` }} />
-            </div>
+            {isGenerating ? (
+              <div className="mt-2 h-[3px] w-full overflow-hidden rounded-full bg-white/20">
+                <span className="block h-full rounded-full bg-[#d8ff60]" style={{ width: `${shownGenerationPercent}%` }} />
+              </div>
+            ) : null}
           </div>
 
           {!isGenerating ? (

@@ -1,6 +1,6 @@
 import { AlertTriangle } from "lucide-react";
-import { AiStudyProjectCard } from "@/components/ai-study/project-card";
 import { StudyMaterialImporter } from "@/components/ai-study/pdf-upload-form";
+import { AiStudyProjectSection, type AiStudyProjectSectionItem } from "@/components/ai-study/project-section";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { requireUser } from "@/lib/auth";
 import { listAiStudyProjects, listPublicAiStudyProjects } from "@/lib/ai-study";
@@ -23,7 +23,7 @@ export default async function StudyBuddyPage({
   const user = await requireUser();
   const params = await searchParams;
   const projects = await listAiStudyProjects(user.id);
-  const publicProjects = await listPublicAiStudyProjects({ take: 12 });
+  const publicProjects = await listPublicAiStudyProjects();
   const error = params?.error ? errorMessages[params.error] || "操作失败，请稍后重试。" : "";
 
   return (
@@ -76,44 +76,38 @@ function ProjectSection({
   emptyText: string;
   variant?: "personal" | "public";
 }) {
-  return (
-    <section className="mt-9">
-      <h2 className="text-[22px] font-black tracking-normal text-[#101828]">{title}</h2>
-      <div className="mt-5 grid grid-cols-1 justify-items-start gap-5 sm:grid-cols-[repeat(auto-fill,minmax(260px,284px))]">
-        {projects.length > 0 ? (
-          projects.map((project) => {
-            const progressTotal = project.knowledgeCount || project._count.nodes || 0;
-            const ownerName = "owner" in project ? (project.owner.studentProfile?.nickname || project.owner.username) : "由我创建";
-            const learnerText = variant === "public" ? `${Math.max(project._count.sources, 1)}人学习` : `${project._count.sources || 1}份资料`;
-            const generation = getGenerationProgress(project);
-            const latestFailedRetryCount = "latestFailedRetryCount" in project ? project.latestFailedRetryCount : 0;
+  const cardProjects = projects.map((project) => {
+    const progressTotal = project.knowledgeCount || project._count.nodes || 0;
+    const ownerName = "owner" in project ? (project.owner.studentProfile?.nickname || project.owner.username) : "由我创建";
+    const learnerText = variant === "public" ? `${Math.max(project._count.sources, 1)}人学习` : `${project._count.sources || 1}份资料`;
+    const generation = getGenerationProgress(project);
+    const latestFailedRetryCount = "latestFailedRetryCount" in project ? project.latestFailedRetryCount : 0;
 
-            return (
-              <AiStudyProjectCard
-                key={project.id}
-                canManage={variant === "personal"}
-                generationPercent={generation.percent}
-                generationText={generation.text}
-                id={project.id}
-                knowledgeCount={progressTotal}
-                latestFailedRetryCount={latestFailedRetryCount}
-                learnerText={learnerText}
-                masteredCount={project.masteredCount || 0}
-                ownerName={ownerName}
-                sourceCount={project._count.sources}
-                status={project.status}
-                title={project.title}
-              />
-            );
-          })
-        ) : (
-          <div className="flex min-h-[150px] w-full max-w-[620px] items-center rounded-[22px] border border-dashed border-[#dfe5ec] bg-[#fbfcfd] px-6 text-sm font-medium text-[#98a2b3] sm:col-span-full">
-            {emptyText}
-          </div>
-        )}
-      </div>
-    </section>
+    return {
+      canManage: variant === "personal",
+      contentOverview: getProjectContentOverview(project),
+      generationPercent: generation.percent,
+      generationText: generation.text,
+      id: project.id,
+      knowledgeCount: progressTotal,
+      latestFailedRetryCount,
+      learnerText,
+      masteredCount: project.masteredCount || 0,
+      ownerName,
+      sourceCount: project._count.sources,
+      status: project.status,
+      title: project.title
+    } satisfies AiStudyProjectSectionItem;
+  });
+
+  return (
+    <AiStudyProjectSection emptyText={emptyText} projects={cardProjects} title={title} />
   );
+}
+
+function getProjectContentOverview(project: StudyProject) {
+  const rootNode = project.nodes[0] || null;
+  return rootNode?.cards[0]?.overview || rootNode?.summary || project.description || "";
 }
 
 function getGenerationProgress(project: StudyProject) {

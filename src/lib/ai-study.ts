@@ -84,6 +84,21 @@ export async function listAiStudyProjects(ownerId: string, input: unknown = {}) 
     },
     orderBy: [{ createdAt: "desc" }],
     include: {
+      nodes: {
+        where: { depth: 0 },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        take: 1,
+        select: {
+          summary: true,
+          cards: {
+            orderBy: { createdAt: "asc" },
+            take: 1,
+            select: {
+              overview: true
+            }
+          }
+        }
+      },
       _count: {
         select: {
           sources: true,
@@ -126,14 +141,31 @@ export async function listAiStudyProjects(ownerId: string, input: unknown = {}) 
 }
 
 export async function listPublicAiStudyProjects(input: { take?: number } = {}) {
+  const take = typeof input.take === "number" ? Math.max(1, Math.min(input.take, 200)) : undefined;
   const projects = await prisma.aiStudyProject.findMany({
     where: {
       visibility: "public",
+      status: "ready",
       deletedAt: null
     },
     orderBy: [{ createdAt: "desc" }],
-    take: Math.max(1, Math.min(input.take || 12, 24)),
+    ...(take ? { take } : {}),
     include: {
+      nodes: {
+        where: { depth: 0 },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        take: 1,
+        select: {
+          summary: true,
+          cards: {
+            orderBy: { createdAt: "asc" },
+            take: 1,
+            select: {
+              overview: true
+            }
+          }
+        }
+      },
       owner: {
         select: {
           username: true,
@@ -290,16 +322,11 @@ export async function getAiStudyProject(ownerId: string, projectId: string) {
   return projectWithProgress;
 }
 
-export async function softDeleteAiStudyProject(ownerId: string, projectId: string) {
-  const result = await prisma.aiStudyProject.updateMany({
+export async function deleteAiStudyProject(ownerId: string, projectId: string) {
+  const result = await prisma.aiStudyProject.deleteMany({
     where: {
       id: projectId,
-      ownerId,
-      deletedAt: null
-    },
-    data: {
-      status: "archived",
-      deletedAt: new Date()
+      ownerId
     }
   });
 

@@ -2,7 +2,7 @@ import { apiError, apiOk } from "@/lib/api-response";
 import {
   formatAiStudyError,
   getAiStudyProject,
-  softDeleteAiStudyProject,
+  deleteAiStudyProject,
   updateAiStudyProject
 } from "@/lib/ai-study";
 import { getStudentApiUser } from "@/lib/student-api";
@@ -36,7 +36,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
   try {
     const { projectId } = await context.params;
-    const result = await softDeleteAiStudyProject(user.id, projectId);
+    const result = await deleteAiStudyProject(user.id, projectId);
     return apiOk(result);
   } catch (error) {
     return aiStudyApiError(error);

@@ -25,6 +25,7 @@ const iconMap = {
   dashboard: LayoutDashboard,
   graduation: GraduationCap,
   map: MapPinned,
+  project: BookOpenCheck,
   settings: Settings,
   users: UsersRound
 };
