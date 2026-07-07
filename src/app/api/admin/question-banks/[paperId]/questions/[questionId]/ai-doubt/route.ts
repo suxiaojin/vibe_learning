@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { askQwen, type ChatMessage } from "@/lib/qwen";
 
@@ -15,7 +15,7 @@ type RouteContext = {
 };
 
 async function requireAdminJson() {
-  const user = await getCurrentUser();
+  const user = await getCurrentAdmin();
   return user?.role === "admin";
 }
 

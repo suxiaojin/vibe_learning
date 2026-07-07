@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+﻿import { NextRequest, NextResponse } from "next/server";
+import { getCurrentAdmin } from "@/lib/auth";
 import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 import type { ImportQuestionType } from "@/lib/question-paper-import";
 import { prisma } from "@/lib/prisma";
@@ -116,7 +116,7 @@ function buildReferenceSections(courses: CourseRow[]) {
 }
 
 async function requireAdminJson() {
-  const user = await getCurrentUser();
+  const user = await getCurrentAdmin();
   return user?.role === "admin";
 }
 

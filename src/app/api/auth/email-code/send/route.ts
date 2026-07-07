@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     where: {
       OR: [{ username: email }, { email }]
     },
-    select: { id: true, status: true }
+    select: { id: true, role: true, status: true }
   });
 
   if (purpose === emailVerificationPurposeRegister && existingUser) {
@@ -53,6 +53,9 @@ export async function POST(request: Request) {
   }
   if (purpose === emailVerificationPurposeLogin && existingUser?.status === "disabled") {
     return errorResponse("账号已被禁用，请联系管理员。", 403, "ACCOUNT_DISABLED");
+  }
+  if (purpose === emailVerificationPurposeLogin && existingUser?.role !== "student") {
+    return errorResponse("管理员账号请使用后台登录入口。", 403, "ADMIN_LOGIN_REQUIRED");
   }
 
   const now = new Date();

@@ -5,7 +5,9 @@ import type { UserRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { recordDailyActiveDiamondBonus } from "@/lib/rewards";
 
-const cookieName = "vl_session";
+const studentCookieName = "vl_session";
+const adminCookieName = "vl_admin_session";
+const sessionMaxAgeSeconds = 60 * 60 * 24 * 14;
 const activityUpdateIntervalMs = 60 * 1000;
 
 function getSecret() {
@@ -16,7 +18,7 @@ function getSecret() {
   return new TextEncoder().encode(secret);
 }
 
-export async function createSession(user: { id: string; username: string; role: UserRole }) {
+async function createSessionCookie(user: { id: string; username: string; role: UserRole }, cookieName: string) {
   const token = await new SignJWT({
     sub: user.id,
     username: user.username,
@@ -33,13 +35,32 @@ export async function createSession(user: { id: string; username: string; role: 
     sameSite: "lax",
     secure: process.env.COOKIE_SECURE === "true",
     path: "/",
-    maxAge: 60 * 60 * 24 * 14
+    maxAge: sessionMaxAgeSeconds
   });
+}
+
+export async function createSession(user: { id: string; username: string; role: UserRole }) {
+  if (user.role !== "student") {
+    throw new Error("createSession only supports student users.");
+  }
+  await createSessionCookie(user, studentCookieName);
+}
+
+export async function createAdminSession(user: { id: string; username: string; role: UserRole }) {
+  if (user.role !== "admin") {
+    throw new Error("createAdminSession only supports admin users.");
+  }
+  await createSessionCookie(user, adminCookieName);
 }
 
 export async function clearSession() {
   const cookieStore = await cookies();
-  cookieStore.delete(cookieName);
+  cookieStore.delete(studentCookieName);
+}
+
+export async function clearAdminSession() {
+  const cookieStore = await cookies();
+  cookieStore.delete(adminCookieName);
 }
 
 async function recordUserActivity(user: { id: string; lastActiveAt: Date | null }) {
@@ -54,7 +75,7 @@ async function recordUserActivity(user: { id: string; lastActiveAt: Date | null 
   });
 }
 
-export async function getCurrentUser() {
+async function getUserFromSession(cookieName: string) {
   const cookieStore = await cookies();
   const token = cookieStore.get(cookieName)?.value;
   if (!token) {
@@ -84,19 +105,31 @@ export async function getCurrentUser() {
       return null;
     }
 
-    if (user?.role === "student") {
-      try {
-        await recordUserActivity(user);
-        await recordDailyActiveDiamondBonus(user.id);
-      } catch (error) {
-        console.error("Failed to record student activity", error);
-      }
-    }
-
     return user;
   } catch {
     return null;
   }
+}
+
+export async function getCurrentUser() {
+  const user = await getUserFromSession(studentCookieName);
+  if (!user || user.role !== "student") {
+    return null;
+  }
+
+  try {
+    await recordUserActivity(user);
+    await recordDailyActiveDiamondBonus(user.id);
+  } catch (error) {
+    console.error("Failed to record student activity", error);
+  }
+
+  return user;
+}
+
+export async function getCurrentAdmin() {
+  const user = await getUserFromSession(adminCookieName);
+  return user?.role === "admin" ? user : null;
 }
 
 export async function requireUser() {
@@ -108,9 +141,9 @@ export async function requireUser() {
 }
 
 export async function requireAdmin() {
-  const user = await requireUser();
-  if (user.role !== "admin") {
-    redirect("/learn");
+  const user = await getCurrentAdmin();
+  if (!user) {
+    redirect("/admin/login");
   }
   return user;
 }

@@ -1,7 +1,7 @@
-import { revalidatePath } from "next/cache";
+﻿import { revalidatePath } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -18,7 +18,7 @@ type PaperCourse = {
 };
 
 async function requireAdminJson() {
-  const user = await getCurrentUser();
+  const user = await getCurrentAdmin();
   return user?.role === "admin";
 }
 

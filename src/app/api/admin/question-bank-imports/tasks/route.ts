@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+﻿import { NextRequest, NextResponse } from "next/server";
+import { getCurrentAdmin } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -12,7 +12,7 @@ function isUploadFile(value: FormDataEntryValue | null): value is File {
 }
 
 async function requireAdminJson() {
-  const user = await getCurrentUser();
+  const user = await getCurrentAdmin();
   return user?.role === "admin";
 }
 

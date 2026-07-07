@@ -32,6 +32,7 @@ const iconMap = {
 
 export function AdminShell({ children, modules }: { children: React.ReactNode; modules: AdminModuleNavItem[] }) {
   const pathname = usePathname();
+  const isAdminLogin = pathname === "/admin/login";
   const isQuestionBankWorkspace = pathname.startsWith("/admin/question-banks");
 
   useEffect(() => {
@@ -50,7 +51,7 @@ export function AdminShell({ children, modules }: { children: React.ReactNode; m
     return () => document.removeEventListener("pointerdown", closeOpenDetails);
   }, []);
 
-  if (isQuestionBankWorkspace) {
+  if (isAdminLogin || isQuestionBankWorkspace) {
     return <>{children}</>;
   }
 
@@ -97,7 +98,7 @@ export function AdminShell({ children, modules }: { children: React.ReactNode; m
             <LifeBuoy size={18} />
             帮助支持
           </Link>
-          <form action="/api/auth/logout" method="post">
+          <form action="/api/auth/admin-logout" method="post">
             <button className="flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm font-bold text-white/75 hover:bg-white/5 hover:text-white" type="submit">
               <LogOut size={18} />
               退出登录

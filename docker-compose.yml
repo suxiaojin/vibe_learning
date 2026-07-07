@@ -5,6 +5,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env.docker
+    environment:
+      APP_SURFACE: student
     volumes:
       - ./config:/app/config:ro
     extra_hosts:
@@ -15,6 +17,26 @@ services:
       - sh
       - -c
       - npx prisma migrate deploy && npx prisma db seed && npm run start
+
+  admin-web:
+    build: .
+    container_name: vibelearning-admin-web
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      APP_SURFACE: admin
+      NEXT_PUBLIC_ADMIN_APP_URL: http://172.18.255.71:3001
+    volumes:
+      - ./config:/app/config:ro
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - 3001:3000
+    command:
+      - sh
+      - -c
+      - npx prisma migrate deploy && npm run start
 
   notification-worker:
     build: .

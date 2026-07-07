@@ -6,6 +6,7 @@ import {
   isValidEmail,
   normalizeEmail
 } from "@/lib/email-verification";
+import type { UserRole } from "@prisma/client";
 import { createSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -65,6 +66,10 @@ export async function POST(request: Request) {
     return errorResponse("账号已被禁用，请联系管理员。", 403, "ACCOUNT_DISABLED");
   }
 
+  if (user.role !== "student") {
+    return errorResponse("管理员账号请使用后台登录入口。", 403, "ADMIN_LOGIN_REQUIRED");
+  }
+
   const now = new Date();
   const verification = await prisma.emailVerificationCode.findFirst({
     where: {
@@ -98,7 +103,7 @@ export async function POST(request: Request) {
     return errorResponse("邮箱验证码不正确。", 400, "EMAIL_CODE_INVALID");
   }
 
-  let loggedInUser: { id: string; username: string; role: typeof user.role } | null = null;
+  let loggedInUser: { id: string; username: string; role: UserRole } | null = null;
   try {
     loggedInUser = await prisma.$transaction(async (tx) => {
       const consumed = await tx.emailVerificationCode.updateMany({
@@ -144,7 +149,7 @@ export async function POST(request: Request) {
     ok: true,
     data: {
       message: "登录成功",
-      redirectTo: loggedInUser.role === "admin" ? "/admin" : "/learn"
+      redirectTo: "/learn"
     }
   });
 }

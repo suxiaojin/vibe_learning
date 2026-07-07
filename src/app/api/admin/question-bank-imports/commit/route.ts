@@ -1,6 +1,6 @@
-import { revalidatePath } from "next/cache";
+﻿import { revalidatePath } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentAdmin } from "@/lib/auth";
 import {
   assertImportQuestionPaperPayload,
   getQuestionPaperImportStats,
@@ -17,7 +17,7 @@ function isOwnerType(value: unknown): value is QuestionBankOwnerType {
 }
 
 async function requireAdminJson() {
-  const user = await getCurrentUser();
+  const user = await getCurrentAdmin();
   return user?.role === "admin";
 }
 
