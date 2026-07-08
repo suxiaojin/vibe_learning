@@ -31,7 +31,7 @@ export async function StudentSidebar({ active }: { active: StudentNavKey }) {
   const footer = await getStudentSidebarAccount();
 
   return (
-    <aside className="hidden border-r border-slate-200/80 bg-white lg:block">
+    <aside className="relative z-50 hidden border-r border-slate-200/80 bg-white lg:block">
       <div className="sticky top-0 flex min-h-dvh flex-col px-5 py-6">
         <div className="mb-8 px-2">
           <p className="text-[28px] font-bold leading-tight text-teal">Vibe Learning</p>
@@ -143,7 +143,7 @@ function MoreMenu({ active }: { active: boolean }) {
         {text.more}
       </button>
 
-      <div className="invisible absolute bottom-0 left-full z-40 w-56 translate-x-2 pl-2 opacity-0 transition duration-150 group-hover:visible group-hover:translate-x-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-x-0 group-focus-within:opacity-100">
+      <div className="invisible absolute bottom-0 left-full z-[80] w-56 translate-x-2 pl-2 opacity-0 transition duration-150 group-hover:visible group-hover:translate-x-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-x-0 group-focus-within:opacity-100">
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white py-2 shadow-[0_8px_28px_rgba(15,23,42,0.16)]">
           <div className="border-b border-slate-200 px-5 py-3">
             <p className="text-sm font-semibold text-slate-700">{text.moreTitle}</p>

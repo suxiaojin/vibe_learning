@@ -443,7 +443,7 @@ async function generateCards(task: AiStudyGenerationTask) {
       temperature: 0.2,
       timeoutMs: cardTimeoutMs
     });
-    const card = parseJsonWithSchema(responseText, cardSchema, `知识卡片 JSON 格式不合法：${node.title}`);
+    const card = parseGeneratedCard(responseText, node);
     generatedCards.push({
       nodeId: node.id,
       overview: card.overview,
@@ -495,6 +495,85 @@ async function generateCards(task: AiStudyGenerationTask) {
   });
 
   await refreshAiStudyProgressCache(project.id);
+}
+
+function parseGeneratedCard(responseText: string, node: AiStudyNode) {
+  try {
+    return parseJsonWithSchema(responseText, cardSchema, `知识卡片 JSON 格式不合法：${node.title}`);
+  } catch {
+    const fallbackCard = buildFallbackCard(responseText, node);
+    return parseJsonWithSchema(JSON.stringify(fallbackCard), cardSchema, `知识卡片兜底内容不合法：${node.title}`);
+  }
+}
+
+function buildFallbackCard(responseText: string, node: AiStudyNode) {
+  const overview = extractCardStringField(responseText, "overview", ["explanation", "keyPoints", "pitfalls", "examples", "flashcards"])
+    || extractCardFallbackText(responseText)
+    || node.summary
+    || node.title;
+  const explanation = extractCardStringField(responseText, "explanation", ["keyPoints", "pitfalls", "examples", "flashcards"])
+    || (node.depth >= 3 ? extractCardFallbackText(responseText) || node.summary : "");
+
+  return {
+    overview: limitCardText(overview, 1200),
+    explanation: limitCardText(explanation, 5000),
+    keyPoints: extractCardArrayItems(responseText, "keyPoints", 10),
+    pitfalls: [],
+    examples: [],
+    flashcards: []
+  };
+}
+
+function extractCardStringField(text: string, field: string, nextFields: string[]) {
+  const normalized = stripJsonFence(text);
+  const nextPattern = nextFields.map((name) => `"${name}"`).join("|");
+  const pattern = new RegExp(`"${field}"\\s*:\\s*"([\\s\\S]*?)(?=",\\s*(?:${nextPattern})\\s*:|",\\s*}\\s*$|}\\s*$)`);
+  const value = normalized.match(pattern)?.[1] || "";
+  return cleanCardText(value);
+}
+
+function extractCardArrayItems(text: string, field: string, maxItems: number) {
+  const normalized = stripJsonFence(text);
+  const arrayContent = normalized.match(new RegExp(`"${field}"\\s*:\\s*\\[([\\s\\S]*?)\\]`))?.[1] || "";
+  if (!arrayContent.trim()) {
+    return [];
+  }
+
+  return arrayContent
+    .split(/",\s*"|'\s*,\s*'|\n|；|;/)
+    .map((item) => cleanCardText(item))
+    .filter(Boolean)
+    .slice(0, maxItems)
+    .map((item) => limitCardText(item, 240));
+}
+
+function extractCardFallbackText(text: string) {
+  return cleanCardText(stripJsonFence(text)
+    .replace(/"?(overview|explanation|keyPoints|pitfalls|examples|flashcards)"?\s*:\s*/g, "\n")
+    .replace(/[{}\[\]]/g, "\n"));
+}
+
+function stripJsonFence(text: string) {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  return fenced?.[1]?.trim() || trimmed;
+}
+
+function cleanCardText(text: string) {
+  return text
+    .replace(/\\n/g, "\n")
+    .replace(/\\"/g, "\"")
+    .replace(/^["'\s,]+|["'\s,]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function limitCardText(text: string, maxLength: number) {
+  const cleaned = cleanCardText(text);
+  if (cleaned.length <= maxLength) {
+    return cleaned;
+  }
+  return `${cleaned.slice(0, maxLength - 3)}...`;
 }
 
 async function updateAiStudyTaskStage(task: AiStudyGenerationTask, stage: string) {
@@ -570,7 +649,7 @@ function getCardInstruction(level: number, promptConfig: AiStudyPromptConfig) {
 }
 
 function prepareOutlineNodes(nodes: z.infer<typeof outlineNodeSchema>[], chunks: AiStudySourceChunk[], projectTitle: string): OutlineNode[] {
-  const normalizedNodes = ensureSingleRootNode(nodes, chunks, projectTitle);
+  const normalizedNodes = ensureOutlineMaxDepth(ensureSingleRootNode(nodes, chunks, projectTitle));
 
   if (normalizedNodes.length > maxNodesPerProject) {
     throw new Error(`知识节点数量超过上限 ${maxNodesPerProject}。`);
@@ -609,10 +688,7 @@ function prepareOutlineNodes(nodes: z.infer<typeof outlineNodeSchema>[], chunks:
 
   return normalizedNodes
     .map((node, sortOrder) => {
-      const sourceChunkIds = Array.from(new Set(node.sourceChunkIds.filter((id) => validChunkIds.has(id))));
-      if (sourceChunkIds.length === 0) {
-        throw new Error(`知识节点缺少有效来源片段：${node.title}`);
-      }
+      const sourceChunkIds = resolveOutlineSourceChunkIds(node, normalizedNodes, validChunkIds, chunks);
       return {
         ...node,
         parentClientId: node.parentClientId || null,
@@ -622,6 +698,133 @@ function prepareOutlineNodes(nodes: z.infer<typeof outlineNodeSchema>[], chunks:
       };
     })
     .sort((left, right) => left.depth - right.depth || left.sortOrder - right.sortOrder);
+}
+
+function ensureOutlineMaxDepth(nodes: z.infer<typeof outlineNodeSchema>[]) {
+  const depthByClientId = resolveOutlineDepths(nodes);
+  const nodeByClientId = new Map(nodes.map((node) => [node.clientId, node]));
+
+  return nodes.map((node) => {
+    const depth = depthByClientId.get(node.clientId) ?? 0;
+    if (depth <= 3) {
+      return node;
+    }
+
+    return {
+      ...node,
+      parentClientId: findOutlineAncestorAtDepth(node, 2, nodeByClientId, depthByClientId)
+    };
+  });
+}
+
+function resolveOutlineDepths(nodes: z.infer<typeof outlineNodeSchema>[]) {
+  const nodeByClientId = new Map(nodes.map((node) => [node.clientId, node]));
+  const depthByClientId = new Map<string, number>();
+
+  function resolve(node: z.infer<typeof outlineNodeSchema>, seen = new Set<string>()): number {
+    if (!node.parentClientId) {
+      return 0;
+    }
+    if (seen.has(node.clientId)) {
+      throw new Error("知识框架存在循环父子关系。");
+    }
+    const parent = nodeByClientId.get(node.parentClientId);
+    if (!parent) {
+      throw new Error(`知识框架父节点不存在：${node.parentClientId}`);
+    }
+
+    const cached = depthByClientId.get(parent.clientId);
+    const parentDepth = cached ?? resolve(parent, new Set([...seen, node.clientId]));
+    const depth = parentDepth + 1;
+    depthByClientId.set(node.clientId, depth);
+    return depth;
+  }
+
+  for (const node of nodes) {
+    depthByClientId.set(node.clientId, resolve(node));
+  }
+
+  return depthByClientId;
+}
+
+function findOutlineAncestorAtDepth(
+  node: z.infer<typeof outlineNodeSchema>,
+  targetDepth: number,
+  nodeByClientId: Map<string, z.infer<typeof outlineNodeSchema>>,
+  depthByClientId: Map<string, number>
+) {
+  let current = node.parentClientId ? nodeByClientId.get(node.parentClientId) : null;
+  while (current) {
+    const depth = depthByClientId.get(current.clientId) ?? 0;
+    if (depth <= targetDepth) {
+      return current.clientId;
+    }
+    current = current.parentClientId ? nodeByClientId.get(current.parentClientId) : null;
+  }
+  return node.parentClientId || null;
+}
+
+function resolveOutlineSourceChunkIds(
+  node: z.infer<typeof outlineNodeSchema>,
+  nodes: z.infer<typeof outlineNodeSchema>[],
+  validChunkIds: Set<string>,
+  chunks: AiStudySourceChunk[]
+) {
+  const directChunkIds = normalizeOutlineSourceChunkIds(node.sourceChunkIds, validChunkIds);
+  if (directChunkIds.length > 0) {
+    return directChunkIds;
+  }
+
+  const titleMatchedChunkIds = findOutlineChunksByTitle(node.title, chunks);
+  if (titleMatchedChunkIds.length > 0) {
+    return titleMatchedChunkIds;
+  }
+
+  const inheritedChunkIds = findAncestorOutlineSourceChunkIds(node, nodes, validChunkIds);
+  if (inheritedChunkIds.length > 0) {
+    return inheritedChunkIds;
+  }
+
+  return chunks.slice(0, 1).map((chunk) => chunk.id);
+}
+
+function normalizeOutlineSourceChunkIds(sourceChunkIds: string[], validChunkIds: Set<string>) {
+  return Array.from(new Set(sourceChunkIds.filter((id) => validChunkIds.has(id)))).slice(0, 24);
+}
+
+function findAncestorOutlineSourceChunkIds(
+  node: z.infer<typeof outlineNodeSchema>,
+  nodes: z.infer<typeof outlineNodeSchema>[],
+  validChunkIds: Set<string>
+) {
+  const nodeByClientId = new Map(nodes.map((candidate) => [candidate.clientId, candidate]));
+  let current = node.parentClientId ? nodeByClientId.get(node.parentClientId) : null;
+
+  while (current) {
+    const sourceChunkIds = normalizeOutlineSourceChunkIds(current.sourceChunkIds, validChunkIds);
+    if (sourceChunkIds.length > 0) {
+      return sourceChunkIds.slice(0, 8);
+    }
+    current = current.parentClientId ? nodeByClientId.get(current.parentClientId) : null;
+  }
+
+  return [];
+}
+
+function findOutlineChunksByTitle(title: string, chunks: AiStudySourceChunk[]) {
+  const normalizedTitle = normalizeOutlineMatchText(title);
+  if (normalizedTitle.length < 2) {
+    return [];
+  }
+
+  return chunks
+    .filter((chunk) => normalizeOutlineMatchText(chunk.content).includes(normalizedTitle))
+    .slice(0, 4)
+    .map((chunk) => chunk.id);
+}
+
+function normalizeOutlineMatchText(value: string) {
+  return value.replace(/\s+/g, "").toLowerCase();
 }
 
 function ensureSingleRootNode(nodes: z.infer<typeof outlineNodeSchema>[], chunks: AiStudySourceChunk[], projectTitle: string) {

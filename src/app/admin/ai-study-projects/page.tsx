@@ -265,6 +265,7 @@ function formatDate(value: Date | string | null) {
   const date = value instanceof Date ? value : new Date(value);
   return date.toLocaleString("zh-CN", {
     hour12: false,
+    timeZone: "Asia/Shanghai",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

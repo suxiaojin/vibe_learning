@@ -4,7 +4,7 @@ import { type ChangeEvent, type DragEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, ChevronRight, FileText, Info, X } from "lucide-react";
 
-const maxPdfBytes = 20 * 1024 * 1024;
+const maxPdfBytes = 80 * 1024 * 1024;
 
 type ApiEnvelope<T> =
   | {
@@ -313,7 +313,7 @@ export function StudyMaterialImporter() {
             >
               <img alt="" className="mx-auto h-8 w-11 object-contain" height={32} src="/ai-study/upload-books.png" width={44} />
               <p className="mt-2 text-[16px] font-black text-[#111827]">拖放或点击此处上传本地文件</p>
-              <p className="mt-3 text-[12px] font-medium text-[#98a2b3]">当前支持 PDF，单个文件不超过20M</p>
+              <p className="mt-3 text-[12px] font-medium text-[#98a2b3]">当前支持 PDF，单个文件不超过80M</p>
               <input
                 ref={fileInputRef}
                 className="hidden"
@@ -488,7 +488,7 @@ function validatePdfFile(file: File) {
     return "上传文件不能为空。";
   }
   if (file.size > maxPdfBytes) {
-    return "PDF 文件不能超过 20MB。";
+    return "PDF 文件不能超过 80MB。";
   }
   return "";
 }

@@ -164,6 +164,7 @@ export function AiStudyProjectCard({
   const failedDisplayText = isRetryLimitReached ? "无法解析此文档，请删除" : (displayGeneration.text || statusLabels.failed);
   const shownGenerationPercent = Math.max(1, Math.min(displayGeneration.percent || 8, 99));
   const overviewText = contentOverview.trim() || "暂无内容概述";
+  const canSubmitRename = Boolean(draftTitle.trim()) && !isSaving;
 
   function openProject() {
     if (!canOpenProject) {
@@ -290,7 +291,7 @@ export function AiStudyProjectCard({
     <>
       <article
         aria-label={canOpenProject ? `查看 ${currentTitle}` : currentTitle}
-        className={`group relative h-[206px] w-full max-w-[284px] overflow-visible rounded-[24px] border p-5 shadow-[0_2px_30px_rgba(83,108,143,0.04)] outline-none transition focus-visible:ring-4 focus-visible:ring-[#16a329]/20 ${
+        className={`group relative h-[206px] w-full max-w-[284px] overflow-visible rounded-[24px] border p-5 shadow-[0_2px_30px_rgba(83,108,143,0.04)] outline-none transition hover:z-20 focus-within:z-20 focus-visible:ring-4 focus-visible:ring-[#16a329]/20 ${
           isGenerating
             ? "cursor-default border-[#6f786f] bg-[linear-gradient(135deg,#7b8477_0%,#5f625e_55%,#4e504e_100%)] text-white"
             : canOpenProject
@@ -378,15 +379,15 @@ export function AiStudyProjectCard({
               </div>
               {canManage ? (
                 <div
-                  className="group/actions relative z-30 cursor-default"
+                  className="group/actions relative z-40 -m-2 p-2 cursor-default"
                   data-card-action
                   onClick={(event) => event.stopPropagation()}
                   onKeyDown={(event) => event.stopPropagation()}
                 >
-                  <button className="grid size-7 place-items-center rounded-full text-[#b5beca] transition hover:bg-[#f1f4f7] hover:text-[#667085]" type="button">
+                  <button aria-label="更多项目操作" className="grid size-8 place-items-center rounded-full text-[#aab4c2] transition hover:bg-[#f1f4f7] hover:text-[#536072]" title="更多项目操作" type="button">
                     <MoreHorizontal size={18} />
                   </button>
-                  <div className="invisible absolute bottom-9 right-0 z-40 w-[180px] translate-y-1 rounded-[12px] border border-[#edf0f4] bg-white py-2 opacity-0 shadow-[0_16px_42px_rgba(16,24,40,0.16)] transition group-hover/actions:visible group-hover/actions:translate-y-0 group-hover/actions:opacity-100 group-focus-within/actions:visible group-focus-within/actions:translate-y-0 group-focus-within/actions:opacity-100">
+                  <div className="invisible absolute bottom-10 right-2 z-[90] w-[180px] translate-y-1 rounded-[12px] border border-[#edf0f4] bg-white py-2 opacity-0 shadow-[0_16px_42px_rgba(16,24,40,0.16)] transition group-hover/actions:visible group-hover/actions:translate-y-0 group-hover/actions:opacity-100 group-focus-within/actions:visible group-focus-within/actions:translate-y-0 group-focus-within/actions:opacity-100">
                     <button className="flex h-11 w-full items-center gap-3 px-4 text-left text-[15px] font-medium text-[#1d2430] hover:bg-[#f7f8fa]" onClick={openRename} type="button">
                       <Pencil size={17} />
                       重命名
@@ -442,7 +443,11 @@ export function AiStudyProjectCard({
               <button className="h-10 w-[94px] rounded-[9px] border border-[#d3d9e4] bg-white text-[15px] font-bold text-[#344054] transition hover:bg-[#f8fafc]" disabled={isSaving} onClick={() => setRenameOpen(false)} type="button">
                 取消
               </button>
-              <button className="h-10 w-[94px] rounded-[9px] bg-[#91a5ff] text-[15px] font-bold text-white transition hover:bg-[#8298fb] disabled:cursor-not-allowed disabled:opacity-60" disabled={isSaving || !draftTitle.trim()} onClick={renameProject} type="button">
+              <button className={`h-10 w-[94px] rounded-[9px] text-[15px] font-bold text-white transition ${
+                canSubmitRename
+                  ? "bg-[#5268ff] shadow-[0_8px_18px_rgba(82,104,255,0.24)] hover:bg-[#4058f2]"
+                  : "cursor-not-allowed bg-[#d6deee]"
+              }`} disabled={!canSubmitRename} onClick={renameProject} type="button">
                 确认
               </button>
             </div>
