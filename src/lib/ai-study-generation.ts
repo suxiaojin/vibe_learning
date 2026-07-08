@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { AiStudyGenerationTask, AiStudyNode, AiStudySourceChunk } from "@prisma/client";
 import pdfParse from "pdf-parse";
+import WordExtractor from "word-extractor";
 import { buildAiStudyTextChunks, markAiStudyTaskFailed, markAiStudyTaskSucceeded } from "@/lib/ai-study";
 import {
   ackAiStudyQueuedTask,
@@ -59,6 +60,8 @@ type OutlineNode = z.infer<typeof outlineNodeSchema> & {
 type GeneratedCard = z.infer<typeof cardSchema> & {
   nodeId: string;
 };
+
+type SupportedParsedSourceType = "pdf" | "document";
 
 export async function runAiStudyWorkerCycle(batchSize = Number(process.env.AI_STUDY_WORKER_BATCH_SIZE || 1)) {
   const normalizedBatchSize = Math.max(1, batchSize);
@@ -220,25 +223,25 @@ async function parseSource(task: AiStudyGenerationTask) {
   if (!source || source.project.deletedAt) {
     throw new Error("资料源不存在或项目已删除。");
   }
-  if (source.sourceType !== "pdf") {
-    throw new Error(`当前 parse_source 只支持 PDF，收到 ${source.sourceType}。`);
+  if (!isSupportedParsedSourceType(source.sourceType)) {
+    throw new Error(`当前 parse_source 只支持 PDF 或 Word，收到 ${source.sourceType}。`);
   }
   if (!source.storageKey) {
-    throw new Error("PDF 资料缺少 MinIO storageKey。");
+    throw new Error("学习资料缺少 MinIO storageKey。");
   }
 
-  await updateAiStudyTaskStage(task, "downloading_pdf");
+  await updateAiStudyTaskStage(task, "downloading_source");
 
   const object = await downloadAiStudyObject(source.storageKey);
 
-  await updateAiStudyTaskStage(task, "extracting_pdf_text");
+  await updateAiStudyTaskStage(task, "extracting_source_text");
 
-  const parsed = await pdfParse(object.body);
+  const parsed = await extractSourceText(source.sourceType, object.body);
   const text = normalizeParsedText(parsed.text).slice(0, maxParsedTextChars);
   const chunks = buildAiStudyTextChunks(text);
 
   if (chunks.length === 0) {
-    throw new Error("PDF 未解析出可学习文本。");
+    throw new Error("学习资料未解析出可学习文本。");
   }
 
   let nextTask: AiStudyGenerationTask | null = null;
@@ -258,7 +261,7 @@ async function parseSource(task: AiStudyGenerationTask) {
       where: { id: source.id },
       data: {
         textContent: text,
-        pageCount: parsed.numpages || null,
+        pageCount: parsed.pageCount,
         status: "parsed"
       }
     });
@@ -267,9 +270,10 @@ async function parseSource(task: AiStudyGenerationTask) {
       where: { id: task.id },
       data: {
         status: "succeeded",
-        stage: "pdf_text_extracted",
+        stage: "source_text_extracted",
         outputSummary: {
-          pageCount: parsed.numpages || null,
+          sourceType: source.sourceType,
+          pageCount: parsed.pageCount,
           chunkCount: chunks.length,
           textLength: text.length
         },
@@ -285,7 +289,7 @@ async function parseSource(task: AiStudyGenerationTask) {
         type: "generate_outline",
         stage: "waiting_for_ai_generation",
         inputSummary: {
-          sourceType: "pdf",
+          sourceType: source.sourceType,
           chunkCount: chunks.length,
           textLength: text.length
         }
@@ -300,6 +304,35 @@ async function parseSource(task: AiStudyGenerationTask) {
 
   await refreshAiStudyProgressCache(source.projectId);
   await enqueueAiStudyTask(nextTask);
+}
+
+async function extractSourceText(sourceType: SupportedParsedSourceType, body: Buffer) {
+  if (sourceType === "pdf") {
+    const parsed = await pdfParse(body);
+    return {
+      text: parsed.text,
+      pageCount: parsed.numpages || null
+    };
+  }
+
+  const extractor = new WordExtractor();
+  const document = await extractor.extract(body);
+  return {
+    text: [
+      document.getBody(),
+      document.getFootnotes(),
+      document.getEndnotes(),
+      document.getHeaders({ includeFooters: false }),
+      document.getFooters(),
+      document.getAnnotations(),
+      document.getTextboxes()
+    ].map((section) => section.trim()).filter(Boolean).join("\n\n"),
+    pageCount: null
+  };
+}
+
+function isSupportedParsedSourceType(sourceType: string): sourceType is SupportedParsedSourceType {
+  return sourceType === "pdf" || sourceType === "document";
 }
 
 async function generateOutline(task: AiStudyGenerationTask) {

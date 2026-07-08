@@ -199,7 +199,7 @@ export function buildAiStudyGenerationProgress(project: ProgressProject): AiStud
     return buildProgress(project.id, project.status, 38, "等待生成思维导图...", outlineTask.type, outlineTask.stage, null, steps);
   }
   if (parseTask?.status === "running") {
-    const percent = parseTask.stage === "extracting_pdf_text" ? 24 : 18;
+    const percent = parseTask.stage === "extracting_source_text" || parseTask.stage === "extracting_pdf_text" ? 24 : 18;
     return buildProgress(project.id, project.status, percent, "正在解析资料...", parseTask.type, parseTask.stage, null, steps);
   }
   if (parseTask?.status === "pending") {

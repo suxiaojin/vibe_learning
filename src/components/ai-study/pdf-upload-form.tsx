@@ -4,7 +4,7 @@ import { type ChangeEvent, type DragEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, ChevronRight, FileText, Info, X } from "lucide-react";
 
-const maxPdfBytes = 80 * 1024 * 1024;
+const maxStudyMaterialBytes = 80 * 1024 * 1024;
 
 type ApiEnvelope<T> =
   | {
@@ -33,6 +33,8 @@ type SelectedFile = {
   name: string;
   size: number;
 };
+
+type SupportedStudyMaterialType = "pdf" | "document";
 
 export function StudyMaterialImporter() {
   const router = useRouter();
@@ -94,7 +96,7 @@ export function StudyMaterialImporter() {
 
     const nextFiles: SelectedFile[] = [];
     for (const file of files) {
-      const validationError = validatePdfFile(file);
+      const validationError = validateStudyMaterialFile(file);
       if (validationError) {
         setError(validationError);
         return;
@@ -118,7 +120,7 @@ export function StudyMaterialImporter() {
     setUploadedProjectId("");
     setUploadPhase("idle");
     setUploadProgress(0);
-    setError(files.length > 1 ? "当前阶段一次只能创建 1 个 PDF 项目，已自动上传第一个文件。" : "");
+    setError(files.length > 1 ? "当前阶段一次只能创建 1 个学习资料项目，已自动上传第一个文件。" : "");
     void uploadSelectedFile(selectedFile, uploadToken);
   }
 
@@ -216,9 +218,13 @@ export function StudyMaterialImporter() {
   }
 
   async function uploadOneFile(file: File, onProgress: (progress: number) => void, uploadToken: string) {
-    const validationError = validatePdfFile(file);
+    const validationError = validateStudyMaterialFile(file);
     if (validationError) {
       throw new Error(validationError);
+    }
+    const sourceType = getStudyMaterialType(file);
+    if (!sourceType) {
+      throw new Error("当前阶段仅支持上传 PDF、Word（.doc/.docx）文件。");
     }
 
     let projectId = "";
@@ -227,7 +233,7 @@ export function StudyMaterialImporter() {
     try {
       const created = await postJson<CreateProjectResponse>("/api/ai-study/projects", {
         title,
-        sourceType: "pdf",
+        sourceType,
         learningGoal: "review"
       });
       projectId = created.project.id;
@@ -313,12 +319,12 @@ export function StudyMaterialImporter() {
             >
               <img alt="" className="mx-auto h-8 w-11 object-contain" height={32} src="/ai-study/upload-books.png" width={44} />
               <p className="mt-2 text-[16px] font-black text-[#111827]">拖放或点击此处上传本地文件</p>
-              <p className="mt-3 text-[12px] font-medium text-[#98a2b3]">当前支持 PDF，单个文件不超过80M</p>
+              <p className="mt-3 text-[12px] font-medium text-[#98a2b3]">当前支持 PDF、Word（.doc/.docx），单个文件不超过80M</p>
               <input
                 ref={fileInputRef}
                 className="hidden"
                 type="file"
-                accept="application/pdf,.pdf"
+                accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.pdf,.doc,.docx"
                 onChange={handleFileInput}
               />
             </div>
@@ -476,19 +482,32 @@ function parseApiEnvelope<T>(value: string) {
   }
 }
 
-function isPdfFile(file: File) {
-  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+function getStudyMaterialType(file: File): SupportedStudyMaterialType | null {
+  const mimeType = file.type.toLowerCase();
+  const fileName = file.name.toLowerCase();
+  if (mimeType === "application/pdf" || fileName.endsWith(".pdf")) {
+    return "pdf";
+  }
+  if (
+    mimeType === "application/msword" ||
+    mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    fileName.endsWith(".doc") ||
+    fileName.endsWith(".docx")
+  ) {
+    return "document";
+  }
+  return null;
 }
 
-function validatePdfFile(file: File) {
-  if (!isPdfFile(file)) {
-    return "当前阶段仅支持上传 PDF 文件。";
+function validateStudyMaterialFile(file: File) {
+  if (!getStudyMaterialType(file)) {
+    return "当前阶段仅支持上传 PDF、Word（.doc/.docx）文件。";
   }
   if (file.size <= 0) {
     return "上传文件不能为空。";
   }
-  if (file.size > maxPdfBytes) {
-    return "PDF 文件不能超过 80MB。";
+  if (file.size > maxStudyMaterialBytes) {
+    return "学习资料文件不能超过 80MB。";
   }
   return "";
 }

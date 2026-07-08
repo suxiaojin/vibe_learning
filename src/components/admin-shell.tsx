@@ -33,6 +33,7 @@ const iconMap = {
 export function AdminShell({ children, modules }: { children: React.ReactNode; modules: AdminModuleNavItem[] }) {
   const pathname = usePathname();
   const isAdminLogin = pathname === "/admin/login";
+  const isAiStudyPreviewWorkspace = /^\/admin\/ai-study-projects\/[^/]+\/preview/.test(pathname);
   const isQuestionBankWorkspace = pathname.startsWith("/admin/question-banks");
 
   useEffect(() => {
@@ -51,7 +52,7 @@ export function AdminShell({ children, modules }: { children: React.ReactNode; m
     return () => document.removeEventListener("pointerdown", closeOpenDetails);
   }, []);
 
-  if (isAdminLogin || isQuestionBankWorkspace) {
+  if (isAdminLogin || isAiStudyPreviewWorkspace || isQuestionBankWorkspace) {
     return <>{children}</>;
   }
 

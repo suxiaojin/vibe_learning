@@ -44,9 +44,11 @@ type LayoutResult = {
 };
 
 type KnowledgeMapViewProps = {
+  nodeHrefBase?: string;
   nodes: KnowledgeMapNode[];
   onCollapseSidebar?: () => void;
   projectId: string;
+  readOnly?: boolean;
   selectedNodeId: string;
 };
 
@@ -64,7 +66,14 @@ const defaultMapViewMode: MapViewMode = "mindmap";
 const mapPreferenceKey = "vibe-ai-study-map-preferences:v1";
 const lastNodeStoragePrefix = "vibe-ai-study-last-node:v1:";
 
-export function KnowledgeMapView({ nodes, onCollapseSidebar, projectId, selectedNodeId }: KnowledgeMapViewProps) {
+export function KnowledgeMapView({
+  nodeHrefBase,
+  nodes,
+  onCollapseSidebar,
+  projectId,
+  readOnly = false,
+  selectedNodeId
+}: KnowledgeMapViewProps) {
   const router = useRouter();
   const [mapNodes, setMapNodes] = useState(nodes);
   const [collapsedNodeIds, setCollapsedNodeIds] = useState<Set<string>>(() => new Set());
@@ -83,6 +92,8 @@ export function KnowledgeMapView({ nodes, onCollapseSidebar, projectId, selected
   const nodeClickTimerRef = useRef<number | null>(null);
   const skipNextBlurCommitRef = useRef(false);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const effectiveNodeHrefBase = nodeHrefBase || `/study-buddy/${projectId}`;
+  const rememberSelection = !readOnly;
 
   const layout = useMemo(() => layoutKnowledgeMap(mapNodes, collapsedNodeIds), [mapNodes, collapsedNodeIds]);
   const layoutRef = useRef(layout);
@@ -305,12 +316,17 @@ export function KnowledgeMapView({ nodes, onCollapseSidebar, projectId, selected
   function scheduleNodeNavigation(nodeId: string) {
     clearNodeClickTimer(nodeClickTimerRef);
     nodeClickTimerRef.current = window.setTimeout(() => {
-      rememberSelectedNode(`${lastNodeStoragePrefix}${projectId}`, nodeId);
-      router.push(`/study-buddy/${projectId}?node=${nodeId}`);
+      if (rememberSelection) {
+        rememberSelectedNode(`${lastNodeStoragePrefix}${projectId}`, nodeId);
+      }
+      router.push(buildNodeHref(effectiveNodeHrefBase, nodeId));
     }, 300);
   }
 
   function startEditingNode(node: KnowledgeMapNode) {
+    if (readOnly) {
+      return;
+    }
     clearNodeClickTimer(nodeClickTimerRef);
     setEditingError("");
     setEditingNode({ nodeId: node.id, title: node.title });
@@ -510,6 +526,7 @@ export function KnowledgeMapView({ nodes, onCollapseSidebar, projectId, selected
                   onStartEditing={startEditingNode}
                   onToggleCollapse={toggleNodeCollapse}
                   onUpdateEditingTitle={updateEditingTitle}
+                  readOnly={readOnly}
                   saving={savingNodeId === node.id}
                   selected={node.id === selectedNodeId}
                   showCollapseControls={collapsedNodeIds.size > 0}
@@ -560,6 +577,7 @@ export function KnowledgeMapView({ nodes, onCollapseSidebar, projectId, selected
           onStartEditing={startEditingNode}
           onToggleCollapse={toggleNodeCollapse}
           onUpdateEditingTitle={updateEditingTitle}
+          readOnly={readOnly}
           savingNodeId={savingNodeId}
           selectedNodeId={selectedNodeId}
           viewportClassName={isFullscreen ? "h-screen" : "h-[calc(100dvh-168px)]"}
@@ -584,6 +602,7 @@ function MapNodePill({
   onStartEditing,
   onToggleCollapse,
   onUpdateEditingTitle,
+  readOnly,
   saving,
   selected,
   showCollapseControls,
@@ -598,6 +617,7 @@ function MapNodePill({
   onStartEditing: (node: KnowledgeMapNode) => void;
   onToggleCollapse: (nodeId: string) => void;
   onUpdateEditingTitle: (title: string) => void;
+  readOnly: boolean;
   saving: boolean;
   selected: boolean;
   showCollapseControls: boolean;
@@ -662,10 +682,13 @@ function MapNodePill({
           onDoubleClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
+            if (readOnly) {
+              return;
+            }
             onStartEditing(node);
           }}
           onPointerDown={(event) => event.stopPropagation()}
-          title="双击修改名称"
+          title={readOnly ? node.title : "双击修改名称"}
           type="button"
         >
           {node.title}
@@ -748,6 +771,7 @@ function MapOutlineView({
   onStartEditing,
   onToggleCollapse,
   onUpdateEditingTitle,
+  readOnly,
   savingNodeId,
   selectedNodeId,
   viewportClassName
@@ -761,6 +785,7 @@ function MapOutlineView({
   onStartEditing: (node: KnowledgeMapNode) => void;
   onToggleCollapse: (nodeId: string) => void;
   onUpdateEditingTitle: (title: string) => void;
+  readOnly: boolean;
   savingNodeId: string | null;
   selectedNodeId: string;
   viewportClassName: string;
@@ -787,6 +812,7 @@ function MapOutlineView({
             onStartEditing={onStartEditing}
             onToggleCollapse={onToggleCollapse}
             onUpdateEditingTitle={onUpdateEditingTitle}
+            readOnly={readOnly}
             savingNodeId={savingNodeId}
             selectedNodeId={selectedNodeId}
           />
@@ -807,6 +833,7 @@ function OutlineNode({
   onStartEditing,
   onToggleCollapse,
   onUpdateEditingTitle,
+  readOnly,
   savingNodeId,
   selectedNodeId
 }: {
@@ -820,6 +847,7 @@ function OutlineNode({
   onStartEditing: (node: KnowledgeMapNode) => void;
   onToggleCollapse: (nodeId: string) => void;
   onUpdateEditingTitle: (title: string) => void;
+  readOnly: boolean;
   savingNodeId: string | null;
   selectedNodeId: string;
 }) {
@@ -890,9 +918,12 @@ function OutlineNode({
             }}
             onDoubleClick={(event) => {
               event.preventDefault();
+              if (readOnly) {
+                return;
+              }
               onStartEditing(node);
             }}
-            title="双击修改名称"
+            title={readOnly ? node.title : "双击修改名称"}
             type="button"
           >
             {node.title}
@@ -914,6 +945,7 @@ function OutlineNode({
               onStartEditing={onStartEditing}
               onToggleCollapse={onToggleCollapse}
               onUpdateEditingTitle={onUpdateEditingTitle}
+              readOnly={readOnly}
               savingNodeId={savingNodeId}
               selectedNodeId={selectedNodeId}
             />
@@ -1073,6 +1105,10 @@ function rememberSelectedNode(storageKey: string, nodeId: string) {
   } catch {
     // Local navigation memory is best-effort only.
   }
+}
+
+function buildNodeHref(basePath: string, nodeId: string) {
+  return `${basePath}?node=${encodeURIComponent(nodeId)}`;
 }
 
 function findNodeTitle(nodes: KnowledgeMapNode[], nodeId: string): string {

@@ -60,6 +60,8 @@ type UploadedSourceInput = {
   startParsing?: boolean;
 };
 
+type UploadableSourceType = "pdf" | "document";
+
 export class AiStudyError extends Error {
   constructor(message: string, readonly status = 400, readonly code = "AI_STUDY_ERROR") {
     super(message);
@@ -365,17 +367,18 @@ export async function uploadAiStudySource(ownerId: string, projectId: string, in
   if (input.size > maxFileBytes) {
     throw new AiStudyError(`上传文件不能超过 ${Math.floor(maxFileBytes / 1024 / 1024)}MB。`, 413, "AI_STUDY_FILE_TOO_LARGE");
   }
-  if (!isPdfFile(input.fileName, input.mimeType)) {
-    throw new AiStudyError("当前阶段仅支持上传 PDF 文件。", 400, "AI_STUDY_UNSUPPORTED_FILE_TYPE");
+  const sourceFile = getSupportedUploadSource(input.fileName, input.mimeType);
+  if (!sourceFile) {
+    throw new AiStudyError("当前阶段仅支持上传 PDF、Word（.doc/.docx）文件。", 400, "AI_STUDY_UNSUPPORTED_FILE_TYPE");
   }
 
   const sourceId = randomUUID();
-  const safeFileName = sanitizeFileName(input.fileName) || "source.pdf";
+  const safeFileName = sanitizeFileName(input.fileName) || sourceFile.defaultFileName;
   const storageKey = `ai-study/${ownerId}/${project.id}/${sourceId}/${safeFileName}`;
   const uploaded = await uploadAiStudyObject({
     key: storageKey,
     body: input.body,
-    contentType: input.mimeType || "application/pdf"
+    contentType: sourceFile.mimeType
   });
 
   const result = await prisma.$transaction(async (tx) => {
@@ -383,9 +386,9 @@ export async function uploadAiStudySource(ownerId: string, projectId: string, in
       data: {
         id: sourceId,
         projectId: project.id,
-        sourceType: "pdf",
+        sourceType: sourceFile.sourceType,
         fileName: input.fileName,
-        mimeType: input.mimeType || "application/pdf",
+        mimeType: sourceFile.mimeType,
         fileSizeBytes: input.size,
         storageBucket: uploaded.bucket,
         storageKey: uploaded.key,
@@ -400,10 +403,11 @@ export async function uploadAiStudySource(ownerId: string, projectId: string, in
             projectId: project.id,
             sourceId: source.id,
             type: "parse_source",
-            stage: "waiting_for_pdf_parse",
+            stage: "waiting_for_source_parse",
             inputSummary: {
               fileName: input.fileName,
-              mimeType: input.mimeType || "application/pdf",
+              sourceType: sourceFile.sourceType,
+              mimeType: sourceFile.mimeType,
               fileSizeBytes: input.size,
               storagePath: uploaded.storagePath
             }
@@ -414,7 +418,7 @@ export async function uploadAiStudySource(ownerId: string, projectId: string, in
     await tx.aiStudyProject.update({
       where: { id: project.id },
       data: {
-        sourceType: project.sourceType === "text" ? "mixed" : "pdf",
+        sourceType: mergeUploadedSourceType(project.sourceType, sourceFile.sourceType),
         status: shouldStartParsing ? "processing" : project.status
       }
     });
@@ -439,7 +443,7 @@ export async function startAiStudyProjectGeneration(ownerId: string, projectId: 
     include: {
       sources: {
         where: {
-          sourceType: "pdf",
+          sourceType: { in: ["pdf", "document"] },
           status: "uploaded"
         },
         orderBy: { createdAt: "desc" },
@@ -476,15 +480,17 @@ export async function startAiStudyProjectGeneration(ownerId: string, projectId: 
   }
 
   const task = await prisma.$transaction(async (tx) => {
+    const sourceMimeType = source.mimeType || getDefaultMimeTypeForSourceType(source.sourceType);
     const createdTask = await tx.aiStudyGenerationTask.create({
       data: {
         projectId: project.id,
         sourceId: source.id,
         type: "parse_source",
-        stage: "waiting_for_pdf_parse",
+        stage: "waiting_for_source_parse",
         inputSummary: {
           fileName: source.fileName,
-          mimeType: source.mimeType || "application/pdf",
+          sourceType: source.sourceType,
+          mimeType: sourceMimeType,
           fileSizeBytes: source.fileSizeBytes,
           storagePath: source.storagePath
         }
@@ -1391,8 +1397,47 @@ export function buildAiStudyTextChunks(text: string) {
   return chunks;
 }
 
-function isPdfFile(fileName: string, mimeType: string) {
-  return mimeType === "application/pdf" || fileName.toLowerCase().endsWith(".pdf");
+function getSupportedUploadSource(fileName: string, mimeType: string): { sourceType: UploadableSourceType; mimeType: string; defaultFileName: string } | null {
+  const normalizedMimeType = mimeType.toLowerCase();
+  const normalizedFileName = fileName.toLowerCase();
+  if (normalizedMimeType === "application/pdf" || normalizedFileName.endsWith(".pdf")) {
+    return {
+      sourceType: "pdf",
+      mimeType: normalizedMimeType || "application/pdf",
+      defaultFileName: "source.pdf"
+    };
+  }
+  if (
+    normalizedMimeType === "application/msword" ||
+    normalizedMimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    normalizedFileName.endsWith(".doc") ||
+    normalizedFileName.endsWith(".docx")
+  ) {
+    const isLegacyDoc = normalizedFileName.endsWith(".doc");
+    return {
+      sourceType: "document",
+      mimeType: normalizedMimeType || (isLegacyDoc ? "application/msword" : getDefaultMimeTypeForSourceType("document")),
+      defaultFileName: isLegacyDoc ? "source.doc" : "source.docx"
+    };
+  }
+  return null;
+}
+
+function getDefaultMimeTypeForSourceType(sourceType: string) {
+  if (sourceType === "pdf") {
+    return "application/pdf";
+  }
+  if (sourceType === "document") {
+    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  }
+  return "application/octet-stream";
+}
+
+function mergeUploadedSourceType(currentSourceType: string, uploadedSourceType: UploadableSourceType) {
+  if (currentSourceType === uploadedSourceType) {
+    return uploadedSourceType;
+  }
+  return "mixed";
 }
 
 function sanitizeFileName(fileName: string) {
@@ -1406,7 +1451,7 @@ function sanitizeFileName(fileName: string) {
 
 function getRetryTaskStage(type: AiStudyGenerationTask["type"]) {
   if (type === "parse_source") {
-    return "waiting_for_pdf_parse";
+    return "waiting_for_source_parse";
   }
   if (type === "generate_outline") {
     return "waiting_for_ai_generation";

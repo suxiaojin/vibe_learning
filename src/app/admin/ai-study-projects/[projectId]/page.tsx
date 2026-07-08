@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, Globe2, Lock, Trash2 } from "lucide-react";
+import { ArrowLeft, BookOpen, Globe2, Lock, Trash2 } from "lucide-react";
 import { notFound } from "next/navigation";
 import {
   deleteAiStudyProjectAsAdmin,
@@ -96,6 +96,10 @@ export default async function AdminAiStudyProjectDetailPage({ params, searchPara
             <p className="mt-2 text-sm text-slate-500">项目 ID：{project.id}</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Link className="secondary-button inline-flex items-center gap-2" href={`/admin/ai-study-projects/${project.id}/preview`}>
+              <BookOpen size={16} />
+              预览学习内容
+            </Link>
             <form id={publishFormId} action={publishAiStudyProject}>
               <input type="hidden" name="projectId" value={project.id} />
               <input type="hidden" name="returnTo" value={currentPath} />
