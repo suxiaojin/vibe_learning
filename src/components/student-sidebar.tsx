@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Bell, BookMarked, Bot, Gem, GraduationCap, HelpCircle, LogOut, MoreHorizontal, Settings, Target, UserRound, UsersRound } from "lucide-react";
+import { Bell, BookMarked, Gem, GraduationCap, HelpCircle, LogOut, MoreHorizontal, Settings, Sparkles, UserRound, UsersRound } from "lucide-react";
 import { NotificationBell } from "@/components/notification-bell";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -8,14 +8,13 @@ import { ensureDiamondAccount } from "@/lib/rewards";
 import { getNotificationBellData } from "@/lib/user-event-notifications";
 import { cn } from "@/lib/utils";
 
-type StudentNavKey = "learn" | "course-center" | "study-buddy" | "wrong-book" | "buddy-circle" | "me" | "notifications" | "settings";
+type StudentNavKey = "learn" | "course-center" | "study-buddy" | "buddy-circle" | "me" | "notifications" | "settings";
 
 const text = {
   subtitle: "\u4e13\u8f6c\u672c\u95ef\u5173\u5b66\u4e60",
   learn: "\u5b66\u4e60",
   courseCenter: "\u8bfe\u7a0b\u4e2d\u5fc3",
-  studyBuddy: "学习搭子",
-  review: "\u590d\u4e60",
+  studyBuddy: "上岸搭子",
   buddyCircle: "搭子圈",
   profile: "\u4e2a\u4eba\u6863\u6848",
   more: "\u66f4\u591a",
@@ -31,7 +30,7 @@ export async function StudentSidebar({ active }: { active: StudentNavKey }) {
   const footer = await getStudentSidebarAccount();
 
   return (
-    <aside className="relative z-50 hidden border-r border-slate-200/80 bg-white lg:block">
+    <aside className="relative z-[100] hidden border-r border-slate-200/80 bg-white lg:block">
       <div className="sticky top-0 flex min-h-dvh flex-col px-5 py-6">
         <div className="mb-8 px-2">
           <p className="text-[28px] font-bold leading-tight text-teal">Vibe Learning</p>
@@ -40,8 +39,7 @@ export async function StudentSidebar({ active }: { active: StudentNavKey }) {
         <nav className="space-y-2.5">
           <StudentNavItem active={active === "learn"} href="/learn" icon={<GraduationCap size={22} />} label={text.learn} />
           <StudentNavItem active={active === "course-center"} href="/course-center" icon={<BookMarked size={22} />} label={text.courseCenter} />
-          <StudentNavItem active={active === "study-buddy"} href="/study-buddy" icon={<Bot size={22} />} label={text.studyBuddy} />
-          <StudentNavItem active={active === "wrong-book"} href="/wrong-book" icon={<Target size={22} />} label={text.review} />
+          <StudentNavItem active={active === "study-buddy"} href="/study-buddy" icon={<Sparkles size={22} />} label={text.studyBuddy} />
           <StudentNavItem active={active === "buddy-circle"} href="/buddy-circle" icon={<UsersRound size={22} />} label={text.buddyCircle} />
           <StudentNavItem active={active === "me"} href="/me" icon={<UserRound size={22} />} label={text.profile} />
           <MoreMenu active={active === "notifications" || active === "settings"} />
@@ -143,7 +141,7 @@ function MoreMenu({ active }: { active: boolean }) {
         {text.more}
       </button>
 
-      <div className="invisible absolute bottom-0 left-full z-[80] w-56 translate-x-2 pl-2 opacity-0 transition duration-150 group-hover:visible group-hover:translate-x-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-x-0 group-focus-within:opacity-100">
+      <div className="invisible absolute bottom-0 left-full z-[120] w-56 translate-x-2 pl-2 opacity-0 transition duration-150 group-hover:visible group-hover:translate-x-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-x-0 group-focus-within:opacity-100">
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white py-2 shadow-[0_8px_28px_rgba(15,23,42,0.16)]">
           <div className="border-b border-slate-200 px-5 py-3">
             <p className="text-sm font-semibold text-slate-700">{text.moreTitle}</p>

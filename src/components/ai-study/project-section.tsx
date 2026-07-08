@@ -17,6 +17,7 @@ export type AiStudyProjectSectionItem = {
   learnerText: string;
   masteredCount: number;
   ownerName: string;
+  ownerProfileHref: string;
   sourceCount: number;
   status: ProjectStatus;
   title: string;
@@ -53,6 +54,7 @@ export function AiStudyProjectSection({ title, projects, emptyText }: AiStudyPro
               learnerText={project.learnerText}
               masteredCount={project.masteredCount}
               ownerName={project.ownerName}
+              ownerProfileHref={project.ownerProfileHref}
               sourceCount={project.sourceCount}
               status={project.status}
               title={project.title}

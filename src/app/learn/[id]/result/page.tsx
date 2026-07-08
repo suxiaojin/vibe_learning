@@ -117,7 +117,6 @@ export default async function QuizResultPage({
   const scorePercent = total ? Math.round((correct / total) * 100) : score;
   const passed = score >= 80;
   const submittedAt = currentSession.completedAt || currentSession.updatedAt;
-  const currentWrongAttempts = currentSession.attempts.filter((attempt) => !attempt.isCorrect);
   const resultShareCard = buildResultShareCard({
     chapterTitle: access.chapter.title,
     correct,
@@ -176,7 +175,6 @@ export default async function QuizResultPage({
               sourceLabel="闯关结果"
             />
             <Link className="secondary-button" href={`/learn?course=${access.group.key}&chapter=${access.chapter.id}`}>返回学习路线</Link>
-            {currentWrongAttempts.length > 0 ? <Link className="secondary-button" href="/wrong-book">查看错题本</Link> : null}
           </div>
         </div>
       </section>

@@ -1,6 +1,7 @@
 "use client";
 
 import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MoreHorizontal, Pencil, RotateCcw, Trash2, X } from "lucide-react";
 
@@ -20,6 +21,7 @@ type ProjectCardProps = {
   knowledgeCount: number;
   sourceCount: number;
   ownerName: string;
+  ownerProfileHref?: string;
   learnerText: string;
   canManage?: boolean;
   contentOverview?: string;
@@ -49,6 +51,8 @@ export function AiStudyProjectCard({
   title,
   status,
   contentOverview = "",
+  ownerName,
+  ownerProfileHref = "",
   canManage = false,
   generationPercent,
   generationText,
@@ -375,7 +379,22 @@ export function AiStudyProjectCard({
           {!isGenerating ? (
             <div className="absolute bottom-0 left-0 right-0 flex h-7 items-center justify-between gap-3 text-[13px] leading-none text-[#98a2b3]">
               <div className="min-w-0 pr-2">
-                <span className="block truncate">AI生成，注意核实</span>
+                {ownerProfileHref ? (
+                  <span className="block truncate">
+                    创建者：
+                    <Link
+                      className="font-bold text-[#53627a] transition hover:text-[#12a425] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#12a425]"
+                      data-card-action
+                      href={ownerProfileHref}
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
+                      @{ownerName}
+                    </Link>
+                  </span>
+                ) : (
+                  <span className="block truncate">AI生成，注意核实</span>
+                )}
               </div>
               {canManage ? (
                 <div

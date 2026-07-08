@@ -6,7 +6,6 @@ import {
   BookOpen,
   ChevronLeft,
   ChevronRight,
-  Footprints,
   Sparkles,
 } from "lucide-react";
 import { KnowledgeMapView, type KnowledgeMapNode } from "@/components/ai-study/knowledge-map-view";
@@ -150,7 +149,7 @@ export default async function StudyBuddyProjectPage({
                   <h3 className="text-[22px] font-black leading-tight tracking-normal text-[#07152f] md:text-[24px]">{nodeDetail.title}</h3>
                 </div>
               ) : (
-                <NodeTitleBlock progressStatus={nodeDetail.progress?.status} title={nodeDetail.title} />
+                <NodeTitleBlock title={nodeDetail.title} />
               )}
 
               {card ? (
@@ -239,15 +238,10 @@ function GenerationPanel({
   );
 }
 
-function NodeTitleBlock({ progressStatus, title }: { progressStatus?: string; title: string }) {
-  const status = getNodeProgressStatus(progressStatus);
+function NodeTitleBlock({ title }: { title: string }) {
   return (
     <div>
       <h3 className="text-[22px] font-black leading-tight tracking-normal text-[#07152f] md:text-[24px]">{title}</h3>
-      <div className={cn("mt-2 flex items-center gap-1.5 text-[13px] font-medium", status.className)}>
-        <Footprints size={15} strokeWidth={2} />
-        <span>{status.label}</span>
-      </div>
     </div>
   );
 }
@@ -282,31 +276,12 @@ function CardList({ items, title }: { items: string[]; title: string }) {
 function KnowledgePointDetail({ explanation }: { explanation: string }) {
   return (
     <section>
-      <div className="flex items-center gap-8">
-        <h4 className="relative pb-2 text-[19px] font-black text-[#101828] after:absolute after:bottom-0 after:left-0 after:h-[3px] after:w-8 after:rounded-full after:bg-[#101828]">
-          AI详解
-        </h4>
-        <div className="flex items-center gap-1.5 pb-2 text-[18px] font-black text-[#9aa3af]">
-          <span>知识闪卡</span>
-          <span className="rounded-[3px] bg-[#eef1f5] px-1 text-[9px] font-black uppercase leading-4 text-[#98a2b3]">beta</span>
-        </div>
-      </div>
+      <h4 className="relative pb-2 text-[19px] font-black text-[#101828] after:absolute after:bottom-0 after:left-0 after:h-[3px] after:w-8 after:rounded-full after:bg-[#101828]">
+        AI详解
+      </h4>
       <p className="mt-4 whitespace-pre-wrap text-[16px] leading-8 text-[#1f2937]">{explanation}</p>
     </section>
   );
-}
-
-function getNodeProgressStatus(status?: string) {
-  if (status === "mastered") {
-    return { className: "text-[#16a329]", label: "已掌握" };
-  }
-  if (status === "learning") {
-    return { className: "text-[#2563ff]", label: "学习中" };
-  }
-  if (status === "review_needed") {
-    return { className: "text-[#f27420]", label: "待复习" };
-  }
-  return { className: "text-[#8a95a3]", label: "待学习" };
 }
 
 function buildNodeTree(nodes: NodeListItem[]) {

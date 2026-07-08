@@ -168,6 +168,7 @@ export async function listPublicAiStudyProjects(input: { take?: number } = {}) {
       },
       owner: {
         select: {
+          id: true,
           username: true,
           studentProfile: {
             select: {
@@ -265,11 +266,7 @@ export async function createAiStudyProject(ownerId: string, input: unknown) {
 
 export async function getAiStudyProject(ownerId: string, projectId: string) {
   const project = await prisma.aiStudyProject.findFirst({
-    where: {
-      id: projectId,
-      ownerId,
-      deletedAt: null
-    },
+    where: accessibleProjectWhere(ownerId, projectId),
     include: {
       sources: {
         orderBy: { createdAt: "asc" },
@@ -606,14 +603,10 @@ export async function retryAiStudyProjectGeneration(ownerId: string, projectId: 
 }
 
 export async function listAiStudyProjectNodes(ownerId: string, projectId: string) {
-  await assertOwnedProject(ownerId, projectId);
   return prisma.aiStudyNode.findMany({
     where: {
       projectId,
-      project: {
-        ownerId,
-        deletedAt: null
-      }
+      project: accessibleProjectRelationWhere(ownerId)
     },
     orderBy: [{ depth: "asc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
     select: {
@@ -651,10 +644,7 @@ export async function getAiStudyNodeDetail(ownerId: string, nodeId: string) {
   const node = await prisma.aiStudyNode.findFirst({
     where: {
       id: nodeId,
-      project: {
-        ownerId,
-        deletedAt: null
-      }
+      project: accessibleProjectRelationWhere(ownerId)
     },
     include: {
       project: {
@@ -871,11 +861,7 @@ export async function createAiStudyChatMessage(
 async function prepareAiStudyBuddyChat(ownerId: string, projectId: string, input: unknown) {
   const parsed = parseAiStudyInput(aiStudyBuddyChatSchema, input, "对话参数不合法。");
   const project = await prisma.aiStudyProject.findFirst({
-    where: {
-      id: projectId,
-      ownerId,
-      deletedAt: null
-    },
+    where: accessibleProjectWhere(ownerId, projectId),
     select: {
       id: true,
       title: true,
@@ -895,10 +881,7 @@ async function prepareAiStudyBuddyChat(ownerId: string, projectId: string, input
         where: {
           id: parsed.nodeId,
           projectId: project.id,
-          project: {
-            ownerId,
-            deletedAt: null
-          }
+          project: accessibleProjectRelationWhere(ownerId)
         },
         select: {
           title: true,
@@ -1100,7 +1083,7 @@ function normalizeAiStudyChatNodeId(nodeId?: string | null) {
 }
 
 async function assertAiStudyChatContext(ownerId: string, projectId: string, nodeId: string | null) {
-  await assertOwnedProject(ownerId, projectId);
+  await assertAccessibleProject(ownerId, projectId);
   if (!nodeId) {
     return;
   }
@@ -1109,10 +1092,7 @@ async function assertAiStudyChatContext(ownerId: string, projectId: string, node
     where: {
       id: nodeId,
       projectId,
-      project: {
-        ownerId,
-        deletedAt: null
-      }
+      project: accessibleProjectRelationWhere(ownerId)
     },
     select: { id: true }
   });
@@ -1329,6 +1309,47 @@ async function assertOwnedProject(ownerId: string, projectId: string) {
   }
 
   return project;
+}
+
+async function assertAccessibleProject(ownerId: string, projectId: string) {
+  const project = await prisma.aiStudyProject.findFirst({
+    where: accessibleProjectWhere(ownerId, projectId),
+    select: { id: true }
+  });
+
+  if (!project) {
+    throw new AiStudyError("学习项目不存在。", 404, "AI_STUDY_PROJECT_NOT_FOUND");
+  }
+
+  return project;
+}
+
+function accessibleProjectWhere(ownerId: string, projectId: string) {
+  return {
+    id: projectId,
+    deletedAt: null,
+    OR: [
+      { ownerId },
+      publicReadyProjectWhere()
+    ]
+  };
+}
+
+function accessibleProjectRelationWhere(ownerId: string) {
+  return {
+    deletedAt: null,
+    OR: [
+      { ownerId },
+      publicReadyProjectWhere()
+    ]
+  };
+}
+
+function publicReadyProjectWhere() {
+  return {
+    visibility: "public" as const,
+    status: "ready" as const
+  };
 }
 
 export function buildAiStudyTextChunks(text: string) {

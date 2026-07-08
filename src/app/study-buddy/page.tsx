@@ -42,7 +42,7 @@ export default async function StudyBuddyPage({
             />
             <div className="pb-2">
               <h1 className="text-[30px] font-black leading-tight tracking-normal text-[#06122b] md:text-[34px]">
-                好好学习，搭搭向上
+                好好学习，早日上岸
               </h1>
               <div className="mt-4">
                 <StudyMaterialImporter />
@@ -78,7 +78,8 @@ function ProjectSection({
 }) {
   const cardProjects = projects.map((project) => {
     const progressTotal = project.knowledgeCount || project._count.nodes || 0;
-    const ownerName = "owner" in project ? (project.owner.studentProfile?.nickname || project.owner.username) : "由我创建";
+    const ownerName = "owner" in project ? project.owner.username : "由我创建";
+    const ownerProfileHref = "owner" in project ? `/students/${project.owner.id}` : "";
     const learnerText = variant === "public" ? `${Math.max(project._count.sources, 1)}人学习` : `${project._count.sources || 1}份资料`;
     const generation = getGenerationProgress(project);
     const latestFailedRetryCount = "latestFailedRetryCount" in project ? project.latestFailedRetryCount : 0;
@@ -94,6 +95,7 @@ function ProjectSection({
       learnerText,
       masteredCount: project.masteredCount || 0,
       ownerName,
+      ownerProfileHref,
       sourceCount: project._count.sources,
       status: project.status,
       title: project.title
