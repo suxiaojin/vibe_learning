@@ -50,3 +50,117 @@ body {
     @apply inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold;
   }
 }
+
+.study-buddy-hero-title {
+  text-wrap: balance;
+}
+
+.study-buddy-hero-title--fade-up {
+  animation: study-buddy-title-fade-up 420ms ease-out both;
+}
+
+.study-buddy-hero-title--character-pop {
+  white-space: normal;
+}
+
+.study-buddy-hero-title__char {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(0.35em) scale(0.92);
+  animation: study-buddy-title-character-pop 420ms cubic-bezier(0.2, 0.9, 0.2, 1.15) both;
+  animation-delay: calc(var(--title-char-index) * 38ms);
+}
+
+.study-buddy-hero-title--gradient-shine {
+  color: transparent;
+  background: linear-gradient(90deg, #06122b 0%, #0f766e 32%, #16a34a 48%, #06122b 72%);
+  background-size: 240% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: study-buddy-title-gradient-shine 2.8s ease-in-out infinite;
+}
+
+.study-buddy-hero-title--underline-swipe .study-buddy-hero-title__text {
+  position: relative;
+  display: inline-block;
+}
+
+.study-buddy-hero-title--underline-swipe .study-buddy-hero-title__text::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -8px;
+  height: 5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #14b8a6, #22c55e);
+  transform: scaleX(0);
+  transform-origin: left center;
+  animation: study-buddy-title-underline-swipe 520ms ease-out 120ms forwards;
+}
+
+@keyframes study-buddy-title-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes study-buddy-title-character-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(0.35em) scale(0.92);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-0.06em) scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes study-buddy-title-gradient-shine {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes study-buddy-title-underline-swipe {
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .study-buddy-hero-title--fade-up,
+  .study-buddy-hero-title--gradient-shine,
+  .study-buddy-hero-title__char,
+  .study-buddy-hero-title--underline-swipe .study-buddy-hero-title__text::after {
+    animation: none;
+  }
+
+  .study-buddy-hero-title--fade-up,
+  .study-buddy-hero-title__char {
+    opacity: 1;
+    transform: none;
+  }
+
+  .study-buddy-hero-title--gradient-shine {
+    color: #06122b;
+    background: none;
+  }
+
+  .study-buddy-hero-title--underline-swipe .study-buddy-hero-title__text::after {
+    transform: scaleX(1);
+  }
+}

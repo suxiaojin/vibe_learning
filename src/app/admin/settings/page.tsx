@@ -8,30 +8,40 @@ import {
   deleteShareCopyStyle,
   updateShareCopyPhrase,
   updateShareCopyStyle,
+  updateStudyBuddyHeroEffectSettings,
+  updateStudyBuddyHeroImageSettings,
+  updateStudyBuddyHeroTitleSettings,
   updateSystemSettings
 } from "@/app/admin/actions";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isShareCopyContext, shareCopyContextLabels } from "@/lib/share-copy";
+import { studyBuddyHeroEffectOptions } from "@/lib/study-buddy-title-effects";
 import { getSystemSettings } from "@/lib/system-settings";
 import { cn } from "@/lib/utils";
 
-type SettingsTab = "login" | "agreements" | "share-copy";
+type SettingsTab = "login" | "agreements" | "study-buddy" | "share-copy";
 
 const tabs: Array<{ key: SettingsTab; label: string }> = [
   { key: "login", label: "登录页配置" },
   { key: "agreements", label: "协议内容" },
+  { key: "study-buddy", label: "学习搭子" },
   { key: "share-copy", label: "分享文案" }
 ];
 
 const noticeText: Record<string, string> = {
   saved: "系统设置已保存。",
+  "study-buddy-hero-image-saved": "顶部动画已保存。",
+  "study-buddy-hero-title-saved": "顶部标题已保存。",
+  "study-buddy-hero-effect-saved": "标题效果已保存。",
   "share-copy-saved": "分享文案已保存。"
 };
 
 const errorText: Record<string, string> = {
   "image-too-large": "图片不能超过 5MB。",
-  "invalid-image-type": "请上传 PNG、JPG、WEBP 或 GIF 图片。"
+  "invalid-image-type": "请上传 PNG、JPG、WEBP 或 GIF 图片。",
+  "invalid-study-buddy-hero-image-type": "请上传 WEBP 图片或动画。",
+  "study-buddy-hero-image-too-large": "学习搭子顶部动画不能超过 5MB。"
 };
 
 const marketingIconOptions = [
@@ -96,7 +106,7 @@ export default async function AdminSettingsPage({
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-black text-ink">系统设置</h1>
-          <p className="mt-1 text-sm font-semibold text-slate-500">管理用户端登录、注册、协议页面展示内容。</p>
+          <p className="mt-1 text-sm font-semibold text-slate-500">管理用户端登录、注册、协议页面和学习搭子展示内容。</p>
         </div>
         <Link className="secondary-button rounded-none" href="/login" target="_blank">
           预览登录页
@@ -267,7 +277,134 @@ export default async function AdminSettingsPage({
             </FieldBlock>
           </div>
         </section>
+
       </form>
+
+      {activeTab === "study-buddy" ? (
+        <section className="border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div>
+              <h2 className="text-lg font-black text-ink">学习搭子首页</h2>
+              <p className="mt-1 text-sm font-semibold text-slate-500">顶部动画、标题文字、标题效果分别保存，互不覆盖。</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-5">
+            <form action={updateStudyBuddyHeroImageSettings} className="border-b border-slate-100 pb-5" encType="multipart/form-data">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-black text-ink">顶部动画</h3>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">只保存首页左侧 WebP 动画图片。</p>
+                </div>
+                <button className="secondary-button rounded-none" type="submit">
+                  <Save size={16} />
+                  保存动画
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-5 xl:grid-cols-[220px_1fr]">
+                <FieldBlock label="当前顶部动画">
+                  <div className="flex min-h-[150px] items-center justify-center border border-slate-200 bg-slate-50 px-4 py-5">
+                    <img alt="" className="h-[110px] w-[160px] object-contain" src={settings.studyBuddyHeroImageUrl} />
+                  </div>
+                </FieldBlock>
+
+                <div className="grid gap-5">
+                  <FieldBlock label="顶部动画地址" description="可填写 public 路径或远程图片地址；上传 WebP 后会把图片数据保存到数据库。">
+                    <input
+                      className="input rounded-none"
+                      name="studyBuddyHeroImageAddress"
+                      placeholder="/ai-study/study-buddy-hero.webp"
+                      defaultValue={settings.studyBuddyHeroImageUrl.startsWith("data:") ? "" : settings.studyBuddyHeroImageUrl}
+                    />
+                  </FieldBlock>
+
+                  <FieldBlock label="上传顶部 WebP 动画" description="上传后保存为数据库字段，学生端刷新 /study-buddy 即可读取，不依赖容器共享目录。">
+                    <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center text-sm font-bold text-slate-600 transition hover:border-[#0872b9] hover:bg-blue-50">
+                      <ImageUp className="mb-2 text-[#0872b9]" size={24} />
+                      <span>选择 WEBP 图片或动画</span>
+                      <span className="mt-1 text-xs font-semibold text-slate-500">建议控制在 5MB 内，尺寸接近 320 × 220 px</span>
+                      <input
+                        accept="image/webp"
+                        className="sr-only"
+                        name="studyBuddyHeroImageFile"
+                        type="file"
+                      />
+                    </label>
+                  </FieldBlock>
+                </div>
+              </div>
+            </form>
+
+            <form action={updateStudyBuddyHeroTitleSettings} className="border-b border-slate-100 pb-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-black text-ink">标题文字</h3>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">只保存学生端首页顶部标题文本。</p>
+                </div>
+                <button className="secondary-button rounded-none" type="submit">
+                  <Save size={16} />
+                  保存标题
+                </button>
+              </div>
+
+              <div className="mt-4">
+                <FieldBlock label="顶部标题" description="保存后学生端刷新 /study-buddy 即可读取最新标题。">
+                  <input
+                    className="input rounded-none"
+                    name="studyBuddyHeroTitle"
+                    defaultValue={settings.studyBuddyHeroTitle}
+                    maxLength={40}
+                    required
+                  />
+                </FieldBlock>
+              </div>
+            </form>
+
+            <form action={updateStudyBuddyHeroEffectSettings}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-black text-ink">标题效果</h3>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">只保存标题动效和打字速度。</p>
+                </div>
+                <button className="secondary-button rounded-none" type="submit">
+                  <Save size={16} />
+                  保存效果
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-5 lg:grid-cols-[220px_220px_1fr]">
+                <FieldBlock label="标题效果">
+                  <select className="input rounded-none" name="studyBuddyHeroEffect" defaultValue={settings.studyBuddyHeroEffect} required>
+                    {studyBuddyHeroEffectOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </FieldBlock>
+
+                <FieldBlock label="打字速度">
+                  <input
+                    className="input rounded-none"
+                    name="studyBuddyHeroTypeSpeedMs"
+                    type="number"
+                    min={40}
+                    max={300}
+                    step={5}
+                    defaultValue={settings.studyBuddyHeroTypeSpeedMs}
+                    required
+                  />
+                </FieldBlock>
+
+                <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold leading-5 text-slate-500">
+                  打字速度只影响“打字机”，单位为毫秒 / 字，数值越小越快；其他效果使用固定轻量动画。保存后学生端刷新 /study-buddy 即可读取最新效果。
+                </div>
+              </div>
+            </form>
+          </div>
+        </section>
+      ) : null}
 
       {activeTab === "share-copy" ? (
         <ShareCopySettingsPanel

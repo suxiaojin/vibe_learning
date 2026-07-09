@@ -10,7 +10,6 @@ import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { requireAdmin } from "@/lib/auth";
 import {
   getAdminAiStudyProject,
-  getAiStudyProjectSourceDirectories,
   getAiStudySourceDirectory
 } from "@/lib/admin-ai-study-projects";
 
@@ -72,7 +71,6 @@ export default async function AdminAiStudyProjectDetailPage({ params, searchPara
   }
 
   const currentPath = `/admin/ai-study-projects/${project.id}`;
-  const directories = getAiStudyProjectSourceDirectories(project.sources);
   const ownerName = project.owner.studentProfile?.nickname || project.owner.username;
   const canPublish = project.status === "ready" && !project.deletedAt && project.visibility !== "public";
   const canPrivatize = !project.deletedAt && project.visibility !== "private";
@@ -148,46 +146,17 @@ export default async function AdminAiStudyProjectDetailPage({ params, searchPara
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[360px_1fr]">
-        <div className="panel">
-          <h2 className="text-lg font-black">创建者</h2>
-          <div className="mt-4 space-y-3 text-sm">
-            <InfoRow label="学生" value={<Link className="font-semibold text-ink hover:text-teal hover:underline" href={`/admin/students/${project.owner.id}`}>{ownerName}</Link>} />
-            <InfoRow label="用户名" value={project.owner.username} />
-            <InfoRow label="账号状态" value={project.owner.status} />
-            <InfoRow label="省份/学制" value={formatOwnerRegion(project.owner.studentProfile)} />
-            <InfoRow label="专业" value={project.owner.studentProfile?.major?.name || "暂无"} />
-          </div>
-        </div>
-
-        <div className="panel">
-          <h2 className="text-lg font-black">项目基础信息</h2>
-          <div className="mt-4 grid gap-3 text-sm md:grid-cols-2">
-            <InfoRow label="来源类型" value={project.sourceType} />
-            <InfoRow label="学习目标" value={project.learningGoal} />
-            <InfoRow label="已掌握" value={`${project.masteredCount} / ${project.knowledgeCount}`} />
-            <InfoRow label="学习人数记录" value={`${project._count.progress}`} />
-            <InfoRow label="创建时间" value={formatDate(project.createdAt)} />
-            <InfoRow label="最后学习" value={formatDate(project.lastStudiedAt)} />
-            <InfoRow label="删除时间" value={formatDate(project.deletedAt)} />
-          </div>
-          {project.description ? <p className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">{project.description}</p> : null}
-        </div>
-      </section>
-
       <section className="panel">
-        <h2 className="text-lg font-black">MinIO 目录前缀</h2>
-        {directories.length > 0 ? (
-          <div className="mt-4 grid gap-2">
-            {directories.map((directory) => (
-              <code key={directory} className="break-all rounded bg-slate-100 px-3 py-2 text-xs text-slate-700">
-                {directory}
-              </code>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-3 text-sm text-slate-500">暂无 MinIO 文件目录。文本项目可能没有对象存储路径。</p>
-        )}
+        <h2 className="text-lg font-black">项目基础信息</h2>
+        <div className="mt-4 grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-3">
+          <InfoRow label="来源类型" value={project.sourceType} />
+          <InfoRow label="学生" value={<Link className="font-semibold text-ink hover:text-teal hover:underline" href={`/admin/students/${project.owner.id}`}>{ownerName}</Link>} />
+          <InfoRow label="用户名" value={project.owner.username} />
+          <InfoRow label="账号状态" value={project.owner.status} />
+          <InfoRow label="省份/学制" value={formatOwnerRegion(project.owner.studentProfile)} />
+          <InfoRow label="专业" value={project.owner.studentProfile?.major?.name || "暂无"} />
+        </div>
+        {project.description ? <p className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">{project.description}</p> : null}
       </section>
 
       <section className="panel">
@@ -347,6 +316,7 @@ function formatDate(value: Date | string | null) {
   }
   const date = value instanceof Date ? value : new Date(value);
   return date.toLocaleString("zh-CN", {
+    timeZone: "Asia/Shanghai",
     hour12: false,
     year: "numeric",
     month: "2-digit",

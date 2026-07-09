@@ -12,7 +12,11 @@ export const systemSettingsDefaults = {
   userAgreementContent: "test",
   privacyPolicyContent: "test",
   platformAgreementContent: "test",
-  customerServiceEmail: "714399532@qq.com"
+  customerServiceEmail: "714399532@qq.com",
+  studyBuddyHeroImageUrl: "/ai-study/study-buddy-hero.webp",
+  studyBuddyHeroTitle: "好好学习，早日上岸",
+  studyBuddyHeroEffect: "typewriter",
+  studyBuddyHeroTypeSpeedMs: 105
 };
 
 export type PublicSystemSettings = typeof systemSettingsDefaults & {

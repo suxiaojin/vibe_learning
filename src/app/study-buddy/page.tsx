@@ -1,9 +1,11 @@
 import { AlertTriangle } from "lucide-react";
 import { StudyMaterialImporter } from "@/components/ai-study/pdf-upload-form";
 import { AiStudyProjectSection, type AiStudyProjectSectionItem } from "@/components/ai-study/project-section";
+import { StudyBuddyHeroTitle } from "@/components/ai-study/study-buddy-hero-title";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { requireUser } from "@/lib/auth";
 import { listAiStudyProjects, listPublicAiStudyProjects } from "@/lib/ai-study";
+import { getSystemSettings } from "@/lib/system-settings";
 
 const errorMessages: Record<string, string> = {
   create_failed: "项目创建失败，请稍后重试。",
@@ -22,8 +24,11 @@ export default async function StudyBuddyPage({
 }) {
   const user = await requireUser();
   const params = await searchParams;
-  const projects = await listAiStudyProjects(user.id);
-  const publicProjects = await listPublicAiStudyProjects();
+  const [settings, projects, publicProjects] = await Promise.all([
+    getSystemSettings(),
+    listAiStudyProjects(user.id),
+    listPublicAiStudyProjects()
+  ]);
   const error = params?.error ? errorMessages[params.error] || "操作失败，请稍后重试。" : "";
 
   return (
@@ -37,13 +42,15 @@ export default async function StudyBuddyPage({
               alt=""
               className="h-[110px] w-[160px] object-contain"
               height={110}
-              src="/ai-study/study-buddy-hero.png"
+              src={settings.studyBuddyHeroImageUrl}
               width={160}
             />
             <div className="pb-2">
-              <h1 className="text-[30px] font-black leading-tight tracking-normal text-[#06122b] md:text-[34px]">
-                好好学习，早日上岸
-              </h1>
+              <StudyBuddyHeroTitle
+                effect={settings.studyBuddyHeroEffect}
+                speedMs={settings.studyBuddyHeroTypeSpeedMs}
+                text={settings.studyBuddyHeroTitle}
+              />
               <div className="mt-4">
                 <StudyMaterialImporter />
               </div>

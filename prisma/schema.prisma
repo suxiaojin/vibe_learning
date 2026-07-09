@@ -387,6 +387,10 @@ model SystemSetting {
   privacyPolicyContent      String   @default("test")
   platformAgreementContent  String   @default("test")
   customerServiceEmail      String   @default("714399532@qq.com")
+  studyBuddyHeroImageUrl    String   @default("/ai-study/study-buddy-hero.webp")
+  studyBuddyHeroTitle       String   @default("好好学习，早日上岸")
+  studyBuddyHeroEffect      String   @default("typewriter")
+  studyBuddyHeroTypeSpeedMs Int      @default(105)
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 

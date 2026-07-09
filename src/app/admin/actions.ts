@@ -18,6 +18,7 @@ import {
   type QuestionBankEditableQuestionType
 } from "@/lib/question-bank-types";
 import { isShareCopyContext } from "@/lib/share-copy";
+import { normalizeStudyBuddyHeroEffect } from "@/lib/study-buddy-title-effects";
 import { systemSettingsDefaults, systemSettingsId } from "@/lib/system-settings";
 
 type QuestionOption = {
@@ -29,6 +30,7 @@ const optionKeys = ["A", "B", "C", "D"] as const;
 const alphabetOptionKeys = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 const loginHeroUploadDir = "uploads/system-settings";
 const maxLoginHeroImageSize = 5 * 1024 * 1024;
+const maxStudyBuddyHeroImageSize = 5 * 1024 * 1024;
 const imageMimeExtensions: Record<string, string> = {
   "image/gif": ".gif",
   "image/jpeg": ".jpg",
@@ -232,7 +234,20 @@ function appendAdminStudentsMessage(path: string, key: "notice" | "error", messa
 
 function getRequiredSettingText(formData: FormData, key: keyof typeof systemSettingsDefaults) {
   const value = String(formData.get(key) || "").trim();
-  return value || systemSettingsDefaults[key];
+  return value || String(systemSettingsDefaults[key]);
+}
+
+function getStudyBuddyHeroEffect(formData: FormData) {
+  const value = String(formData.get("studyBuddyHeroEffect") || "").trim();
+  return normalizeStudyBuddyHeroEffect(value);
+}
+
+function getStudyBuddyHeroTypeSpeedMs(formData: FormData) {
+  const value = Number(formData.get("studyBuddyHeroTypeSpeedMs"));
+  if (!Number.isFinite(value)) {
+    return systemSettingsDefaults.studyBuddyHeroTypeSpeedMs;
+  }
+  return Math.min(300, Math.max(40, Math.round(value)));
 }
 
 async function saveLoginHeroImage(file: File) {
@@ -250,6 +265,40 @@ async function saveLoginHeroImage(file: File) {
   await mkdir(publicDir, { recursive: true });
   await writeFile(`${publicDir}/${fileName}`, Buffer.from(await file.arrayBuffer()));
   return `/${loginHeroUploadDir}/${fileName}`;
+}
+
+async function saveStudyBuddyHeroImage(file: File) {
+  if (file.type !== "image/webp") {
+    redirect("/admin/settings?tab=study-buddy&error=invalid-study-buddy-hero-image-type");
+  }
+
+  if (file.size > maxStudyBuddyHeroImageSize) {
+    redirect("/admin/settings?tab=study-buddy&error=study-buddy-hero-image-too-large");
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  return `data:image/webp;base64,${buffer.toString("base64")}`;
+}
+
+async function updateSystemSettingsPatch(data: Partial<typeof systemSettingsDefaults>) {
+  await prisma.systemSetting.upsert({
+    where: { id: systemSettingsId },
+    update: data,
+    create: {
+      ...systemSettingsDefaults,
+      ...data,
+      id: systemSettingsId
+    }
+  });
+}
+
+async function getCurrentStudyBuddyHeroImageUrl() {
+  const settings = await prisma.systemSetting.findUnique({
+    where: { id: systemSettingsId },
+    select: { studyBuddyHeroImageUrl: true }
+  });
+
+  return settings?.studyBuddyHeroImageUrl || systemSettingsDefaults.studyBuddyHeroImageUrl;
 }
 
 function getQuestionType(formData: FormData) {
@@ -383,14 +432,7 @@ export async function updateSystemSettings(formData: FormData) {
     customerServiceEmail: getRequiredSettingText(formData, "customerServiceEmail")
   };
 
-  await prisma.systemSetting.upsert({
-    where: { id: systemSettingsId },
-    update: data,
-    create: {
-      id: systemSettingsId,
-      ...data
-    }
-  });
+  await updateSystemSettingsPatch(data);
 
   revalidatePath("/admin/settings");
   revalidatePath("/login");
@@ -399,7 +441,49 @@ export async function updateSystemSettings(formData: FormData) {
   revalidatePath("/privacy-policy");
   revalidatePath("/platform-agreement");
   revalidatePath("/forgot-password");
+  revalidatePath("/study-buddy");
   redirect("/admin/settings?notice=saved");
+}
+
+export async function updateStudyBuddyHeroImageSettings(formData: FormData) {
+  await requireAdmin();
+  let studyBuddyHeroImageUrl = await getCurrentStudyBuddyHeroImageUrl();
+  const studyBuddyHeroImageAddress = String(formData.get("studyBuddyHeroImageAddress") || "").trim();
+  const studyBuddyHeroImageFile = formData.get("studyBuddyHeroImageFile");
+
+  if (studyBuddyHeroImageAddress) {
+    studyBuddyHeroImageUrl = studyBuddyHeroImageAddress;
+  }
+
+  if (studyBuddyHeroImageFile instanceof File && studyBuddyHeroImageFile.size > 0) {
+    studyBuddyHeroImageUrl = await saveStudyBuddyHeroImage(studyBuddyHeroImageFile);
+  }
+
+  await updateSystemSettingsPatch({ studyBuddyHeroImageUrl });
+  revalidatePath("/admin/settings");
+  revalidatePath("/study-buddy");
+  redirect("/admin/settings?tab=study-buddy&notice=study-buddy-hero-image-saved");
+}
+
+export async function updateStudyBuddyHeroTitleSettings(formData: FormData) {
+  await requireAdmin();
+  await updateSystemSettingsPatch({
+    studyBuddyHeroTitle: getRequiredSettingText(formData, "studyBuddyHeroTitle")
+  });
+  revalidatePath("/admin/settings");
+  revalidatePath("/study-buddy");
+  redirect("/admin/settings?tab=study-buddy&notice=study-buddy-hero-title-saved");
+}
+
+export async function updateStudyBuddyHeroEffectSettings(formData: FormData) {
+  await requireAdmin();
+  await updateSystemSettingsPatch({
+    studyBuddyHeroEffect: getStudyBuddyHeroEffect(formData),
+    studyBuddyHeroTypeSpeedMs: getStudyBuddyHeroTypeSpeedMs(formData)
+  });
+  revalidatePath("/admin/settings");
+  revalidatePath("/study-buddy");
+  redirect("/admin/settings?tab=study-buddy&notice=study-buddy-hero-effect-saved");
 }
 
 export async function createShareCopyStyle(formData: FormData) {
