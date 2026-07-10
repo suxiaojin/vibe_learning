@@ -1,90 +1,160 @@
 "use client";
 
-import { Check, ChevronDown, Upload } from "lucide-react";
+import { Check, ChevronDown, Loader2, Upload } from "lucide-react";
 import type { ReactNode } from "react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DEFAULT_AVATARS } from "@/lib/default-avatars";
 import { cn } from "@/lib/utils";
 
 const avatarMaxBytes = 800 * 1024;
 const allowedAvatarTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+const avatarUpdatedEventName = "vibe:avatar-updated";
+
+type AvatarApiResponse = {
+  avatarImage?: string;
+  error?: string;
+};
 
 export function AvatarUploadForm({
-  action,
   children,
   currentAvatarImage,
   errorText
 }: {
-  action: (formData: FormData) => void | Promise<void>;
   children: ReactNode;
   currentAvatarImage?: string;
   errorText?: string | null;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  const [savedAvatarImage, setSavedAvatarImage] = useState(currentAvatarImage || "");
   const [clientError, setClientError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const displayError = clientError || errorText || null;
+  const [serverErrorVisible, setServerErrorVisible] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [successText, setSuccessText] = useState<string | null>(null);
+  const displayAvatarImage = savedAvatarImage || currentAvatarImage || "";
+  const displayError = clientError || (serverErrorVisible ? errorText : null) || null;
+
+  useEffect(() => {
+    setSavedAvatarImage(currentAvatarImage || "");
+  }, [currentAvatarImage]);
+
+  useEffect(() => {
+    setServerErrorVisible(true);
+  }, [errorText]);
+
+  useEffect(() => {
+    if (!successText) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => setSuccessText(null), 2400);
+    return () => window.clearTimeout(timeoutId);
+  }, [successText]);
+
+  async function saveAvatar(formData: FormData) {
+    setClientError(null);
+    setServerErrorVisible(false);
+    setSuccessText(null);
+    setIsSaving(true);
+
+    try {
+      const response = await fetch("/api/student/avatar", {
+        method: "POST",
+        body: formData
+      });
+      const data = (await response.json().catch(() => ({}))) as AvatarApiResponse;
+
+      if (!response.ok || !data.avatarImage) {
+        throw new Error(data.error || "头像保存失败，请稍后重试");
+      }
+
+      setSavedAvatarImage(data.avatarImage);
+      setSuccessText("头像已更新");
+      window.dispatchEvent(new CustomEvent(avatarUpdatedEventName, { detail: { avatarImage: data.avatarImage } }));
+    } catch (error) {
+      setClientError(error instanceof Error ? error.message : "头像保存失败，请稍后重试");
+    } finally {
+      setIsSaving(false);
+      if (inputRef.current) {
+        inputRef.current.value = "";
+      }
+    }
+  }
+
+  function handleFileChange() {
+    const input = inputRef.current;
+    const file = input?.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setServerErrorVisible(false);
+    setSuccessText(null);
+
+    if (file.size > avatarMaxBytes) {
+      setClientError("上传失败，大小不超过 800KB");
+      input.value = "";
+      return;
+    }
+
+    if (!allowedAvatarTypes.has(file.type)) {
+      setClientError("上传失败，仅支持 JPG、PNG、WebP");
+      input.value = "";
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("avatarImage", file);
+    void saveAvatar(formData);
+  }
+
+  function handlePresetAvatar(avatarImage: string) {
+    const formData = new FormData();
+    formData.append("presetAvatarImage", avatarImage);
+    void saveAvatar(formData);
+  }
 
   return (
-    <div>
+    <div aria-busy={isSaving}>
       <div className="flex flex-wrap items-center gap-4">
-        <form action={action} ref={formRef}>
-          <button
-            aria-label="上传头像"
-            className="block rounded-full text-left outline-none ring-offset-4 transition hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-teal"
-            title="上传头像"
-            type="button"
-            onClick={() => inputRef.current?.click()}
-          >
-            {children}
-          </button>
-          <input
-            ref={inputRef}
-            className="sr-only"
-            name="avatarImage"
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            onChange={() => {
-              const input = inputRef.current;
-              const file = input?.files?.[0];
-              if (!file) {
-                return;
-              }
-
-              if (file.size > avatarMaxBytes) {
-                setClientError("上传失败，大小不超过 800KB");
-                input.value = "";
-                return;
-              }
-
-              if (!allowedAvatarTypes.has(file.type)) {
-                setClientError("上传失败，仅支持 JPG、PNG、WebP");
-                input.value = "";
-                return;
-              }
-
-              setClientError(null);
-              if (input.files?.length) {
-                formRef.current?.requestSubmit();
-              }
-            }}
-          />
-        </form>
+        <button
+          aria-label="上传头像"
+          className="block rounded-full text-left outline-none ring-offset-4 transition hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-teal disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
+          disabled={isSaving}
+          title="上传头像"
+          type="button"
+          onClick={() => inputRef.current?.click()}
+        >
+          {displayAvatarImage ? (
+            <img alt="当前头像" className="size-24 shrink-0 rounded-full object-cover shadow-soft" src={displayAvatarImage} />
+          ) : (
+            children
+          )}
+        </button>
+        <input
+          ref={inputRef}
+          className="sr-only"
+          name="avatarImage"
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          onChange={handleFileChange}
+        />
 
         <div className="space-y-2">
           <div className="flex flex-wrap gap-2">
             <button
-              className="secondary-button min-h-10 rounded-xl px-4 text-sm"
+              className="secondary-button min-h-11 rounded-xl px-4 text-sm"
+              disabled={isSaving}
               type="button"
               onClick={() => inputRef.current?.click()}
             >
-              <Upload size={16} />
-              上传头像
+              {isSaving ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}
+              {isSaving ? "保存中" : "上传头像"}
             </button>
             <button
               aria-expanded={pickerOpen}
-              className="secondary-button min-h-10 rounded-xl px-4 text-sm"
+              className="secondary-button min-h-11 rounded-xl px-4 text-sm"
+              disabled={isSaving}
               type="button"
               onClick={() => setPickerOpen((open) => !open)}
             >
@@ -104,28 +174,28 @@ export function AvatarUploadForm({
           </div>
           <div className="grid grid-cols-4 gap-3 sm:grid-cols-6">
             {DEFAULT_AVATARS.map((avatar) => {
-              const active = currentAvatarImage === avatar.src;
+              const active = displayAvatarImage === avatar.src;
 
               return (
-                <form action={action} key={avatar.id}>
-                  <input name="presetAvatarImage" type="hidden" value={avatar.src} />
-                  <button
-                    aria-label={`选择${avatar.label}`}
-                    className={cn(
-                      "relative block rounded-full bg-white p-0.5 outline-none ring-offset-2 transition hover:scale-[1.04] focus-visible:ring-2 focus-visible:ring-teal",
-                      active ? "ring-2 ring-teal" : "ring-1 ring-slate-200 hover:ring-teal/40"
-                    )}
-                    title={avatar.label}
-                    type="submit"
-                  >
-                    <img alt={avatar.label} className="size-12 rounded-full object-cover" src={avatar.src} />
-                    {active ? (
-                      <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-teal text-white shadow-sm">
-                        <Check size={13} />
-                      </span>
-                    ) : null}
-                  </button>
-                </form>
+                <button
+                  aria-label={`选择${avatar.label}`}
+                  className={cn(
+                    "relative block rounded-full bg-white p-0.5 outline-none ring-offset-2 transition hover:scale-[1.04] focus-visible:ring-2 focus-visible:ring-teal disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100",
+                    active ? "ring-2 ring-teal" : "ring-1 ring-slate-200 hover:ring-teal/40"
+                  )}
+                  disabled={isSaving}
+                  key={avatar.id}
+                  title={avatar.label}
+                  type="button"
+                  onClick={() => handlePresetAvatar(avatar.src)}
+                >
+                  <img alt={avatar.label} className="size-12 rounded-full object-cover" src={avatar.src} />
+                  {active ? (
+                    <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-teal text-white shadow-sm">
+                      <Check size={13} />
+                    </span>
+                  ) : null}
+                </button>
               );
             })}
           </div>
@@ -133,6 +203,7 @@ export function AvatarUploadForm({
       ) : null}
 
       {displayError ? <p className="mt-3 max-w-md text-sm font-bold leading-5 text-coral">{displayError}</p> : null}
+      {!displayError && successText ? <p className="mt-3 max-w-md text-sm font-bold leading-5 text-teal">{successText}</p> : null}
     </div>
   );
 }

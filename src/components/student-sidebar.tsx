@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { Bell, BookMarked, Gem, GraduationCap, HelpCircle, LogOut, MoreHorizontal, Settings, Sparkles, UserRound, UsersRound } from "lucide-react";
 import { NotificationBell } from "@/components/notification-bell";
+import { StudentSidebarAvatar } from "@/components/student-sidebar-avatar";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ensureDiamondAccount } from "@/lib/rewards";
@@ -14,8 +15,8 @@ const text = {
   subtitle: "\u4e13\u8f6c\u672c\u95ef\u5173\u5b66\u4e60",
   learn: "\u5b66\u4e60",
   courseCenter: "\u8bfe\u7a0b\u4e2d\u5fc3",
-  studyBuddy: "搭子",
-  buddyCircle: "学霸说",
+  studyBuddy: "学习搭子",
+  buddyCircle: "搭子圈",
   profile: "\u4e2a\u4eba\u6863\u6848",
   more: "\u66f4\u591a",
   moreTitle: "\u66f4\u591a\u529f\u80fd",
@@ -30,7 +31,7 @@ export async function StudentSidebar({ active }: { active: StudentNavKey }) {
   const footer = await getStudentSidebarAccount();
 
   return (
-    <aside className="relative z-[100] hidden border-r border-slate-200/80 bg-white lg:block">
+    <aside className="hidden border-r border-slate-200/80 bg-white lg:block">
       <div className="sticky top-0 flex min-h-dvh flex-col px-5 py-6">
         <div className="mb-8 px-2">
           <p className="text-[28px] font-bold leading-tight text-teal">Vibe Learning</p>
@@ -65,7 +66,7 @@ async function getStudentSidebarAccount() {
 
   return (
     <div className="flex items-center gap-5">
-      <SidebarAvatar image={avatarImage} name={displayName} />
+      <StudentSidebarAvatar image={avatarImage} name={displayName} />
       <Link
         aria-label={`我的钻石，${diamondAccount.balance} 个`}
         className="relative grid size-11 place-items-center rounded-full text-sky-500 transition hover:text-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-200"
@@ -84,19 +85,6 @@ async function getStudentSidebarAccount() {
         unreadCount={notificationBellData.unreadCount}
       />
     </div>
-  );
-}
-
-function SidebarAvatar({ image, name }: { image: string; name: string }) {
-  const className = "size-14 rounded-full object-cover shadow-sm";
-  if (image) {
-    return <Link href="/me?tab=homepage"><img alt={`${name} 的头像`} className={className} src={image} /></Link>;
-  }
-
-  return (
-    <Link className="grid size-14 place-items-center rounded-full bg-[#58cc02] text-xl font-semibold text-white shadow-sm" href="/me?tab=homepage">
-      {name.slice(0, 1).toUpperCase()}
-    </Link>
   );
 }
 
@@ -141,7 +129,7 @@ function MoreMenu({ active }: { active: boolean }) {
         {text.more}
       </button>
 
-      <div className="invisible absolute bottom-0 left-full z-[120] w-56 translate-x-2 pl-2 opacity-0 transition duration-150 group-hover:visible group-hover:translate-x-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-x-0 group-focus-within:opacity-100">
+      <div className="invisible absolute bottom-0 left-full z-40 w-56 translate-x-2 pl-2 opacity-0 transition duration-150 group-hover:visible group-hover:translate-x-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-x-0 group-focus-within:opacity-100">
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white py-2 shadow-[0_8px_28px_rgba(15,23,42,0.16)]">
           <div className="border-b border-slate-200 px-5 py-3">
             <p className="text-sm font-semibold text-slate-700">{text.moreTitle}</p>

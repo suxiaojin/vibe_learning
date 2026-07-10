@@ -237,7 +237,7 @@ function ProfilePanel({
     <SectionFrame icon={<UserRound className="text-teal" size={22} />} title="我的信息">
       <div>
         <span className="label">头像</span>
-        <AvatarUploadForm action={updateAvatar} currentAvatarImage={avatarImage} errorText={avatarError}>
+        <AvatarUploadForm currentAvatarImage={avatarImage} errorText={avatarError}>
           <Avatar name={nickname} color={avatarColor} image={avatarImage} size="md" />
         </AvatarUploadForm>
       </div>
@@ -1085,43 +1085,6 @@ async function findOrCreateSchoolByName(name: string) {
       province: "未设置",
       status: "published"
     }
-  });
-}
-
-async function updateAvatar(formData: FormData) {
-  "use server";
-
-  const user = await requireUser();
-  const uploadedAvatarImage = await readAvatarImage(formData.get("avatarImage"));
-  const presetAvatarImage = uploadedAvatarImage
-    ? null
-    : readPresetAvatarImage(formData.get("presetAvatarImage"), "/me?tab=profile&profile=avatar_type");
-  const avatarImage = uploadedAvatarImage || presetAvatarImage;
-
-  if (!avatarImage) {
-    redirect("/me?tab=profile");
-  }
-
-  await prisma.studentProfile.upsert({
-    where: { userId: user.id },
-    update: { avatarImage },
-    create: {
-      userId: user.id,
-      nickname: user.username,
-      avatarImage
-    }
-  });
-
-  revalidatePath("/me");
-  revalidatePath(`/students/${user.id}`);
-  redirect("/me?tab=profile&profile=updated");
-}
-
-async function readAvatarImage(value: FormDataEntryValue | null) {
-  return readUploadedImage(value, {
-    maxBytes: avatarMaxBytes,
-    sizeRedirect: "/me?tab=profile&profile=avatar_size",
-    typeRedirect: "/me?tab=profile&profile=avatar_type"
   });
 }
 
