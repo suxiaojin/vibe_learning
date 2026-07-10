@@ -17,6 +17,7 @@ import {
   Target,
   X
 } from "lucide-react";
+import { EmptyState, PageHeader, ProgressBar, SurfaceCard } from "@/components/student-ui";
 import { cn } from "@/lib/utils";
 
 type RegionOption = {
@@ -309,20 +310,16 @@ export function CourseCenterForm({
 
   return (
     <>
-      <header className="flex flex-wrap items-start justify-between gap-5">
-        <div>
-          <h1 className="text-[32px] font-bold leading-tight text-ink">课程中心</h1>
-          <p className="mt-2 text-[15px] font-medium leading-6 text-slate-500">{savedPlanLabel || "请先保存学习方案"}</p>
-        </div>
-        <button
-          className="secondary-button border-teal/30 px-5 text-[15px] font-semibold text-teal hover:border-teal/60 hover:text-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/25"
-          type="button"
-          onClick={() => setDrawerOpen(true)}
-        >
-          <Settings2 size={19} />
-          调整学习方案
-        </button>
-      </header>
+      <PageHeader
+        title="课程中心"
+        description={savedPlanLabel || "请先保存学习方案"}
+        actions={
+          <button className="secondary-button border-teal/30 px-5 text-[15px] text-teal hover:border-teal/60" type="button" onClick={() => setDrawerOpen(true)}>
+            <Settings2 size={19} />
+            调整学习方案
+          </button>
+        }
+      />
 
       {overview.courses.length > 0 ? (
         <section className="mt-6 grid gap-5 xl:grid-cols-2">
@@ -331,22 +328,26 @@ export function CourseCenterForm({
           ))}
         </section>
       ) : (
-        <section className="mt-6 rounded-[22px] border border-dashed border-teal/30 bg-white px-6 py-12 text-center shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
-          <BookOpenCheck className="mx-auto text-teal" size={34} />
-          <h2 className="mt-4 text-xl font-semibold text-ink">先完成学习方案设置</h2>
-          <p className="mt-2 text-sm font-medium leading-6 text-slate-500">保存地区、公共课和专业课后，这里会展示你的课程与真实学习进度。</p>
-          <button className="primary-button mt-5 px-6 text-[15px] font-semibold" type="button" onClick={() => setDrawerOpen(true)}>
-            设置学习方案
-          </button>
-        </section>
+        <div className="mt-6">
+          <EmptyState
+            icon={<BookOpenCheck size={28} />}
+            title="先完成学习方案设置"
+            description="保存地区、公共课和专业课后，这里会展示你的课程与真实学习进度。"
+            action={
+              <button className="primary-button px-6 text-[15px]" type="button" onClick={() => setDrawerOpen(true)}>
+                设置学习方案
+              </button>
+            }
+          />
+        </div>
       )}
 
       {drawerOpen ? (
-        <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/45" role="presentation" onMouseDown={closeDrawer}>
+        <div className="drawer-scrim" role="presentation" onMouseDown={closeDrawer}>
           <section
             aria-labelledby="course-plan-title"
             aria-modal="true"
-            className="flex h-full w-full max-w-xl flex-col bg-mist shadow-2xl"
+            className="drawer-panel"
             role="dialog"
             onMouseDown={(event) => event.stopPropagation()}
           >
@@ -367,7 +368,7 @@ export function CourseCenterForm({
 
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
               <div className="space-y-5">
-                <fieldset className="rounded-[22px] border border-slate-200/80 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+                <fieldset className="surface-card p-5">
                   <legend className="px-2 text-sm font-semibold text-slate-600">{text.regionTitle}</legend>
                   <div className="mt-1 grid gap-4 sm:grid-cols-2">
                     <SelectField
@@ -389,7 +390,7 @@ export function CourseCenterForm({
                   </div>
                 </fieldset>
 
-                <fieldset className="rounded-[22px] border border-slate-200/80 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+                <fieldset className="surface-card p-5">
                   <legend className="px-2 text-sm font-semibold text-slate-600">{text.courseTitle}</legend>
                   <div className="mt-1 grid gap-4 sm:grid-cols-2">
                     <SelectField
@@ -411,7 +412,7 @@ export function CourseCenterForm({
                   </div>
                 </fieldset>
 
-                <div className="rounded-[22px] border border-teal/20 bg-teal/5 px-5 py-4">
+                <div className="rounded-panel border border-teal/20 bg-teal/5 px-5 py-4">
                   <p className="text-xs font-semibold uppercase text-teal">调整后的学习方案</p>
                   <p className="mt-2 font-semibold text-ink">{selectedRegion?.name || selectedRegion?.province || "待选择"} · {selectedRegion?.studySystem || "待选择"}</p>
                   <p className="mt-1 text-sm font-medium text-slate-600">{selectedPublicSubject?.name || "待选择公共课"} + {selectedMajor?.name || "待选择专业课"}</p>
@@ -452,8 +453,8 @@ export function CourseCenterForm({
                 </div>
               ) : null}
               <div className="flex justify-end gap-3">
-                <button className="secondary-button min-w-24 text-[15px] font-semibold" type="button" onClick={closeDrawer}>{text.cancel}</button>
-                <button className="primary-button min-w-40 text-[15px] font-semibold" type="button" disabled={!canSave} onClick={saveSelection}>
+                <button className="secondary-button min-w-24 text-[15px]" type="button" onClick={closeDrawer}>{text.cancel}</button>
+                <button className="primary-button min-w-40 text-[15px]" type="button" disabled={!canSave} onClick={saveSelection}>
                   {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
                   {saving ? text.saving : text.save}
                 </button>
@@ -471,21 +472,22 @@ function CourseCard({ course }: { course: CourseCenterOverview["courses"][number
   const href = course.currentSection?.href || `/learn?course=${course.key}`;
 
   return (
-    <article
+    <SurfaceCard
+      as="article"
       className={cn(
-        "flex flex-col rounded-[22px] border bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.06)]",
-        isMajor ? "border-teal/35" : "border-slate-200/80"
+        "flex flex-col p-6",
+        isMajor ? "border-teal/35" : "border-info/15"
       )}
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 items-center gap-4">
-          <span className={cn("grid size-16 shrink-0 place-items-center rounded-2xl border", isMajor ? "border-teal/25 bg-teal/10 text-teal" : "border-sky-200 bg-sky-50 text-sky-600")}>
+          <span className={cn("grid size-16 shrink-0 place-items-center rounded-2xl border", isMajor ? "border-teal/25 bg-teal/10 text-teal" : "border-info/15 bg-info-muted text-info")}>
             {isMajor ? <Monitor size={32} /> : <Sigma size={32} />}
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="truncate text-2xl font-semibold text-ink">{course.title}</h2>
-              <span className={cn("badge", isMajor ? "bg-teal/10 text-teal" : "bg-sky-50 text-sky-600")}>
+              <span className={cn("badge", isMajor ? "bg-teal/10 text-teal" : "bg-info-muted text-info")}>
                 {isMajor ? "专业课" : "公共课"}
               </span>
             </div>
@@ -493,13 +495,17 @@ function CourseCard({ course }: { course: CourseCenterOverview["courses"][number
           </div>
         </div>
         <div className="shrink-0 text-right">
-          <p className={cn("text-[34px] font-bold leading-none", isMajor ? "text-teal" : "text-sky-600")}>{course.progressPercent}<span className="ml-0.5 text-base">%</span></p>
+          <p className={cn("text-[34px] font-bold leading-none", isMajor ? "text-teal" : "text-info")}>{course.progressPercent}<span className="ml-0.5 text-base">%</span></p>
           <p className="mt-1 text-xs font-semibold text-slate-400">学习进度</p>
         </div>
       </div>
 
-      <div className="mt-6 h-2.5 overflow-hidden rounded-full bg-slate-100" aria-label={`${course.title}学习进度 ${course.progressPercent}%`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={course.progressPercent}>
-        <div className={cn("h-full rounded-full", isMajor ? "bg-teal" : "bg-sky-500")} style={{ width: `${course.progressPercent}%` }} />
+      <div className="mt-6">
+        <ProgressBar
+          label={`${course.title}学习进度 ${course.progressPercent}%`}
+          value={course.progressPercent}
+          indicatorClassName={isMajor ? "bg-teal" : "bg-info"}
+        />
       </div>
 
       <div className="mt-6 flex flex-wrap items-end justify-between gap-4 border-b border-slate-100 pb-5">
@@ -508,7 +514,7 @@ function CourseCard({ course }: { course: CourseCenterOverview["courses"][number
           <p className="mt-2 truncate text-base font-semibold text-ink">{course.currentSection?.title || "课程内容准备中"}</p>
           {course.currentSection?.chapterTitle ? <p className="mt-1 truncate text-xs font-medium text-slate-400">{course.currentSection.chapterTitle}</p> : null}
         </div>
-        <Link className={cn(isMajor ? "primary-button" : "secondary-button border-sky-300 text-sky-600 hover:border-sky-500 hover:text-sky-700", "min-w-32 text-[15px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/25")} href={href}>
+        <Link className={cn(isMajor ? "primary-button" : "secondary-button border-info/25 text-info hover:border-info/50 hover:text-info", "min-w-32 text-[15px]")} href={href}>
           {isMajor ? "继续学习" : "进入课程"}
           <ChevronRight size={17} />
         </Link>
@@ -522,7 +528,7 @@ function CourseCard({ course }: { course: CourseCenterOverview["courses"][number
               const content = (
                 <>
                   <span className="flex min-w-0 items-center gap-3">
-                    <Circle className={cn("shrink-0", isMajor ? "text-teal" : "text-sky-500")} size={11} />
+                    <Circle className={cn("shrink-0", isMajor ? "text-teal" : "text-info")} size={11} />
                     <span className="truncate">{section.title}</span>
                   </span>
                   <span className="flex shrink-0 items-center gap-1 text-xs text-slate-400">
@@ -546,7 +552,7 @@ function CourseCard({ course }: { course: CourseCenterOverview["courses"][number
         ) : (
           <p className="mt-3 text-sm font-medium text-slate-400">{course.sectionCount === 0 ? "暂无已发布的课程内容" : "已完成当前课程的全部知识点"}</p>
         )}
-        <Link className={cn("mt-4 inline-flex items-center gap-1 text-sm font-semibold", isMajor ? "text-teal" : "text-sky-600")} href={`/course-center/knowledge-map?course=${course.key}`}>
+        <Link className={cn("mt-4 inline-flex items-center gap-1 text-sm font-semibold", isMajor ? "text-teal" : "text-info")} href={`/course-center/knowledge-map?course=${course.key}`}>
           查看全部 {course.sectionCount} 个知识点 <ChevronRight size={16} />
         </Link>
       </div>
@@ -559,7 +565,7 @@ function CourseCard({ course }: { course: CourseCenterOverview["courses"][number
           title="专项练习"
         />
       </div>
-    </article>
+    </SurfaceCard>
   );
 }
 
@@ -575,12 +581,12 @@ function PracticeTestAction({
   isMajor: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200/80 bg-white px-4 py-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+    <div className="flex items-center justify-between gap-4 rounded-2xl border border-border-soft/80 bg-surface px-4 py-4 shadow-card">
       <div className="flex min-w-0 items-center gap-4">
         <span
           className={cn(
             "grid size-11 shrink-0 place-items-center rounded-full",
-            isMajor ? "bg-teal/10 text-teal" : "bg-sky-50 text-sky-600"
+            isMajor ? "bg-teal/10 text-teal" : "bg-info-muted text-info"
           )}
         >
           <Target size={24} />
@@ -594,7 +600,7 @@ function PracticeTestAction({
           "inline-flex min-h-12 shrink-0 items-center justify-center rounded-xl px-6 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2",
           isMajor
             ? "border border-teal/35 bg-white text-teal focus-visible:ring-teal/25"
-            : "border border-sky-300 bg-white text-sky-600 focus-visible:ring-sky-200"
+            : "border border-info/25 bg-white text-info focus-visible:ring-info/20"
         )}
         href={href}
       >

@@ -5,14 +5,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AutoDismissMessage } from "@/components/auto-dismiss-message";
 import { AvatarUploadForm } from "@/components/avatar-upload-form";
-import { BuddyShareCardView } from "@/components/buddy-share-card";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { HomeProfileEditor } from "@/components/home-profile-editor";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
+import { SocialPostCard, type SocialPostNode } from "@/components/social-post-card";
 import { SocialMedalBadge } from "@/components/social-medal-badge";
 import { SocialPostActions } from "@/components/social-post-actions";
-import { SocialPostAuthorHeader } from "@/components/social-post-author-header";
-import { StudentSidebar } from "@/components/student-sidebar";
+import { StudentPageShell } from "@/components/student-page-shell";
+import { SurfaceCard, TabNav } from "@/components/student-ui";
 import { requireUser } from "@/lib/auth";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import { deleteBuddyPost, likeBuddyPost, listProfileBuddyPosts, repostBuddyPost, unlikeBuddyPost, unrepostBuddyPost } from "@/lib/buddy-posts";
@@ -26,7 +26,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const avatarColors = [
-  { key: "green", className: "bg-[#58cc02]" },
+  { key: "green", className: "bg-success" },
   { key: "sky", className: "bg-sky-500" },
   { key: "coral", className: "bg-coral" },
   { key: "honey", className: "bg-honey" },
@@ -36,7 +36,6 @@ const avatarColors = [
 const avatarMaxBytes = 800 * 1024;
 const coverMaxBytes = 2 * 1024 * 1024;
 const allowedAvatarTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
-const meSectionClass = "rounded-2xl border border-slate-200/70 bg-transparent shadow-none";
 const dayMs = 24 * 60 * 60 * 1000;
 const heatmapWeekCount = 26;
 const chinaDateFormatter = new Intl.DateTimeFormat("en-US", {
@@ -124,55 +123,51 @@ export default async function MePage({
   const dailyAttempts = summarizeDailyAttempts(recentAttempts);
 
   return (
-    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
-      <StudentSidebar active="me" />
+    <StudentPageShell active="me" contentClassName="xl:px-8">
+      <div className="space-y-6">
+        <ProfileTabs activeTab={activeTab} />
 
-      <section className="min-w-0 px-5 py-8 lg:px-8">
-        <div className="mx-auto max-w-6xl space-y-6">
-          <ProfileTabs activeTab={activeTab} />
+        <Message type={query?.profile} successText="资料已保存" />
+        <Message type={query?.password} successText="密码已更新" />
 
-          <Message type={query?.profile} successText="资料已保存" />
-          <Message type={query?.password} successText="密码已更新" />
-
-          {activeTab === "profile" ? (
-            <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
-              <ProfilePanel
-                username={fullUser.username}
-                nickname={nickname}
-                avatarColor={avatarColor}
-                avatarImage={avatarImage}
-                profileStatus={query?.profile}
-                gender={fullUser.studentProfile?.gender || ""}
-                school={fullUser.studentProfile?.school || ""}
-                schoolId={fullUser.studentProfile?.schoolId || ""}
-                schools={schools}
-                phoneNumber={fullUser.phoneNumber || ""}
-                email={fullUser.email || ""}
-              />
-              <PasswordPanel status={query?.password} />
-            </section>
-          ) : null}
-
-          {activeTab === "medals" ? (
-            <MedalTrack
-              dailyAttempts={dailyAttempts}
-              gender={fullUser.studentProfile?.gender || ""}
-              totalAttempts={totalAttempts}
-            />
-          ) : null}
-
-          {activeTab === "diamonds" ? <DiamondPanel transactions={transactions} /> : null}
-
-          {activeTab === "homepage" && homeProfile ? (
-            <MyHomePagePanel
-              posts={homePosts.items}
-              profile={homeProfile}
+        {activeTab === "profile" ? (
+          <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+            <ProfilePanel
+              username={fullUser.username}
+              nickname={nickname}
+              avatarColor={avatarColor}
+              avatarImage={avatarImage}
               profileStatus={query?.profile}
+              gender={fullUser.studentProfile?.gender || ""}
+              school={fullUser.studentProfile?.school || ""}
+              schoolId={fullUser.studentProfile?.schoolId || ""}
+              schools={schools}
+              phoneNumber={fullUser.phoneNumber || ""}
+              email={fullUser.email || ""}
             />
-          ) : null}
-        </div>
-      </section>
-    </main>
+            <PasswordPanel status={query?.password} />
+          </section>
+        ) : null}
+
+        {activeTab === "medals" ? (
+          <MedalTrack
+            dailyAttempts={dailyAttempts}
+            gender={fullUser.studentProfile?.gender || ""}
+            totalAttempts={totalAttempts}
+          />
+        ) : null}
+
+        {activeTab === "diamonds" ? <DiamondPanel transactions={transactions} /> : null}
+
+        {activeTab === "homepage" && homeProfile ? (
+          <MyHomePagePanel
+            posts={homePosts.items}
+            profile={homeProfile}
+            profileStatus={query?.profile}
+          />
+        ) : null}
+      </div>
+    </StudentPageShell>
   );
 }
 
@@ -192,41 +187,18 @@ function SectionFrame({
   title: string;
 }) {
   return (
-    <section className={meSectionClass}>
+    <SurfaceCard className="overflow-hidden p-0">
       <div className="flex items-center gap-3 border-b border-slate-200/80 px-5 py-4">
         {icon}
         <h2 className="text-lg font-semibold text-ink">{title}</h2>
       </div>
       <div className={cn("p-5", bodyClassName)}>{children}</div>
-    </section>
+    </SurfaceCard>
   );
 }
 
 function ProfileTabs({ activeTab }: { activeTab: MeTab }) {
-  return (
-    <nav aria-label="个人档案功能" className="border-b border-slate-200">
-      <div className="flex min-h-16 gap-7 overflow-x-auto px-1">
-        {meTabs.map((tab) => {
-          const active = activeTab === tab.key;
-          return (
-            <a
-              key={tab.key}
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "inline-flex shrink-0 items-center border-b-2 px-1 pt-1 text-sm font-semibold transition",
-                active
-                  ? "border-teal text-ink"
-                  : "border-transparent text-slate-600 hover:border-slate-300 hover:text-ink"
-              )}
-              href={`/me?tab=${tab.key}`}
-            >
-              {tab.label}
-            </a>
-          );
-        })}
-      </div>
-    </nav>
-  );
+  return <TabNav activeKey={activeTab} ariaLabel="个人档案功能" items={meTabs.map((tab) => ({ ...tab, href: `/me?tab=${tab.key}` }))} />;
 }
 
 function ProfilePanel({
@@ -414,7 +386,7 @@ function DiamondPanel({
                   <tr key={item.id} className="border-b border-slate-100 last:border-0">
                     <td className="py-3 pr-4 font-semibold text-slate-500">{formatDateTime(item.createdAt)}</td>
                     <td className="py-3 pr-4 font-bold text-ink">{transactionLabels[item.type] || item.type}</td>
-                    <td className={cn("py-3 pr-4 font-semibold", item.amount >= 0 ? "text-[#58cc02]" : "text-coral")}>
+                    <td className={cn("py-3 pr-4 font-semibold", item.amount >= 0 ? "text-success-strong" : "text-coral")}>
                       {item.amount >= 0 ? "+" : ""}
                       {item.amount}
                     </td>
@@ -462,7 +434,7 @@ function MyHomePagePanel({
         </AutoDismissMessage>
       ) : null}
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
+      <section className="surface-card overflow-hidden p-0">
         <div
           className="h-48 bg-slate-200 bg-cover bg-center md:h-64"
           style={profile.user.coverImage ? { backgroundImage: `url(${profile.user.coverImage})` } : undefined}
@@ -508,7 +480,7 @@ function MyHomePagePanel({
         openInitially={openEditor}
       />
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
+      <section className="surface-card overflow-hidden p-0">
         <div className="border-b border-slate-100 px-5 py-4">
           <h3 className="text-base font-semibold text-ink">我的帖子</h3>
         </div>
@@ -536,107 +508,41 @@ function HomePostCard({ post }: { post: ProfilePost }) {
   const deleteFormId = `home-post-delete-${post.id}`;
 
   return (
-    <article className="scroll-mt-6 p-5 transition-colors target:bg-sky-50/70" id={`post-${post.id}`}>
-      <div className="flex items-start gap-3">
-        <Avatar name={post.author.nickname} color={post.author.avatarColor} image={post.author.avatarImage} size="sm" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-3">
-            <SocialPostAuthorHeader author={post.author} dateLabel={formatDateTime(post.createdAt)} />
-            {post.canDelete ? (
-              <form id={deleteFormId} action={deleteHomePost}>
-                <input name="postId" type="hidden" value={post.id} />
-                <ConfirmSubmitButton
-                  aria-label="删除帖子"
-                  className="grid size-9 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-coral/10 hover:text-coral"
-                  form={deleteFormId}
-                  message="确认删除这条帖子？删除后不可恢复。"
-                >
-                  <Trash2 size={17} />
-                </ConfirmSubmitButton>
-              </form>
-            ) : null}
-          </div>
-          {post.type === "original" ? (
-            <HomePostBody content={post.content} sharePayload={post.sharePayload} />
-          ) : (
-            <div className="mt-3 space-y-3">
-              {post.content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p> : null}
-              <HomeRepostSourceCard originalPost={post.originalPost} sourceState={post.sourceState} />
-            </div>
-          )}
-          <div className="mt-4">
-            <SocialPostActions
-              canLike={post.canLike}
-              canRepost={post.canRepost}
-              initialLikeCount={post.likeCount}
-              initialLiked={post.likedByMe}
-              initialRepostCount={post.repostCount}
-              initialReposted={post.repostedByMe}
-              postId={post.id}
-              repostSource={getPostRepostSource(post)}
-            />
-          </div>
-        </div>
-      </div>
-    </article>
+    <SocialPostCard
+      actionMenu={post.canDelete ? (
+        <form id={deleteFormId} action={deleteHomePost}>
+          <input name="postId" type="hidden" value={post.id} />
+          <ConfirmSubmitButton
+            aria-label="删除帖子"
+            className="grid size-9 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-coral/10 hover:text-coral"
+            form={deleteFormId}
+            message="确认删除这条帖子？删除后不可恢复。"
+          >
+            <Trash2 size={17} />
+          </ConfirmSubmitButton>
+        </form>
+      ) : null}
+      embedded
+      getDateLabel={formatDateTime}
+      id={`post-${post.id}`}
+      post={post as SocialPostNode}
+      renderActions={(targetPost) => <HomePostActions post={targetPost} />}
+    />
   );
 }
 
-function HomeRepostSourceCard({
-  depth = 0,
-  originalPost,
-  sourceState
-}: {
-  depth?: number;
-  originalPost: ProfilePost["originalPost"];
-  sourceState: ProfilePost["sourceState"];
-}) {
-  if (sourceState !== "visible" || !originalPost) {
-    return (
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <p className="text-sm font-bold text-slate-400">原内容已删除</p>
-      </div>
-    );
-  }
-
+function HomePostActions({ post }: { post: SocialPostNode }) {
   return (
-    <div className={cn("rounded-2xl border border-slate-200 bg-slate-50 p-4", depth > 0 ? "bg-white/70" : "")}>
-      <div className="flex items-start gap-3">
-        <a href={`/students/${originalPost.author.id}`}>
-          <Avatar name={originalPost.author.nickname} color={originalPost.author.avatarColor} image={originalPost.author.avatarImage} size="sm" />
-        </a>
-        <div className="min-w-0 flex-1">
-          <SocialPostAuthorHeader author={originalPost.author} dateLabel={formatDateTime(originalPost.createdAt)} />
-          <HomePostBody compact content={originalPost.content} sharePayload={originalPost.sharePayload} />
-          {originalPost.type === "repost" ? (
-            <div className="mt-3 border-l-2 border-slate-200 pl-3">
-              <HomeRepostSourceCard depth={depth + 1} originalPost={originalPost.originalPost} sourceState={originalPost.sourceState} />
-            </div>
-          ) : null}
-          <div className="mt-3">
-            <SocialPostActions
-              canLike={originalPost.canLike}
-              canRepost={originalPost.canRepost}
-              initialLikeCount={originalPost.likeCount}
-              initialLiked={originalPost.likedByMe}
-              initialRepostCount={originalPost.repostCount}
-              initialReposted={originalPost.repostedByMe}
-              postId={originalPost.id}
-              repostSource={getPostRepostSource(originalPost)}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function HomePostBody({ compact = false, content, sharePayload }: { compact?: boolean; content: string; sharePayload: ProfilePost["sharePayload"] }) {
-  return (
-    <div className={cn(compact ? "mt-2" : "mt-3", "space-y-3")}>
-      {content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{content}</p> : null}
-      <BuddyShareCardView card={sharePayload} compact={compact} />
-    </div>
+    <SocialPostActions
+      canLike={post.canLike}
+      canRepost={post.canRepost}
+      initialLikeCount={post.likeCount}
+      initialLiked={post.likedByMe}
+      initialRepostCount={post.repostCount}
+      initialReposted={post.repostedByMe}
+      postId={post.id}
+      repostSource={getPostRepostSource(post)}
+    />
   );
 }
 
@@ -644,7 +550,7 @@ function getPostRepostSource(post: {
   author: { nickname: string; username: string };
   canRepost: boolean;
   content: string;
-  createdAt: Date;
+  createdAt: Date | string;
   originalPost?: { content: string } | null;
 }) {
   return post.canRepost
@@ -703,11 +609,11 @@ function MedalTrack({
                 const Icon = node.icon;
                 return (
                   <div key={node.label} className="absolute top-0 z-10 w-20" style={{ left: `calc(8px + (100% - 16px) * ${node.position / 100})`, transform: nodeTransform(node.position) }}>
-                    <p className="mb-4 text-center text-xs font-black text-ink">{node.label}</p>
+                    <p className="mb-4 text-center text-xs font-semibold text-ink">{node.label}</p>
                     <span className={cn("mx-auto grid size-9 place-items-center rounded-full border-2 border-white shadow-soft", reached ? `${medalColor} text-white` : "bg-slate-200 text-slate-400")}>
                       <Icon size={18} />
                     </span>
-                    <p className="mt-2 text-center text-[11px] font-black text-slate-400">{node.threshold === 0 ? "默认" : `${node.threshold} 道`}</p>
+                    <p className="mt-2 text-center text-[11px] font-semibold text-slate-400">{node.threshold === 0 ? "默认" : `${node.threshold} 道`}</p>
                   </div>
                 );
               })}
@@ -797,7 +703,7 @@ function AnswerHeatmap({
   return (
     <div className="min-w-0 rounded-2xl border border-slate-200/70 bg-transparent px-4 py-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-black text-ink">Active Learning</h3>
+        <h3 className="text-sm font-semibold text-ink">学习活跃度</h3>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <span className="text-xs font-semibold text-slate-500">本月 {monthAttemptCount} 题</span>
           <ShareToBuddyButton
@@ -807,7 +713,7 @@ function AnswerHeatmap({
             copyContext="active_learning"
             defaultContent={shareContent}
             shareCard={activeLearningShareCard}
-            sourceLabel="Active Learning"
+            sourceLabel="学习活跃度"
           />
         </div>
       </div>
@@ -963,12 +869,12 @@ function Avatar({ name, color, image, size }: { name: string; color: string; ima
   const colorClass = avatarColors.find((item) => item.key === color)?.className || avatarColors[0].className;
   const sizeClass =
     size === "lg"
-      ? "size-28 text-5xl font-black"
+      ? "size-28 text-5xl font-bold"
       : size === "header"
-        ? "size-20 text-3xl font-black"
+        ? "size-20 text-3xl font-bold"
         : size === "sm"
-          ? "size-12 text-lg font-black"
-          : "size-24 text-4xl font-black";
+          ? "size-12 text-lg font-bold"
+          : "size-24 text-4xl font-bold";
 
   if (image) {
     return (
@@ -993,8 +899,8 @@ function Avatar({ name, color, image, size }: { name: string; color: string; ima
   );
 }
 
-function formatDateTime(date: Date) {
-  return date.toLocaleString("zh-CN", {
+function formatDateTime(value: Date | string) {
+  return new Date(value).toLocaleString("zh-CN", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

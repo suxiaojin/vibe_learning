@@ -15,23 +15,39 @@ body {
 
 @layer components {
   .panel {
-    @apply rounded-2xl border border-slate-200 bg-white p-5 shadow-soft;
+    @apply rounded-panel border border-border-soft/80 bg-surface p-5 shadow-card;
+  }
+
+  .surface-card {
+    @apply rounded-panel border border-border-soft/80 bg-surface shadow-card;
+  }
+
+  .surface-card-muted {
+    @apply rounded-panel border border-border-soft/70 bg-surface-muted shadow-card;
+  }
+
+  .empty-state {
+    @apply rounded-panel border border-dashed border-teal/30 bg-surface px-6 py-12 text-center shadow-card;
   }
 
   .primary-button {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-teal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal/90 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-teal px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/25 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .secondary-button {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:border-teal hover:text-teal;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border-soft bg-surface px-4 py-2 text-sm font-semibold text-ink transition hover:border-teal hover:text-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/20 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .danger-button {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-200 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .success-button {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-success px-4 py-2 text-sm font-semibold text-white transition hover:bg-success-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success/25 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .icon-button {
-    @apply grid size-11 place-items-center rounded-xl border border-slate-200 bg-white text-slate-700 transition hover:border-teal hover:text-teal;
+    @apply grid size-11 place-items-center rounded-xl border border-border-soft bg-surface text-slate-700 transition hover:border-teal hover:text-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/20 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .nav-link {
@@ -39,7 +55,7 @@ body {
   }
 
   .input {
-    @apply min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-teal focus:ring-2 focus:ring-teal/15;
+    @apply min-h-11 w-full rounded-xl border border-border-soft bg-surface px-3 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-teal focus:ring-2 focus:ring-teal/15 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400;
   }
 
   .label {
@@ -48,6 +64,34 @@ body {
 
   .badge {
     @apply inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold;
+  }
+
+  .tab-nav {
+    @apply flex min-h-14 gap-6 overflow-x-auto border-b border-border-soft px-1;
+  }
+
+  .tab-nav-link {
+    @apply inline-flex shrink-0 items-center border-b-2 border-transparent px-1 pt-1 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-ink;
+  }
+
+  .tab-nav-link-active {
+    @apply border-teal text-ink;
+  }
+
+  .progress-track {
+    @apply h-2.5 overflow-hidden rounded-full bg-slate-100;
+  }
+
+  .progress-fill {
+    @apply h-full rounded-full bg-teal transition-all;
+  }
+
+  .drawer-scrim {
+    @apply fixed inset-0 z-50 flex justify-end bg-slate-950/50;
+  }
+
+  .drawer-panel {
+    @apply flex h-full w-full max-w-xl flex-col bg-mist shadow-popover;
   }
 }
 

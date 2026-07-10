@@ -1,5 +1,5 @@
-import { StudentSidebar } from "@/components/student-sidebar";
 import { CourseCenterForm, type CourseCenterOverview } from "@/components/course-center-form";
+import { StudentPageShell } from "@/components/student-page-shell";
 import { requireUser } from "@/lib/auth";
 import { getFoundationOptions, getStudentFoundationProfile } from "@/lib/foundation";
 import { getStudentLearningPath, type SyllabusPathGroup } from "@/lib/syllabus-learning";
@@ -33,15 +33,9 @@ export default async function CourseCenterPage() {
   const overview = buildCourseCenterOverview(learningPath.groups);
 
   return (
-    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
-      <StudentSidebar active="course-center" />
-
-      <section className="min-w-0 px-5 py-8 lg:px-8 xl:px-10">
-        <div className="mx-auto w-full max-w-[1280px]">
-          <CourseCenterForm initialOptions={options} currentProfile={currentProfile} overview={overview} />
-        </div>
-      </section>
-    </main>
+    <StudentPageShell active="course-center" maxWidthClassName="max-w-[1280px]">
+      <CourseCenterForm initialOptions={options} currentProfile={currentProfile} overview={overview} />
+    </StudentPageShell>
   );
 }
 

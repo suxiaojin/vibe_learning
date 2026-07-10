@@ -3,13 +3,13 @@ import { Ban, Check, ChevronDown, MoreHorizontal, Search, Send, SlidersHorizonta
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { BuddyFeedLoadMore } from "@/components/buddy-feed-load-more";
-import { BuddyShareCardView } from "@/components/buddy-share-card";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { DismissibleDetails } from "@/components/dismissible-details";
 import { PostSuccessNoticeTrigger } from "@/components/post-success-toast";
+import { SocialAvatar, SocialPostCard, type SocialPostNode } from "@/components/social-post-card";
 import { SocialPostActions } from "@/components/social-post-actions";
-import { SocialPostAuthorHeader } from "@/components/social-post-author-header";
-import { StudentSidebar } from "@/components/student-sidebar";
+import { StudentPageShell } from "@/components/student-page-shell";
+import { EmptyState, SurfaceCard } from "@/components/student-ui";
 import {
   createBuddyPost,
   deleteBuddyPost,
@@ -55,14 +55,6 @@ const errorText: Record<string, string> = {
   UNKNOWN: "操作失败，请稍后再试。"
 };
 
-const avatarColorClasses: Record<string, string> = {
-  coral: "bg-coral",
-  green: "bg-[#58cc02]",
-  honey: "bg-honey",
-  sky: "bg-sky-500",
-  violet: "bg-violet-500"
-};
-
 export default async function BuddyCirclePage({
   searchParams
 }: {
@@ -100,54 +92,52 @@ export default async function BuddyCirclePage({
   const returnTo = buildCircleHref(params);
 
   return (
-    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
+    <StudentPageShell active="buddy-circle" maxWidthClassName="max-w-[1520px]">
       <PostSuccessNoticeTrigger active={params?.notice === "post-sent"} />
-      <StudentSidebar active="buddy-circle" />
 
-      <section className="min-w-0 px-5 py-8 lg:px-8 xl:px-10">
-        <div className="mx-auto grid max-w-[1520px] gap-7 xl:grid-cols-[minmax(640px,1fr)_360px]">
-          <div className="min-w-0 space-y-4">
-            <FeedHeader params={params} scope={scope} sort={sort} />
+      <div className="grid gap-6 xl:grid-cols-[minmax(680px,1fr)_320px]">
+        <div className="min-w-0 space-y-4">
+          <FeedHeader params={params} scope={scope} sort={sort} />
 
-            {params?.error ? (
-              <p className="rounded-2xl bg-coral/10 px-4 py-3 text-sm font-semibold text-coral">
-                {errorText[params.error] || errorText.UNKNOWN}
-              </p>
-            ) : null}
+          {params?.error ? (
+            <p className="rounded-2xl bg-coral/10 px-4 py-3 text-sm font-semibold text-coral">
+              {errorText[params.error] || errorText.UNKNOWN}
+            </p>
+          ) : null}
 
-            <PostComposer returnTo={returnTo} />
+          <PostComposer returnTo={returnTo} />
 
-            {query ? <UserSearchResults query={query} returnTo={returnTo} users={searchResult.items} /> : null}
+          {query ? <UserSearchResults query={query} returnTo={returnTo} users={searchResult.items} /> : null}
 
-            <section className="space-y-4">
-              {feed.items.length === 0 ? (
-                <div className="rounded-[22px] border border-dashed border-slate-300 bg-white p-10 text-center text-sm font-medium text-slate-500 shadow-[0_14px_34px_rgba(24,32,47,0.05)]">
-                  {scope === "following" ? "你关注的人还没有发帖。" : "暂时没有符合条件的帖子。"}
-                </div>
-              ) : (
-                feed.items.map((post) => (
-                  <BuddyPostCard key={post.id} post={post} returnTo={returnTo} scope={scope} />
-                ))
-              )}
-              <BuddyFeedLoadMore
-                initialNextCursor={feed.nextCursor}
-                majorId={params?.majorId || undefined}
-                province={params?.province || undefined}
-                scope={scope}
-                sort={sort}
-                studySystem={params?.studySystem || undefined}
+          <section className="space-y-4">
+            {feed.items.length === 0 ? (
+              <EmptyState
+                title={scope === "following" ? "关注动态为空" : "暂时没有帖子"}
+                description={scope === "following" ? "你关注的人还没有发帖，可以先去发现页看看新的学习搭子。" : "暂时没有符合条件的帖子，换个筛选条件试试看。"}
               />
-            </section>
-          </div>
-
-          <aside className="space-y-5 xl:sticky xl:top-6 xl:self-start">
-            <SearchPanel params={params} query={query} scope={scope} sort={sort} />
-            <FeedFilters majors={majors} params={params} regions={regions} scope={scope} sort={sort} />
-            <RecommendedFollowPanel returnTo={returnTo} users={recommendedFollows.items} />
-          </aside>
+            ) : (
+              feed.items.map((post) => (
+                <BuddyPostCard key={post.id} post={post} returnTo={returnTo} scope={scope} />
+              ))
+            )}
+            <BuddyFeedLoadMore
+              initialNextCursor={feed.nextCursor}
+              majorId={params?.majorId || undefined}
+              province={params?.province || undefined}
+              scope={scope}
+              sort={sort}
+              studySystem={params?.studySystem || undefined}
+            />
+          </section>
         </div>
-      </section>
-    </main>
+
+        <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
+          <SearchPanel params={params} query={query} scope={scope} sort={sort} />
+          <FeedFilters majors={majors} params={params} regions={regions} scope={scope} sort={sort} />
+          <RecommendedFollowPanel returnTo={returnTo} users={recommendedFollows.items} />
+        </aside>
+      </div>
+    </StudentPageShell>
   );
 }
 
@@ -161,7 +151,7 @@ function FeedHeader({
   sort: BuddyFeedSort;
 }) {
   return (
-    <section className="sticky top-0 z-30 overflow-visible rounded-[22px] border border-slate-200/80 bg-white/95 shadow-[0_14px_34px_rgba(24,32,47,0.06)] backdrop-blur">
+    <section className="surface-card sticky top-0 z-30 overflow-visible bg-surface/95 p-0 backdrop-blur">
       <div className="grid min-h-[64px] grid-cols-2">
         <FeedTab active={scope === "discover"} label="发现" params={params} sort={sort} tab="discover" />
         <FeedTab active={scope === "following"} label="关注" params={params} sort={sort} tab="following" />
@@ -203,7 +193,7 @@ function FeedTab({
         {label}
         <ChevronDown className="transition group-hover:rotate-180 group-focus-within:rotate-180" size={16} />
       </a>
-      <div className="invisible absolute top-full z-40 w-36 overflow-hidden rounded-2xl border border-slate-200 bg-white py-2 opacity-0 shadow-[0_12px_32px_rgba(15,23,42,0.14)] transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+      <div className="invisible absolute top-full z-40 w-36 overflow-hidden rounded-2xl border border-border-soft bg-white py-2 opacity-0 shadow-popover transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
         {options.map((option) => (
           <a
             key={option.key}
@@ -221,7 +211,7 @@ function FeedTab({
 
 function PostComposer({ returnTo }: { returnTo: string }) {
   return (
-    <section className="rounded-[22px] border border-slate-200/80 bg-white p-5 shadow-[0_14px_34px_rgba(24,32,47,0.06)]">
+    <SurfaceCard>
       <form action={publishPost} className="space-y-3.5">
         <input name="returnTo" type="hidden" value={returnTo} />
         <textarea
@@ -237,7 +227,7 @@ function PostComposer({ returnTo }: { returnTo: string }) {
           </button>
         </div>
       </form>
-    </section>
+    </SurfaceCard>
   );
 }
 
@@ -253,22 +243,22 @@ function SearchPanel({
   sort: BuddyFeedSort;
 }) {
   return (
-    <section className="rounded-[22px] border border-slate-200/80 bg-white p-4 shadow-[0_14px_34px_rgba(24,32,47,0.06)]">
+    <SurfaceCard className="border-border-soft/70 bg-surface/80 p-3 shadow-none">
       <form className="relative" method="get">
         <input name="tab" type="hidden" value={scope} />
         <input name="sort" type="hidden" value={sort} />
         {params?.province ? <input name="province" type="hidden" value={params.province} /> : null}
         {params?.studySystem ? <input name="studySystem" type="hidden" value={params.studySystem} /> : null}
         {params?.majorId ? <input name="majorId" type="hidden" value={params.majorId} /> : null}
-        <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={19} />
+        <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
         <input
-          className="input min-h-14 rounded-2xl pl-11 text-[15px]"
+          className="input min-h-12 rounded-xl pl-10 text-sm"
           name="q"
           defaultValue={query}
           placeholder="搜索昵称"
         />
       </form>
-    </section>
+    </SurfaceCard>
   );
 }
 
@@ -289,66 +279,66 @@ function FeedFilters({
   const studySystems = Array.from(new Set(regions.map((region) => region.studySystem))).filter(Boolean);
 
   return (
-    <section className="rounded-[22px] border border-slate-200/80 bg-white p-5 shadow-[0_14px_34px_rgba(24,32,47,0.06)]">
-      <div className="mb-5 flex items-center gap-2 text-xl font-semibold text-ink">
-        <SlidersHorizontal className="text-teal" size={20} />
+    <SurfaceCard className="border-border-soft/70 bg-surface/80 p-4 shadow-none">
+      <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-ink">
+        <SlidersHorizontal className="text-slate-400" size={18} />
         筛选条件
       </div>
-      <form className="space-y-4" method="get">
+      <form className="space-y-3" method="get">
         <input name="tab" type="hidden" value={scope} />
         <input name="sort" type="hidden" value={sort} />
         {params?.q ? <input name="q" type="hidden" value={params.q} /> : null}
         <label className="block">
           <span className="label">省份</span>
-          <select className="input min-h-14 rounded-2xl text-[15px]" name="province" defaultValue={params?.province || ""}>
+          <select className="input min-h-11 rounded-xl text-sm" name="province" defaultValue={params?.province || ""}>
             <option value="">全部省份</option>
             {provinces.map((province) => <option key={province} value={province}>{province}</option>)}
           </select>
         </label>
         <label className="block">
           <span className="label">学制</span>
-          <select className="input min-h-14 rounded-2xl text-[15px]" name="studySystem" defaultValue={params?.studySystem || ""}>
+          <select className="input min-h-11 rounded-xl text-sm" name="studySystem" defaultValue={params?.studySystem || ""}>
             <option value="">全部学制</option>
             {studySystems.map((studySystem) => <option key={studySystem} value={studySystem}>{studySystem}</option>)}
           </select>
         </label>
         <label className="block">
           <span className="label">专业</span>
-          <select className="input min-h-14 rounded-2xl text-[15px]" name="majorId" defaultValue={params?.majorId || ""}>
+          <select className="input min-h-11 rounded-xl text-sm" name="majorId" defaultValue={params?.majorId || ""}>
             <option value="">全部专业</option>
             {majors.map((major) => <option key={major.id} value={major.id}>{major.name}</option>)}
           </select>
         </label>
         <div className="flex gap-2 pt-1">
-          <button className="primary-button min-h-12 flex-1 rounded-2xl text-[15px]" type="submit">筛选</button>
-          <a className="secondary-button min-h-12 rounded-2xl px-5 text-[15px]" href={`/buddy-circle?tab=${scope}`}>重置</a>
+          <button className="primary-button min-h-11 flex-1 rounded-xl text-sm" type="submit">筛选</button>
+          <a className="secondary-button min-h-11 rounded-xl px-4 text-sm" href={`/buddy-circle?tab=${scope}`}>重置</a>
         </div>
       </form>
-    </section>
+    </SurfaceCard>
   );
 }
 
 function RecommendedFollowPanel({ returnTo, users }: { returnTo: string; users: SocialRecommendation[] }) {
   return (
-    <section className="rounded-[22px] border border-slate-200/80 bg-white p-5 shadow-[0_14px_34px_rgba(24,32,47,0.06)]">
-      <h2 className="text-xl font-semibold text-ink">推荐关注</h2>
-      <div className="mt-4 space-y-4">
+    <SurfaceCard className="border-border-soft/70 bg-surface/80 p-4 shadow-none">
+      <h2 className="text-sm font-semibold text-ink">推荐关注</h2>
+      <div className="mt-3 space-y-3">
         {users.length === 0 ? (
-          <p className="rounded-2xl bg-slate-50 px-4 py-7 text-center text-sm font-medium text-slate-500">暂时没有同条件推荐。</p>
+          <p className="rounded-xl bg-surface-muted px-4 py-6 text-center text-sm font-medium text-slate-500">暂时没有同条件推荐。</p>
         ) : (
           users.map((user) => (
-            <div key={user.id} className="flex items-center justify-between gap-3">
+            <div key={user.id} className="flex items-center justify-between gap-3 rounded-xl px-1 py-1">
               <a className="flex min-w-0 items-center gap-3" href={`/students/${user.id}`}>
-                <ProfileAvatar user={user} />
+                <SocialAvatar size="sm" user={user} />
                 <span className="min-w-0">
-                  <span className="block truncate text-[15px] font-semibold text-ink">{user.nickname}</span>
-                  <span className="block truncate text-[13px] font-medium text-slate-500">@{user.username}</span>
+                  <span className="block truncate text-sm font-semibold text-ink">{user.nickname}</span>
+                  <span className="block truncate text-xs font-medium text-slate-500">@{user.username}</span>
                 </span>
               </a>
               <form action={followFromCircle}>
                 <input name="targetId" type="hidden" value={user.id} />
                 <input name="returnTo" type="hidden" value={returnTo} />
-                <button className="min-h-10 rounded-full bg-ink px-5 text-sm font-semibold text-white transition hover:bg-slate-700" type="submit">
+                <button className="secondary-button min-h-9 rounded-full px-4 text-sm" type="submit">
                   关注
                 </button>
               </form>
@@ -356,7 +346,7 @@ function RecommendedFollowPanel({ returnTo, users }: { returnTo: string; users: 
           ))
         )}
       </div>
-    </section>
+    </SurfaceCard>
   );
 }
 
@@ -370,16 +360,16 @@ function UserSearchResults({
   users: SocialUserSearchResult[];
 }) {
   return (
-    <section className="rounded-[22px] border border-slate-200/80 bg-white p-5 shadow-[0_14px_34px_rgba(24,32,47,0.06)]">
+    <SurfaceCard>
       <h2 className="text-lg font-semibold text-ink">昵称搜索：{query}</h2>
       <div className="mt-4 space-y-3">
         {users.length === 0 ? (
-          <p className="rounded-2xl bg-slate-50 px-4 py-6 text-center text-sm font-medium text-slate-500">没有找到匹配昵称的用户。</p>
+          <p className="rounded-2xl bg-surface-muted px-4 py-6 text-center text-sm font-medium text-slate-500">没有找到匹配昵称的用户。</p>
         ) : (
           users.map((user) => (
-            <div key={user.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 p-4">
+            <div key={user.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border-soft/80 bg-surface p-4">
               <a className="flex min-w-0 items-center gap-3" href={`/students/${user.id}`}>
-                <ProfileAvatar user={user} />
+                <SocialAvatar size="sm" user={user} />
                 <span className="min-w-0">
                   <span className="block truncate text-[15px] font-semibold text-ink">{user.nickname}</span>
                   <span className="mt-1 block truncate text-[13px] font-medium text-slate-500">
@@ -390,7 +380,7 @@ function UserSearchResults({
               <form action={user.isFollowing ? unfollowFromCircle : followFromCircle}>
                 <input name="targetId" type="hidden" value={user.id} />
                 <input name="returnTo" type="hidden" value={returnTo} />
-                <button className={user.isFollowing ? "secondary-button min-h-10 rounded-xl px-4 text-sm" : "primary-button min-h-10 rounded-xl px-4 text-sm"} type="submit">
+                <button className={user.isFollowing ? "secondary-button min-h-11 rounded-xl px-4 text-sm" : "primary-button min-h-11 rounded-xl px-4 text-sm"} type="submit">
                   {user.isFollowing ? <UserCheck size={16} /> : <UserPlus size={16} />}
                   {user.isFollowing ? "已关注" : "关注"}
                 </button>
@@ -399,105 +389,33 @@ function UserSearchResults({
           ))
         )}
       </div>
-    </section>
+    </SurfaceCard>
   );
 }
 
 function BuddyPostCard({ post, returnTo, scope }: { post: BuddyFeedItem; returnTo: string; scope: BuddyFeedScope }) {
   return (
-    <article className="rounded-[22px] border border-slate-200/80 bg-white p-5 shadow-[0_14px_34px_rgba(24,32,47,0.06)]">
-      <div className="flex items-start gap-4">
-        <a href={`/students/${post.author.id}`}>
-          <ProfileAvatar user={post.author} />
-        </a>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-3">
-            <SocialPostAuthorHeader author={post.author} dateLabel={formatDateTime(post.createdAt)} />
-            <PostMoreMenu post={post} returnTo={returnTo} scope={scope} />
-          </div>
-
-          {post.type === "original" ? (
-            <PostBody content={post.content} sharePayload={post.sharePayload} />
-          ) : (
-            <div className="mt-4 space-y-3">
-              {post.content ? <p className="whitespace-pre-wrap text-base font-medium leading-7 text-ink/85">{post.content}</p> : null}
-              <RepostSourceCard originalPost={post.originalPost} sourceState={post.sourceState} />
-            </div>
-          )}
-
-          <div className="mt-4 border-t border-slate-100 pt-4">
-            <SocialPostActions
-              canLike={post.canLike}
-              canRepost={post.canRepost}
-              initialLikeCount={post.likeCount}
-              initialLiked={post.likedByMe}
-              initialRepostCount={post.repostCount}
-              initialReposted={post.repostedByMe}
-              postId={post.id}
-              repostSource={getPostRepostSource(post)}
-            />
-          </div>
-        </div>
-      </div>
-    </article>
+    <SocialPostCard
+      actionMenu={<PostMoreMenu post={post} returnTo={returnTo} scope={scope} />}
+      getDateLabel={formatDateTime}
+      post={post as SocialPostNode}
+      renderActions={(targetPost) => <BuddyPostActions post={targetPost} />}
+    />
   );
 }
 
-function RepostSourceCard({
-  depth = 0,
-  originalPost,
-  sourceState
-}: {
-  depth?: number;
-  originalPost: BuddyFeedItem["originalPost"];
-  sourceState: BuddyFeedItem["sourceState"];
-}) {
-  if (sourceState !== "visible" || !originalPost) {
-    return (
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <p className="text-sm font-bold text-slate-400">原内容已删除</p>
-      </div>
-    );
-  }
-
+function BuddyPostActions({ post }: { post: SocialPostNode }) {
   return (
-    <div className={cn("rounded-2xl border border-slate-200 bg-slate-50 p-4", depth > 0 ? "bg-white/70" : "")}>
-      <div className="flex items-start gap-3">
-        <a href={`/students/${originalPost.author.id}`}>
-          <ProfileAvatar user={originalPost.author} />
-        </a>
-        <div className="min-w-0 flex-1">
-          <SocialPostAuthorHeader author={originalPost.author} dateLabel={formatDateTime(originalPost.createdAt)} />
-          <PostBody compact content={originalPost.content} sharePayload={originalPost.sharePayload} />
-          {originalPost.type === "repost" ? (
-            <div className="mt-3 border-l-2 border-slate-200 pl-3">
-              <RepostSourceCard depth={depth + 1} originalPost={originalPost.originalPost} sourceState={originalPost.sourceState} />
-            </div>
-          ) : null}
-          <div className="mt-3">
-            <SocialPostActions
-              canLike={originalPost.canLike}
-              canRepost={originalPost.canRepost}
-              initialLikeCount={originalPost.likeCount}
-              initialLiked={originalPost.likedByMe}
-              initialRepostCount={originalPost.repostCount}
-              initialReposted={originalPost.repostedByMe}
-              postId={originalPost.id}
-              repostSource={getPostRepostSource(originalPost)}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PostBody({ compact = false, content, sharePayload }: { compact?: boolean; content: string; sharePayload: BuddyFeedItem["sharePayload"] }) {
-  return (
-    <div className={cn(compact ? "mt-2" : "mt-4", "space-y-3")}>
-      {content ? <p className={cn("whitespace-pre-wrap font-medium leading-7 text-ink/85", compact ? "text-[15px]" : "text-base")}>{content}</p> : null}
-      <BuddyShareCardView card={sharePayload} compact={compact} />
-    </div>
+    <SocialPostActions
+      canLike={post.canLike}
+      canRepost={post.canRepost}
+      initialLikeCount={post.likeCount}
+      initialLiked={post.likedByMe}
+      initialRepostCount={post.repostCount}
+      initialReposted={post.repostedByMe}
+      postId={post.id}
+      repostSource={getPostRepostSource(post)}
+    />
   );
 }
 
@@ -505,7 +423,7 @@ function getPostRepostSource(post: {
   author: { nickname: string; username: string };
   canRepost: boolean;
   content: string;
-  createdAt: Date;
+  createdAt: Date | string;
   originalPost?: { content: string } | null;
 }) {
   return post.canRepost
@@ -532,11 +450,11 @@ function PostMoreMenu({ post, returnTo, scope }: { post: BuddyFeedItem; returnTo
     <DismissibleDetails className="group relative shrink-0" group="buddy-post-menu">
       <summary
         aria-label="更多操作"
-        className="grid size-9 cursor-pointer list-none place-items-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-ink [&::-webkit-details-marker]:hidden"
+        className="grid size-11 cursor-pointer list-none place-items-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-ink [&::-webkit-details-marker]:hidden"
       >
         <MoreHorizontal size={20} />
       </summary>
-      <div className="absolute right-0 top-11 z-40 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white py-2 shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
+      <div className="absolute right-0 top-12 z-40 w-56 overflow-hidden rounded-2xl border border-border-soft bg-white py-2 shadow-popover">
         {scope === "discover" && showAuthorActions ? (
           <>
             <form action={followFromCircle}>
@@ -620,17 +538,6 @@ function MenuButton({
   );
 }
 
-function ProfileAvatar({ user }: { user: { avatarColor?: string; avatarImage?: string; nickname: string } }) {
-  if (user.avatarImage) {
-    return <img alt={`${user.nickname} 的头像`} className="size-11 shrink-0 rounded-full object-cover shadow-sm ring-1 ring-slate-200/80" src={user.avatarImage} />;
-  }
-  return (
-    <span className={cn("grid size-11 shrink-0 place-items-center rounded-full text-base font-semibold text-white shadow-sm ring-1 ring-slate-200/80", avatarColorClasses[user.avatarColor || "green"] || avatarColorClasses.green)}>
-      {user.nickname.slice(0, 1).toUpperCase()}
-    </span>
-  );
-}
-
 function getScope(tab?: string): BuddyFeedScope {
   return tab === "following" ? "following" : "discover";
 }
@@ -651,8 +558,8 @@ function buildCircleHref(params?: CircleSearchParams, overrides?: { sort?: Buddy
   return `/buddy-circle?${query.toString()}`;
 }
 
-function formatDateTime(date: Date) {
-  return date.toLocaleString("zh-CN", {
+function formatDateTime(value: Date | string) {
+  return new Date(value).toLocaleString("zh-CN", {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",

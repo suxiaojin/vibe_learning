@@ -1,5 +1,5 @@
 import { LearningCourseSwitcher, LearningPath, type PathCourse } from "@/components/learning-path";
-import { StudentSidebar } from "@/components/student-sidebar";
+import { StudentPageShell } from "@/components/student-page-shell";
 import { requireUser } from "@/lib/auth";
 import { getStudentLearningPath, type SyllabusPathGroup } from "@/lib/syllabus-learning";
 
@@ -79,28 +79,23 @@ export default async function LearnPage({
     : null;
 
   return (
-    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
-      <StudentSidebar active="learn" />
-
-      <section className="min-w-0 px-5 py-8 lg:px-8">
-        <div className="mx-auto grid w-full max-w-[1080px] gap-5 xl:grid-cols-[minmax(0,42rem)_180px] xl:items-start xl:justify-center xl:gap-8">
-          <div className="min-w-0">
-            {chapterPath && coursePath ? (
-              <LearningPath course={coursePath} chapter={chapterPath} />
-            ) : pathState.completed ? (
-              <div className="mx-auto max-w-2xl pb-24">
-                <div className="panel text-slate-600">{text.empty}</div>
-              </div>
-            ) : null}
-          </div>
-          {courseSwitcher ? (
-            <div className="order-first flex min-w-0 justify-end xl:order-none xl:sticky xl:top-10 xl:z-30 xl:justify-start">
-              <LearningCourseSwitcher {...courseSwitcher} />
+    <StudentPageShell active="learn" maxWidthClassName="max-w-[1080px]">
+      <div className="grid w-full gap-5 xl:grid-cols-[minmax(0,42rem)_180px] xl:items-start xl:justify-center xl:gap-8">
+        <div className="min-w-0">
+          {chapterPath && coursePath ? (
+            <LearningPath course={coursePath} chapter={chapterPath} />
+          ) : pathState.completed ? (
+            <div className="mx-auto max-w-2xl pb-24">
+              <div className="panel text-slate-600">{text.empty}</div>
             </div>
           ) : null}
         </div>
-      </section>
-
-    </main>
+        {courseSwitcher ? (
+          <div className="order-first flex min-w-0 justify-end xl:order-none xl:sticky xl:top-10 xl:z-30 xl:justify-start">
+            <LearningCourseSwitcher {...courseSwitcher} />
+          </div>
+        ) : null}
+      </div>
+    </StudentPageShell>
   );
 }

@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { CheckCircle2, Flame, Gem, RotateCcw, Trophy, XCircle } from "lucide-react";
 import { redirect } from "next/navigation";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
+import { StudentPageShell } from "@/components/student-page-shell";
 import { WrongQuestionAi } from "@/components/wrong-question-ai";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import { requireUser } from "@/lib/auth";
@@ -98,16 +99,16 @@ export default async function QuizResultPage({
 
   if (!currentSession) {
     return (
-      <main className="mx-auto max-w-5xl px-4 py-8">
+      <StudentPageShell active="learn" maxWidthClassName="max-w-5xl">
         <section className="panel">
           <h1 className="text-2xl font-semibold text-ink">暂无答题记录</h1>
           <p className="mt-2 text-sm font-medium text-slate-500">完成一次答题后，这里会展示每次作答的对题和错题。</p>
           <div className="mt-5 flex flex-wrap gap-3">
-            <Link className="primary-button bg-[#58cc02] hover:bg-[#58cc02]/90" href={`/learn/${id}?restart=1`}>开始答题</Link>
+            <Link className="success-button" href={`/learn/${id}?restart=1`}>开始答题</Link>
             <Link className="secondary-button" href={`/learn?course=${access.group.key}&chapter=${access.chapter.id}`}>返回学习路线</Link>
           </div>
         </section>
-      </main>
+      </StudentPageShell>
     );
   }
 
@@ -132,13 +133,13 @@ export default async function QuizResultPage({
   const resultShareSuggestions = getResultShareSuggestions(passed);
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
-      <section className={passed ? "overflow-hidden rounded-[22px] border border-[#58cc02]/50 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]" : "overflow-hidden rounded-[22px] border border-coral/50 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]"}>
-        <div className={passed ? "bg-[#58cc02] p-6 text-white" : "bg-coral p-6 text-white"}>
+    <StudentPageShell active="learn" maxWidthClassName="max-w-5xl">
+      <section className={cn("overflow-hidden rounded-panel border bg-surface shadow-card", passed ? "border-success/50" : "border-coral/50")}>
+        <div className={passed ? "bg-success p-6 text-white" : "bg-coral p-6 text-white"}>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-sm font-medium text-white/85">{access.course.title} / {access.chapter.title} / {access.section.title}</p>
-              <h1 className="mt-2 text-[32px] font-bold leading-tight">{passed ? "闯关成功" : "还差一点"}</h1>
+              <h1 className="mt-2 text-3xl font-bold leading-tight">{passed ? "闯关成功" : "还差一点"}</h1>
               <p className="mt-2 text-sm font-medium text-white/90">做题日期：{formatDateTime(submittedAt)}</p>
             </div>
             <span className="grid size-16 place-items-center rounded-2xl border-2 border-white/20 bg-white/15">
@@ -155,19 +156,19 @@ export default async function QuizResultPage({
 
         <div className="px-5 pb-5">
           <div className="h-3 rounded-full bg-slate-100">
-            <div className={passed ? "h-3 rounded-full bg-[#58cc02]" : "h-3 rounded-full bg-coral"} style={{ width: `${scorePercent}%` }} />
+            <div className={passed ? "h-3 rounded-full bg-success" : "h-3 rounded-full bg-coral"} style={{ width: `${scorePercent}%` }} />
           </div>
           <p className="mt-3 text-sm font-semibold text-slate-600">
             {passed ? "下一关已经为你准备好了，继续保持节奏。" : "达到 80 分即可解锁下一关，先把错题吃透再挑战。"}
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
             {passed && nextSection ? (
-              <Link className="primary-button bg-[#58cc02] hover:bg-[#58cc02]/90" href={`/learn/${nextSection.section.id}`}>继续下一关</Link>
+              <Link className="success-button" href={`/learn/${nextSection.section.id}`}>继续下一关</Link>
             ) : (
-              <Link className="primary-button bg-[#58cc02] hover:bg-[#58cc02]/90" href={`/learn/${id}?restart=1`}>再练一次</Link>
+              <Link className="success-button" href={`/learn/${id}?restart=1`}>再练一次</Link>
             )}
             <ShareToBuddyButton
-              buttonClassName={passed ? "min-h-12 border-[#58cc02]/30 text-[#45a000]" : "min-h-12 border-coral/30 text-coral"}
+              buttonClassName={passed ? "min-h-12 border-success/30 text-success-strong" : "min-h-12 border-coral/30 text-coral"}
               contentSuggestions={resultShareSuggestions}
               copyContext={passed ? "quiz_passed" : "quiz_failed"}
               defaultContent={resultShareContent}
@@ -189,12 +190,12 @@ export default async function QuizResultPage({
           const wrongAttempts = session.attempts.filter((attempt) => !attempt.isCorrect);
           return (
             <article key={session.id} className="panel">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-soft pb-4">
                 <div>
                   <h3 className="text-lg font-semibold text-ink">{formatDateTime(session.completedAt || session.updatedAt)}</h3>
                   <p className="mt-1 text-sm font-semibold text-slate-500">正确 {correctAttempts.length} 题，错误 {wrongAttempts.length} 题</p>
                 </div>
-                <span className={cn("badge", (session.score || 0) >= 80 ? "bg-[#58cc02]/10 text-[#45a000]" : "bg-coral/10 text-coral")}>
+                <span className={cn("badge", (session.score || 0) >= 80 ? "bg-success-muted text-success-strong" : "bg-coral/10 text-coral")}>
                   {session.score ?? 0} 分
                 </span>
               </div>
@@ -205,14 +206,14 @@ export default async function QuizResultPage({
           );
         })}
       </section>
-    </main>
+    </StudentPageShell>
   );
 }
 
 function AttemptGroup({ attempts, title, tone }: { attempts: AttemptWithQuestion[]; title: string; tone: "correct" | "wrong" }) {
   return (
     <section className="mt-5">
-      <div className={cn("flex items-center gap-2", tone === "correct" ? "text-[#45a000]" : "text-coral")}>
+      <div className={cn("flex items-center gap-2", tone === "correct" ? "text-success-strong" : "text-coral")}>
         {tone === "correct" ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
         <h4 className="font-semibold">{title}</h4>
       </div>
@@ -232,33 +233,33 @@ function AttemptGroup({ attempts, title, tone }: { attempts: AttemptWithQuestion
 function AttemptCard({ attempt, index, tone }: { attempt: AttemptWithQuestion; index: number; tone: "correct" | "wrong" }) {
   const options = coerceOptions(attempt.question.options);
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4">
+    <article className="rounded-panel border border-border-soft bg-surface p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className={cn("text-sm font-semibold", tone === "correct" ? "text-[#45a000]" : "text-coral")}>{tone === "correct" ? "对题" : "错题"} {index + 1}</p>
+          <p className={cn("text-sm font-semibold", tone === "correct" ? "text-success-strong" : "text-coral")}>{tone === "correct" ? "对题" : "错题"} {index + 1}</p>
           <h3 className="mt-2 text-lg font-bold leading-relaxed">{attempt.question.stem}</h3>
         </div>
-        <span className={cn("badge", tone === "correct" ? "bg-[#58cc02]/10 text-[#45a000]" : "bg-coral/10 text-coral")}>
+        <span className={cn("badge", tone === "correct" ? "bg-success-muted text-success-strong" : "bg-coral/10 text-coral")}>
           {tone === "correct" ? "已掌握" : "需要复习"}
         </span>
       </div>
       <div className="mt-4 grid gap-2">
         {options.map((option) => (
-          <div key={option.key} className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6">
+          <div key={option.key} className="rounded-xl border border-border-soft bg-surface px-4 py-3 text-sm leading-6">
             <span className="font-semibold">{option.key}.</span> {option.text}
           </div>
         ))}
       </div>
       <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-        <p className={cn("rounded-2xl p-4", tone === "correct" ? "bg-[#58cc02]/10 text-[#45a000]" : "bg-coral/10 text-coral")}>
+        <p className={cn("rounded-xl p-4", tone === "correct" ? "bg-success-muted text-success-strong" : "bg-coral/10 text-coral")}>
           <span className="font-semibold">你的答案：</span>{answerText(attempt.selectedAnswer)}
         </p>
-        <p className="rounded-2xl bg-teal/10 p-4 text-teal">
+        <p className="rounded-xl bg-teal/10 p-4 text-teal">
           <span className="font-semibold">正确答案：</span>{answerText(attempt.question.answer)}
         </p>
       </div>
       {attempt.question.analysis ? (
-        <div className="mt-3 rounded-2xl bg-mist p-4">
+        <div className="mt-3 rounded-xl bg-mist p-4">
           <p className="text-xs font-semibold text-slate-500">解析</p>
           <p className="mt-2 text-sm leading-6 text-slate-700">{attempt.question.analysis}</p>
         </div>
@@ -335,13 +336,13 @@ function ResultMetric({
   tone: "success" | "danger" | "sky";
 }) {
   const toneClass = {
-    success: "bg-[#58cc02]/10 text-[#45a000]",
+    success: "bg-success-muted text-success-strong",
     danger: "bg-coral/10 text-coral",
     sky: "bg-sky-50 text-sky-500"
   }[tone];
 
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+    <div className="flex items-center gap-3 rounded-xl border border-border-soft bg-surface p-4">
       <span className={`grid size-11 shrink-0 place-items-center rounded-xl ${toneClass}`}>{icon}</span>
       <div>
         <p className="text-xs font-bold text-slate-400">{label}</p>

@@ -112,11 +112,11 @@ export function SocialPostActions({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-6">
+    <div className="flex flex-wrap items-center gap-3 sm:gap-6">
       <button
         aria-label={liked ? "取消点赞" : "点赞"}
         className={cn(
-          "inline-flex min-h-10 min-w-16 items-center gap-2 rounded-full px-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60",
+          "inline-flex min-h-11 min-w-14 items-center gap-2 rounded-full px-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-16",
           liked ? "text-pink-500" : "text-slate-400 hover:text-pink-500"
         )}
         disabled={busy === "like" || (!canLike && !liked)}
@@ -131,7 +131,7 @@ export function SocialPostActions({
         reposted ? (
           <button
             aria-label="取消转帖"
-            className="inline-flex min-h-10 min-w-16 items-center gap-2 rounded-full px-2 text-sm font-medium text-teal transition hover:text-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex min-h-11 min-w-14 items-center gap-2 rounded-full px-2 text-sm font-medium text-teal transition hover:text-slate-400 disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-16"
             disabled={busy === "repost"}
             type="button"
             onClick={cancelRepost}
@@ -143,7 +143,7 @@ export function SocialPostActions({
           <>
             <button
               aria-label="转帖"
-              className="inline-flex min-h-10 min-w-16 items-center gap-2 rounded-full px-2 text-sm font-medium text-slate-400 transition hover:text-teal disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex min-h-11 min-w-14 items-center gap-2 rounded-full px-2 text-sm font-medium text-slate-400 transition hover:text-teal disabled:cursor-not-allowed disabled:opacity-60 sm:min-w-16"
               disabled={busy === "repost" || !canRepost}
               type="button"
               onClick={() => setRepostOpen(true)}
@@ -153,19 +153,19 @@ export function SocialPostActions({
             </button>
 
             {repostOpen ? (
-              <div className="fixed inset-0 z-50 grid place-items-start justify-center overflow-y-auto bg-ink/35 px-4 py-12">
-                <div className="relative w-full max-w-2xl rounded-2xl bg-white p-5 shadow-[0_18px_60px_rgba(15,23,42,0.24)]">
+              <div className="fixed inset-0 z-50 grid place-items-start justify-center overflow-y-auto bg-ink/40 px-3 py-6 sm:px-4 sm:py-12">
+                <div className="relative w-full max-w-2xl rounded-2xl bg-white p-4 shadow-popover sm:p-5">
                   <div className="flex items-center justify-between gap-3">
                     <button
                       aria-label="关闭转帖"
-                      className="grid size-9 place-items-center rounded-full text-ink hover:bg-slate-100"
+                      className="grid size-11 place-items-center rounded-full text-ink transition hover:bg-slate-100"
                       type="button"
                       onClick={() => setRepostOpen(false)}
                     >
                       <X size={22} />
                     </button>
                     <button
-                      className="min-h-10 rounded-full bg-ink px-6 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                      className="min-h-11 rounded-full bg-ink px-6 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
                       disabled={busy === "repost"}
                       type="button"
                       onClick={submitRepost}
@@ -174,13 +174,13 @@ export function SocialPostActions({
                     </button>
                   </div>
                   <textarea
-                    className="mt-5 min-h-56 w-full resize-y border-0 text-lg font-medium leading-8 text-ink outline-none placeholder:text-slate-400"
+                    className="mt-4 min-h-44 w-full resize-y border-0 text-base font-medium leading-8 text-ink outline-none placeholder:text-slate-400 sm:mt-5 sm:min-h-56 sm:text-lg"
                     maxLength={300}
                     placeholder="添加评论"
                     value={repostContent}
                     onChange={(event) => setRepostContent(event.target.value)}
                   />
-                  <div className="mt-4 rounded-2xl border border-slate-200 p-4">
+                  <div className="mt-4 rounded-2xl border border-border-soft/80 bg-surface-muted p-4">
                     <p className="text-sm font-semibold text-ink">{repostSource.authorName}</p>
                     <p className="mt-1 text-xs font-medium text-slate-400">@{repostSource.username} · {repostSource.createdAtLabel}</p>
                     <p className="mt-3 whitespace-pre-wrap text-sm font-medium leading-7 text-slate-700">{repostSource.content}</p>

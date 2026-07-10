@@ -1,21 +1,19 @@
-import { ArrowLeft, UserCheck, UserPlus } from "lucide-react";
+import { ArrowLeft, MessageCircle, UserCheck, UserPlus } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { BuddyShareCardView } from "@/components/buddy-share-card";
 import { SocialMedalBadge } from "@/components/social-medal-badge";
+import { SocialAvatar, SocialPostCard, type SocialPostNode } from "@/components/social-post-card";
 import { SocialPostActions } from "@/components/social-post-actions";
-import { SocialPostAuthorHeader } from "@/components/social-post-author-header";
-import { StudentSidebar } from "@/components/student-sidebar";
+import { StudentPageShell } from "@/components/student-page-shell";
+import { EmptyState, SurfaceCard } from "@/components/student-ui";
 import { listProfileBuddyPosts } from "@/lib/buddy-posts";
 import { formatBuddyError } from "@/lib/buddies";
 import { requireUser } from "@/lib/auth";
 import { followUser, getSocialProfile, unfollowUser } from "@/lib/social";
-import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type ProfilePost = Awaited<ReturnType<typeof listProfileBuddyPosts>>["items"][number];
 type SocialProfile = Awaited<ReturnType<typeof getSocialProfile>>;
 
 const errorText: Record<string, string> = {
@@ -43,39 +41,44 @@ export default async function StudentProfilePage({
   ]);
 
   return (
-    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
-      <StudentSidebar active="buddy-circle" />
+    <StudentPageShell active="buddy-circle" maxWidthClassName="max-w-5xl">
+      <div className="space-y-5">
+        <a className="inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-teal" href="/buddy-circle">
+          <ArrowLeft size={17} />
+          返回搭子圈
+        </a>
 
-      <section className="min-w-0 px-5 py-8 lg:px-8">
-        <div className="mx-auto max-w-5xl space-y-5">
-          <a className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-teal" href="/buddy-circle">
-            <ArrowLeft size={17} />
-            返回搭子圈
-          </a>
+        {query?.error ? (
+          <p className="rounded-card bg-coral/10 px-4 py-3 text-sm font-semibold text-coral">
+            {errorText[query.error] || errorText.UNKNOWN}
+          </p>
+        ) : null}
 
-          {query?.error ? (
-            <p className="rounded-xl bg-coral/10 px-4 py-3 text-sm font-bold text-coral">
-              {errorText[query.error] || errorText.UNKNOWN}
-            </p>
-          ) : null}
+        <ProfileHero profile={profile} />
 
-          <ProfileHero profile={profile} />
-
-          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
-            <div className="border-b border-slate-100 px-5 py-4">
-              <h2 className="text-base font-semibold text-ink">帖子</h2>
+        <SurfaceCard className="overflow-hidden p-0">
+          <div className="border-b border-border-soft/80 px-5 py-4">
+            <h2 className="text-base font-semibold text-ink">帖子</h2>
+          </div>
+          {posts.items.length === 0 ? (
+            <EmptyState description="这里暂时还没有内容。" icon={<MessageCircle size={22} />} title="还没有公开帖子" />
+          ) : (
+            <div className="divide-y divide-border-soft/80">
+              {posts.items.map((post) => (
+                <SocialPostCard
+                  key={post.id}
+                  embedded
+                  getDateLabel={formatDateTime}
+                  id={`post-${post.id}`}
+                  post={post as SocialPostNode}
+                  renderActions={renderPostActions}
+                />
+              ))}
             </div>
-            <div className="divide-y divide-slate-100">
-              {posts.items.length === 0 ? (
-                <p className="px-5 py-12 text-center text-sm font-semibold text-slate-500">这里暂时还没有内容。</p>
-              ) : (
-                posts.items.map((post) => <ProfilePostCard key={post.id} post={post} />)
-              )}
-            </div>
-          </section>
-        </div>
-      </section>
-    </main>
+          )}
+        </SurfaceCard>
+      </div>
+    </StudentPageShell>
   );
 }
 
@@ -83,20 +86,20 @@ function ProfileHero({ profile }: { profile: SocialProfile }) {
   const profileMeta = [profile.user.province, profile.user.studySystem, profile.user.majorName].filter(Boolean).join(" - ");
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
+    <SurfaceCard className="overflow-hidden p-0">
       <div
-        className="h-48 bg-slate-200 bg-cover bg-center md:h-64"
+        className="h-44 bg-surface-muted bg-cover bg-center md:h-60"
         style={profile.user.coverImage ? { backgroundImage: `url(${profile.user.coverImage})` } : undefined}
       />
-      <div className="px-6 pb-6">
+      <div className="px-5 pb-6 md:px-6">
         <div className="-mt-12 flex flex-wrap items-end justify-between gap-4">
-          <ProfileAvatar user={profile.user} size="lg" />
+          <SocialAvatar className="size-28 text-5xl ring-4 ring-white" size="lg" user={profile.user} />
           <ProfileAction profile={profile} />
         </div>
 
         <div className="mt-4">
           <div className="flex min-w-0 items-center gap-3">
-            <h1 className="truncate text-[32px] font-bold leading-tight text-ink">{profile.user.nickname}</h1>
+            <h1 className="truncate text-3xl font-bold leading-tight text-ink md:text-[32px]">{profile.user.nickname}</h1>
             <SocialMedalBadge gender={profile.user.gender} label={profile.user.medalLabel} level={profile.user.medalLevel} />
           </div>
           <p className="mt-1 text-sm font-semibold text-slate-500">@{profile.user.username}</p>
@@ -113,7 +116,7 @@ function ProfileHero({ profile }: { profile: SocialProfile }) {
           </div>
         </div>
       </div>
-    </section>
+    </SurfaceCard>
   );
 }
 
@@ -137,104 +140,22 @@ function ProfileAction({ profile }: { profile: SocialProfile }) {
   );
 }
 
-function ProfilePostCard({ post }: { post: ProfilePost }) {
+function renderPostActions(post: SocialPostNode) {
   return (
-    <article className="scroll-mt-6 p-5 transition-colors target:bg-sky-50/70" id={`post-${post.id}`}>
-      <div className="flex items-start gap-3">
-        <ProfileAvatar user={post.author} size="sm" />
-        <div className="min-w-0 flex-1">
-          <SocialPostAuthorHeader author={post.author} dateLabel={formatDateTime(post.createdAt)} />
-          {post.type === "original" ? (
-            <ProfilePostBody content={post.content} sharePayload={post.sharePayload} />
-          ) : (
-            <div className="mt-3 space-y-3">
-              {post.content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p> : null}
-              <ProfileRepostSourceCard originalPost={post.originalPost} sourceState={post.sourceState} />
-            </div>
-          )}
-          <div className="mt-4">
-            <SocialPostActions
-              canLike={post.canLike}
-              canRepost={post.canRepost}
-              initialLikeCount={post.likeCount}
-              initialLiked={post.likedByMe}
-              initialRepostCount={post.repostCount}
-              initialReposted={post.repostedByMe}
-              postId={post.id}
-              repostSource={getPostRepostSource(post)}
-            />
-          </div>
-        </div>
-      </div>
-    </article>
+    <SocialPostActions
+      canLike={post.canLike}
+      canRepost={post.canRepost}
+      initialLikeCount={post.likeCount}
+      initialLiked={post.likedByMe}
+      initialRepostCount={post.repostCount}
+      initialReposted={post.repostedByMe}
+      postId={post.id}
+      repostSource={getPostRepostSource(post)}
+    />
   );
 }
 
-function ProfileRepostSourceCard({
-  depth = 0,
-  originalPost,
-  sourceState
-}: {
-  depth?: number;
-  originalPost: ProfilePost["originalPost"];
-  sourceState: ProfilePost["sourceState"];
-}) {
-  if (sourceState !== "visible" || !originalPost) {
-    return (
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <p className="text-sm font-bold text-slate-400">原内容已删除</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className={cn("rounded-2xl border border-slate-200 bg-slate-50 p-4", depth > 0 ? "bg-white/70" : "")}>
-      <div className="flex items-start gap-3">
-        <a href={`/students/${originalPost.author.id}`}>
-          <ProfileAvatar user={originalPost.author} size="sm" />
-        </a>
-        <div className="min-w-0 flex-1">
-          <SocialPostAuthorHeader author={originalPost.author} dateLabel={formatDateTime(originalPost.createdAt)} />
-          <ProfilePostBody compact content={originalPost.content} sharePayload={originalPost.sharePayload} />
-          {originalPost.type === "repost" ? (
-            <div className="mt-3 border-l-2 border-slate-200 pl-3">
-              <ProfileRepostSourceCard depth={depth + 1} originalPost={originalPost.originalPost} sourceState={originalPost.sourceState} />
-            </div>
-          ) : null}
-          <div className="mt-3">
-            <SocialPostActions
-              canLike={originalPost.canLike}
-              canRepost={originalPost.canRepost}
-              initialLikeCount={originalPost.likeCount}
-              initialLiked={originalPost.likedByMe}
-              initialRepostCount={originalPost.repostCount}
-              initialReposted={originalPost.repostedByMe}
-              postId={originalPost.id}
-              repostSource={getPostRepostSource(originalPost)}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ProfilePostBody({ compact = false, content, sharePayload }: { compact?: boolean; content: string; sharePayload: ProfilePost["sharePayload"] }) {
-  return (
-    <div className={cn(compact ? "mt-2" : "mt-3", "space-y-3")}>
-      {content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{content}</p> : null}
-      <BuddyShareCardView card={sharePayload} compact={compact} />
-    </div>
-  );
-}
-
-function getPostRepostSource(post: {
-  author: { nickname: string; username: string };
-  canRepost: boolean;
-  content: string;
-  createdAt: Date;
-  originalPost?: { content: string } | null;
-}) {
+function getPostRepostSource(post: SocialPostNode) {
   return post.canRepost
     ? {
         authorName: post.author.nickname,
@@ -245,24 +166,6 @@ function getPostRepostSource(post: {
     : undefined;
 }
 
-function ProfileAvatar({
-  size,
-  user
-}: {
-  size: "lg" | "sm";
-  user: { avatarImage?: string; nickname: string };
-}) {
-  const sizeClass = size === "lg" ? "size-28 text-5xl" : "size-12 text-lg";
-  if (user.avatarImage) {
-    return <img alt={`${user.nickname} 的头像`} className={cn("shrink-0 rounded-full object-cover shadow-sm", sizeClass)} src={user.avatarImage} />;
-  }
-  return (
-    <span className={cn("grid shrink-0 place-items-center rounded-full bg-[#58cc02] font-black text-white shadow-sm", sizeClass)}>
-      {user.nickname.slice(0, 1).toUpperCase()}
-    </span>
-  );
-}
-
 function StatValue({ label, value }: { label: string; value: number }) {
   return (
     <span className="font-semibold text-slate-500">
@@ -271,8 +174,8 @@ function StatValue({ label, value }: { label: string; value: number }) {
   );
 }
 
-function formatDateTime(date: Date) {
-  return date.toLocaleString("zh-CN", {
+function formatDateTime(date: Date | string) {
+  return new Date(date).toLocaleString("zh-CN", {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
@@ -283,8 +186,8 @@ function formatDateTime(date: Date) {
   });
 }
 
-function formatJoinedMonth(date: Date) {
-  return date.toLocaleDateString("zh-CN", {
+function formatJoinedMonth(date: Date | string) {
+  return new Date(date).toLocaleDateString("zh-CN", {
     year: "numeric",
     month: "2-digit",
     timeZone: "Asia/Shanghai"

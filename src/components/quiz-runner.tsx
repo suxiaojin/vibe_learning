@@ -6,6 +6,7 @@ import { CheckCircle2, Heart, Loader2, X, XCircle } from "lucide-react";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import { getQuestionBankTypeLabel, isQuestionBankRichAnswerQuestionType, type QuestionBankEditableQuestionType } from "@/lib/question-bank-types";
+import { cn } from "@/lib/utils";
 
 type Question = {
   id: string;
@@ -44,6 +45,9 @@ const text = {
   rightAnswer: "\u6b63\u786e\u7b54\u6848\uff1a",
   source: "\u9898\u5e93\uff1a"
 };
+
+const quizActionButtonClass =
+  "inline-flex min-h-12 w-36 items-center justify-center gap-2 rounded-xl border-b-4 border-success-strong bg-success px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-400";
 
 function coerceOptions(options: unknown): Option[] {
   if (Array.isArray(options)) {
@@ -269,10 +273,10 @@ export function QuizRunner({
   }
 
   return (
-    <section className="flex h-dvh flex-col overflow-hidden bg-white">
+    <section className="flex h-dvh flex-col overflow-hidden bg-surface">
       <div className="mx-auto flex w-full max-w-5xl items-center gap-5 px-5 py-6">
         <button
-          className="grid size-10 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+          className="grid size-11 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/20"
           type="button"
           aria-label={text.exit}
           onClick={() => {
@@ -285,7 +289,7 @@ export function QuizRunner({
         </button>
         <div className="min-w-0 flex-1">
           <div className="h-4 overflow-hidden rounded-full bg-slate-200">
-            <div className="h-full rounded-full bg-[#58cc02] transition-all" style={{ width: `${progressPercent}%` }} />
+            <div className="h-full rounded-full bg-success transition-all" style={{ width: `${progressPercent}%` }} />
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 text-sm font-semibold text-coral">
@@ -303,18 +307,19 @@ export function QuizRunner({
             </span>
           ) : null}
         </p>
-        <h3 className="mt-3 text-[22px] font-semibold leading-snug text-ink">{current.stem}</h3>
+        <h3 className="mt-3 text-xl font-semibold leading-snug text-ink">{current.stem}</h3>
 
         {current.type === "fill_blank" || isQuestionBankRichAnswerQuestionType(current.type) ? (
           <div className="mt-6">
             <input
-              className={`min-h-14 w-full rounded-2xl border-2 px-5 py-3 text-base font-bold outline-none transition ${
+              className={cn(
+                "min-h-14 w-full rounded-xl border-2 bg-surface px-5 py-3 text-base font-bold outline-none transition",
                 checkState === "correct"
-                  ? "border-[#58cc02] bg-[#58cc02]/10"
+                  ? "border-success bg-success-muted"
                   : checkState === "wrong"
                     ? "border-coral bg-coral/10"
-                    : "border-slate-200 bg-white focus:border-sky-400"
-              }`}
+                    : "border-border-soft focus:border-info"
+              )}
               disabled={checkState !== "idle"}
               value={selected[0] || ""}
               onChange={(event) => updateFillBlankAnswer(current, event.target.value)}
@@ -328,15 +333,16 @@ export function QuizRunner({
               return (
                 <button
                   key={option.key}
-                  className={`min-h-14 rounded-2xl border-2 px-5 py-3 text-left text-base font-bold transition ${
+                  className={cn(
+                    "min-h-14 rounded-xl border-2 px-5 py-3 text-left text-base font-bold transition",
                     correctOption
-                      ? "border-[#58cc02] bg-[#58cc02]/10 text-ink"
+                      ? "border-success bg-success-muted text-ink"
                       : checkState === "wrong" && active
                         ? "border-coral bg-coral/10 text-coral"
                         : active
-                          ? "border-sky-400 bg-sky-50 text-ink"
-                          : "border-slate-200 bg-white hover:border-slate-300"
-                  }`}
+                          ? "border-info bg-info-muted text-ink"
+                          : "border-border-soft bg-surface hover:border-slate-300"
+                  )}
                   type="button"
                   disabled={checkState !== "idle"}
                   onClick={() => toggleAnswer(current, option.key)}
@@ -350,9 +356,10 @@ export function QuizRunner({
       </article>
 
       <div
-        className={`border-t border-slate-200 px-5 py-4 ${
-          checkState === "correct" ? "bg-[#58cc02]/20" : checkState === "wrong" ? "bg-coral/10" : "bg-white"
-        }`}
+        className={cn(
+          "border-t border-border-soft px-5 py-4",
+          checkState === "correct" ? "bg-success-muted" : checkState === "wrong" ? "bg-coral/10" : "bg-surface"
+        )}
       >
         <div className="mx-auto flex min-h-16 w-full max-w-5xl flex-wrap items-center justify-between gap-4">
           {checkState === "idle" ? (
@@ -360,8 +367,8 @@ export function QuizRunner({
               {text.skip}
             </button>
           ) : (
-            <div className={`flex min-w-0 items-center gap-3 ${checkState === "correct" ? "text-[#45a000]" : "text-coral"}`}>
-              <span className="grid size-11 shrink-0 place-items-center rounded-full bg-white">
+            <div className={cn("flex min-w-0 items-center gap-3", checkState === "correct" ? "text-success-strong" : "text-coral")}>
+              <span className="grid size-11 shrink-0 place-items-center rounded-full bg-surface">
                 {checkState === "correct" ? <CheckCircle2 size={26} /> : <XCircle size={26} />}
               </span>
               <div className="min-w-0">
@@ -374,7 +381,7 @@ export function QuizRunner({
           <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
             {checkState !== "idle" ? (
               <ShareToBuddyButton
-                buttonClassName="min-h-12 rounded-2xl border-white bg-white px-4 shadow-sm hover:border-white"
+                buttonClassName="min-h-12 rounded-xl border-surface bg-surface px-4 shadow-sm hover:border-surface"
                 buttonLabel="分享"
                 contentSuggestions={questionShareSuggestions}
                 copyContext={checkState === "correct" ? "question_correct" : "question_wrong"}
@@ -386,7 +393,7 @@ export function QuizRunner({
 
             {checkState === "idle" ? (
               <button
-                className="inline-flex min-h-12 w-36 items-center justify-center gap-2 rounded-2xl border-b-4 border-[#45a000] bg-[#58cc02] px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-400"
+                className={quizActionButtonClass}
                 type="button"
                 disabled={!canCheck}
                 onClick={checkAnswer}
@@ -396,7 +403,7 @@ export function QuizRunner({
               </button>
             ) : (
               <button
-                className="inline-flex min-h-12 w-36 items-center justify-center gap-2 rounded-2xl border-b-4 border-[#45a000] bg-[#58cc02] px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-400"
+                className={quizActionButtonClass}
                 type="button"
                 disabled={loading}
                 onClick={nextQuestion}

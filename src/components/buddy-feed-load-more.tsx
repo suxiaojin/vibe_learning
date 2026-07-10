@@ -3,10 +3,9 @@
 import type { ReactNode } from "react";
 import { Ban, Loader2, MoreHorizontal, Trash2, UserMinus, UserPlus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BuddyShareCardView } from "@/components/buddy-share-card";
 import { DismissibleDetails } from "@/components/dismissible-details";
+import { SocialPostCard, type SocialPostNode } from "@/components/social-post-card";
 import { SocialPostActions } from "@/components/social-post-actions";
-import { SocialPostAuthorHeader } from "@/components/social-post-author-header";
 import type { BuddyShareCard, BuddyShareType } from "@/lib/buddy-share-cards";
 import { cn } from "@/lib/utils";
 
@@ -70,14 +69,6 @@ type FeedResponse = {
     items: FeedPost[];
     nextCursor: string | null;
   };
-};
-
-const avatarColorClasses: Record<string, string> = {
-  coral: "bg-coral",
-  green: "bg-[#58cc02]",
-  honey: "bg-honey",
-  sky: "bg-sky-500",
-  violet: "bg-violet-500"
 };
 
 export function BuddyFeedLoadMore({
@@ -197,99 +188,27 @@ function ClientBuddyPostCard({
   scope: FeedScope;
 }) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
-      <div className="flex items-start gap-3">
-        <a href={`/students/${post.author.id}`}>
-          <ProfileAvatar user={post.author} />
-        </a>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-3">
-            <SocialPostAuthorHeader author={post.author} dateLabel={formatDateTime(post.createdAt)} />
-            <ClientPostMoreMenu onHidden={onHidden} post={post} scope={scope} />
-          </div>
-
-          {post.type === "original" ? (
-            <PostBody content={post.content} sharePayload={post.sharePayload} />
-          ) : (
-            <div className="mt-4 space-y-3">
-              {post.content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{post.content}</p> : null}
-              <ClientRepostSourceCard originalPost={post.originalPost} sourceState={post.sourceState} />
-            </div>
-          )}
-
-          <div className="mt-4 border-t border-slate-100 pt-4">
-            <SocialPostActions
-              canLike={post.canLike}
-              canRepost={post.canRepost}
-              initialLikeCount={post.likeCount}
-              initialLiked={post.likedByMe}
-              initialRepostCount={post.repostCount}
-              initialReposted={post.repostedByMe}
-              postId={post.id}
-              repostSource={getPostRepostSource(post)}
-            />
-          </div>
-        </div>
-      </div>
-    </article>
+    <SocialPostCard
+      actionMenu={<ClientPostMoreMenu onHidden={onHidden} post={post} scope={scope} />}
+      getDateLabel={formatDateTime}
+      post={post as SocialPostNode}
+      renderActions={(targetPost) => <ClientPostActions post={targetPost} />}
+    />
   );
 }
 
-function ClientRepostSourceCard({
-  depth = 0,
-  originalPost,
-  sourceState
-}: {
-  depth?: number;
-  originalPost: FeedPost["originalPost"];
-  sourceState: FeedPost["sourceState"];
-}) {
-  if (sourceState !== "visible" || !originalPost) {
-    return (
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <p className="text-sm font-bold text-slate-400">原内容已删除</p>
-      </div>
-    );
-  }
-
+function ClientPostActions({ post }: { post: SocialPostNode }) {
   return (
-    <div className={cn("rounded-2xl border border-slate-200 bg-slate-50 p-4", depth > 0 ? "bg-white/70" : "")}>
-      <div className="flex items-start gap-3">
-        <a href={`/students/${originalPost.author.id}`}>
-          <ProfileAvatar user={originalPost.author} />
-        </a>
-        <div className="min-w-0 flex-1">
-          <SocialPostAuthorHeader author={originalPost.author} dateLabel={formatDateTime(originalPost.createdAt)} />
-          <PostBody compact content={originalPost.content} sharePayload={originalPost.sharePayload} />
-          {originalPost.type === "repost" ? (
-            <div className="mt-3 border-l-2 border-slate-200 pl-3">
-              <ClientRepostSourceCard depth={depth + 1} originalPost={originalPost.originalPost} sourceState={originalPost.sourceState} />
-            </div>
-          ) : null}
-          <div className="mt-3">
-            <SocialPostActions
-              canLike={originalPost.canLike}
-              canRepost={originalPost.canRepost}
-              initialLikeCount={originalPost.likeCount}
-              initialLiked={originalPost.likedByMe}
-              initialRepostCount={originalPost.repostCount}
-              initialReposted={originalPost.repostedByMe}
-              postId={originalPost.id}
-              repostSource={getPostRepostSource(originalPost)}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PostBody({ compact = false, content, sharePayload }: { compact?: boolean; content: string; sharePayload: BuddyShareCard | null }) {
-  return (
-    <div className={cn(compact ? "mt-2" : "mt-4", "space-y-3")}>
-      {content ? <p className="whitespace-pre-wrap text-sm font-semibold leading-7 text-slate-700">{content}</p> : null}
-      <BuddyShareCardView card={sharePayload} compact={compact} />
-    </div>
+    <SocialPostActions
+      canLike={post.canLike}
+      canRepost={post.canRepost}
+      initialLikeCount={post.likeCount}
+      initialLiked={post.likedByMe}
+      initialRepostCount={post.repostCount}
+      initialReposted={post.repostedByMe}
+      postId={post.id}
+      repostSource={getPostRepostSource(post)}
+    />
   );
 }
 
@@ -297,7 +216,7 @@ function getPostRepostSource(post: {
   author: { nickname: string; username: string };
   canRepost: boolean;
   content: string;
-  createdAt: string;
+  createdAt: Date | string;
   originalPost?: { content: string } | null;
 }) {
   return post.canRepost
@@ -392,7 +311,7 @@ function MenuButton({
   return (
     <button
       className={cn(
-        "flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm font-black transition hover:bg-slate-50",
+        "flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm font-semibold transition hover:bg-slate-50",
         danger ? "text-coral" : "text-slate-700"
       )}
       type="button"
@@ -409,18 +328,7 @@ function MenuButton({
   );
 }
 
-function ProfileAvatar({ user }: { user: { avatarColor?: string; avatarImage?: string; nickname: string } }) {
-  if (user.avatarImage) {
-    return <img alt={`${user.nickname} 的头像`} className="size-12 shrink-0 rounded-full object-cover shadow-sm" src={user.avatarImage} />;
-  }
-  return (
-    <span className={cn("grid size-12 shrink-0 place-items-center rounded-full text-lg font-black text-white shadow-sm", avatarColorClasses[user.avatarColor || "green"] || avatarColorClasses.green)}>
-      {user.nickname.slice(0, 1).toUpperCase()}
-    </span>
-  );
-}
-
-function formatDateTime(value: string) {
+function formatDateTime(value: Date | string) {
   return new Date(value).toLocaleString("zh-CN", {
     day: "2-digit",
     hour: "2-digit",

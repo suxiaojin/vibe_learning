@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft, Lock, RotateCcw, Sparkles, Trophy } from "lucide-react";
-import { StudentSidebar } from "@/components/student-sidebar";
+import { StudentPageShell } from "@/components/student-page-shell";
 import { requireUser } from "@/lib/auth";
 import { getStudentLearningPath, type SyllabusPathGroup } from "@/lib/syllabus-learning";
 
@@ -49,66 +49,65 @@ export default async function StagesPage({
   const currentChapterId = getCurrentChapterId(group);
 
   return (
-    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
-      <StudentSidebar active="learn" />
+    <StudentPageShell active="learn" maxWidthClassName="max-w-3xl">
+      <Link className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-teal" href={group ? `/learn?course=${group.key}` : "/learn"}>
+        <ArrowLeft size={22} />
+        {text.back}
+      </Link>
 
-      <section className="mx-auto w-full max-w-3xl px-5 py-8">
-        <Link className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-teal" href={group ? `/learn?course=${group.key}` : "/learn"}>
-          <ArrowLeft size={22} />
-          {text.back}
-        </Link>
+      <div className="mt-5 border-t border-border-soft pt-4">
+        {!group || group.sectionIds.length === 0 ? <div className="panel text-slate-600">{text.empty}</div> : null}
+        <div className="space-y-5">
+          {group?.courses.map((course) => (
+            <section key={course.id} className="space-y-3">
+              <div className="px-1">
+                <p className="text-xs font-semibold text-teal">{text.course}</p>
+                <h1 className="mt-1 text-2xl font-semibold text-ink">{course.title}</h1>
+              </div>
+              {course.chapters.map((chapter) => {
+                const passedCount = chapter.sections.filter((section) => section.status === "passed").length;
+                const percent = chapter.sections.length ? Math.round((passedCount / chapter.sections.length) * 100) : 0;
+                const completed = chapter.sections.length > 0 && passedCount === chapter.sections.length;
+                const current = currentChapterId === chapter.id && !completed;
+                const locked = !completed && !current && chapter.sections.every((section) => section.status === "locked");
 
-        <div className="mt-5 border-t border-slate-200 pt-4">
-          {!group || group.sectionIds.length === 0 ? <div className="panel text-slate-600">{text.empty}</div> : null}
-          <div className="space-y-5">
-            {group?.courses.map((course) => (
-              <section key={course.id} className="space-y-3">
-                <div className="px-1">
-                  <p className="text-xs font-semibold text-teal">{text.course}</p>
-                  <h1 className="mt-1 text-2xl font-semibold text-ink">{course.title}</h1>
-                </div>
-                {course.chapters.map((chapter) => {
-                  const passedCount = chapter.sections.filter((section) => section.status === "passed").length;
-                  const percent = chapter.sections.length ? Math.round((passedCount / chapter.sections.length) * 100) : 0;
-                  const completed = chapter.sections.length > 0 && passedCount === chapter.sections.length;
-                  const current = currentChapterId === chapter.id && !completed;
-                  const locked = !completed && !current && chapter.sections.every((section) => section.status === "locked");
-
-                  return (
-                    <section key={chapter.id} className={`overflow-hidden rounded-2xl border border-slate-200 ${current ? "bg-sky-100" : completed ? "bg-white" : "bg-slate-50"}`}>
-                      <div className="p-5">
-                        <div>
-                          <h2 className="text-xl font-semibold text-ink">{chapter.title}</h2>
-                          <p className="mt-1 text-sm font-semibold text-slate-500">{chapter.sections.length} {text.pieces}</p>
-                          <div className="mt-5 flex items-center gap-3">
-                            {locked ? <Lock className="shrink-0 text-slate-400" size={18} /> : <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#58cc02] text-white">{completed ? <Trophy size={16} /> : <Sparkles size={16} />}</span>}
-                            <div className="h-3 flex-1 rounded-full bg-slate-100">
-                              <div className="h-3 rounded-full bg-[#58cc02]" style={{ width: `${percent}%` }} />
-                            </div>
-                            <span className="w-10 text-right text-xs font-semibold text-slate-400">{percent}%</span>
+                return (
+                  <section
+                    key={chapter.id}
+                    className={`overflow-hidden rounded-panel border border-border-soft/80 shadow-card ${current ? "bg-success-muted" : completed ? "bg-surface" : "bg-surface-muted"}`}
+                  >
+                    <div className="p-5">
+                      <div>
+                        <h2 className="text-xl font-semibold text-ink">{chapter.title}</h2>
+                        <p className="mt-1 text-sm font-semibold text-slate-500">{chapter.sections.length} {text.pieces}</p>
+                        <div className="mt-5 flex items-center gap-3">
+                          {locked ? <Lock className="shrink-0 text-slate-400" size={18} /> : <span className="grid size-6 shrink-0 place-items-center rounded-full bg-success text-white">{completed ? <Trophy size={16} /> : <Sparkles size={16} />}</span>}
+                          <div className="h-3 flex-1 rounded-full bg-slate-100">
+                            <div className="h-3 rounded-full bg-success" style={{ width: `${percent}%` }} />
                           </div>
-                          <div className="mt-7">
-                            {completed ? (
-                              <Link className="secondary-button w-48" href={`/learn?course=${group.key}&chapter=${chapter.id}`}>
-                                <RotateCcw size={18} />
-                                {text.review}
-                              </Link>
-                            ) : current ? (
-                              <Link className="primary-button w-64 bg-sky-500 hover:bg-sky-500/90" href={`/learn?course=${group.key}&chapter=${chapter.id}`}>{text.current}</Link>
-                            ) : (
-                              <button className="secondary-button w-64 text-sky-500" type="button" disabled>{text.locked}</button>
-                            )}
-                          </div>
+                          <span className="w-10 text-right text-xs font-semibold text-slate-400">{percent}%</span>
+                        </div>
+                        <div className="mt-7">
+                          {completed ? (
+                            <Link className="secondary-button w-48" href={`/learn?course=${group.key}&chapter=${chapter.id}`}>
+                              <RotateCcw size={18} />
+                              {text.review}
+                            </Link>
+                          ) : current ? (
+                            <Link className="success-button w-64" href={`/learn?course=${group.key}&chapter=${chapter.id}`}>{text.current}</Link>
+                          ) : (
+                            <button className="secondary-button w-64 text-slate-400" type="button" disabled>{text.locked}</button>
+                          )}
                         </div>
                       </div>
-                    </section>
-                  );
-                })}
-              </section>
-            ))}
-          </div>
+                    </div>
+                  </section>
+                );
+              })}
+            </section>
+          ))}
         </div>
-      </section>
-    </main>
+      </div>
+    </StudentPageShell>
   );
 }

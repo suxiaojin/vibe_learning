@@ -1,5 +1,5 @@
 import { CourseKnowledgeMap } from "@/components/course-knowledge-map";
-import { StudentSidebar } from "@/components/student-sidebar";
+import { StudentPageShell } from "@/components/student-page-shell";
 import { requireUser } from "@/lib/auth";
 import { getStudentLearningPath } from "@/lib/syllabus-learning";
 
@@ -13,14 +13,8 @@ export default async function CourseKnowledgeMapPage({
   const pathState = await getStudentLearningPath(user.id, params?.course);
 
   return (
-    <main className="min-h-dvh bg-mist lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
-      <StudentSidebar active="course-center" />
-
-      <section className="min-w-0 px-5 py-8 lg:px-8 xl:px-10">
-        <div className="mx-auto w-full max-w-[1280px]">
-          <CourseKnowledgeMap selectedGroup={pathState.selectedGroup} />
-        </div>
-      </section>
-    </main>
+    <StudentPageShell active="course-center" maxWidthClassName="max-w-[1280px]">
+      <CourseKnowledgeMap selectedGroup={pathState.selectedGroup} />
+    </StudentPageShell>
   );
 }
