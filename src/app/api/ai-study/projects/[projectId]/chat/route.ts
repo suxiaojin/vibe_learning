@@ -2,6 +2,7 @@ import { apiError, apiOk } from "@/lib/api-response";
 import {
   askAiStudyBuddy,
   createAiStudyChatMessage,
+  createPaidAiStudyChatUserMessage,
   formatAiStudyError,
   listAiStudyChatMessages,
   sanitizeAiStudyBuddyAnswer,
@@ -63,9 +64,9 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     if (acceptsTextStream(request)) {
-      return createTextStream(async (push) => {
-        await createAiStudyChatMessage(user.id, projectId, chatRequest.nodeId, "user", chatRequest.message);
+      await createPaidAiStudyChatUserMessage(user.id, projectId, chatRequest.nodeId, chatRequest.message);
 
+      return createTextStream(async (push) => {
         let rawAnswer = "";
         try {
           const result = await streamAiStudyBuddy(
@@ -88,7 +89,7 @@ export async function POST(request: Request, context: RouteContext) {
       });
     }
 
-    await createAiStudyChatMessage(user.id, projectId, chatRequest.nodeId, "user", chatRequest.message);
+    await createPaidAiStudyChatUserMessage(user.id, projectId, chatRequest.nodeId, chatRequest.message);
     const result = await askAiStudyBuddy(user.id, projectId, chatRequest);
     await createAiStudyChatMessage(user.id, projectId, chatRequest.nodeId, "assistant", result.answer);
     return apiOk(result);

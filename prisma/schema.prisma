@@ -36,6 +36,11 @@ enum DiamondTransactionType {
   ai_consumption
 }
 
+enum DiamondRuleDirection {
+  grant
+  consume
+}
+
 enum ContentStatus {
   draft
   published
@@ -313,6 +318,7 @@ model User {
   syllabusProgress UserSyllabusProgress[]
   diamondAccount  DiamondAccount?
   diamondTransactions DiamondTransaction[]
+  diamondRuleConfigsUpdated DiamondRuleConfig[] @relation("DiamondRuleConfigUpdater")
   passwordChangeLogs PasswordChangeLog[] @relation("PasswordChangeTarget")
   passwordChangesMade PasswordChangeLog[] @relation("PasswordChangeActor")
   sentNotifications Notification[] @relation("NotificationAuthor")
@@ -897,6 +903,22 @@ model DiamondTransaction {
   @@index([accountId, createdAt])
   @@index([type, occurredOn])
   @@map("diamond_transactions")
+}
+
+model DiamondRuleConfig {
+  key         String               @id
+  direction   DiamondRuleDirection
+  amount      Int
+  enabled     Boolean              @default(true)
+  version     Int                  @default(1)
+  updatedById String?
+  updatedBy   User?                @relation("DiamondRuleConfigUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([direction, enabled])
+  @@index([updatedById])
+  @@map("diamond_rule_configs")
 }
 
 model PasswordChangeLog {

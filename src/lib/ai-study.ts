@@ -13,6 +13,10 @@ import {
 } from "@/lib/ai-study-progress-cache";
 import { askQwen, streamQwen, type ChatMessage } from "@/lib/qwen";
 import { getAiStudyPromptConfig, type AiStudyPromptConfig } from "@/lib/ai-study-prompts";
+import {
+  consumeDiamondsByRule,
+  InsufficientDiamondBalanceError
+} from "@/lib/rewards";
 
 const sourceTypeSchema = z.enum(["pdf", "document", "image", "text", "mixed"]);
 const learningGoalSchema = z.enum(["preview", "review", "sprint", "weak_point", "other"]);
@@ -74,6 +78,17 @@ export function formatAiStudyError(error: unknown) {
     return { message: error.message, status: error.status, code: error.code };
   }
   return null;
+}
+
+function rethrowAiStudyDiamondError(error: unknown): never {
+  if (error instanceof InsufficientDiamondBalanceError) {
+    throw new AiStudyError(
+      "钻石不足，请充值后再试。",
+      402,
+      "AI_STUDY_INSUFFICIENT_DIAMONDS"
+    );
+  }
+  throw error;
 }
 
 export async function listAiStudyProjects(ownerId: string, input: unknown = {}) {
@@ -242,6 +257,18 @@ export async function createAiStudyProject(ownerId: string, input: unknown) {
       await tx.aiStudySourceChunk.createMany({ data: chunks });
     }
 
+    await consumeDiamondsByRule(tx, {
+      userId: ownerId,
+      ruleKey: "ai_study_project_create",
+      dedupeKey: `ai_study_project_create:${project.id}`,
+      note: "学习搭子：创建项目",
+      metadata: {
+        projectId: project.id,
+        sourceId: source.id,
+        sourceType: "text"
+      }
+    });
+
     taskToQueue = await tx.aiStudyGenerationTask.create({
       data: {
         projectId: project.id,
@@ -257,7 +284,7 @@ export async function createAiStudyProject(ownerId: string, input: unknown) {
     });
 
     return project;
-  });
+  }).catch(rethrowAiStudyDiamondError);
 
   await enqueueAiStudyTask(taskToQueue);
   if (taskToQueue) {
@@ -382,6 +409,24 @@ export async function uploadAiStudySource(ownerId: string, projectId: string, in
   });
 
   const result = await prisma.$transaction(async (tx) => {
+    if (shouldStartParsing) {
+      const claimed = await tx.aiStudyProject.updateMany({
+        where: {
+          id: project.id,
+          ownerId,
+          status: "draft",
+          deletedAt: null
+        },
+        data: {
+          sourceType: mergeUploadedSourceType(project.sourceType, sourceFile.sourceType),
+          status: "processing"
+        }
+      });
+      if (claimed.count !== 1) {
+        throw new AiStudyError("项目已经在解析中。", 400, "AI_STUDY_PROJECT_PROCESSING");
+      }
+    }
+
     const source = await tx.aiStudySource.create({
       data: {
         id: sourceId,
@@ -396,6 +441,20 @@ export async function uploadAiStudySource(ownerId: string, projectId: string, in
         status: "uploaded"
       }
     });
+
+    if (shouldStartParsing) {
+      await consumeDiamondsByRule(tx, {
+        userId: ownerId,
+        ruleKey: "ai_study_project_create",
+        dedupeKey: `ai_study_project_create:${project.id}`,
+        note: "学习搭子：创建项目",
+        metadata: {
+          projectId: project.id,
+          sourceId: source.id,
+          sourceType: source.sourceType
+        }
+      });
+    }
 
     const task = shouldStartParsing
       ? await tx.aiStudyGenerationTask.create({
@@ -415,16 +474,17 @@ export async function uploadAiStudySource(ownerId: string, projectId: string, in
         })
       : null;
 
-    await tx.aiStudyProject.update({
-      where: { id: project.id },
-      data: {
-        sourceType: mergeUploadedSourceType(project.sourceType, sourceFile.sourceType),
-        status: shouldStartParsing ? "processing" : project.status
-      }
-    });
+    if (!shouldStartParsing) {
+      await tx.aiStudyProject.update({
+        where: { id: project.id },
+        data: {
+          sourceType: mergeUploadedSourceType(project.sourceType, sourceFile.sourceType)
+        }
+      });
+    }
 
     return { source, task };
-  });
+  }).catch(rethrowAiStudyDiamondError);
 
   await enqueueAiStudyTask(result.task);
   if (result.task) {
@@ -479,33 +539,56 @@ export async function startAiStudyProjectGeneration(ownerId: string, projectId: 
     throw new AiStudyError("请先上传学习资料。", 400, "AI_STUDY_SOURCE_REQUIRED");
   }
 
-  const task = await prisma.$transaction(async (tx) => {
-    const sourceMimeType = source.mimeType || getDefaultMimeTypeForSourceType(source.sourceType);
-    const createdTask = await tx.aiStudyGenerationTask.create({
-      data: {
-        projectId: project.id,
-        sourceId: source.id,
-        type: "parse_source",
-        stage: "waiting_for_source_parse",
-        inputSummary: {
-          fileName: source.fileName,
-          sourceType: source.sourceType,
-          mimeType: sourceMimeType,
-          fileSizeBytes: source.fileSizeBytes,
-          storagePath: source.storagePath
+  let task: AiStudyGenerationTask;
+  try {
+    task = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.aiStudyProject.updateMany({
+        where: {
+          id: project.id,
+          ownerId,
+          status: "draft",
+          deletedAt: null
+        },
+        data: {
+          status: "processing"
         }
+      });
+      if (claimed.count !== 1) {
+        throw new AiStudyError("项目已经在解析中。", 400, "AI_STUDY_PROJECT_PROCESSING");
       }
-    });
 
-    await tx.aiStudyProject.update({
-      where: { id: project.id },
-      data: {
-        status: "processing"
-      }
-    });
+      await consumeDiamondsByRule(tx, {
+        userId: ownerId,
+        ruleKey: "ai_study_project_create",
+        dedupeKey: `ai_study_project_create:${project.id}`,
+        note: "学习搭子：创建项目",
+        metadata: {
+          projectId: project.id,
+          sourceId: source.id,
+          sourceType: source.sourceType
+        }
+      });
 
-    return createdTask;
-  });
+      const sourceMimeType = source.mimeType || getDefaultMimeTypeForSourceType(source.sourceType);
+      return tx.aiStudyGenerationTask.create({
+        data: {
+          projectId: project.id,
+          sourceId: source.id,
+          type: "parse_source",
+          stage: "waiting_for_source_parse",
+          inputSummary: {
+            fileName: source.fileName,
+            sourceType: source.sourceType,
+            mimeType: sourceMimeType,
+            fileSizeBytes: source.fileSizeBytes,
+            storagePath: source.storagePath
+          }
+        }
+      });
+    });
+  } catch (error) {
+    rethrowAiStudyDiamondError(error);
+  }
 
   await enqueueAiStudyTask(task);
   await writeAiStudyTaskProgressCache(task);
@@ -862,6 +945,74 @@ export async function createAiStudyChatMessage(
   }
 
   return mapAiStudyChatMessageRow(message);
+}
+
+export async function createPaidAiStudyChatUserMessage(
+  ownerId: string,
+  projectId: string,
+  nodeId: string | null | undefined,
+  content: string
+) {
+  const normalizedNodeId = normalizeAiStudyChatNodeId(nodeId);
+  const normalizedContent = content.replace(/\r\n/g, "\n").trim();
+  if (!normalizedContent) {
+    throw new AiStudyError("对话内容不能为空。", 400, "AI_STUDY_CHAT_MESSAGE_EMPTY");
+  }
+
+  const id = randomUUID();
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const project = await tx.aiStudyProject.findFirst({
+        where: accessibleProjectWhere(ownerId, projectId),
+        select: { id: true }
+      });
+      if (!project) {
+        throw new AiStudyError("学习项目不存在。", 404, "AI_STUDY_PROJECT_NOT_FOUND");
+      }
+
+      if (normalizedNodeId) {
+        const node = await tx.aiStudyNode.findFirst({
+          where: {
+            id: normalizedNodeId,
+            projectId,
+            project: accessibleProjectRelationWhere(ownerId)
+          },
+          select: { id: true }
+        });
+        if (!node) {
+          throw new AiStudyError("知识节点不存在。", 404, "AI_STUDY_NODE_NOT_FOUND");
+        }
+      }
+
+      await consumeDiamondsByRule(tx, {
+        userId: ownerId,
+        ruleKey: "ai_study_buddy_chat",
+        dedupeKey: `ai_study_buddy_chat:${id}`,
+        note: "学习搭子：问问搭子",
+        metadata: {
+          projectId,
+          chatMessageId: id,
+          messageLength: normalizedContent.length,
+          ...(normalizedNodeId ? { nodeId: normalizedNodeId } : {})
+        }
+      });
+
+      const rows = await tx.$queryRaw<AiStudyChatMessageRow[]>`
+        INSERT INTO "ai_study_chat_messages" ("id", "user_id", "project_id", "node_id", "role", "content")
+        VALUES (${id}, ${ownerId}, ${projectId}, ${normalizedNodeId}, 'user', ${normalizedContent.slice(0, 20_000)})
+        RETURNING "id", "role", "content", "created_at"
+      `;
+
+      const message = rows[0];
+      if (!message) {
+        throw new AiStudyError("对话记录保存失败。", 500, "AI_STUDY_CHAT_MESSAGE_SAVE_FAILED");
+      }
+
+      return mapAiStudyChatMessageRow(message);
+    });
+  } catch (error) {
+    rethrowAiStudyDiamondError(error);
+  }
 }
 
 async function prepareAiStudyBuddyChat(ownerId: string, projectId: string, input: unknown) {

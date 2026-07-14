@@ -62,6 +62,33 @@ const transactionLabels: Record<string, string> = {
   ai_consumption: "AI 消耗"
 };
 
+const diamondRuleTransactionPresentation: Record<string, { typeLabel: string; description: string }> = {
+  ai_study_project_create: {
+    typeLabel: "项目创建",
+    description: "学习搭子：创建项目"
+  },
+  ai_study_buddy_chat: {
+    typeLabel: "AI 对话",
+    description: "学习搭子：问问搭子"
+  }
+};
+
+function getDiamondRuleKey(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return "";
+  }
+  const value = (metadata as Record<string, unknown>).diamondRuleKey;
+  return typeof value === "string" ? value : "";
+}
+
+function getTransactionPresentation(item: { type: string; note: string | null; metadata: unknown }) {
+  const rulePresentation = diamondRuleTransactionPresentation[getDiamondRuleKey(item.metadata)];
+  return {
+    typeLabel: rulePresentation?.typeLabel || transactionLabels[item.type] || item.type,
+    description: rulePresentation?.description || item.note || "-"
+  };
+}
+
 type MeTab = "profile" | "medals" | "diamonds" | "homepage";
 
 const meTabs: Array<{ key: MeTab; label: string }> = [
@@ -357,6 +384,7 @@ function DiamondPanel({
     amount: number;
     balanceAfter: number;
     note: string | null;
+    metadata: unknown;
     createdAt: Date;
   }>;
 }) {
@@ -382,18 +410,21 @@ function DiamondPanel({
                   </td>
                 </tr>
               ) : (
-                transactions.map((item) => (
-                  <tr key={item.id} className="border-b border-slate-100 last:border-0">
-                    <td className="py-3 pr-4 font-semibold text-slate-500">{formatDateTime(item.createdAt)}</td>
-                    <td className="py-3 pr-4 font-bold text-ink">{transactionLabels[item.type] || item.type}</td>
-                    <td className={cn("py-3 pr-4 font-semibold", item.amount >= 0 ? "text-success-strong" : "text-coral")}>
-                      {item.amount >= 0 ? "+" : ""}
-                      {item.amount}
-                    </td>
-                    <td className="py-3 pr-4 font-semibold text-slate-600">{item.balanceAfter}</td>
-                    <td className="py-3 text-slate-500">{item.note || "-"}</td>
-                  </tr>
-                ))
+                transactions.map((item) => {
+                  const presentation = getTransactionPresentation(item);
+                  return (
+                    <tr key={item.id} className="border-b border-slate-100 last:border-0">
+                      <td className="py-3 pr-4 font-semibold text-slate-500">{formatDateTime(item.createdAt)}</td>
+                      <td className="py-3 pr-4 font-bold text-ink">{presentation.typeLabel}</td>
+                      <td className={cn("py-3 pr-4 font-semibold", item.amount >= 0 ? "text-success-strong" : "text-coral")}>
+                        {item.amount >= 0 ? "+" : ""}
+                        {item.amount}
+                      </td>
+                      <td className="py-3 pr-4 font-semibold text-slate-600">{item.balanceAfter}</td>
+                      <td className="py-3 text-slate-500">{presentation.description}</td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

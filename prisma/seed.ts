@@ -31,6 +31,19 @@ async function main() {
     }
   });
 
+  await prisma.diamondRuleConfig.createMany({
+    data: [
+      { key: "register_bonus", direction: "grant", amount: 100, enabled: true },
+      { key: "daily_active_novice", direction: "grant", amount: 10, enabled: true },
+      { key: "daily_active_expert", direction: "grant", amount: 15, enabled: true },
+      { key: "daily_active_scholar", direction: "grant", amount: 20, enabled: true },
+      { key: "daily_answer_bonus", direction: "grant", amount: 5, enabled: true },
+      { key: "ai_study_project_create", direction: "consume", amount: 50, enabled: true },
+      { key: "ai_study_buddy_chat", direction: "consume", amount: 5, enabled: true }
+    ],
+    skipDuplicates: true
+  });
+
   const subject = await prisma.subject.upsert({
     where: {
       province_examType_name: {

@@ -13,20 +13,23 @@ import {
   updateStudyBuddyHeroTitleSettings,
   updateSystemSettings
 } from "@/app/admin/actions";
+import { AdminDiamondRuleSettings } from "@/components/admin-diamond-rule-settings";
 import { requireAdmin } from "@/lib/auth";
+import { listDiamondRuleSettings } from "@/lib/diamond-rules";
 import { prisma } from "@/lib/prisma";
 import { isShareCopyContext, shareCopyContextLabels } from "@/lib/share-copy";
 import { studyBuddyHeroEffectOptions } from "@/lib/study-buddy-title-effects";
 import { getSystemSettings } from "@/lib/system-settings";
 import { cn } from "@/lib/utils";
 
-type SettingsTab = "login" | "agreements" | "study-buddy" | "share-copy";
+type SettingsTab = "login" | "agreements" | "study-buddy" | "share-copy" | "diamonds";
 
 const tabs: Array<{ key: SettingsTab; label: string }> = [
   { key: "login", label: "登录页配置" },
   { key: "agreements", label: "协议内容" },
   { key: "study-buddy", label: "学习搭子" },
-  { key: "share-copy", label: "分享文案" }
+  { key: "share-copy", label: "分享文案" },
+  { key: "diamonds", label: "钻石设置" }
 ];
 
 const noticeText: Record<string, string> = {
@@ -34,14 +37,17 @@ const noticeText: Record<string, string> = {
   "study-buddy-hero-image-saved": "顶部动画已保存。",
   "study-buddy-hero-title-saved": "顶部标题已保存。",
   "study-buddy-hero-effect-saved": "标题效果已保存。",
-  "share-copy-saved": "分享文案已保存。"
+  "share-copy-saved": "分享文案已保存。",
+  "diamond-rule-saved": "钻石规则已保存，后续新事件将使用最新配置。"
 };
 
 const errorText: Record<string, string> = {
   "image-too-large": "图片不能超过 5MB。",
   "invalid-image-type": "请上传 PNG、JPG、WEBP 或 GIF 图片。",
   "invalid-study-buddy-hero-image-type": "请上传 WEBP 图片或动画。",
-  "study-buddy-hero-image-too-large": "学习搭子顶部动画不能超过 5MB。"
+  "study-buddy-hero-image-too-large": "学习搭子顶部动画不能超过 5MB。",
+  "invalid-diamond-rule": "钻石规则不存在或尚未接入代码。",
+  "invalid-diamond-rule-amount": "钻石数量必须是 1 到 1,000,000 之间的整数。"
 };
 
 const marketingIconOptions = [
@@ -98,6 +104,7 @@ export default async function AdminSettingsPage({
         orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
       })
     : [];
+  const diamondRules = activeTab === "diamonds" ? await listDiamondRuleSettings() : [];
   const notice = params?.notice ? noticeText[params.notice] : null;
   const error = params?.error ? errorText[params.error] : null;
 
@@ -106,14 +113,14 @@ export default async function AdminSettingsPage({
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-black text-ink">系统设置</h1>
-          <p className="mt-1 text-sm font-semibold text-slate-500">管理用户端登录、注册、协议页面和学习搭子展示内容。</p>
+          <p className="mt-1 text-sm font-semibold text-slate-500">管理用户端内容、学习搭子展示和钻石奖励规则。</p>
         </div>
         <Link className="secondary-button rounded-none" href="/login" target="_blank">
           预览登录页
         </Link>
       </header>
 
-      <nav className="flex gap-8 border-b border-slate-200 text-sm font-bold text-slate-600" aria-label="系统设置导航">
+      <nav className="flex gap-8 overflow-x-auto whitespace-nowrap border-b border-slate-200 text-sm font-bold text-slate-600" aria-label="系统设置导航">
         {tabs.map((tab) => (
           <Link
             key={tab.key}
@@ -412,6 +419,8 @@ export default async function AdminSettingsPage({
           styles={shareCopyStyles}
         />
       ) : null}
+
+      {activeTab === "diamonds" ? <AdminDiamondRuleSettings rules={diamondRules} /> : null}
     </main>
   );
 }

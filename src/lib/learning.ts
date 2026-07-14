@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { dailyAnswerStepSize } from "@/lib/diamond-rules";
 import { getStudentFoundationProfileStatus } from "@/lib/foundation";
 import { prisma } from "@/lib/prisma";
 import { getBeijingDate, grantDailyAnswerDiamondBonuses } from "@/lib/rewards";
@@ -192,8 +193,8 @@ export async function bumpStudyStat(
   }
 
   const previousQuestions = Math.max(0, stat.questionsAnswered - questionsAnswered);
-  const previousStep = Math.floor(previousQuestions / 10);
-  const currentStep = Math.floor(stat.questionsAnswered / 10);
+  const previousStep = Math.floor(previousQuestions / dailyAnswerStepSize);
+  const currentStep = Math.floor(stat.questionsAnswered / dailyAnswerStepSize);
 
   if (currentStep <= previousStep) {
     return [];

@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ContentStatus, Difficulty, QuestionType, RegionStatus, ShareCopyContext, SyllabusRequirement } from "@prisma/client";
 import { requireAdmin } from "@/lib/auth";
+import { getDiamondRuleDefinition, maxDiamondRuleAmount } from "@/lib/diamond-rules";
 import { prisma } from "@/lib/prisma";
 import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 import { getBeijingDate } from "@/lib/rewards";
@@ -56,6 +57,11 @@ function shareCopySettingsPath(context?: ShareCopyContext) {
     query.set("context", context);
   }
   query.set("notice", "share-copy-saved");
+  return `/admin/settings?${query.toString()}`;
+}
+
+function diamondRuleSettingsPath(kind: "notice" | "error", value: string) {
+  const query = new URLSearchParams({ tab: "diamonds", [kind]: value });
   return `/admin/settings?${query.toString()}`;
 }
 
@@ -484,6 +490,43 @@ export async function updateStudyBuddyHeroEffectSettings(formData: FormData) {
   revalidatePath("/admin/settings");
   revalidatePath("/study-buddy");
   redirect("/admin/settings?tab=study-buddy&notice=study-buddy-hero-effect-saved");
+}
+
+export async function updateDiamondRuleSettings(formData: FormData) {
+  const admin = await requireAdmin();
+  const key = String(formData.get("key") || "").trim();
+  const definition = getDiamondRuleDefinition(key);
+  if (!definition) {
+    redirect(diamondRuleSettingsPath("error", "invalid-diamond-rule"));
+  }
+
+  const amountValue = String(formData.get("amount") || "").trim();
+  const amount = Number(amountValue);
+  if (!/^\d+$/.test(amountValue) || !Number.isSafeInteger(amount) || amount < 1 || amount > maxDiamondRuleAmount) {
+    redirect(diamondRuleSettingsPath("error", "invalid-diamond-rule-amount"));
+  }
+
+  const enabled = formData.get("enabled") === "on";
+  await prisma.diamondRuleConfig.upsert({
+    where: { key: definition.key },
+    update: {
+      amount,
+      enabled,
+      version: { increment: 1 },
+      updatedById: admin.id
+    },
+    create: {
+      key: definition.key,
+      direction: definition.direction,
+      amount,
+      enabled,
+      version: 2,
+      updatedById: admin.id
+    }
+  });
+
+  revalidatePath("/admin/settings");
+  redirect(diamondRuleSettingsPath("notice", "diamond-rule-saved"));
 }
 
 export async function createShareCopyStyle(formData: FormData) {
