@@ -8,9 +8,11 @@ import shutil
 import tempfile
 import threading
 import time
+import unicodedata
 import uuid
 from collections import Counter
 from pathlib import Path
+from statistics import median
 from typing import Any
 
 import fitz
@@ -31,6 +33,10 @@ AI_REVIEW_ENABLED = os.getenv("VIBE_AI_REVIEW_ENABLED", "true").lower() != "fals
 AI_REVIEW_CHUNK_SIZE = int(os.getenv("VIBE_AI_REVIEW_CHUNK_SIZE", "12"))
 AI_REVIEW_TIMEOUT = float(os.getenv("VIBE_AI_REVIEW_TIMEOUT", "90"))
 AI_REVIEW_MIN_CONFIDENCE = float(os.getenv("VIBE_AI_REVIEW_MIN_CONFIDENCE", "0.74"))
+NATIVE_TEXT_MIN_CHARS_PER_PAGE = int(os.getenv("VIBE_PDF_NATIVE_TEXT_MIN_CHARS_PER_PAGE", "80"))
+ANSWER_MATCH_MIN_RATIO = float(os.getenv("VIBE_PDF_ANSWER_MATCH_MIN_RATIO", "0.70"))
+OCR_RENDER_SCALE = float(os.getenv("VIBE_PDF_OCR_RENDER_SCALE", "2.0"))
+OCR_REPAIR_SCALE = float(os.getenv("VIBE_PDF_OCR_REPAIR_SCALE", "3.0"))
 BASE_DIR = Path(__file__).resolve().parent
 PROMPT_DIR = Path(os.getenv("VIBE_AI_PROMPT_DIR", str(BASE_DIR / "prompts")))
 AI_REVIEW_SYSTEM_PROMPT_PATH = Path(os.getenv("VIBE_AI_REVIEW_SYSTEM_PROMPT_PATH", str(PROMPT_DIR / "ai_review_system_prompt.txt")))
@@ -39,8 +45,35 @@ TASKS: dict[str, dict[str, Any]] = {}
 TASK_LOCK = threading.Lock()
 
 
-QUESTION_START = re.compile(r"^\s*(\d{1,3})[\.．、]\s*(.*)$")
-OPTION_START = re.compile(r"([A-D])[\.\．、,，]\s*")
+QUESTION_START = re.compile(
+    r"^\s*(?:第\s*)?([0-9]{1,3})\s*(?:题)?\s*(?:[\.、,，。:：\)）]|(?=\S))\s*(.*)$"
+)
+OPTION_START = re.compile(
+    r"(?:^|\s|[（(])([A-Ha-h])\s*(?:[\.、,，:：\)）]|(?=\s))\s*"
+)
+
+NOISE_TOKENS = (
+    "小红书搜索",
+    "免费领取专升本资料大礼包",
+    "文行文化",
+    "目标公办本科",
+    "志在必得的转本考生",
+    "默默学凭借",
+    "欢迎添加刘老师",
+    "刘老师微信咨询",
+    "为你量身打造上岸计划",
+    "助力过万学子转本成功",
+    "xsxz0312",
+)
+
+SECTION_PATTERNS = (
+    ("multiple_choice", ("多项选择题", "多选题")),
+    ("true_false", ("判断题",)),
+    ("fill_blank", ("填空题",)),
+    ("mixed", ("阅读理解",)),
+    ("comprehensive", ("名词解释题", "简答题", "论述题", "计算分析题", "计算题", "证明题", "综合分析题", "综合题", "古诗词鉴赏", "作文")),
+    ("single_choice", ("单项选择题", "单选题")),
+)
 
 QUESTION_TYPE_LABELS = {
     "single_choice": "单选",
@@ -57,6 +90,8 @@ DEFAULT_AI_REVIEW_USER_PROMPT_TEMPLATE = (
     "请只做保守复核：1) 修正明显 OCR 错字、断行和标点问题；2) 复核题型是否合理；"
     "3) 复核答案是否存在于选项中、是否与解析最后结论一致；4) 标出无法确定的问题。"
     "不要凭空新增题目，不要改写题意，不确定时只给 warning。"
+    "不得根据学科常识补写原 JSON 中为空的答案、解析、选项或题干；"
+    "只有原字段已经包含 PDF 提取内容时才允许纠错，否则必须只给 warning。"
     "只输出 JSON，不要 Markdown。JSON 格式："
     "{\"corrections\":[{\"number\":1,\"confidence\":0.9,\"reason\":\"原因\","
     "\"type\":\"single_choice\",\"stem\":\"可选\",\"options\":[{\"key\":\"A\",\"text\":\"...\"}],"
@@ -77,10 +112,14 @@ def question_type_from_section(section: str) -> str:
         return "fill_blank"
     if section == "comprehensive":
         return "comprehensive"
+    if section == "mixed":
+        return "comprehensive"
     return "single_choice"
 
 
 def normalize_text(text: str) -> str:
+    text = unicodedata.normalize("NFKC", str(text or ""))
+    text = text.replace("\u200b", "").replace("\ufeff", "")
     text = re.sub(r"\s+", " ", text).strip()
     return (
         text.replace("不可算改", "不可篡改")
@@ -90,12 +129,87 @@ def normalize_text(text: str) -> str:
     )
 
 
-def render_pdf_pages(pdf_path: Path, output_dir: Path, request_id: str) -> list[Path]:
+def remove_noise_fragments(text: str) -> str:
+    cleaned = unicodedata.normalize("NFKC", str(text or ""))
+    for token in NOISE_TOKENS:
+        cleaned = cleaned.replace(token, " ")
+    cleaned = re.sub(r"(?:上岸计划|转本成功的经验|加刘老师微信咨询)\s*[!！:：]*", " ", cleaned)
+    cleaned = re.sub(
+        r"(?:、?\s*看过来[!！]?|(?:z0312|xsxz0312)?\s*的经验[,，!！]*|"
+        r"微信咨询\s*[:：]?\s*(?:xsxz0312)?|为你量身打造上(?:岸计划)?|加\s*[:：]\s*的)",
+        " ",
+        cleaned,
+    )
+    cleaned = re.sub(r"(?<!\d)(\d)\s+(\d)\s*(?=[\.、])", r"\1\2", cleaned)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def meaningful_text_length(text: str) -> int:
+    cleaned = remove_noise_fragments(text)
+    return len(re.findall(r"[A-Za-z0-9\u3400-\u9fff]", cleaned))
+
+
+def inspect_native_text(pdf_path: Path) -> dict[str, Any]:
+    document = fitz.open(pdf_path)
+    page_texts = [page.get_text("text", sort=True) for page in document]
+    page_lengths = [meaningful_text_length(text) for text in page_texts]
+    useful_pages = sum(length >= NATIVE_TEXT_MIN_CHARS_PER_PAGE for length in page_lengths)
+    minimum_total = max(160, document.page_count * NATIVE_TEXT_MIN_CHARS_PER_PAGE)
+    total = sum(page_lengths)
+    return {
+        "pageCount": document.page_count,
+        "pageTexts": page_texts,
+        "pageMeaningfulChars": page_lengths,
+        "meaningfulChars": total,
+        "usefulPages": useful_pages,
+        "usable": total >= minimum_total and useful_pages >= max(1, document.page_count // 2),
+    }
+
+
+def native_blocks_from_pdf(pdf_path: Path) -> list[list[dict[str, Any]]]:
+    document = fitz.open(pdf_path)
+    pages: list[list[dict[str, Any]]] = []
+    for page in document:
+        page_items: list[dict[str, Any]] = []
+        page_dict = page.get_text("dict", sort=True)
+        for block in page_dict.get("blocks", []):
+            if block.get("type") != 0:
+                continue
+            for line in block.get("lines", []):
+                direction = line.get("dir") or (1.0, 0.0)
+                if abs(float(direction[1])) > 0.18:
+                    continue
+                text = remove_noise_fragments("".join(str(span.get("text", "")) for span in line.get("spans", [])))
+                if not text:
+                    continue
+                x, y, x2, y2 = [float(value) for value in line.get("bbox", (0, 0, 0, 0))]
+                page_items.append(
+                    {
+                        "x": x,
+                        "y": y,
+                        "x2": x2,
+                        "y2": y2,
+                        "height": max(1.0, y2 - y),
+                        "text": text,
+                        "score": 1.0,
+                    }
+                )
+        pages.append(page_items)
+    return pages
+
+
+def render_pdf_pages(
+    pdf_path: Path,
+    output_dir: Path,
+    request_id: str,
+    *,
+    scale: float = OCR_RENDER_SCALE,
+) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     document = fitz.open(pdf_path)
     logger.info("[%s] rendering %s pages from %s", request_id, document.page_count, pdf_path.name)
     image_paths: list[Path] = []
-    matrix = fitz.Matrix(2, 2)
+    matrix = fitz.Matrix(scale, scale)
     for index, page in enumerate(document, start=1):
         image_path = output_dir / f"page_{index:03d}.png"
         page.get_pixmap(matrix=matrix, alpha=False).save(image_path)
@@ -244,6 +358,7 @@ def run_ocr(image_paths: list[Path], request_id: str, progress_callback: Any = N
                     "y": min(ys),
                     "x2": max(xs),
                     "y2": max(ys),
+                    "height": max(1.0, max(ys) - min(ys)),
                     "text": str(text).strip(),
                     "score": float(score),
                 }
@@ -257,18 +372,22 @@ def run_ocr(image_paths: list[Path], request_id: str, progress_callback: Any = N
 
 def rows_from_page(page: list[dict[str, Any]]) -> list[str]:
     rows: list[list[dict[str, Any]]] = []
+    heights = [float(item.get("height") or (float(item.get("y2", 0)) - float(item.get("y", 0)))) for item in page]
+    typical_height = median([height for height in heights if height > 0]) if any(height > 0 for height in heights) else 16.0
+    y_tolerance = min(12.0, max(4.0, typical_height * 0.36))
     for item in sorted(page, key=lambda entry: (float(entry["y"]), float(entry["x"]))):
-        text = str(item.get("text", "")).strip()
+        text = remove_noise_fragments(str(item.get("text", "")))
         if not text:
             continue
-        if any(token in text for token in ("小红书搜索", "免费领取", "文行文化")):
-            continue
         y = float(item["y"])
-        if rows and abs(float(rows[-1][0]["y"]) - y) <= 6:
+        if rows and abs(float(rows[-1][0]["y"]) - y) <= y_tolerance:
             rows[-1].append(item)
         else:
-            rows.append([item])
-    return [" ".join(str(cell["text"]).strip() for cell in sorted(row, key=lambda entry: float(entry["x"]))) for row in rows]
+            rows.append([{**item, "text": text}])
+    return [
+        normalize_text(" ".join(remove_noise_fragments(str(cell["text"])) for cell in sorted(row, key=lambda entry: float(entry["x"]))))
+        for row in rows
+    ]
 
 
 def parse_options(row: str) -> list[dict[str, str]]:
@@ -279,7 +398,7 @@ def parse_options(row: str) -> list[dict[str, str]]:
         end = matches[index + 1].start() if index + 1 < len(matches) else len(row)
         text = row[start:end].strip()
         if text:
-            options.append({"key": match.group(1), "text": normalize_text(text)})
+            options.append({"key": match.group(1).upper(), "text": normalize_text(text)})
     return options
 
 
@@ -306,7 +425,40 @@ def question_range_label(start: int, end: int) -> str:
     return f"第 {start} 题" if start == end else f"第 {start}-{end} 题"
 
 
-def parse_questions_from_ocr(pages: list[list[dict[str, Any]]]) -> tuple[list[dict[str, Any]], list[str]]:
+def detect_section(row: str) -> str | None:
+    compact = re.sub(r"\s+", "", normalize_text(row))
+    for section, tokens in SECTION_PATTERNS:
+        if any(token in compact for token in tokens):
+            return section
+    return None
+
+
+def expected_count_from_heading(row: str) -> int | None:
+    compact = re.sub(r"\s+", "", normalize_text(row))
+    match = re.search(r"本(?:大)?题共(\d{1,3})(?:小题|题)", compact)
+    if match:
+        return int(match.group(1))
+    return 1 if re.search(r"本题\d+(?:\.\d+)?分", compact) else None
+
+
+def normalize_question_row(row: str, expected: int) -> str:
+    normalized = normalize_text(remove_noise_fragments(row))
+    if expected == 1:
+        normalized = re.sub(r"^[lI|]\s*[\.．、]", "1.", normalized)
+    if expected >= 10:
+        expected_text = str(expected)
+        normalized = re.sub(
+            rf"^[lI|]{re.escape(expected_text[1:])}\s*[\.．、]",
+            f"{expected_text}.",
+            normalized,
+        )
+    if expected == 12:
+        normalized = re.sub(r"^立(?=[\u3400-\u9fff])", "12.", normalized)
+    normalized = re.sub(r"^(\d{1,3})\s*[;；]", r"\1.", normalized)
+    return normalized
+
+
+def parse_questions_from_rows(pages: list[list[str]]) -> tuple[list[dict[str, Any]], list[str], dict[str, Any]]:
     questions: list[dict[str, Any]] = []
     warnings: list[str] = []
     section = "single_choice"
@@ -314,17 +466,22 @@ def parse_questions_from_ocr(pages: list[list[dict[str, Any]]]) -> tuple[list[di
     expected = 1
     started = False
     skipping_out_of_sequence = False
+    expected_total = 0
+    counted_headings: set[str] = set()
 
     def finish_current() -> None:
         nonlocal current
         if not current:
             return
         stem = normalize_text(" ".join(current.pop("stem_parts")))
+        source_section = str(current.pop("section", current.get("type", "single_choice")))
         if stem.endswith("（"):
             stem += "）"
         option_map = {option["key"]: option["text"] for option in current["options"]}
+        if source_section == "mixed":
+            current["type"] = "single_choice" if len(option_map) >= 2 else "comprehensive"
         current["stem"] = stem
-        current["options"] = [{"key": key, "text": option_map[key]} for key in ("A", "B", "C", "D") if key in option_map]
+        current["options"] = [{"key": key, "text": option_map[key]} for key in sorted(option_map)]
         if current["type"] == "true_false":
             current["options"] = [{"key": "A", "text": "正确"}, {"key": "B", "text": "错误"}]
         if current["type"] in {"fill_blank", "comprehensive"}:
@@ -332,32 +489,48 @@ def parse_questions_from_ocr(pages: list[list[dict[str, Any]]]) -> tuple[list[di
         questions.append(current)
         current = None
 
-    for page_index, page in enumerate(pages, start=1):
-        for row in rows_from_page(page):
+    def begin_question(number: int, body: str) -> dict[str, Any]:
+        body = body.strip()
+        matches = list(OPTION_START.finditer(body))
+        stem = body[: matches[0].start()].strip() if matches else body
+        return {
+            "number": number,
+            "type": question_type_from_section(section),
+            "section": section,
+            "stem_parts": [stem] if stem else [],
+            "options": parse_options(body) if matches else [],
+        }
+
+    for page_index, page_rows in enumerate(pages, start=1):
+        for raw_row in page_rows:
+            row = normalize_question_row(raw_row, expected)
+            if not row:
+                continue
             if any(token in row for token in ("答案：", "解题关键词")):
                 continue
-            if "单项选择题" in row:
+
+            heading_count = expected_count_from_heading(row)
+            heading_key = re.sub(r"\s+", "", row)
+            if heading_count and heading_key not in counted_headings:
+                expected_total += heading_count
+                counted_headings.add(heading_key)
+
+            detected_section = detect_section(row)
+            if detected_section:
+                finish_current()
                 started = True
-                section = "single_choice"
-                continue
+                section = detected_section
+                expected_token = re.search(rf"(?<!\d){expected}\s*[\.．、,，。:：\)）]", row)
+                if not expected_token:
+                    continue
+                row = row[expected_token.start() :]
+
             start_match = QUESTION_START.match(row)
             if not started and start_match and looks_like_exam_instruction(row):
                 continue
             if not started and start_match:
                 started = True
             if not started:
-                continue
-            if "多项选择题" in row:
-                section = "multiple_choice"
-                continue
-            if "判断题" in row:
-                section = "true_false"
-                continue
-            if "填空题" in row:
-                section = "fill_blank"
-                continue
-            if "综合" in row and "题" in row:
-                section = "comprehensive"
                 continue
             if any(token in row for token in ("全部选对", "错选或不选", "表述错误的填涂", "答案填在答题卡")):
                 continue
@@ -382,12 +555,7 @@ def parse_questions_from_ocr(pages: list[list[dict[str, Any]]]) -> tuple[list[di
                         )
                         skipping_out_of_sequence = False
                         finish_current()
-                        current = {
-                            "number": number,
-                            "type": question_type_from_section(section),
-                            "stem_parts": [match.group(2).strip()],
-                            "options": [],
-                        }
+                        current = begin_question(number, match.group(2))
                         expected = number + 1
                         continue
 
@@ -396,20 +564,18 @@ def parse_questions_from_ocr(pages: list[list[dict[str, Any]]]) -> tuple[list[di
                     continue
                 skipping_out_of_sequence = False
                 finish_current()
-                current = {
-                    "number": number,
-                    "type": question_type_from_section(section),
-                    "stem_parts": [match.group(2).strip()],
-                    "options": [],
-                }
+                current = begin_question(number, match.group(2))
                 expected += 1
                 continue
 
             if skipping_out_of_sequence or current is None:
                 continue
             options = parse_options(row)
-            if options and current["type"] in {"single_choice", "multiple_choice"}:
+            accepts_options = current["type"] in {"single_choice", "multiple_choice"} or current.get("section") == "mixed"
+            if options and accepts_options:
                 current["options"].extend(options)
+            elif accepts_options and current["options"]:
+                current["options"][-1]["text"] = normalize_text(f"{current['options'][-1]['text']} {row}")
             else:
                 current["stem_parts"].append(row)
 
@@ -418,45 +584,256 @@ def parse_questions_from_ocr(pages: list[list[dict[str, Any]]]) -> tuple[list[di
     for question in questions:
         if question["type"] in {"single_choice", "multiple_choice"} and len(question["options"]) != 4:
             warnings.append(f"第 {question['number']} 题选项数量为 {len(question['options'])}，请预览确认。")
-    return questions, warnings
+    maximum_number = max((int(question["number"]) for question in questions), default=0)
+    if expected_total > maximum_number:
+        warnings.append(
+            f"章节题量合计为 {expected_total} 题，当前最大题号为 {maximum_number}，疑似漏识尾部 {question_range_label(maximum_number + 1, expected_total)}。"
+        )
+    return questions, warnings, {
+        "expectedQuestionCount": max(expected_total, maximum_number),
+        "maximumQuestionNumber": maximum_number,
+    }
+
+
+def parse_questions_from_ocr(pages: list[list[dict[str, Any]]]) -> tuple[list[dict[str, Any]], list[str], dict[str, Any]]:
+    return parse_questions_from_rows([rows_from_page(page) for page in pages])
 
 
 def extract_pdf_text(pdf_path: Path) -> str:
     document = fitz.open(pdf_path)
-    return "\n".join(page.get_text("text") for page in document)
+    return "\n".join(page.get_text("text", sort=True) for page in document)
+
+
+def extract_answer_text(
+    pdf_path: Path,
+    *,
+    request_id: str,
+) -> tuple[str, dict[str, Any]]:
+    inspection = inspect_native_text(pdf_path)
+    if inspection["usable"]:
+        return "\n".join(str(text) for text in inspection["pageTexts"]), {
+            "method": "native_text",
+            "meaningfulChars": inspection["meaningfulChars"],
+            "pageMeaningfulChars": inspection["pageMeaningfulChars"],
+        }
+
+    answer_page_dir = pdf_path.parent / "answer_pages"
+    image_paths = render_pdf_pages(pdf_path, answer_page_dir, f"{request_id}-answer")
+    pages_ocr = run_ocr(image_paths, f"{request_id}-answer")
+    text = "\n".join("\n".join(rows_from_page(page)) for page in pages_ocr)
+    return text, {
+        "method": "ocr",
+        "meaningfulChars": meaningful_text_length(text),
+        "nativeMeaningfulChars": inspection["meaningfulChars"],
+        "pageMeaningfulChars": inspection["pageMeaningfulChars"],
+    }
 
 
 def clean_analysis(text: str) -> str:
     text = re.sub(r"\n\s*\d+\s*\n", "\n", text)
-    text = text.replace("文行文化", " ")
-    text = re.sub(r"\s*[一二三四五六七八九十]、(?:单项选择题|多项选择题|判断题|填空题|综合题)\s*", " ", text)
+    text = remove_noise_fragments(text)
+    text = re.sub(
+        r"\s*[一二三四五六七八九十]+、(?:单项选择题|多项选择题|判断题|填空题|名词解释题|简答题|论述题|计算(?:分析)?题|证明题|综合(?:分析)?题|古诗词鉴赏|作文)\s*",
+        " ",
+        text,
+    )
     return normalize_text(text)
 
 
-def parse_answers(answer_text: str) -> dict[int, dict[str, str]]:
-    prefix = chr(0x7B2C)
-    question = chr(0x9898)
-    analysis = chr(0x89E3) + chr(0x6790)
-    full_colon = chr(0xFF1A)
-    pattern = re.compile(
-        f"{prefix}\\s*(\\d{{1,3}})\\s*{question}[:{full_colon}]\\s*(.*?)\\s*"
-        f"{analysis}[:{full_colon}](.*?)(?=\\n{prefix}\\s*\\d{{1,3}}\\s*{question}[:{full_colon}]|\\Z)",
+def normalize_answer_document(text: str) -> str:
+    normalized = unicodedata.normalize("NFKC", str(text or ""))
+    normalized = normalized.replace("【", "[").replace("】", "]").replace("［", "[").replace("］", "]")
+    normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = re.sub(r"\[\s*精析\s*[Il1]?\s*[\]\)]?", "[精析]", normalized)
+    normalized = re.sub(
+        r"\[\s*(答案要点|参考答案|参考范文|佳作展台)\s*[\]\)]?",
+        lambda match: f"[{match.group(1)}]",
+        normalized,
+    )
+    normalized = re.sub(r"(?<=\d)[ \t]+(?=\d)", "", normalized)
+    lines = [remove_noise_fragments(line) for line in normalized.splitlines()]
+    return "\n".join(line for line in lines if line)
+
+
+def normalize_choice_answer(answer: str, question_type: str) -> str:
+    normalized = normalize_text(answer).upper()
+    if question_type == "true_false":
+        if normalized in {"正确", "对", "√", "TRUE", "T"}:
+            return "A"
+        if normalized in {"错误", "错", "×", "FALSE", "F"}:
+            return "B"
+    return "".join(dict.fromkeys(re.findall(r"[A-H]", normalized)))
+
+
+def parse_answers(answer_text: str, questions: list[dict[str, Any]] | None = None) -> dict[int, dict[str, str]]:
+    normalized = normalize_answer_document(answer_text)
+    question_types = {int(question["number"]): str(question["type"]) for question in questions or []}
+    answers: dict[int, dict[str, str]] = {}
+
+    def save(number: int, answer: str = "", analysis: str = "", *, detailed: bool = False) -> None:
+        question_type = question_types.get(number, "single_choice")
+        if question_type in {"single_choice", "multiple_choice", "true_false"}:
+            answer = normalize_choice_answer(answer, question_type)
+        else:
+            answer = normalize_text(answer)
+        analysis = clean_analysis(analysis)
+        previous = answers.get(number)
+        if previous and not detailed:
+            if not previous.get("answer") and answer:
+                previous["answer"] = answer
+            if not previous.get("analysis") and analysis:
+                previous["analysis"] = analysis
+            return
+        if question_type in {"fill_blank", "comprehensive"} and not answer and analysis:
+            answer = analysis
+        answers[number] = {"answer": answer, "analysis": analysis}
+
+    legacy_pattern = re.compile(
+        r"第\s*(\d{1,3})\s*题\s*[:：]\s*(.*?)\s*解析\s*[:：](.*?)(?=\n第\s*\d{1,3}\s*题\s*[:：]|\Z)",
         re.S,
     )
-    answers: dict[int, dict[str, str]] = {}
-    for match in pattern.finditer(answer_text):
+    for match in legacy_pattern.finditer(normalized):
+        save(int(match.group(1)), match.group(2), match.group(3), detailed=True)
+
+    for match in re.finditer(
+        r"(?m)(?<!\d)(\d{1,3})[ \t]*题[ \t]*[,，、:：]?[ \t]*"
+        r"([A-H](?:[ \t]*[A-H]){0,7})"
+        r"(?![A-Ha-h])",
+        normalized,
+    ):
+        save(int(match.group(1)), match.group(2))
+    for match in re.finditer(
+        r"(?m)(?<!\d)(\d{1,3})\s*[-~—至]\s*(\d{1,3})[ \t]+(.+?)"
+        r"(?=[ \t]+\d{1,3}\s*[-~—至]\s*\d{1,3}[ \t]+|$)",
+        normalized,
+    ):
+        start, end = int(match.group(1)), int(match.group(2))
+        count = end - start + 1
+        tokens = re.findall(r"\b[A-H]+\b", match.group(3).upper())
+        if end < start:
+            continue
+        if len(tokens) == count:
+            for offset, token in enumerate(tokens):
+                save(start + offset, token)
+        elif len(tokens) == 1 and len(tokens[0]) == count:
+            for offset, letter in enumerate(tokens[0]):
+                save(start + offset, letter)
+
+    boundary = re.compile(
+        r"(?m)^\s*(?:\([一二三四五六七八九十]+\)\s*)?(\d{1,3})\s*"
+        r"(?:[\.、]|(?=\[(?:答案|参考答案|答案要点|参考范文|佳作展台|解析|精析)\]))\s*"
+    )
+    matches = list(boundary.finditer(normalized))
+    for index, match in enumerate(matches):
         number = int(match.group(1))
-        answers[number] = {
-            "answer": re.sub(r"\s+", "", match.group(2).strip()),
-            "analysis": clean_analysis(match.group(3)),
-        }
+        if number < 1 or number > 300:
+            continue
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(normalized)
+        segment = normalized[match.end() : end].strip()
+        if not segment:
+            continue
+        question_type = question_types.get(number, "single_choice")
+        answer_value = ""
+        analysis_value = ""
+
+        answer_marker = re.search(
+            r"\[(?:答案|参考答案|答案要点|参考范文|佳作展台)\]\s*(.*?)(?=\[(?:解析|精析|考点)\]|\Z)",
+            segment,
+            re.S,
+        )
+        review_marker = re.search(r"\[(?:解析|精析)\]\s*(.*)", segment, re.S)
+        if answer_marker:
+            answer_content = answer_marker.group(1).strip()
+            if question_type in {"single_choice", "multiple_choice", "true_false"}:
+                token = re.match(r"\s*([A-H]+|正确|错误|对|错|√|×)", answer_content)
+                answer_value = token.group(1) if token else answer_content
+            else:
+                answer_value = answer_content
+        if review_marker:
+            review_content = review_marker.group(1).strip()
+            if question_type in {"single_choice", "multiple_choice", "true_false"}:
+                token = re.match(r"\s*([A-H]+|正确|错误|对|错|√|×)(?:\s+|[,，。:：])?(.*)", review_content, re.S)
+                if token:
+                    answer_value = answer_value or token.group(1)
+                    analysis_value = token.group(2).strip()
+                else:
+                    analysis_value = review_content
+            else:
+                analysis_value = review_content
+        if not answer_marker and not review_marker and question_type in {"fill_blank", "comprehensive"}:
+            answer_value = segment
+            analysis_value = segment
+        if answer_value or analysis_value:
+            save(number, answer_value, analysis_value, detailed=True)
+
+    subjective_numbers = sorted(
+        number for number, question_type in question_types.items() if question_type in {"fill_blank", "comprehensive"}
+    )
+    if subjective_numbers:
+        number_choices = "|".join(str(number) for number in sorted(subjective_numbers, reverse=True))
+        subjective_boundary = re.compile(rf"(?<!\d)({number_choices})\s*(?:[\.、]|题\s*答案)\s*")
+        subjective_matches = list(subjective_boundary.finditer(normalized))
+        for index, match in enumerate(subjective_matches):
+            number = int(match.group(1))
+            end = subjective_matches[index + 1].start() if index + 1 < len(subjective_matches) else len(normalized)
+            segment = normalized[match.end() : end].strip()
+            if not segment:
+                continue
+            marker = re.search(r"\[(?:答案|参考答案|答案要点|参考范文|佳作展台)\]\s*(.*)", segment, re.S)
+            answer_value = marker.group(1).strip() if marker else segment
+            save(number, answer_value, answer_value)
+
+    section_headings: list[dict[str, Any]] = []
+    offset = 0
+    for raw_line in normalized.splitlines(keepends=True):
+        line = raw_line.strip()
+        section = detect_section(line)
+        count = expected_count_from_heading(line)
+        if section and count:
+            section_headings.append(
+                {
+                    "headingStart": offset,
+                    "contentStart": offset + len(raw_line),
+                    "count": count,
+                }
+            )
+        offset += len(raw_line)
+
+    question_cursor = 1
+    for index, heading in enumerate(section_headings):
+        count = int(heading["count"])
+        content_end = (
+            int(section_headings[index + 1]["headingStart"])
+            if index + 1 < len(section_headings)
+            else len(normalized)
+        )
+        content = normalized[int(heading["contentStart"]) : content_end]
+        answer_markers = list(re.finditer(r"\[答案\]\s*", content))
+        review_markers = list(re.finditer(r"\[(?:解析|精析)\]\s*", content))
+
+        if len(answer_markers) == count:
+            for answer_index, marker in enumerate(answer_markers):
+                end = answer_markers[answer_index + 1].start() if answer_index + 1 < count else len(content)
+                segment = content[marker.end() : end].strip()
+                review = re.search(r"\[(?:解析|精析)\]\s*(.*)", segment, re.S)
+                answer_value = segment[: review.start()].strip() if review else segment
+                analysis_value = review.group(1).strip() if review else ""
+                save(question_cursor + answer_index, answer_value, analysis_value)
+        elif len(review_markers) == count:
+            for review_index, marker in enumerate(review_markers):
+                end = review_markers[review_index + 1].start() if review_index + 1 < count else len(content)
+                analysis_value = content[marker.end() : end].strip()
+                save(question_cursor + review_index, "", analysis_value)
+        question_cursor += count
     return answers
 
 
 def answer_to_list(question_type: str, answer: str) -> list[str]:
+    if not str(answer or "").strip():
+        return []
     if question_type in {"single_choice", "multiple_choice", "true_false"}:
-        return list(answer)
-    return [answer]
+        return list(normalize_choice_answer(answer, question_type))
+    return [normalize_text(answer)]
 
 
 def truncate_text(text: str, limit: int) -> str:
@@ -553,8 +930,9 @@ def sanitize_ai_answer(value: Any) -> list[str] | None:
     return None
 
 
-def apply_ai_correction(question: dict[str, Any], correction: dict[str, Any]) -> list[str]:
+def apply_ai_correction(question: dict[str, Any], correction: dict[str, Any]) -> tuple[list[str], list[str]]:
     changed: list[str] = []
+    blocked: list[str] = []
     allowed_types = {"single_choice", "multiple_choice", "true_false", "fill_blank", "comprehensive"}
     next_type = correction.get("type")
     if isinstance(next_type, str) and next_type in allowed_types and next_type != question.get("type"):
@@ -566,20 +944,32 @@ def apply_ai_correction(question: dict[str, Any], correction: dict[str, Any]) ->
         if isinstance(value, str):
             text = normalize_text(value)
             if text and text != question.get(key):
-                question[key] = text
-                changed.append(label)
+                if not normalize_text(str(question.get(key) or "")):
+                    blocked.append(label)
+                else:
+                    question[key] = text
+                    changed.append(label)
 
     options = sanitize_ai_options(correction.get("options"))
     if options is not None and options and options != question.get("options"):
-        question["options"] = options
-        changed.append("选项")
+        source_options = question.get("options") or []
+        source_keys = {str(item.get("key")) for item in source_options if isinstance(item, dict)}
+        next_keys = {str(item.get("key")) for item in options}
+        if not source_options or source_keys != next_keys:
+            blocked.append("选项")
+        else:
+            question["options"] = options
+            changed.append("选项")
 
     answer = sanitize_ai_answer(correction.get("answer"))
     if answer is not None and answer != question.get("answer"):
-        question["answer"] = answer
-        changed.append("答案")
+        if not question.get("answer"):
+            blocked.append("答案")
+        else:
+            question["answer"] = answer
+            changed.append("答案")
 
-    return changed
+    return changed, list(dict.fromkeys(blocked))
 
 
 def review_payload_with_ai(
@@ -649,7 +1039,11 @@ def review_payload_with_ai(
                 if reason:
                     warnings.append(f"AI 未自动修改：第 {number} 题置信度 {confidence:.2f}，{reason}")
                 continue
-            changed = apply_ai_correction(question, correction)
+            changed, blocked = apply_ai_correction(question, correction)
+            if blocked:
+                warnings.append(
+                    f"AI 未应用无来源补写：第 {number} 题（{','.join(blocked)}），请依据原 PDF 人工补充。"
+                )
             if changed:
                 applied.append(
                     {
@@ -757,6 +1151,150 @@ def validate_payload(payload: dict[str, Any]) -> list[str]:
     return warnings
 
 
+def question_parse_score(questions: list[dict[str, Any]], debug: dict[str, Any]) -> float:
+    expected = int(debug.get("expectedQuestionCount") or 0)
+    coverage = len(questions) / expected if expected else (1.0 if questions else 0.0)
+    choice_questions = [
+        question for question in questions if question.get("type") in {"single_choice", "multiple_choice"}
+    ]
+    complete_choices = sum(len(question.get("options") or []) >= 4 for question in choice_questions)
+    option_quality = complete_choices / len(choice_questions) if choice_questions else 1.0
+    return coverage * 100.0 + option_quality * 20.0
+
+
+def extract_questions_adaptive(
+    question_path: Path,
+    *,
+    request_id: str,
+    progress_callback: Any = None,
+) -> tuple[list[dict[str, Any]], list[str], dict[str, Any]]:
+    inspection = inspect_native_text(question_path)
+    page_count = int(inspection["pageCount"])
+    candidates: list[tuple[list[dict[str, Any]], list[str], dict[str, Any]]] = []
+
+    if inspection["usable"]:
+        native_pages = [rows_from_page(page) for page in native_blocks_from_pdf(question_path)]
+        native_questions, native_warnings, native_structure = parse_questions_from_rows(native_pages)
+        native_debug = {
+            **native_structure,
+            "method": "native_text",
+            "meaningfulChars": inspection["meaningfulChars"],
+            "pageMeaningfulChars": inspection["pageMeaningfulChars"],
+            "pageCount": page_count,
+        }
+        candidates.append((native_questions, native_warnings, native_debug))
+        expected = int(native_structure.get("expectedQuestionCount") or 0)
+        coverage = len(native_questions) / expected if expected else (1.0 if native_questions else 0.0)
+        needs_ocr_fallback = coverage < 0.90
+    else:
+        needs_ocr_fallback = True
+
+    if needs_ocr_fallback:
+        page_images = render_pdf_pages(question_path, question_path.parent / "pages", request_id)
+        pages_ocr = run_ocr(page_images, request_id, progress_callback=progress_callback)
+        ocr_questions, ocr_warnings, ocr_structure = parse_questions_from_ocr(pages_ocr)
+        candidates.append(
+            (
+                ocr_questions,
+                ocr_warnings,
+                {
+                    **ocr_structure,
+                    "method": "ocr",
+                    "nativeMeaningfulChars": inspection["meaningfulChars"],
+                    "pageMeaningfulChars": inspection["pageMeaningfulChars"],
+                    "pageCount": page_count,
+                },
+            )
+        )
+        expected = int(ocr_structure.get("expectedQuestionCount") or 0)
+        if expected and len(ocr_questions) < expected and OCR_REPAIR_SCALE > OCR_RENDER_SCALE:
+            repair_request_id = f"{request_id}-repair"
+            repair_images = render_pdf_pages(
+                question_path,
+                question_path.parent / "pages_repair",
+                repair_request_id,
+                scale=OCR_REPAIR_SCALE,
+            )
+            repair_pages_ocr = run_ocr(repair_images, repair_request_id)
+            repair_questions, _, repair_structure = parse_questions_from_ocr(repair_pages_ocr)
+            merged_by_number = {int(question["number"]): question for question in ocr_questions}
+            repaired_numbers: list[int] = []
+            for repair_question in repair_questions:
+                number = int(repair_question["number"])
+                current = merged_by_number.get(number)
+                if current is None:
+                    merged_by_number[number] = repair_question
+                    repaired_numbers.append(number)
+                    continue
+                if len(repair_question.get("options") or []) > len(current.get("options") or []):
+                    current["options"] = repair_question["options"]
+            merged_questions = [merged_by_number[number] for number in sorted(merged_by_number)]
+            merged_warnings = [warning for warning in ocr_warnings if not warning.startswith("疑似漏识")]
+            merged_structure = {
+                **ocr_structure,
+                "expectedQuestionCount": max(
+                    expected,
+                    int(repair_structure.get("expectedQuestionCount") or 0),
+                ),
+                "repairScale": OCR_REPAIR_SCALE,
+                "repairedQuestionNumbers": repaired_numbers,
+            }
+            candidates.append(
+                (
+                    merged_questions,
+                    merged_warnings,
+                    {
+                        **merged_structure,
+                        "method": "ocr_multiscale",
+                        "nativeMeaningfulChars": inspection["meaningfulChars"],
+                        "pageMeaningfulChars": inspection["pageMeaningfulChars"],
+                        "pageCount": page_count,
+                    },
+                )
+            )
+
+    questions, warnings, debug = max(candidates, key=lambda candidate: question_parse_score(candidate[0], candidate[2]))
+    debug["candidateMethods"] = [
+        {
+            "method": candidate_debug["method"],
+            "questionCount": len(candidate_questions),
+            "score": round(question_parse_score(candidate_questions, candidate_debug), 2),
+        }
+        for candidate_questions, _, candidate_debug in candidates
+    ]
+    return questions, warnings, debug
+
+
+def build_quality_gate(
+    *,
+    questions: list[dict[str, Any]],
+    answers: dict[int, dict[str, str]],
+    question_debug: dict[str, Any],
+) -> dict[str, Any]:
+    question_count = len(questions)
+    answered_count = sum(bool(str(answer.get("answer") or "").strip()) for answer in answers.values())
+    answer_ratio = answered_count / question_count if question_count else 0.0
+    expected_count = int(question_debug.get("expectedQuestionCount") or question_count)
+    reasons: list[str] = []
+    if not question_count:
+        reasons.append("没有识别到题目")
+    if expected_count > question_count:
+        reasons.append(f"预计 {expected_count} 题，实际识别 {question_count} 题")
+    if question_count and answer_ratio < ANSWER_MATCH_MIN_RATIO:
+        reasons.append(
+            f"有来源答案仅匹配 {answered_count}/{question_count}，低于 {ANSWER_MATCH_MIN_RATIO:.0%} 门槛"
+        )
+    return {
+        "status": "review_required" if reasons else "passed",
+        "reviewRequired": bool(reasons),
+        "reasons": reasons,
+        "expectedQuestionCount": expected_count,
+        "questionCount": question_count,
+        "answeredQuestionCount": answered_count,
+        "answerMatchRatio": round(answer_ratio, 4),
+    }
+
+
 def parse_question_files(
     *,
     question_path: Path,
@@ -773,12 +1311,16 @@ def parse_question_files(
     ai_api_key: str = "",
     ai_model: str = "",
 ) -> dict[str, Any]:
-    page_images = render_pdf_pages(question_path, question_path.parent / "pages", request_id)
-    pages_ocr = run_ocr(page_images, request_id, progress_callback=progress_callback)
-    questions, question_warnings = parse_questions_from_ocr(pages_ocr)
+    questions, question_warnings, question_debug = extract_questions_adaptive(
+        question_path,
+        request_id=request_id,
+        progress_callback=progress_callback,
+    )
     logger.info("[%s] parsed questions=%s warnings=%s", request_id, len(questions), len(question_warnings))
-    answers = parse_answers(extract_pdf_text(answer_path))
-    logger.info("[%s] parsed answers=%s", request_id, len(answers))
+    answer_text, answer_debug = extract_answer_text(answer_path, request_id=request_id)
+    answers = parse_answers(answer_text, questions)
+    logger.info("[%s] parsed answers=%s method=%s", request_id, len(answers), answer_debug["method"])
+    quality_gate = build_quality_gate(questions=questions, answers=answers, question_debug=question_debug)
     payload, merge_warnings = merge_payload(
         title=title,
         year=year,
@@ -793,6 +1335,9 @@ def parse_question_files(
         merge_warnings.append(
             f"题目数量 {len(questions)}，答案数量 {len(answers)}，请检查 OCR 是否漏题，或真题 PDF 与答案解析 PDF 是否对应。"
         )
+    quality_warnings = [
+        f"质量门禁未通过：{'；'.join(quality_gate['reasons'])}。请完成预览复核后再导入。"
+    ] if quality_gate["reviewRequired"] else []
     stats = Counter(question["type"] for question in payload["questions"])
     ai_warnings: list[str] = []
     ai_debug: dict[str, Any] = {"enabled": False}
@@ -812,12 +1357,16 @@ def parse_question_files(
     return {
         "payload": payload,
         "stats": dict(stats),
-        "warnings": question_warnings + merge_warnings + ai_warnings + validation_warnings,
+        "warnings": quality_warnings + question_warnings + merge_warnings + ai_warnings + validation_warnings,
         "debug": {
             "requestId": request_id,
             "questionCount": len(payload["questions"]),
             "answerCount": len(answers),
-            "pageCount": len(page_images),
+            "answeredQuestionCount": quality_gate["answeredQuestionCount"],
+            "pageCount": question_debug["pageCount"],
+            "questionExtraction": question_debug,
+            "answerExtraction": answer_debug,
+            "qualityGate": quality_gate,
             "aiReview": ai_debug,
         },
     }
