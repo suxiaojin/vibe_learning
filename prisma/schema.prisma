@@ -160,6 +160,7 @@ enum QuestionType {
   question_answer
   handwriting
   reading_comprehension
+  poetry_appreciation
   classical_chinese_translation
   writing
   legal_document
@@ -570,6 +571,7 @@ model LearningCourse {
   name            String
   courseType      LearningCourseType
   description     String?
+  questionTypeConfig Json?
   status          ContentStatus      @default(draft)
   sortOrder       Int                @default(0)
   region          Region             @relation(fields: [regionId], references: [id], onDelete: Cascade)

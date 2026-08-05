@@ -442,6 +442,7 @@ const questionTypeStyleAliases: Record<string, string> = {
   question_answer: "fill_blank",
   handwriting: "fill_blank",
   reading_comprehension: "comprehensive",
+  poetry_appreciation: "proof",
   classical_chinese_translation: "proof",
   writing: "comprehensive",
   legal_document: "proof",

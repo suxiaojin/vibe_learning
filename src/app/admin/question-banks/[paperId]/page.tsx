@@ -1,7 +1,7 @@
 import { QuestionBankDetailWorkbench, type KnowledgeTreeCourse } from "@/components/question-bank-detail-workbench";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { resolveQuestionBankQuestionTypes } from "@/lib/question-bank-types";
+import { parseQuestionBankQuestionTypeConfig, resolveQuestionBankQuestionTypes } from "@/lib/question-bank-types";
 
 function toQuestionOptions(value: unknown) {
   if (!Array.isArray(value)) {
@@ -221,13 +221,16 @@ export default async function QuestionBankDetailPage({
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
   });
   const knowledgeDisplayById = buildKnowledgeDisplayMap(knowledgeCourses);
+  const configuredQuestionTypes = parseQuestionBankQuestionTypeConfig(paper.course.questionTypeConfig);
 
   return (
     <QuestionBankDetailWorkbench
+      courseId={paper.course.id}
+      courseName={paper.course.major?.name || paper.course.publicSubject?.name || paper.course.name}
       paperId={paper.id}
       paperTitle={paper.title}
       ownerHref={ownerHref(paper)}
-      questionTypes={resolveQuestionBankQuestionTypes(paperQuestionTypeText(paper))}
+      questionTypes={configuredQuestionTypes || resolveQuestionBankQuestionTypes(paperQuestionTypeText(paper))}
       knowledgeTree={knowledgeCourses.map(toKnowledgeTreeCourse)}
       questions={paper.questions.map((item) => {
         const rawKnowledgeTagIds = [

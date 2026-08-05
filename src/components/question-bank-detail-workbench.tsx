@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { PointerEventHandler, ReactNode } from "react";
+import type { ChangeEvent, PointerEventHandler, ReactNode, RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
+  ArrowDown,
+  ArrowUp,
   CheckSquare,
   CircleDot,
   CopyPlus,
@@ -14,8 +16,10 @@ import {
   Image,
   ListChecks,
   Loader2,
+  Plus,
   Save,
   Search,
+  Settings2,
   Sigma,
   Sparkles,
   Trash2,
@@ -26,13 +30,16 @@ import {
   createQuestionBankTypedQuestion,
   deleteQuestionBankPaperQuestion,
   reorderQuestionBankPaperQuestions,
-  updateQuestionBankQuestion
+  updateQuestionBankQuestion,
+  updateQuestionBankQuestionType,
+  updateQuestionBankQuestionTypeConfig
 } from "@/app/admin/actions";
 import {
   getQuestionBankTypeLabel,
   isQuestionBankChoiceQuestionType,
   isQuestionBankEditableQuestionType,
   isQuestionBankRichAnswerQuestionType,
+  questionBankQuestionTypeCatalog,
   type QuestionBankChoiceQuestionType,
   type QuestionBankEditableQuestionType,
   type QuestionBankQuestionTypeConfig,
@@ -88,6 +95,8 @@ export type KnowledgeTreeCourse = {
 };
 
 type QuestionBankDetailWorkbenchProps = {
+  courseId: string;
+  courseName: string;
   paperId: string;
   paperTitle: string;
   ownerHref: string;
@@ -119,6 +128,13 @@ type QuestionTypeMeta = {
   activeChip: string;
 };
 
+type QuestionTypeControl = {
+  value: EditableQuestionType;
+  options: QuestionBankQuestionTypeConfig[];
+  disabled?: boolean;
+  onChange: (type: EditableQuestionType) => void;
+};
+
 const optionKeys = ["A", "B", "C", "D"] as const;
 const alphabetOptionKeys = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 const layoutStorageKey = "question-bank-detail-column-layout";
@@ -132,6 +148,9 @@ const minColumnLayout = {
   list: 280,
   attributes: 380
 };
+const questionStemImageMaxBytes = 2 * 1024 * 1024;
+const questionStemHtmlMaxChars = 5 * 1024 * 1024;
+const questionStemImageTypes = new Set(["image/gif", "image/jpeg", "image/png", "image/webp"]);
 
 const questionTypeStyles: Record<string, QuestionTypeMeta> = {
   single_choice: {
@@ -199,6 +218,7 @@ const questionTypeStyleAliases: Record<string, string> = {
   question_answer: "fill_blank",
   handwriting: "fill_blank",
   reading_comprehension: "comprehensive",
+  poetry_appreciation: "proof",
   classical_chinese_translation: "proof",
   writing: "comprehensive",
   legal_document: "proof",
@@ -354,16 +374,57 @@ function nextOptionKey(keys: string[]) {
   return alphabetOptionKeys.find((key) => !keys.includes(key));
 }
 
-function ToolbarButton({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
+function ToolbarButton({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick?: () => void }) {
   return (
-    <button className="inline-flex h-7 items-center gap-1.5 px-3 text-xs font-medium text-[#1f2b3d] hover:bg-white" type="button">
+    <button
+      className="inline-flex h-7 items-center gap-1.5 px-3 text-xs font-medium text-[#1f2b3d] hover:bg-white"
+      type="button"
+      onClick={onClick}
+      onMouseDown={(event) => onClick && event.preventDefault()}
+    >
       <Icon size={13} />
       {label}
     </button>
   );
 }
 
-function EditorShell({ title, children }: { title: string; children: ReactNode }) {
+function QuestionTypeSelect({ value, options, disabled = false, onChange }: QuestionTypeControl) {
+  const selectOptions = options.some((option) => option.type === value)
+    ? options
+    : [{ type: value, label: getQuestionBankTypeLabel(value, options) }, ...options];
+
+  return (
+    <label className="flex h-8 items-center border-l border-[#d4dae4] bg-[#f8fafc] pl-2 text-xs font-semibold text-[#475467]">
+      <span className="shrink-0">题型</span>
+      <select
+        className="h-8 min-w-[108px] cursor-pointer bg-transparent px-2 text-sm font-bold text-[#071b38] outline-none transition focus:bg-white focus:ring-2 focus:ring-inset focus:ring-[#3b82f6]/50 disabled:cursor-wait disabled:opacity-60"
+        value={value}
+        disabled={disabled}
+        aria-label="更改题目题型"
+        onChange={(event) => onChange(event.target.value as EditableQuestionType)}
+      >
+        {selectOptions.map((option) => (
+          <option key={option.type} value={option.type}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      {disabled ? <Loader2 className="mr-2 shrink-0 animate-spin text-[#3b82f6]" size={14} aria-hidden="true" /> : null}
+    </label>
+  );
+}
+
+function EditorShell({
+  title,
+  children,
+  questionTypeControl,
+  onInsertImage
+}: {
+  title: string;
+  children: ReactNode;
+  questionTypeControl?: QuestionTypeControl;
+  onInsertImage?: () => void;
+}) {
   return (
     <section>
       <div className="flex h-10 items-center justify-between border-b border-[#d4dae4] bg-[#eef3f9] px-3">
@@ -374,12 +435,16 @@ function EditorShell({ title, children }: { title: string; children: ReactNode }
           <div className="flex items-center">
             <ToolbarButton icon={CopyPlus} label="截图" />
             <ToolbarButton icon={Eye} label="识别" />
-            <ToolbarButton icon={Image} label="插入图表" />
+            <ToolbarButton icon={Image} label="插入图表" onClick={onInsertImage} />
             <ToolbarButton icon={Sigma} label="插入公式" />
           </div>
-          <button className="grid h-8 w-9 place-items-center bg-[#ef3e46] text-white" type="button" aria-label="删除内容">
-            <Trash2 size={14} />
-          </button>
+          {questionTypeControl ? (
+            <QuestionTypeSelect {...questionTypeControl} />
+          ) : (
+            <button className="grid h-8 w-9 place-items-center bg-[#ef3e46] text-white" type="button" aria-label="删除内容">
+              <Trash2 size={14} />
+            </button>
+          )}
         </div>
       </div>
       {children}
@@ -598,33 +663,239 @@ function KnowledgeTreeView({
   );
 }
 
-function RichTextEditor({ name, defaultValue = "" }: { name: string; defaultValue?: string }) {
+function RichTextEditor({
+  name,
+  defaultValue = "",
+  imageInputRef,
+  minHeightClassName = "min-h-[240px]"
+}: {
+  name: string;
+  defaultValue?: string;
+  imageInputRef?: RefObject<HTMLInputElement | null>;
+  minHeightClassName?: string;
+}) {
   const initialHtml = toRichTextHtml(defaultValue);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const savedRangeRef = useRef<Range | null>(null);
+  const selectedResizableElementRef = useRef<HTMLElement | null>(null);
+  const [imageError, setImageError] = useState("");
+  const [tableConfigOpen, setTableConfigOpen] = useState(false);
+  const [tableRows, setTableRows] = useState("2");
+  const [tableColumns, setTableColumns] = useState("2");
+  const [resizeBox, setResizeBox] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    kind: "image" | "table";
+  } | null>(null);
+  const rememberSelection = () => {
+    const selection = window.getSelection();
+    const editor = editorRef.current;
+    if (!selection || !editor || selection.rangeCount === 0 || !editor.contains(selection.anchorNode)) {
+      return;
+    }
+    savedRangeRef.current = selection.getRangeAt(0).cloneRange();
+  };
+  const restoreSelection = () => {
+    const selection = window.getSelection();
+    const range = savedRangeRef.current;
+    if (!selection || !range) {
+      return;
+    }
+    selection.removeAllRanges();
+    selection.addRange(range);
+  };
   const syncValue = () => {
     if (inputRef.current) {
       inputRef.current.value = editorRef.current?.innerHTML || "";
     }
+    rememberSelection();
   };
   const applyCommand = (command: string) => {
     editorRef.current?.focus();
     document.execCommand(command, false);
     syncValue();
   };
+  const updateResizeBox = () => {
+    const container = containerRef.current;
+    const element = selectedResizableElementRef.current;
+    if (!container || !element || !element.isConnected) {
+      setResizeBox(null);
+      return;
+    }
+    const containerRect = container.getBoundingClientRect();
+    const elementRect = element.getBoundingClientRect();
+    setResizeBox({
+      left: elementRect.left - containerRect.left,
+      top: elementRect.top - containerRect.top,
+      width: elementRect.width,
+      height: elementRect.height,
+      kind: element.tagName === "IMG" ? "image" : "table"
+    });
+  };
+  const selectResizableElement = (target: EventTarget | null) => {
+    const editor = editorRef.current;
+    const element = target instanceof Element ? target.closest("img, table") as HTMLElement | null : null;
+    if (!editor || !element || !editor.contains(element)) {
+      selectedResizableElementRef.current = null;
+      setResizeBox(null);
+      return;
+    }
+    selectedResizableElementRef.current = element;
+    window.requestAnimationFrame(updateResizeBox);
+  };
+  const startResize: PointerEventHandler<HTMLButtonElement> = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const element = selectedResizableElementRef.current;
+    const editor = editorRef.current;
+    if (!element || !editor) {
+      return;
+    }
+
+    const startRect = element.getBoundingClientRect();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const aspectRatio = startRect.width / Math.max(1, startRect.height);
+    const isImage = element.tagName === "IMG";
+    const maxWidth = Math.max(120, editor.clientWidth - 32);
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      const nextWidth = clamp(startRect.width + moveEvent.clientX - startX, 80, maxWidth);
+      element.style.width = `${Math.round(nextWidth)}px`;
+      element.style.maxWidth = "100%";
+      if (isImage) {
+        element.style.height = `${Math.round(nextWidth / aspectRatio)}px`;
+      } else {
+        const nextHeight = Math.max(48, startRect.height + moveEvent.clientY - startY);
+        element.style.height = `${Math.round(nextHeight)}px`;
+        element.style.tableLayout = "fixed";
+      }
+      updateResizeBox();
+    };
+    const handleUp = () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+      syncValue();
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+  };
   const insertTable = () => {
-    editorRef.current?.focus();
-    document.execCommand(
-      "insertHTML",
-      false,
-      '<table><tbody><tr><td><br></td><td><br></td></tr><tr><td><br></td><td><br></td></tr></tbody></table><p><br></p>'
-    );
+    const editor = editorRef.current;
+    if (!editor) {
+      return;
+    }
+    const rowCount = clamp(Math.floor(Number(tableRows) || 2), 1, 50);
+    const columnCount = clamp(Math.floor(Number(tableColumns) || 2), 1, 50);
+    const table = document.createElement("table");
+    const body = document.createElement("tbody");
+    for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+      const row = document.createElement("tr");
+      for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
+        const cell = document.createElement("td");
+        cell.append(document.createElement("br"));
+        row.append(cell);
+      }
+      body.append(row);
+    }
+    table.append(body);
+    table.style.width = "100%";
+    table.style.maxWidth = "100%";
+    table.style.tableLayout = "fixed";
+    const trailingParagraph = document.createElement("p");
+    trailingParagraph.append(document.createElement("br"));
+
+    editor.focus();
+    restoreSelection();
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0 && editor.contains(selection.anchorNode)) {
+      const range = selection.getRangeAt(0);
+      range.deleteContents();
+      const fragment = document.createDocumentFragment();
+      fragment.append(table, trailingParagraph);
+      range.insertNode(fragment);
+      range.setStart(trailingParagraph, 0);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    } else {
+      editor.append(table, trailingParagraph);
+    }
+    selectedResizableElementRef.current = table;
+    setTableRows(String(rowCount));
+    setTableColumns(String(columnCount));
+    setTableConfigOpen(false);
     syncValue();
+    window.requestAnimationFrame(updateResizeBox);
+  };
+  const insertImage = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    if (!questionStemImageTypes.has(file.type)) {
+      setImageError("仅支持 PNG、JPG、WEBP 或 GIF 图片。");
+      return;
+    }
+    if (file.size > questionStemImageMaxBytes) {
+      setImageError("单张图片不能超过 2MB。");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const src = String(reader.result || "");
+      const editor = editorRef.current;
+      if (!editor || editor.innerHTML.length + src.length > questionStemHtmlMaxChars) {
+        setImageError("题干内容过大，请删除部分图片后再插入。");
+        return;
+      }
+
+      editor.focus();
+      restoreSelection();
+      const image = document.createElement("img");
+      image.alt = file.name;
+      image.src = src;
+      image.style.height = "auto";
+      image.style.maxWidth = "100%";
+
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0 && editor.contains(selection.anchorNode)) {
+        const range = selection.getRangeAt(0);
+        range.deleteContents();
+        range.insertNode(image);
+        range.setStartAfter(image);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      } else {
+        editor.append(image);
+      }
+      selectedResizableElementRef.current = image;
+      setImageError("");
+      syncValue();
+      window.requestAnimationFrame(updateResizeBox);
+    };
+    reader.readAsDataURL(file);
   };
 
   return (
-    <div className="bg-[#d9e5fb]">
+    <div ref={containerRef} className="relative bg-[#d9e5fb]">
       <input ref={inputRef} type="hidden" name={name} defaultValue={initialHtml} />
+      {imageInputRef ? (
+        <input
+          ref={imageInputRef}
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          className="sr-only"
+          type="file"
+          onChange={insertImage}
+        />
+      ) : null}
       <div className="flex h-8 items-center gap-1 border-b border-[#c6d3e6] bg-white px-2">
         {[
           { label: "B", command: "bold" },
@@ -645,20 +916,71 @@ function RichTextEditor({ name, defaultValue = "" }: { name: string; defaultValu
             {item.label}
           </button>
         ))}
-        <button
-          className="grid h-6 min-w-10 place-items-center rounded border border-[#d4dae4] bg-[#f8fafc] px-2 text-xs font-black text-[#1f2b3d] hover:border-[#94a3b8]"
-          type="button"
-          onMouseDown={(event) => {
-            event.preventDefault();
-            insertTable();
-          }}
-        >
-          表格
-        </button>
+        <div className="relative">
+          <button
+            className="grid h-6 min-w-10 place-items-center rounded border border-[#d4dae4] bg-[#f8fafc] px-2 text-xs font-black text-[#1f2b3d] hover:border-[#94a3b8]"
+            type="button"
+            aria-expanded={tableConfigOpen}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              rememberSelection();
+              setTableConfigOpen((current) => !current);
+            }}
+          >
+            表格
+          </button>
+          {tableConfigOpen ? (
+            <div
+              className="absolute left-0 top-8 z-30 w-56 border border-[#cbd5e1] bg-white p-3 shadow-xl"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <div className="grid grid-cols-2 gap-3">
+                <label className="grid gap-1 text-xs font-bold text-[#475467]">
+                  行数
+                  <input
+                    className="h-9 w-full border border-[#cbd5e1] px-2 text-sm text-[#071b38] outline-none focus:border-[#3b82f6]"
+                    min={1}
+                    max={50}
+                    type="number"
+                    value={tableRows}
+                    onChange={(event) => setTableRows(event.target.value)}
+                  />
+                </label>
+                <label className="grid gap-1 text-xs font-bold text-[#475467]">
+                  列数
+                  <input
+                    className="h-9 w-full border border-[#cbd5e1] px-2 text-sm text-[#071b38] outline-none focus:border-[#3b82f6]"
+                    min={1}
+                    max={50}
+                    type="number"
+                    value={tableColumns}
+                    onChange={(event) => setTableColumns(event.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="mt-3 flex justify-end gap-2">
+                <button
+                  className="h-8 border border-[#cbd5e1] px-3 text-xs font-bold text-[#64748b] hover:bg-[#f1f5f9]"
+                  type="button"
+                  onClick={() => setTableConfigOpen(false)}
+                >
+                  取消
+                </button>
+                <button
+                  className="h-8 bg-[#1d4ed8] px-3 text-xs font-bold text-white hover:bg-[#1e40af]"
+                  type="button"
+                  onClick={insertTable}
+                >
+                  插入表格
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
       <div
         ref={editorRef}
-        className="min-h-[240px] w-full bg-[#d9e5fb] px-4 py-4 text-base leading-8 text-[#071b38] outline-none focus:ring-2 focus:ring-inset focus:ring-[#3b82f6]/40 [&_td]:min-w-24 [&_td]:border [&_td]:border-[#8ea3c2] [&_td]:bg-white/35 [&_td]:px-2 [&_td]:py-1 [&_table]:my-2 [&_table]:border-collapse"
+        className={`${minHeightClassName} w-full bg-[#d9e5fb] px-4 py-4 text-base leading-8 text-[#071b38] outline-none focus:ring-2 focus:ring-inset focus:ring-[#3b82f6]/40 [&_img]:my-3 [&_img]:h-auto [&_img]:max-w-full [&_td]:min-w-0 [&_td]:border [&_td]:border-[#8ea3c2] [&_td]:bg-white/35 [&_td]:px-2 [&_td]:py-1 [&_table]:my-2 [&_table]:max-w-full [&_table]:border-collapse`}
         contentEditable
         dangerouslySetInnerHTML={{ __html: initialHtml }}
         role="textbox"
@@ -667,15 +989,69 @@ function RichTextEditor({ name, defaultValue = "" }: { name: string; defaultValu
           if (inputRef.current) {
             inputRef.current.value = event.currentTarget.innerHTML;
           }
+          if (selectedResizableElementRef.current) {
+            window.requestAnimationFrame(updateResizeBox);
+          }
         }}
+        onKeyUp={rememberSelection}
+        onMouseUp={rememberSelection}
+        onPointerDown={(event) => selectResizableElement(event.target)}
         suppressContentEditableWarning
       />
+      {resizeBox ? (
+        <div
+          className="pointer-events-none absolute z-20 border-2 border-[#3b82f6]"
+          style={{
+            left: resizeBox.left,
+            top: resizeBox.top,
+            width: resizeBox.width,
+            height: resizeBox.height
+          }}
+        >
+          <span className="absolute -top-6 right-0 bg-[#3b82f6] px-1.5 py-0.5 text-[10px] font-bold text-white">
+            {resizeBox.kind === "image" ? "图片" : "表格"}
+          </span>
+          <button
+            aria-label={`调整${resizeBox.kind === "image" ? "图片" : "表格"}大小`}
+            className="pointer-events-auto absolute -bottom-2 -right-2 size-4 cursor-nwse-resize border-2 border-white bg-[#2563eb] shadow"
+            onPointerDown={startResize}
+            title="拖动调整大小"
+            type="button"
+          />
+        </div>
+      ) : null}
+      {imageError ? <p className="border-t border-[#f4b4b8] bg-[#fff1f2] px-3 py-2 text-xs font-semibold text-[#c2414c]">{imageError}</p> : null}
     </div>
   );
 }
 
 function RichTextDisplay({ value }: { value: string }) {
-  return <div className="min-h-[150px] bg-[#d9e5fb] px-4 py-4 text-base leading-8 text-[#071b38] [&_td]:min-w-24 [&_td]:border [&_td]:border-[#8ea3c2] [&_td]:bg-white/35 [&_td]:px-2 [&_td]:py-1 [&_table]:my-2 [&_table]:border-collapse" dangerouslySetInnerHTML={{ __html: toRichTextHtml(value) }} />;
+  return <div className="min-h-[150px] bg-[#d9e5fb] px-4 py-4 text-base leading-8 text-[#071b38] [&_img]:my-3 [&_img]:h-auto [&_img]:max-w-full [&_td]:min-w-0 [&_td]:border [&_td]:border-[#8ea3c2] [&_td]:bg-white/35 [&_td]:px-2 [&_td]:py-1 [&_table]:my-2 [&_table]:max-w-full [&_table]:border-collapse" dangerouslySetInnerHTML={{ __html: toRichTextHtml(value) }} />;
+}
+
+function QuestionStemEditor({
+  defaultValue = "",
+  questionTypeControl
+}: {
+  defaultValue?: string;
+  questionTypeControl?: QuestionTypeControl;
+}) {
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+
+  return (
+    <EditorShell
+      title="题干"
+      questionTypeControl={questionTypeControl}
+      onInsertImage={() => imageInputRef.current?.click()}
+    >
+      <RichTextEditor
+        name="stem"
+        defaultValue={defaultValue}
+        imageInputRef={imageInputRef}
+        minHeightClassName="min-h-[150px]"
+      />
+    </EditorShell>
+  );
 }
 
 function QuestionTypeChip({
@@ -755,11 +1131,13 @@ function editQuestionFormId(questionId: string) {
 function ChoiceQuestionForm({
   paperId,
   question,
-  type
+  type,
+  questionTypeControl
 }: {
   paperId: string;
   question?: QuestionRow;
   type: ChoiceQuestionType;
+  questionTypeControl?: QuestionTypeControl;
 }) {
   const editing = Boolean(question);
   const formId = editing && question ? editQuestionFormId(question.id) : createQuestionFormId(type);
@@ -787,14 +1165,7 @@ function ChoiceQuestionForm({
       <input type="hidden" name="paperId" value={paperId} />
       <input type="hidden" name="questionType" value={type} />
       {question ? <input type="hidden" name="paperQuestionId" value={question.id} /> : null}
-      <EditorShell title="题干">
-        <textarea
-          className="min-h-[150px] w-full resize-none bg-[#d9e5fb] px-4 py-4 text-base leading-8 text-[#071b38] outline-none"
-          name="stem"
-          defaultValue={question?.title || ""}
-          required
-        />
-      </EditorShell>
+      <QuestionStemEditor defaultValue={question?.title || ""} questionTypeControl={questionTypeControl} />
       <section>
         <div className="flex h-10 items-center justify-between border-b border-[#d4dae4] bg-[#eef3f9] px-3">
           <h2 className="text-sm font-black text-[#111827]">选择题选项</h2>
@@ -848,7 +1219,7 @@ function ChoiceQuestionForm({
   );
 }
 
-function TrueFalseQuestionForm({ paperId, question }: { paperId: string; question?: QuestionRow }) {
+function TrueFalseQuestionForm({ paperId, question, questionTypeControl }: { paperId: string; question?: QuestionRow; questionTypeControl?: QuestionTypeControl }) {
   const editing = Boolean(question);
   const formId = editing && question ? editQuestionFormId(question.id) : createQuestionFormId("true_false");
   const answer = question?.answer[0] || "";
@@ -858,14 +1229,7 @@ function TrueFalseQuestionForm({ paperId, question }: { paperId: string; questio
       <input type="hidden" name="paperId" value={paperId} />
       <input type="hidden" name="questionType" value="true_false" />
       {question ? <input type="hidden" name="paperQuestionId" value={question.id} /> : null}
-      <EditorShell title="题干">
-        <textarea
-          className="min-h-[150px] w-full resize-none bg-[#d9e5fb] px-4 py-4 text-base leading-8 text-[#071b38] outline-none"
-          name="stem"
-          defaultValue={question?.title || ""}
-          required
-        />
-      </EditorShell>
+      <QuestionStemEditor defaultValue={question?.title || ""} questionTypeControl={questionTypeControl} />
       <section>
         <div className="flex h-10 items-center justify-between border-b border-[#d4dae4] bg-[#eef3f9] px-3">
           <h2 className="text-sm font-black text-[#111827]">判断选项</h2>
@@ -904,7 +1268,7 @@ function TrueFalseQuestionForm({ paperId, question }: { paperId: string; questio
   );
 }
 
-function FillBlankQuestionForm({ paperId, question }: { paperId: string; question?: QuestionRow }) {
+function FillBlankQuestionForm({ paperId, question, questionTypeControl }: { paperId: string; question?: QuestionRow; questionTypeControl?: QuestionTypeControl }) {
   const editing = Boolean(question);
   const formId = editing && question ? editQuestionFormId(question.id) : createQuestionFormId("fill_blank");
 
@@ -913,14 +1277,7 @@ function FillBlankQuestionForm({ paperId, question }: { paperId: string; questio
       <input type="hidden" name="paperId" value={paperId} />
       <input type="hidden" name="questionType" value="fill_blank" />
       {question ? <input type="hidden" name="paperQuestionId" value={question.id} /> : null}
-      <EditorShell title="题干">
-        <textarea
-          className="min-h-[150px] w-full resize-none bg-[#d9e5fb] px-4 py-4 text-base leading-8 text-[#071b38] outline-none"
-          name="stem"
-          defaultValue={question?.title || ""}
-          required
-        />
-      </EditorShell>
+      <QuestionStemEditor defaultValue={question?.title || ""} questionTypeControl={questionTypeControl} />
       <section>
         <div className="flex h-10 items-center border-b border-[#d4dae4] bg-[#eef3f9] px-3">
           <h2 className="text-sm font-black text-[#111827]">答案</h2>
@@ -942,7 +1299,17 @@ function FillBlankQuestionForm({ paperId, question }: { paperId: string; questio
   );
 }
 
-function RichAnswerQuestionForm({ paperId, question, type }: { paperId: string; question?: QuestionRow; type: RichAnswerQuestionType }) {
+function RichAnswerQuestionForm({
+  paperId,
+  question,
+  type,
+  questionTypeControl
+}: {
+  paperId: string;
+  question?: QuestionRow;
+  type: RichAnswerQuestionType;
+  questionTypeControl?: QuestionTypeControl;
+}) {
   const editing = Boolean(question);
   const formId = editing && question ? editQuestionFormId(question.id) : createQuestionFormId(type);
   const action = editing ? updateQuestionBankQuestion : createQuestionBankTypedQuestion;
@@ -952,9 +1319,7 @@ function RichAnswerQuestionForm({ paperId, question, type }: { paperId: string; 
       <input type="hidden" name="paperId" value={paperId} />
       <input type="hidden" name="questionType" value={type} />
       {question ? <input type="hidden" name="paperQuestionId" value={question.id} /> : null}
-      <EditorShell title="题干">
-        <RichTextEditor name="stem" defaultValue={question?.title || ""} />
-      </EditorShell>
+      <QuestionStemEditor defaultValue={question?.title || ""} questionTypeControl={questionTypeControl} />
       <EditorShell title="答案">
         <RichTextEditor name="answer" defaultValue={question?.answer[0] || ""} />
       </EditorShell>
@@ -1121,7 +1486,219 @@ function AiDoubtReviewPanel({ paperId, question }: { paperId: string; question: 
   );
 }
 
-export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, questionTypes, knowledgeTree, questions }: QuestionBankDetailWorkbenchProps) {
+function QuestionTypeConfigDialog({
+  courseId,
+  courseName,
+  paperId,
+  questionTypes,
+  onClose,
+  onSaved
+}: {
+  courseId: string;
+  courseName: string;
+  paperId: string;
+  questionTypes: QuestionBankQuestionTypeConfig[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [selectedTypes, setSelectedTypes] = useState<QuestionBankQuestionTypeConfig[]>(questionTypes);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const availableTypes = questionBankQuestionTypeCatalog.filter((item) => !selectedTypes.some((selected) => selected.type === item.type));
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !saving) {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose, saving]);
+
+  function moveType(index: number, direction: -1 | 1) {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= selectedTypes.length) {
+      return;
+    }
+    setSelectedTypes((current) => {
+      const next = [...current];
+      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+      return next;
+    });
+  }
+
+  function addType(item: QuestionBankQuestionTypeConfig) {
+    setSelectedTypes((current) => current.some((selected) => selected.type === item.type) ? current : [...current, item]);
+    setMessage("");
+  }
+
+  function removeType(type: EditableQuestionType) {
+    if (selectedTypes.length <= 1) {
+      setMessage("至少需要保留一种题型。");
+      return;
+    }
+    setSelectedTypes((current) => current.filter((item) => item.type !== type));
+    setMessage("");
+  }
+
+  async function saveConfig() {
+    if (saving || selectedTypes.length === 0) {
+      return;
+    }
+    setSaving(true);
+    setMessage("");
+    const formData = new FormData();
+    formData.set("paperId", paperId);
+    formData.set("courseId", courseId);
+    formData.set("config", JSON.stringify(selectedTypes));
+
+    try {
+      await updateQuestionBankQuestionTypeConfig(formData);
+      onSaved();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "题型配置保存失败，请重试。");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-[#0f172a]/40 p-6"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !saving) {
+          onClose();
+        }
+      }}
+    >
+      <section
+        aria-labelledby="question-type-config-title"
+        aria-modal="true"
+        className="flex max-h-[82vh] w-full max-w-[760px] flex-col overflow-hidden border border-[#cbd5e1] bg-white shadow-2xl"
+        role="dialog"
+      >
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-[#d7dee8] bg-[#f8fafc] px-5">
+          <div className="min-w-0">
+            <h2 id="question-type-config-title" className="text-base font-black text-[#071b38]">题型配置</h2>
+            <p className="truncate text-xs font-medium text-[#64748b]">{courseName}</p>
+          </div>
+          <button
+            aria-label="关闭题型配置"
+            className="grid size-9 place-items-center text-[#64748b] hover:bg-[#eef2f7] hover:text-[#071b38] disabled:opacity-40"
+            disabled={saving}
+            onClick={onClose}
+            title="关闭"
+            type="button"
+          >
+            <X size={18} />
+          </button>
+        </header>
+
+        <div className="grid min-h-0 flex-1 grid-cols-2 divide-x divide-[#d7dee8]">
+          <section className="min-h-0 overflow-y-auto">
+            <div className="sticky top-0 z-10 flex h-10 items-center justify-between border-b border-[#e2e8f0] bg-white px-4">
+              <h3 className="text-sm font-black text-[#071b38]">已启用题型</h3>
+              <span className="text-xs font-bold text-[#64748b]">{selectedTypes.length}</span>
+            </div>
+            <div className="divide-y divide-[#e8edf3]">
+              {selectedTypes.map((item, index) => (
+                <div key={item.type} className="grid min-h-12 grid-cols-[1fr_auto] items-center gap-2 px-4 py-2">
+                  <span className="truncate text-sm font-semibold text-[#1f2b3d]">{item.label}</span>
+                  <div className="flex items-center">
+                    <button
+                      aria-label={`上移${item.label}`}
+                      className="grid size-8 place-items-center text-[#64748b] hover:bg-[#eef2f7] hover:text-[#1d4ed8] disabled:opacity-25"
+                      disabled={index === 0 || saving}
+                      onClick={() => moveType(index, -1)}
+                      title="上移"
+                      type="button"
+                    >
+                      <ArrowUp size={15} />
+                    </button>
+                    <button
+                      aria-label={`下移${item.label}`}
+                      className="grid size-8 place-items-center text-[#64748b] hover:bg-[#eef2f7] hover:text-[#1d4ed8] disabled:opacity-25"
+                      disabled={index === selectedTypes.length - 1 || saving}
+                      onClick={() => moveType(index, 1)}
+                      title="下移"
+                      type="button"
+                    >
+                      <ArrowDown size={15} />
+                    </button>
+                    <button
+                      aria-label={`移除${item.label}`}
+                      className="grid size-8 place-items-center text-[#ef4444] hover:bg-[#fff1f2] disabled:opacity-25"
+                      disabled={selectedTypes.length <= 1 || saving}
+                      onClick={() => removeType(item.type)}
+                      title="移除"
+                      type="button"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="min-h-0 overflow-y-auto">
+            <div className="sticky top-0 z-10 flex h-10 items-center justify-between border-b border-[#e2e8f0] bg-white px-4">
+              <h3 className="text-sm font-black text-[#071b38]">可添加题型</h3>
+              <span className="text-xs font-bold text-[#64748b]">{availableTypes.length}</span>
+            </div>
+            {availableTypes.length > 0 ? (
+              <div className="divide-y divide-[#e8edf3]">
+                {availableTypes.map((item) => (
+                  <div key={item.type} className="flex min-h-12 items-center justify-between gap-3 px-4 py-2">
+                    <span className="truncate text-sm font-semibold text-[#1f2b3d]">{item.label}</span>
+                    <button
+                      aria-label={`添加${item.label}`}
+                      className="grid size-8 shrink-0 place-items-center text-[#1d4ed8] hover:bg-[#eff6ff] disabled:opacity-40"
+                      disabled={saving}
+                      onClick={() => addType(item)}
+                      title="添加"
+                      type="button"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="grid min-h-40 place-items-center text-sm font-medium text-[#94a3b8]">暂无可添加题型</div>
+            )}
+          </section>
+        </div>
+
+        <footer className="flex min-h-16 shrink-0 items-center justify-between gap-4 border-t border-[#d7dee8] bg-[#f8fafc] px-5 py-3">
+          <p className="min-w-0 text-xs font-semibold text-[#c2414c]">{message}</p>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              className="h-9 border border-[#cbd5e1] bg-white px-5 text-sm font-bold text-[#475467] hover:bg-[#f1f5f9] disabled:opacity-40"
+              disabled={saving}
+              onClick={onClose}
+              type="button"
+            >
+              取消
+            </button>
+            <button
+              className="inline-flex h-9 min-w-24 items-center justify-center gap-2 bg-[#1f9d8b] px-5 text-sm font-bold text-white hover:bg-[#178271] disabled:cursor-wait disabled:opacity-50"
+              disabled={saving || selectedTypes.length === 0}
+              onClick={saveConfig}
+              type="button"
+            >
+              {saving ? <Loader2 className="animate-spin" size={15} /> : <Save size={15} />}
+              {saving ? "保存中" : "保存配置"}
+            </button>
+          </div>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+export function QuestionBankDetailWorkbench({ courseId, courseName, paperId, paperTitle, ownerHref, questionTypes, knowledgeTree, questions }: QuestionBankDetailWorkbenchProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const focusedQuestionId = searchParams.get("question");
@@ -1135,6 +1712,8 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
   const [aiTagMessage, setAiTagMessage] = useState("");
   const [knowledgeTagUpdatingId, setKnowledgeTagUpdatingId] = useState("");
   const [knowledgeTagMessage, setKnowledgeTagMessage] = useState("");
+  const [questionTypeUpdatingId, setQuestionTypeUpdatingId] = useState("");
+  const [questionTypeConfigOpen, setQuestionTypeConfigOpen] = useState(false);
   const draggedQuestionIdRef = useRef("");
   const focusedQuestionIdRef = useRef("");
   const orderInputRef = useRef<HTMLInputElement | null>(null);
@@ -1246,6 +1825,46 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
   function closeSearch() {
     setSearchOpen(false);
     setSearchQuery("");
+  }
+
+  async function changeEditorQuestionType(nextType: EditableQuestionType) {
+    if (!questionTypes.some((option) => option.type === nextType)) {
+      return;
+    }
+
+    if (activeEditorType) {
+      setActiveEditorType(nextType);
+      return;
+    }
+
+    if (!selectedQuestion || selectedQuestion.type === nextType || questionTypeUpdatingId) {
+      return;
+    }
+
+    const confirmed = window.confirm("更改题型后将切换编辑器，当前尚未保存的修改会丢失。是否继续？");
+    if (!confirmed) {
+      return;
+    }
+
+    const paperQuestionId = selectedQuestion.id;
+    const previousType = selectedQuestion.type;
+    setQuestionTypeUpdatingId(paperQuestionId);
+    setOrderedQuestions((current) => current.map((question) => (question.id === paperQuestionId ? { ...question, type: nextType } : question)));
+
+    const formData = new FormData();
+    formData.set("paperId", paperId);
+    formData.set("paperQuestionId", paperQuestionId);
+    formData.set("questionType", nextType);
+
+    try {
+      await updateQuestionBankQuestionType(formData);
+      router.refresh();
+    } catch (error) {
+      setOrderedQuestions((current) => current.map((question) => (question.id === paperQuestionId ? { ...question, type: previousType } : question)));
+      window.alert(error instanceof Error ? error.message : "题型修改失败，请重试。");
+    } finally {
+      setQuestionTypeUpdatingId("");
+    }
   }
 
   async function runAiTagging() {
@@ -1408,8 +2027,23 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
       tone: "normal",
       onClick: runAiTagging,
       disabled: aiTagging || orderedQuestions.length === 0 || knowledgeTree.length === 0
+    },
+    {
+      label: "题型配置",
+      icon: Settings2,
+      tone: "normal",
+      onClick: () => setQuestionTypeConfigOpen(true)
     }
   ];
+  const editorQuestionType = activeEditorType || selectedEditableType;
+  const editorQuestionTypeControl: QuestionTypeControl | undefined = editorQuestionType
+    ? {
+        value: editorQuestionType,
+        options: questionTypes,
+        disabled: Boolean(selectedQuestion && questionTypeUpdatingId === selectedQuestion.id),
+        onChange: changeEditorQuestionType
+      }
+    : undefined;
 
   return (
     <main className="h-screen overflow-hidden bg-[#eef3f8] text-[#071b38]">
@@ -1438,7 +2072,7 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
           gridTemplateColumns: `90px ${columnLayout.editor}px 6px ${columnLayout.list}px 6px minmax(${columnLayout.attributes}px, 1fr)`
         }}
       >
-        <aside className="border-r border-[#d7dee8] bg-white">
+        <aside className="overflow-y-auto border-r border-[#d7dee8] bg-white">
           <div className="grid border-b border-[#e2e7ef] py-2">
             {toolTypes.map((item) => {
               const Icon = item.icon;
@@ -1465,21 +2099,43 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
 
         <section className="h-full overflow-y-auto border-r border-[#d7dee8] bg-[#eef3f8] px-3 pb-16 pt-0 overscroll-contain">
           {activeEditorType && isChoiceQuestionType(activeEditorType) ? (
-            <ChoiceQuestionForm key={`create-${activeEditorType}`} paperId={paperId} type={activeEditorType} />
+            <ChoiceQuestionForm key={`create-${activeEditorType}`} paperId={paperId} type={activeEditorType} questionTypeControl={editorQuestionTypeControl} />
           ) : activeEditorType === "true_false" ? (
-            <TrueFalseQuestionForm key="create-true_false" paperId={paperId} />
+            <TrueFalseQuestionForm key="create-true_false" paperId={paperId} questionTypeControl={editorQuestionTypeControl} />
           ) : activeEditorType === "fill_blank" ? (
-            <FillBlankQuestionForm key="create-fill_blank" paperId={paperId} />
+            <FillBlankQuestionForm key="create-fill_blank" paperId={paperId} questionTypeControl={editorQuestionTypeControl} />
           ) : activeEditorType && isRichAnswerQuestionType(activeEditorType) ? (
-            <RichAnswerQuestionForm key={`create-${activeEditorType}`} paperId={paperId} type={activeEditorType} />
+            <RichAnswerQuestionForm key={`create-${activeEditorType}`} paperId={paperId} type={activeEditorType} questionTypeControl={editorQuestionTypeControl} />
           ) : selectedQuestion && selectedChoiceType ? (
-            <ChoiceQuestionForm key={`edit-${selectedQuestion.id}`} paperId={paperId} question={selectedQuestion} type={selectedChoiceType} />
+            <ChoiceQuestionForm
+              key={`edit-${selectedQuestion.id}-${selectedChoiceType}`}
+              paperId={paperId}
+              question={selectedQuestion}
+              type={selectedChoiceType}
+              questionTypeControl={editorQuestionTypeControl}
+            />
           ) : selectedQuestion && selectedEditableType === "true_false" ? (
-            <TrueFalseQuestionForm key={`edit-${selectedQuestion.id}`} paperId={paperId} question={selectedQuestion} />
+            <TrueFalseQuestionForm
+              key={`edit-${selectedQuestion.id}-true_false`}
+              paperId={paperId}
+              question={selectedQuestion}
+              questionTypeControl={editorQuestionTypeControl}
+            />
           ) : selectedQuestion && selectedEditableType === "fill_blank" ? (
-            <FillBlankQuestionForm key={`edit-${selectedQuestion.id}`} paperId={paperId} question={selectedQuestion} />
+            <FillBlankQuestionForm
+              key={`edit-${selectedQuestion.id}-fill_blank`}
+              paperId={paperId}
+              question={selectedQuestion}
+              questionTypeControl={editorQuestionTypeControl}
+            />
           ) : selectedQuestion && selectedEditableType && isRichAnswerQuestionType(selectedEditableType) ? (
-            <RichAnswerQuestionForm key={`edit-${selectedQuestion.id}`} paperId={paperId} question={selectedQuestion} type={selectedEditableType} />
+            <RichAnswerQuestionForm
+              key={`edit-${selectedQuestion.id}-${selectedEditableType}`}
+              paperId={paperId}
+              question={selectedQuestion}
+              type={selectedEditableType}
+              questionTypeControl={editorQuestionTypeControl}
+            />
           ) : selectedQuestion ? (
             <ReadonlyQuestionPreview paperId={paperId} question={selectedQuestion} />
           ) : (
@@ -1684,6 +2340,20 @@ export function QuestionBankDetailWorkbench({ paperId, paperTitle, ownerHref, qu
           </section>
         </aside>
       </section>
+      {questionTypeConfigOpen ? (
+        <QuestionTypeConfigDialog
+          courseId={courseId}
+          courseName={courseName}
+          paperId={paperId}
+          questionTypes={questionTypes}
+          onClose={() => setQuestionTypeConfigOpen(false)}
+          onSaved={() => {
+            setQuestionTypeConfigOpen(false);
+            setActiveEditorType(null);
+            router.refresh();
+          }}
+        />
+      ) : null}
     </main>
   );
 }

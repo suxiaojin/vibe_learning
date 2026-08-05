@@ -16,6 +16,7 @@ import {
   isQuestionBankChoiceQuestionType,
   isQuestionBankEditableQuestionType,
   isQuestionBankRichAnswerQuestionType,
+  parseQuestionBankQuestionTypeConfig,
   type QuestionBankEditableQuestionType
 } from "@/lib/question-bank-types";
 import { isShareCopyContext } from "@/lib/share-copy";
@@ -1959,6 +1960,61 @@ export async function updateQuestionBankQuestion(formData: FormData) {
 
   revalidatePath(`/admin/question-banks/${paperQuestion.paperId}`);
   redirect(`/admin/question-banks/${paperQuestion.paperId}`);
+}
+
+export async function updateQuestionBankQuestionType(formData: FormData) {
+  await requireAdmin();
+  const paperId = String(formData.get("paperId") || "");
+  const paperQuestionId = String(formData.get("paperQuestionId") || "");
+  const type = String(formData.get("questionType") || "");
+
+  if (!isQuestionBankEditableQuestionType(type)) {
+    throw new Error("Unsupported question type");
+  }
+
+  const paperQuestion = await prisma.examPaperQuestion.findFirstOrThrow({
+    where: {
+      id: paperQuestionId,
+      paperId
+    },
+    select: {
+      questionId: true,
+      paperId: true
+    }
+  });
+
+  await prisma.question.update({
+    where: { id: paperQuestion.questionId },
+    data: { type }
+  });
+
+  revalidatePath(`/admin/question-banks/${paperQuestion.paperId}`);
+}
+
+export async function updateQuestionBankQuestionTypeConfig(formData: FormData) {
+  await requireAdmin();
+  const paperId = String(formData.get("paperId") || "");
+  const courseId = String(formData.get("courseId") || "");
+  const config = parseQuestionBankQuestionTypeConfig(JSON.parse(String(formData.get("config") || "null")));
+
+  if (!config) {
+    throw new Error("At least one question type is required");
+  }
+
+  await prisma.examPaper.findFirstOrThrow({
+    where: {
+      id: paperId,
+      courseId
+    },
+    select: { id: true }
+  });
+
+  await prisma.learningCourse.update({
+    where: { id: courseId },
+    data: { questionTypeConfig: config }
+  });
+
+  revalidatePath(`/admin/question-banks/${paperId}`);
 }
 
 export async function updateQuestionBankChoiceQuestion(formData: FormData) {

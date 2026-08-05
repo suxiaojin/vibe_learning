@@ -17,6 +17,7 @@ export const questionBankRichAnswerQuestionTypes = [
   "question_answer",
   "handwriting",
   "reading_comprehension",
+  "poetry_appreciation",
   "classical_chinese_translation",
   "writing",
   "legal_document",
@@ -63,6 +64,7 @@ export const questionBankTypeDefaultLabels: Record<QuestionBankEditableQuestionT
   question_answer: "问答",
   handwriting: "书写",
   reading_comprehension: "阅读理解",
+  poetry_appreciation: "古诗词鉴赏",
   classical_chinese_translation: "文言文翻译",
   writing: "写作",
   legal_document: "法律文书",
@@ -74,6 +76,31 @@ export const questionBankTypeDefaultLabels: Record<QuestionBankEditableQuestionT
 
 function q(type: QuestionBankEditableQuestionType, label = questionBankTypeDefaultLabels[type]): QuestionBankQuestionTypeConfig {
   return { type, label };
+}
+
+export const questionBankQuestionTypeCatalog = questionBankEditableQuestionTypes.map((type) => q(type));
+
+export function parseQuestionBankQuestionTypeConfig(value: unknown): QuestionBankQuestionTypeConfig[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const config: QuestionBankQuestionTypeConfig[] = [];
+  for (const item of value) {
+    const type = typeof item === "string"
+      ? item
+      : item && typeof item === "object" && "type" in item
+        ? String(item.type || "")
+        : "";
+    if (!isQuestionBankEditableQuestionType(type) || config.some((entry) => entry.type === type)) {
+      continue;
+    }
+
+    const submittedLabel = item && typeof item === "object" && "label" in item ? String(item.label || "").trim() : "";
+    config.push(q(type, submittedLabel.slice(0, 24) || questionBankTypeDefaultLabels[type]));
+  }
+
+  return config.length > 0 ? config : null;
 }
 
 export const defaultQuestionBankQuestionTypes = [q("single_choice"), q("multiple_choice")] as const;
@@ -92,6 +119,13 @@ export const advancedMathQuestionBankQuestionTypes = [
   q("calculation"),
   q("proof"),
   q("comprehensive")
+] as const;
+
+export const universityChineseQuestionBankQuestionTypes = [
+  q("single_choice"),
+  q("reading_comprehension"),
+  q("poetry_appreciation"),
+  q("writing")
 ] as const;
 
 const majorQuestionBankQuestionTypes: Array<{
@@ -168,6 +202,9 @@ function includesAnyKeyword(value: string, keywords: string[]) {
 }
 
 export function resolveQuestionBankQuestionTypes(value: string): QuestionBankQuestionTypeConfig[] {
+  if (includesAnyKeyword(value, ["大学语文"])) {
+    return [...universityChineseQuestionBankQuestionTypes];
+  }
   if (includesAnyKeyword(value, ["高等数学", "大学数学"])) {
     return [...advancedMathQuestionBankQuestionTypes];
   }
