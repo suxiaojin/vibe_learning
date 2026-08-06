@@ -1,10 +1,12 @@
 import { AlertTriangle } from "lucide-react";
 import { StudyMaterialImporter } from "@/components/ai-study/pdf-upload-form";
 import { AiStudyProjectSection, type AiStudyProjectSectionItem } from "@/components/ai-study/project-section";
+import type { OfficialStudyMaterialCardItem } from "@/components/ai-study/official-study-material-card";
 import { StudyBuddyHeroTitle } from "@/components/ai-study/study-buddy-hero-title";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { requireUser } from "@/lib/auth";
 import { listAiStudyProjects, listPublicAiStudyProjects } from "@/lib/ai-study";
+import { listPublicOfficialStudyMaterials } from "@/lib/official-study-materials";
 import { getSystemSettings } from "@/lib/system-settings";
 
 const errorMessages: Record<string, string> = {
@@ -16,6 +18,7 @@ const errorMessages: Record<string, string> = {
 type PersonalProject = Awaited<ReturnType<typeof listAiStudyProjects>>[number];
 type PublicProject = Awaited<ReturnType<typeof listPublicAiStudyProjects>>[number];
 type StudyProject = PersonalProject | PublicProject;
+type OfficialMaterial = Awaited<ReturnType<typeof listPublicOfficialStudyMaterials>>[number];
 
 export default async function StudyBuddyPage({
   searchParams
@@ -24,10 +27,11 @@ export default async function StudyBuddyPage({
 }) {
   const user = await requireUser();
   const params = await searchParams;
-  const [settings, projects, publicProjects] = await Promise.all([
+  const [settings, projects, publicProjects, officialMaterials] = await Promise.all([
     getSystemSettings(),
     listAiStudyProjects(user.id),
-    listPublicAiStudyProjects()
+    listPublicAiStudyProjects(),
+    listPublicOfficialStudyMaterials()
   ]);
   const error = params?.error ? errorMessages[params.error] || "操作失败，请稍后重试。" : "";
 
@@ -65,7 +69,7 @@ export default async function StudyBuddyPage({
           ) : null}
 
           <ProjectSection emptyText="还没有上传资料，点击上方按钮导入第一份学习资料。" projects={projects} title="我的项目" />
-          <ProjectSection emptyText="暂无公开项目。" projects={publicProjects} title="公开项目" variant="public" />
+          <PublicProjectSection aiProjects={publicProjects} materials={officialMaterials} />
         </div>
       </section>
     </main>
@@ -75,23 +79,57 @@ export default async function StudyBuddyPage({
 function ProjectSection({
   title,
   projects,
-  emptyText,
-  variant = "personal"
+  emptyText
 }: {
   title: string;
   projects: StudyProject[];
   emptyText: string;
-  variant?: "personal" | "public";
 }) {
-  const cardProjects = projects.map((project) => {
+  const cardProjects = buildProjectSectionItems(projects, "personal");
+
+  return (
+    <AiStudyProjectSection emptyText={emptyText} projects={cardProjects} title={title} />
+  );
+}
+
+function PublicProjectSection({
+  aiProjects,
+  materials
+}: {
+  aiProjects: PublicProject[];
+  materials: OfficialMaterial[];
+}) {
+  const officialItems = materials.map((material) => ({
+    kind: "official-material",
+    id: material.id,
+    title: material.title,
+    description: material.description || "",
+    fileType: material.fileType,
+    fileName: material.originalFileName,
+    fileSizeBytes: material.fileSizeBytes,
+    courseName: material.major?.name || material.publicSubject?.name || material.course?.name || ""
+  } satisfies OfficialStudyMaterialCardItem));
+  const aiItems = buildProjectSectionItems(aiProjects, "public");
+  return (
+    <AiStudyProjectSection
+      emptyText="暂无公开项目。"
+      projects={[...officialItems, ...aiItems]}
+      title="公开项目"
+    />
+  );
+}
+
+function buildProjectSectionItems(projects: StudyProject[], variant: "personal" | "public") {
+  return projects.map((project) => {
     const progressTotal = project.knowledgeCount || project._count.nodes || 0;
     const ownerName = "owner" in project ? project.owner.username : "由我创建";
     const ownerProfileHref = "owner" in project ? `/students/${project.owner.id}` : "";
-    const learnerText = variant === "public" ? `${Math.max(project._count.sources, 1)}人学习` : `${project._count.sources || 1}份资料`;
+    const learnerText = variant === "public" ? "公开学习项目" : `${project._count.sources || 1}份资料`;
     const generation = getGenerationProgress(project);
     const latestFailedRetryCount = "latestFailedRetryCount" in project ? project.latestFailedRetryCount : 0;
 
     return {
+      kind: "ai-project",
       canManage: variant === "personal",
       contentOverview: getProjectContentOverview(project),
       generationPercent: generation.percent,
@@ -108,10 +146,6 @@ function ProjectSection({
       title: project.title
     } satisfies AiStudyProjectSectionItem;
   });
-
-  return (
-    <AiStudyProjectSection emptyText={emptyText} projects={cardProjects} title={title} />
-  );
 }
 
 function getProjectContentOverview(project: StudyProject) {

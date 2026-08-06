@@ -6,16 +6,22 @@ import {
   publishAiStudyProject
 } from "@/app/admin/ai-study-projects/actions";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
+import { OfficialStudyMaterialPanel } from "@/components/admin/official-study-material-panel";
 import { requireAdmin } from "@/lib/auth";
 import {
   buildAdminAiStudyProjectsPath,
   listAdminAiStudyProjects
 } from "@/lib/admin-ai-study-projects";
+import {
+  listAdminOfficialStudyMaterials,
+  listOfficialStudyMaterialScopes
+} from "@/lib/official-study-materials";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 type SearchParams = {
+  tab?: string;
   keyword?: string;
   status?: string;
   visibility?: string;
@@ -64,12 +70,17 @@ export default async function AdminAiStudyProjectsPage({
 }) {
   await requireAdmin();
   const params = await searchParams;
-  const { filters, projects, stats } = await listAdminAiStudyProjects({
-    keyword: params?.keyword,
-    status: params?.status,
-    visibility: params?.visibility
-  });
+  const [{ filters, projects, stats }, officialMaterials, materialScopes] = await Promise.all([
+    listAdminAiStudyProjects({
+      keyword: params?.keyword,
+      status: params?.status,
+      visibility: params?.visibility
+    }),
+    listAdminOfficialStudyMaterials(),
+    listOfficialStudyMaterialScopes()
+  ]);
   const currentPath = buildAdminAiStudyProjectsPath(filters);
+  const activeTab = params?.tab === "official" ? "official" : "ai";
   const notice = params?.notice ? noticeText[params.notice] : "";
   const error = params?.error ? errorText[params.error] : "";
 
@@ -80,17 +91,37 @@ export default async function AdminAiStudyProjectsPage({
           <h1 className="text-xl font-bold">项目管理</h1>
           <p className="mt-1 text-sm text-slate-600">查看学习搭子项目，并管理公开展示状态。</p>
         </div>
-        <div className="flex flex-wrap gap-2 text-sm">
+        {activeTab === "ai" ? <div className="flex flex-wrap gap-2 text-sm">
           <span className="badge bg-slate-100 text-slate-600">当前筛选 {stats.filteredCount}</span>
           <span className="badge bg-teal/10 text-teal">有效 {stats.activeCount}</span>
           <span className="badge bg-blue-50 text-blue-700">公开 {stats.publicCount}</span>
           <span className="badge bg-amber-50 text-amber-700">待审核 {stats.pendingCount}</span>
-        </div>
+        </div> : null}
       </div>
 
       {notice ? <div className="mt-4 rounded-2xl bg-teal/10 p-3 text-sm font-semibold text-teal">{notice}</div> : null}
       {error ? <div className="mt-4 rounded-2xl bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</div> : null}
 
+      <nav className="mt-6 flex border-b border-slate-200" aria-label="项目类型">
+        <Link
+          className={`relative px-6 py-3 text-sm font-bold transition ${activeTab === "ai" ? "text-teal" : "text-slate-500 hover:text-ink"}`}
+          href="/admin/ai-study-projects"
+        >
+          AI项目
+          {activeTab === "ai" ? <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-teal" /> : null}
+        </Link>
+        <Link
+          className={`relative px-6 py-3 text-sm font-bold transition ${activeTab === "official" ? "text-teal" : "text-slate-500 hover:text-ink"}`}
+          href="/admin/ai-study-projects?tab=official"
+        >
+          官方项目
+          {activeTab === "official" ? <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-teal" /> : null}
+        </Link>
+      </nav>
+
+      {activeTab === "official" ? (
+        <OfficialStudyMaterialPanel initialMaterials={officialMaterials} scopes={materialScopes} />
+      ) : <>
       <form className="mt-5 grid gap-3 rounded-2xl bg-slate-50 p-4 xl:grid-cols-[minmax(260px,1fr)_150px_150px_auto]" action="/admin/ai-study-projects">
         <div>
           <label className="label">搜索项目</label>
@@ -230,6 +261,7 @@ export default async function AdminAiStudyProjectsPage({
           </tbody>
         </table>
       </div>
+      </>}
     </main>
   );
 }

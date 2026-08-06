@@ -167,6 +167,58 @@ export async function downloadAiStudyObject(key: string): Promise<DownloadObject
   };
 }
 
+export async function deleteAiStudyObject(key: string) {
+  const config = getAiStudyStorageConfig();
+  if (!config.forcePathStyle) {
+    throw new Error("AI study MinIO storage currently requires AI_STUDY_S3_FORCE_PATH_STYLE=true.");
+  }
+
+  const payloadHash = sha256Hex("");
+  const now = new Date();
+  const amzDate = toAmzDate(now);
+  const dateStamp = amzDate.slice(0, 8);
+  const canonicalUri = `/${encodePathSegment(config.bucket)}/${encodeObjectKey(key)}`;
+  const url = new URL(`${config.endpoint}${canonicalUri}`);
+  const host = url.host;
+  const signedHeaders = "host;x-amz-content-sha256;x-amz-date";
+  const canonicalHeaders = [
+    `host:${host}`,
+    `x-amz-content-sha256:${payloadHash}`,
+    `x-amz-date:${amzDate}`
+  ].join("\n") + "\n";
+  const canonicalRequest = [
+    "DELETE",
+    canonicalUri,
+    "",
+    canonicalHeaders,
+    signedHeaders,
+    payloadHash
+  ].join("\n");
+  const credentialScope = `${dateStamp}/${config.region}/s3/aws4_request`;
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    credentialScope,
+    sha256Hex(canonicalRequest)
+  ].join("\n");
+  const signingKey = getSignatureKey(config.secretKey, dateStamp, config.region, "s3");
+  const signature = hmacHex(signingKey, stringToSign);
+
+  const response = await fetch(url, {
+    method: "DELETE",
+    headers: {
+      Authorization: `AWS4-HMAC-SHA256 Credential=${config.accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
+      "x-amz-content-sha256": payloadHash,
+      "x-amz-date": amzDate
+    }
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`MinIO delete failed with ${response.status}: ${detail.slice(0, 600)}`);
+  }
+}
+
 function encodeObjectKey(key: string) {
   return key.split("/").map(encodePathSegment).join("/");
 }

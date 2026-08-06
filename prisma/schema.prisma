@@ -295,56 +295,74 @@ enum AiStudyTaskStatus {
   canceled
 }
 
+enum OfficialStudyMaterialFileType {
+  pdf
+  word
+}
+
+enum OfficialStudyMaterialFileStatus {
+  uploading
+  ready
+  failed
+}
+
+enum OfficialStudyMaterialVisibility {
+  draft
+  public
+  offline
+}
+
 model User {
-  id              String            @id @default(cuid())
-  username        String            @unique
-  passwordHash    String
-  role            UserRole          @default(student)
-  status          UserStatus        @default(active)
-  phoneNumber     String?
-  email           String?
-  adminRemark     String?
-  createdAt       DateTime          @default(now())
-  lastLoginAt     DateTime?
-  lastActiveAt    DateTime?
-  disabledAt      DateTime?
-  disabledReason  String?
-  studentProfile  StudentProfile?
-  progress        UserProgress[]
-  attempts        QuestionAttempt[]
-  quizSessions    QuizSession[]
-  wrongQuestions  WrongQuestion[]
-  aiConversations AiConversation[]
-  studyStats      StudyStat[]
-  syllabusProgress UserSyllabusProgress[]
-  diamondAccount  DiamondAccount?
-  diamondTransactions DiamondTransaction[]
-  diamondRuleConfigsUpdated DiamondRuleConfig[] @relation("DiamondRuleConfigUpdater")
-  passwordChangeLogs PasswordChangeLog[] @relation("PasswordChangeTarget")
-  passwordChangesMade PasswordChangeLog[] @relation("PasswordChangeActor")
-  sentNotifications Notification[] @relation("NotificationAuthor")
-  notificationTemplates NotificationTemplate[] @relation("NotificationTemplateAuthor")
-  notificationRecipients NotificationRecipient[]
-  notificationDispatchJobsCreated NotificationDispatchJob[] @relation("NotificationDispatchJobAuthor")
-  notificationAutomationRulesCreated NotificationAutomationRule[] @relation("NotificationAutomationRuleAuthor")
-  notificationEvents NotificationEvent[]
-  notificationDispatchRecipients NotificationDispatchRecipient[]
-  buddyPairsAsA BuddyPair[] @relation("BuddyPairUserA")
-  buddyPairsAsB BuddyPair[] @relation("BuddyPairUserB")
-  buddyPairsTerminated BuddyPair[] @relation("BuddyPairTerminalActor")
-  buddyRequestsSent BuddyRequest[] @relation("BuddyRequestRequester")
-  buddyRequestsReceived BuddyRequest[] @relation("BuddyRequestRecipient")
-  buddyPosts BuddyPost[] @relation("BuddyPostAuthor")
-  buddyPostLikes BuddyPostLike[]
-  following SocialFollow[] @relation("SocialFollowFollower")
-  followers SocialFollow[] @relation("SocialFollowFollowing")
-  blockedUsers SocialBlock[] @relation("SocialBlockBlocker")
-  blockedBy SocialBlock[] @relation("SocialBlockBlocked")
-  userEventNotificationsReceived UserEventNotification[] @relation("UserEventNotificationRecipient")
-  userEventNotificationsActed UserEventNotification[] @relation("UserEventNotificationActor")
-  aiStudyProjects AiStudyProject[] @relation("AiStudyProjectOwner")
-  aiStudyProgress AiStudyProgress[]
-  aiStudyChatMessages AiStudyChatMessage[]
+  id                                 String                          @id @default(cuid())
+  username                           String                          @unique
+  passwordHash                       String
+  role                               UserRole                        @default(student)
+  status                             UserStatus                      @default(active)
+  phoneNumber                        String?
+  email                              String?
+  adminRemark                        String?
+  createdAt                          DateTime                        @default(now())
+  lastLoginAt                        DateTime?
+  lastActiveAt                       DateTime?
+  disabledAt                         DateTime?
+  disabledReason                     String?
+  studentProfile                     StudentProfile?
+  progress                           UserProgress[]
+  attempts                           QuestionAttempt[]
+  quizSessions                       QuizSession[]
+  wrongQuestions                     WrongQuestion[]
+  aiConversations                    AiConversation[]
+  studyStats                         StudyStat[]
+  syllabusProgress                   UserSyllabusProgress[]
+  diamondAccount                     DiamondAccount?
+  diamondTransactions                DiamondTransaction[]
+  diamondRuleConfigsUpdated          DiamondRuleConfig[]             @relation("DiamondRuleConfigUpdater")
+  passwordChangeLogs                 PasswordChangeLog[]             @relation("PasswordChangeTarget")
+  passwordChangesMade                PasswordChangeLog[]             @relation("PasswordChangeActor")
+  sentNotifications                  Notification[]                  @relation("NotificationAuthor")
+  notificationTemplates              NotificationTemplate[]          @relation("NotificationTemplateAuthor")
+  notificationRecipients             NotificationRecipient[]
+  notificationDispatchJobsCreated    NotificationDispatchJob[]       @relation("NotificationDispatchJobAuthor")
+  notificationAutomationRulesCreated NotificationAutomationRule[]    @relation("NotificationAutomationRuleAuthor")
+  notificationEvents                 NotificationEvent[]
+  notificationDispatchRecipients     NotificationDispatchRecipient[]
+  buddyPairsAsA                      BuddyPair[]                     @relation("BuddyPairUserA")
+  buddyPairsAsB                      BuddyPair[]                     @relation("BuddyPairUserB")
+  buddyPairsTerminated               BuddyPair[]                     @relation("BuddyPairTerminalActor")
+  buddyRequestsSent                  BuddyRequest[]                  @relation("BuddyRequestRequester")
+  buddyRequestsReceived              BuddyRequest[]                  @relation("BuddyRequestRecipient")
+  buddyPosts                         BuddyPost[]                     @relation("BuddyPostAuthor")
+  buddyPostLikes                     BuddyPostLike[]
+  following                          SocialFollow[]                  @relation("SocialFollowFollower")
+  followers                          SocialFollow[]                  @relation("SocialFollowFollowing")
+  blockedUsers                       SocialBlock[]                   @relation("SocialBlockBlocker")
+  blockedBy                          SocialBlock[]                   @relation("SocialBlockBlocked")
+  userEventNotificationsReceived     UserEventNotification[]         @relation("UserEventNotificationRecipient")
+  userEventNotificationsActed        UserEventNotification[]         @relation("UserEventNotificationActor")
+  aiStudyProjects                    AiStudyProject[]                @relation("AiStudyProjectOwner")
+  aiStudyProgress                    AiStudyProgress[]
+  aiStudyChatMessages                AiStudyChatMessage[]
+  officialStudyMaterialsCreated      OfficialStudyMaterial[]         @relation("OfficialStudyMaterialCreator")
 
   @@index([role, status, createdAt])
   @@index([role, status, lastActiveAt])
@@ -453,47 +471,49 @@ model Region {
 }
 
 model PublicSubject {
-  id              String                @id @default(cuid())
-  name            String                @unique
-  code            String?               @unique
-  description     String?
-  status          ContentStatus         @default(draft)
-  sortOrder       Int                   @default(0)
-  regions         RegionPublicSubject[]
-  studentProfiles StudentProfile[]
-  learningCourses LearningCourse[]
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+  id                     String                  @id @default(cuid())
+  name                   String                  @unique
+  code                   String?                 @unique
+  description            String?
+  status                 ContentStatus           @default(draft)
+  sortOrder              Int                     @default(0)
+  regions                RegionPublicSubject[]
+  studentProfiles        StudentProfile[]
+  learningCourses        LearningCourse[]
+  officialStudyMaterials OfficialStudyMaterial[]
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
 
   @@index([status, sortOrder])
   @@map("public_subjects")
 }
 
 model Major {
-  id              String           @id @default(cuid())
-  name            String           @unique
-  description     String?
-  status          ContentStatus    @default(draft)
-  sortOrder       Int              @default(0)
-  regions         RegionMajor[]
-  studentProfiles StudentProfile[]
-  learningCourses LearningCourse[]
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id                     String                  @id @default(cuid())
+  name                   String                  @unique
+  description            String?
+  status                 ContentStatus           @default(draft)
+  sortOrder              Int                     @default(0)
+  regions                RegionMajor[]
+  studentProfiles        StudentProfile[]
+  learningCourses        LearningCourse[]
+  officialStudyMaterials OfficialStudyMaterial[]
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
 
   @@index([status, sortOrder])
   @@map("majors")
 }
 
 model School {
-  id              String          @id @default(cuid())
+  id              String           @id @default(cuid())
   name            String
-  province        String          @default("未设置")
-  status          ContentStatus   @default(published)
-  sortOrder       Int             @default(0)
+  province        String           @default("未设置")
+  status          ContentStatus    @default(published)
+  sortOrder       Int              @default(0)
   studentProfiles StudentProfile[]
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   @@unique([province, name])
   @@index([status, sortOrder])
@@ -529,29 +549,29 @@ model RegionMajor {
 }
 
 model StudentProfile {
-  id              String         @id @default(cuid())
-  userId          String         @unique
-  regionId        String?
-  publicSubjectId String?
-  majorId         String?
-  schoolId        String?
-  nickname        String?
-  avatarColor     String         @default("green")
-  avatarImage     String?
-  coverImage      String?
-  bio             String?
-  gender          StudentGender?
-  school          String?
-  birthYear       Int?
-  birthMonth      Int?
-  allowBuddySearch Boolean       @default(true)
-  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  region          Region?        @relation(fields: [regionId], references: [id], onDelete: SetNull)
-  publicSubject   PublicSubject? @relation(fields: [publicSubjectId], references: [id], onDelete: SetNull)
-  major           Major?         @relation(fields: [majorId], references: [id], onDelete: SetNull)
-  schoolOption    School?        @relation(fields: [schoolId], references: [id], onDelete: SetNull)
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id               String         @id @default(cuid())
+  userId           String         @unique
+  regionId         String?
+  publicSubjectId  String?
+  majorId          String?
+  schoolId         String?
+  nickname         String?
+  avatarColor      String         @default("green")
+  avatarImage      String?
+  coverImage       String?
+  bio              String?
+  gender           StudentGender?
+  school           String?
+  birthYear        Int?
+  birthMonth       Int?
+  allowBuddySearch Boolean        @default(true)
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  region           Region?        @relation(fields: [regionId], references: [id], onDelete: SetNull)
+  publicSubject    PublicSubject? @relation(fields: [publicSubjectId], references: [id], onDelete: SetNull)
+  major            Major?         @relation(fields: [majorId], references: [id], onDelete: SetNull)
+  schoolOption     School?        @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
   @@index([regionId])
   @@index([publicSubjectId])
@@ -564,25 +584,26 @@ model StudentProfile {
 }
 
 model LearningCourse {
-  id              String             @id @default(cuid())
-  regionId        String
-  publicSubjectId String?
-  majorId         String?
-  name            String
-  courseType      LearningCourseType
-  description     String?
-  questionTypeConfig Json?
-  status          ContentStatus      @default(draft)
-  sortOrder       Int                @default(0)
-  region          Region             @relation(fields: [regionId], references: [id], onDelete: Cascade)
-  publicSubject   PublicSubject?     @relation(fields: [publicSubjectId], references: [id], onDelete: SetNull)
-  major           Major?             @relation(fields: [majorId], references: [id], onDelete: SetNull)
-  chapters        Chapter[]
-  syllabusItems   SyllabusItem[]
-  examPapers      ExamPaper[]
-  aiStudyProjects AiStudyProject[]
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
+  id                     String                  @id @default(cuid())
+  regionId               String
+  publicSubjectId        String?
+  majorId                String?
+  name                   String
+  courseType             LearningCourseType
+  description            String?
+  questionTypeConfig     Json?
+  status                 ContentStatus           @default(draft)
+  sortOrder              Int                     @default(0)
+  region                 Region                  @relation(fields: [regionId], references: [id], onDelete: Cascade)
+  publicSubject          PublicSubject?          @relation(fields: [publicSubjectId], references: [id], onDelete: SetNull)
+  major                  Major?                  @relation(fields: [majorId], references: [id], onDelete: SetNull)
+  chapters               Chapter[]
+  syllabusItems          SyllabusItem[]
+  examPapers             ExamPaper[]
+  aiStudyProjects        AiStudyProject[]
+  officialStudyMaterials OfficialStudyMaterial[]
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
 
   @@index([regionId, courseType, status, sortOrder])
   @@index([publicSubjectId])
@@ -591,25 +612,25 @@ model LearningCourse {
 }
 
 model SyllabusItem {
-  id              String               @id @default(cuid())
+  id              String                 @id @default(cuid())
   courseId        String
   parentId        String?
   code            String?
   title           String
   description     String?
   requirement     SyllabusRequirement?
-  sortOrder       Int                  @default(0)
-  status          ContentStatus        @default(draft)
-  course          LearningCourse       @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  parent          SyllabusItem?        @relation("SyllabusItemChildren", fields: [parentId], references: [id], onDelete: Cascade)
-  children        SyllabusItem[]       @relation("SyllabusItemChildren")
+  sortOrder       Int                    @default(0)
+  status          ContentStatus          @default(draft)
+  course          LearningCourse         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  parent          SyllabusItem?          @relation("SyllabusItemChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children        SyllabusItem[]         @relation("SyllabusItemChildren")
   knowledgePoints KnowledgePoint[]
   progress        UserSyllabusProgress[]
   quizSessions    QuizSession[]
   questions       Question[]
   questionTags    QuestionKnowledgeTag[]
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
 
   @@index([courseId, parentId, sortOrder])
   @@index([status, sortOrder])
@@ -671,29 +692,29 @@ model KnowledgePoint {
 }
 
 model Question {
-  id               String            @id @default(cuid())
+  id               String                 @id @default(cuid())
   knowledgePointId String
   syllabusItemId   String?
-  knowledgePoint   KnowledgePoint    @relation(fields: [knowledgePointId], references: [id], onDelete: Cascade)
-  syllabusItem     SyllabusItem?     @relation(fields: [syllabusItemId], references: [id], onDelete: SetNull)
+  knowledgePoint   KnowledgePoint         @relation(fields: [knowledgePointId], references: [id], onDelete: Cascade)
+  syllabusItem     SyllabusItem?          @relation(fields: [syllabusItemId], references: [id], onDelete: SetNull)
   type             QuestionType
   stem             String
   options          Json
   answer           Json
   analysis         String
   aiDoubtAnswer    String?
-  source           String            @default("人工录入")
-  sourceType       QuestionSourceType @default(manual)
+  source           String                 @default("人工录入")
+  sourceType       QuestionSourceType     @default(manual)
   sourceYear       Int?
-  difficulty       Difficulty        @default(medium)
-  status           ContentStatus     @default(draft)
+  difficulty       Difficulty             @default(medium)
+  status           ContentStatus          @default(draft)
   paperQuestions   ExamPaperQuestion[]
   knowledgeTags    QuestionKnowledgeTag[]
   attempts         QuestionAttempt[]
   wrongQuestions   WrongQuestion[]
   aiConversations  AiConversation[]
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
 
   @@index([knowledgePointId, status])
   @@index([syllabusItemId])
@@ -740,14 +761,14 @@ model ExamPaper {
 }
 
 model ExamPaperQuestion {
-  id        String    @id @default(cuid())
-  paperId   String
+  id         String    @id @default(cuid())
+  paperId    String
   questionId String
-  sortOrder Int       @default(0)
-  score     Float?
-  paper     ExamPaper @relation(fields: [paperId], references: [id], onDelete: Cascade)
-  question  Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  createdAt DateTime  @default(now())
+  sortOrder  Int       @default(0)
+  score      Float?
+  paper      ExamPaper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  question   Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
 
   @@unique([paperId, questionId])
   @@index([paperId, sortOrder])
@@ -789,16 +810,16 @@ model UserSyllabusProgress {
 }
 
 model QuestionAttempt {
-  id             String   @id @default(cuid())
+  id             String       @id @default(cuid())
   userId         String
   sessionId      String?
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   session        QuizSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   questionId     String
-  question       Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  question       Question     @relation(fields: [questionId], references: [id], onDelete: Cascade)
   selectedAnswer Json
   isCorrect      Boolean
-  createdAt      DateTime @default(now())
+  createdAt      DateTime     @default(now())
 
   @@index([userId, questionId])
   @@index([sessionId, questionId])
@@ -806,22 +827,22 @@ model QuestionAttempt {
 }
 
 model QuizSession {
-  id             String            @id @default(cuid())
-  userId         String
-  syllabusItemId String
-  status         QuizSessionStatus @default(in_progress)
-  currentIndex   Int               @default(0)
-  score          Int?
-  correctCount   Int               @default(0)
-  totalCount     Int               @default(0)
-  diamondRewardAmount Int           @default(0)
-  startedAt      DateTime          @default(now())
-  completedAt    DateTime?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  syllabusItem   SyllabusItem      @relation(fields: [syllabusItemId], references: [id], onDelete: Cascade)
-  attempts       QuestionAttempt[]
+  id                  String            @id @default(cuid())
+  userId              String
+  syllabusItemId      String
+  status              QuizSessionStatus @default(in_progress)
+  currentIndex        Int               @default(0)
+  score               Int?
+  correctCount        Int               @default(0)
+  totalCount          Int               @default(0)
+  diamondRewardAmount Int               @default(0)
+  startedAt           DateTime          @default(now())
+  completedAt         DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  user                User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  syllabusItem        SyllabusItem      @relation(fields: [syllabusItemId], references: [id], onDelete: Cascade)
+  attempts            QuestionAttempt[]
 
   @@index([userId, syllabusItemId, status, updatedAt])
   @@index([syllabusItemId])
@@ -939,19 +960,19 @@ model PasswordChangeLog {
 }
 
 model Notification {
-  id          String                  @id @default(cuid())
+  id          String                   @id @default(cuid())
   title       String
   contentHtml String
-  status      NotificationStatus      @default(draft)
-  source      NotificationSource      @default(manual)
+  status      NotificationStatus       @default(draft)
+  source      NotificationSource       @default(manual)
   authorId    String?
-  author      User?                   @relation("NotificationAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  author      User?                    @relation("NotificationAuthor", fields: [authorId], references: [id], onDelete: SetNull)
   recipients  NotificationRecipient[]
   dispatchJob NotificationDispatchJob?
   sentAt      DateTime?
   expiresAt   DateTime?
-  createdAt   DateTime                @default(now())
-  updatedAt   DateTime                @updatedAt
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
 
   @@index([status, expiresAt, sentAt])
   @@index([authorId, createdAt])
@@ -959,16 +980,16 @@ model Notification {
 }
 
 model NotificationTemplate {
-  id          String   @id @default(cuid())
-  name        String
-  title       String
-  contentHtml String
-  authorId    String?
-  author      User?    @relation("NotificationTemplateAuthor", fields: [authorId], references: [id], onDelete: SetNull)
-  dispatchJobs NotificationDispatchJob[]
+  id              String                       @id @default(cuid())
+  name            String
+  title           String
+  contentHtml     String
+  authorId        String?
+  author          User?                        @relation("NotificationTemplateAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  dispatchJobs    NotificationDispatchJob[]
   automationRules NotificationAutomationRule[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt       DateTime                     @default(now())
+  updatedAt       DateTime                     @updatedAt
 
   @@index([authorId, updatedAt])
   @@index([updatedAt])
@@ -976,34 +997,34 @@ model NotificationTemplate {
 }
 
 model NotificationDispatchJob {
-  id                 String                     @id @default(cuid())
-  type               NotificationDispatchType
-  channel            NotificationChannel        @default(in_app)
-  status             NotificationDispatchStatus @default(pending)
-  templateId         String?
-  template           NotificationTemplate?      @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  automationRuleId   String?
-  automationRule     NotificationAutomationRule? @relation(fields: [automationRuleId], references: [id], onDelete: SetNull)
-  eventId            String?
-  event              NotificationEvent?         @relation(fields: [eventId], references: [id], onDelete: SetNull)
-  authorId           String?
-  author             User?                      @relation("NotificationDispatchJobAuthor", fields: [authorId], references: [id], onDelete: SetNull)
-  notificationId     String?                    @unique
-  notification       Notification?              @relation(fields: [notificationId], references: [id], onDelete: SetNull)
-  titleSnapshot      String
+  id                  String                          @id @default(cuid())
+  type                NotificationDispatchType
+  channel             NotificationChannel             @default(in_app)
+  status              NotificationDispatchStatus      @default(pending)
+  templateId          String?
+  template            NotificationTemplate?           @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  automationRuleId    String?
+  automationRule      NotificationAutomationRule?     @relation(fields: [automationRuleId], references: [id], onDelete: SetNull)
+  eventId             String?
+  event               NotificationEvent?              @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  authorId            String?
+  author              User?                           @relation("NotificationDispatchJobAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  notificationId      String?                         @unique
+  notification        Notification?                   @relation(fields: [notificationId], references: [id], onDelete: SetNull)
+  titleSnapshot       String
   contentHtmlSnapshot String
-  audienceSnapshot   Json?
-  scheduledAt        DateTime
-  startedAt          DateTime?
-  sentAt             DateTime?
-  cancelledAt        DateTime?
-  failedAt           DateTime?
-  attemptCount       Int                        @default(0)
-  maxAttempts        Int                        @default(3)
-  lastError          String?
-  recipients         NotificationDispatchRecipient[]
-  createdAt          DateTime                   @default(now())
-  updatedAt          DateTime                   @updatedAt
+  audienceSnapshot    Json?
+  scheduledAt         DateTime
+  startedAt           DateTime?
+  sentAt              DateTime?
+  cancelledAt         DateTime?
+  failedAt            DateTime?
+  attemptCount        Int                             @default(0)
+  maxAttempts         Int                             @default(3)
+  lastError           String?
+  recipients          NotificationDispatchRecipient[]
+  createdAt           DateTime                        @default(now())
+  updatedAt           DateTime                        @updatedAt
 
   @@unique([automationRuleId, eventId])
   @@index([channel, status, scheduledAt])
@@ -1017,22 +1038,22 @@ model NotificationDispatchJob {
 }
 
 model NotificationDispatchRecipient {
-  id                  String                  @id @default(cuid())
-  jobId               String
-  job                 NotificationDispatchJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  userId              String?
-  user                User?                   @relation(fields: [userId], references: [id], onDelete: SetNull)
-  usernameSnapshot    String
-  provinceSnapshot    String?
-  studySystemSnapshot String?
-  majorNameSnapshot   String?
-  emailSnapshot       String?
-  deliveryStatus      NotificationDeliveryStatus @default(pending)
-  deliveredAt         DateTime?
-  failedAt            DateTime?
-  deliveryAttemptCount Int                    @default(0)
-  deliveryLastError   String?
-  createdAt           DateTime                @default(now())
+  id                   String                     @id @default(cuid())
+  jobId                String
+  job                  NotificationDispatchJob    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  userId               String?
+  user                 User?                      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  usernameSnapshot     String
+  provinceSnapshot     String?
+  studySystemSnapshot  String?
+  majorNameSnapshot    String?
+  emailSnapshot        String?
+  deliveryStatus       NotificationDeliveryStatus @default(pending)
+  deliveredAt          DateTime?
+  failedAt             DateTime?
+  deliveryAttemptCount Int                        @default(0)
+  deliveryLastError    String?
+  createdAt            DateTime                   @default(now())
 
   @@unique([jobId, userId])
   @@index([jobId])
@@ -1121,22 +1142,22 @@ model BuddyPair {
 }
 
 model BuddyRequest {
-  id               String             @id @default(cuid())
+  id               String                  @id @default(cuid())
   pairId           String
   requesterId      String
   recipientId      String
-  status           BuddyRequestStatus @default(pending)
+  status           BuddyRequestStatus      @default(pending)
   expiresAt        DateTime
   respondedAt      DateTime?
   withdrawnAt      DateTime?
   expiredAt        DateTime?
   reapplyAllowedAt DateTime?
-  pair             BuddyPair          @relation(fields: [pairId], references: [id], onDelete: Cascade)
-  requester        User               @relation("BuddyRequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
-  recipient        User               @relation("BuddyRequestRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  pair             BuddyPair               @relation(fields: [pairId], references: [id], onDelete: Cascade)
+  requester        User                    @relation("BuddyRequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  recipient        User                    @relation("BuddyRequestRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
   notifications    UserEventNotification[]
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
 
   @@index([recipientId, status, createdAt])
   @@index([requesterId, status, createdAt])
@@ -1237,23 +1258,23 @@ model UserEventNotification {
 }
 
 model AiStudyProject {
-  id             String               @id @default(cuid())
+  id             String                  @id @default(cuid())
   ownerId        String
   title          String
   description    String?
   sourceType     AiStudySourceType
   learningGoal   AiStudyLearningGoal
   courseId       String?
-  visibility     AiStudyVisibility    @default(private)
-  status         AiStudyProjectStatus @default(draft)
-  knowledgeCount Int                  @default(0)
-  masteredCount  Int                  @default(0)
+  visibility     AiStudyVisibility       @default(private)
+  status         AiStudyProjectStatus    @default(draft)
+  knowledgeCount Int                     @default(0)
+  masteredCount  Int                     @default(0)
   lastStudiedAt  DateTime?
   deletedAt      DateTime?
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
-  owner          User                 @relation("AiStudyProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  course         LearningCourse?      @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  owner          User                    @relation("AiStudyProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  course         LearningCourse?         @relation(fields: [courseId], references: [id], onDelete: SetNull)
   sources        AiStudySource[]
   sourceChunks   AiStudySourceChunk[]
   nodes          AiStudyNode[]
@@ -1270,7 +1291,7 @@ model AiStudyProject {
 }
 
 model AiStudySource {
-  id            String              @id @default(cuid())
+  id            String                  @id @default(cuid())
   projectId     String
   sourceType    AiStudySourceType
   fileName      String?
@@ -1279,11 +1300,11 @@ model AiStudySource {
   storageBucket String?
   storageKey    String?
   storagePath   String?
-  textContent   String?             @db.Text
+  textContent   String?                 @db.Text
   pageCount     Int?
-  status        AiStudySourceStatus @default(uploaded)
-  createdAt     DateTime            @default(now())
-  project       AiStudyProject      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status        AiStudySourceStatus     @default(uploaded)
+  createdAt     DateTime                @default(now())
+  project       AiStudyProject          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   chunks        AiStudySourceChunk[]
   tasks         AiStudyGenerationTask[]
 
@@ -1292,17 +1313,57 @@ model AiStudySource {
   @@map("ai_study_sources")
 }
 
+model OfficialStudyMaterial {
+  id               String                          @id @default(cuid())
+  createdById      String
+  courseId         String?
+  majorId          String?
+  publicSubjectId  String?
+  title            String
+  description      String?                         @db.Text
+  fileType         OfficialStudyMaterialFileType
+  originalFileName String
+  mimeType         String
+  fileSizeBytes    Int
+  storageBucket    String?
+  storageKey       String?
+  storagePath      String?
+  previewText      String?                         @db.Text
+  previewTruncated Boolean                         @default(false)
+  fileStatus       OfficialStudyMaterialFileStatus @default(uploading)
+  processingError  String?
+  visibility       OfficialStudyMaterialVisibility @default(draft)
+  allowDownload    Boolean                         @default(true)
+  sortOrder        Int                             @default(0)
+  publishedAt      DateTime?
+  deletedAt        DateTime?
+  createdAt        DateTime                        @default(now())
+  updatedAt        DateTime                        @updatedAt
+  createdBy        User                            @relation("OfficialStudyMaterialCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  course           LearningCourse?                 @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  major            Major?                          @relation(fields: [majorId], references: [id], onDelete: SetNull)
+  publicSubject    PublicSubject?                  @relation(fields: [publicSubjectId], references: [id], onDelete: SetNull)
+
+  @@index([visibility, fileStatus, sortOrder, publishedAt])
+  @@index([createdById, deletedAt, createdAt])
+  @@index([courseId])
+  @@index([majorId])
+  @@index([publicSubjectId])
+  @@index([storageBucket, storageKey])
+  @@map("official_study_materials")
+}
+
 model AiStudySourceChunk {
-  id          String         @id @default(cuid())
-  projectId   String
-  sourceId    String
-  pageNumber  Int?
-  chunkIndex  Int
-  content     String         @db.Text
-  bbox        Json?
-  createdAt   DateTime       @default(now())
-  project     AiStudyProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  source      AiStudySource  @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  id         String         @id @default(cuid())
+  projectId  String
+  sourceId   String
+  pageNumber Int?
+  chunkIndex Int
+  content    String         @db.Text
+  bbox       Json?
+  createdAt  DateTime       @default(now())
+  project    AiStudyProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  source     AiStudySource  @relation(fields: [sourceId], references: [id], onDelete: Cascade)
 
   @@unique([sourceId, chunkIndex])
   @@index([projectId, sourceId])
@@ -1310,20 +1371,20 @@ model AiStudySourceChunk {
 }
 
 model AiStudyNode {
-  id             String                @id @default(cuid())
+  id             String               @id @default(cuid())
   projectId      String
   parentId       String?
   title          String
-  summary        String                @db.Text
-  sortOrder      Int                   @default(0)
-  depth          Int                   @default(0)
+  summary        String               @db.Text
+  sortOrder      Int                  @default(0)
+  depth          Int                  @default(0)
   sourceChunkIds Json
-  status         AiStudyNodeStatus     @default(draft)
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
-  project        AiStudyProject        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  parent         AiStudyNode?          @relation("AiStudyNodeChildren", fields: [parentId], references: [id], onDelete: Cascade)
-  children       AiStudyNode[]         @relation("AiStudyNodeChildren")
+  status         AiStudyNodeStatus    @default(draft)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  project        AiStudyProject       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent         AiStudyNode?         @relation("AiStudyNodeChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children       AiStudyNode[]        @relation("AiStudyNodeChildren")
   cards          AiStudyCard[]
   progress       AiStudyProgress[]
   chatMessages   AiStudyChatMessage[]

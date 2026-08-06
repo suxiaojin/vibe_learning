@@ -1832,7 +1832,7 @@ function validateQuestionBankQuestion({
   if (type === "fill_blank" && answers.length < 1) {
     throw new Error("Fill blank answer is required");
   }
-  if (isQuestionBankRichAnswerQuestionType(type) && answers.length < 1) {
+  if (isQuestionBankRichAnswerQuestionType(type) && type !== "material_analysis" && answers.length < 1) {
     throw new Error("Rich answer question answer is required");
   }
 }

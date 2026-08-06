@@ -3,10 +3,15 @@
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { AiStudyProjectCard } from "@/components/ai-study/project-card";
+import {
+  OfficialStudyMaterialCard,
+  type OfficialStudyMaterialCardItem
+} from "@/components/ai-study/official-study-material-card";
 
 type ProjectStatus = "draft" | "processing" | "ready" | "failed" | "archived";
 
 export type AiStudyProjectSectionItem = {
+  kind: "ai-project";
   canManage: boolean;
   contentOverview: string;
   generationPercent: number;
@@ -23,9 +28,11 @@ export type AiStudyProjectSectionItem = {
   title: string;
 };
 
+export type StudyBuddySectionItem = AiStudyProjectSectionItem | OfficialStudyMaterialCardItem;
+
 type AiStudyProjectSectionProps = {
   title: string;
-  projects: AiStudyProjectSectionItem[];
+  projects: StudyBuddySectionItem[];
   emptyText: string;
 };
 
@@ -41,9 +48,11 @@ export function AiStudyProjectSection({ title, projects, emptyText }: AiStudyPro
       <h2 className="text-[22px] font-black tracking-normal text-[#101828]">{title}</h2>
       <div className="mt-5 grid grid-cols-1 justify-items-start gap-5 sm:grid-cols-[repeat(auto-fill,minmax(260px,284px))]">
         {projects.length > 0 ? (
-          visibleProjects.map((project) => (
+          visibleProjects.map((project) => project.kind === "official-material" ? (
+            <OfficialStudyMaterialCard key={`material-${project.id}`} material={project} />
+          ) : (
             <AiStudyProjectCard
-              key={project.id}
+              key={`project-${project.id}`}
               canManage={project.canManage}
               contentOverview={project.contentOverview}
               generationPercent={project.generationPercent}
