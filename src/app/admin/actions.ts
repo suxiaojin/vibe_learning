@@ -1958,8 +1958,15 @@ export async function updateQuestionBankQuestion(formData: FormData) {
   });
   await touchQuestionBankPaper(paperQuestion.paperId);
 
-  revalidatePath(`/admin/question-banks/${paperQuestion.paperId}`);
-  redirect(`/admin/question-banks/${paperQuestion.paperId}`);
+  revalidatePath("/admin/question-banks");
+  return {
+    paperQuestionId,
+    type,
+    stem,
+    options,
+    answer: answers,
+    analysis: String(formData.get("analysis") || "").trim()
+  };
 }
 
 export async function updateQuestionBankQuestionType(formData: FormData) {

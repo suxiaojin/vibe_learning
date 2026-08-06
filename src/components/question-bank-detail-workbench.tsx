@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { ChangeEvent, PointerEventHandler, ReactNode, RefObject } from "react";
+import type { ChangeEvent, FormEventHandler, PointerEventHandler, ReactNode, RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -109,6 +109,7 @@ type ActiveEditorType = QuestionBankEditableQuestionType | null;
 type EditableQuestionType = QuestionBankEditableQuestionType;
 type ChoiceQuestionType = QuestionBankChoiceQuestionType;
 type RichAnswerQuestionType = QuestionBankRichAnswerQuestionType;
+type QuestionUpdateHandler = (formData: FormData) => void;
 
 type ToolItem = {
   label: string;
@@ -1132,16 +1133,17 @@ function ChoiceQuestionForm({
   paperId,
   question,
   type,
-  questionTypeControl
+  questionTypeControl,
+  onUpdate
 }: {
   paperId: string;
   question?: QuestionRow;
   type: ChoiceQuestionType;
   questionTypeControl?: QuestionTypeControl;
+  onUpdate?: QuestionUpdateHandler;
 }) {
   const editing = Boolean(question);
   const formId = editing && question ? editQuestionFormId(question.id) : createQuestionFormId(type);
-  const action = editing ? updateQuestionBankQuestion : createQuestionBankTypedQuestion;
   const inputType = type === "single_choice" ? "radio" : "checkbox";
   const focusColor = type === "single_choice" ? "focus:border-[#22c55e]" : "focus:border-[#3b82f6]";
   const accentColor = type === "single_choice" ? "accent-[#22c55e]" : "accent-[#3b82f6]";
@@ -1161,7 +1163,15 @@ function ChoiceQuestionForm({
   };
 
   return (
-    <form id={formId} action={action} key={question?.id || type}>
+    <form
+      id={formId}
+      action={editing ? undefined : createQuestionBankTypedQuestion}
+      key={question?.id || type}
+      onSubmit={editing && onUpdate ? ((event) => {
+        event.preventDefault();
+        onUpdate(new FormData(event.currentTarget));
+      }) as FormEventHandler<HTMLFormElement> : undefined}
+    >
       <input type="hidden" name="paperId" value={paperId} />
       <input type="hidden" name="questionType" value={type} />
       {question ? <input type="hidden" name="paperQuestionId" value={question.id} /> : null}
@@ -1219,13 +1229,31 @@ function ChoiceQuestionForm({
   );
 }
 
-function TrueFalseQuestionForm({ paperId, question, questionTypeControl }: { paperId: string; question?: QuestionRow; questionTypeControl?: QuestionTypeControl }) {
+function TrueFalseQuestionForm({
+  paperId,
+  question,
+  questionTypeControl,
+  onUpdate
+}: {
+  paperId: string;
+  question?: QuestionRow;
+  questionTypeControl?: QuestionTypeControl;
+  onUpdate?: QuestionUpdateHandler;
+}) {
   const editing = Boolean(question);
   const formId = editing && question ? editQuestionFormId(question.id) : createQuestionFormId("true_false");
   const answer = question?.answer[0] || "";
 
   return (
-    <form id={formId} action={editing ? updateQuestionBankQuestion : createQuestionBankTypedQuestion} key={question?.id || "true_false"}>
+    <form
+      id={formId}
+      action={editing ? undefined : createQuestionBankTypedQuestion}
+      key={question?.id || "true_false"}
+      onSubmit={editing && onUpdate ? ((event) => {
+        event.preventDefault();
+        onUpdate(new FormData(event.currentTarget));
+      }) as FormEventHandler<HTMLFormElement> : undefined}
+    >
       <input type="hidden" name="paperId" value={paperId} />
       <input type="hidden" name="questionType" value="true_false" />
       {question ? <input type="hidden" name="paperQuestionId" value={question.id} /> : null}
@@ -1268,12 +1296,30 @@ function TrueFalseQuestionForm({ paperId, question, questionTypeControl }: { pap
   );
 }
 
-function FillBlankQuestionForm({ paperId, question, questionTypeControl }: { paperId: string; question?: QuestionRow; questionTypeControl?: QuestionTypeControl }) {
+function FillBlankQuestionForm({
+  paperId,
+  question,
+  questionTypeControl,
+  onUpdate
+}: {
+  paperId: string;
+  question?: QuestionRow;
+  questionTypeControl?: QuestionTypeControl;
+  onUpdate?: QuestionUpdateHandler;
+}) {
   const editing = Boolean(question);
   const formId = editing && question ? editQuestionFormId(question.id) : createQuestionFormId("fill_blank");
 
   return (
-    <form id={formId} action={editing ? updateQuestionBankQuestion : createQuestionBankTypedQuestion} key={question?.id || "fill_blank"}>
+    <form
+      id={formId}
+      action={editing ? undefined : createQuestionBankTypedQuestion}
+      key={question?.id || "fill_blank"}
+      onSubmit={editing && onUpdate ? ((event) => {
+        event.preventDefault();
+        onUpdate(new FormData(event.currentTarget));
+      }) as FormEventHandler<HTMLFormElement> : undefined}
+    >
       <input type="hidden" name="paperId" value={paperId} />
       <input type="hidden" name="questionType" value="fill_blank" />
       {question ? <input type="hidden" name="paperQuestionId" value={question.id} /> : null}
@@ -1303,19 +1349,28 @@ function RichAnswerQuestionForm({
   paperId,
   question,
   type,
-  questionTypeControl
+  questionTypeControl,
+  onUpdate
 }: {
   paperId: string;
   question?: QuestionRow;
   type: RichAnswerQuestionType;
   questionTypeControl?: QuestionTypeControl;
+  onUpdate?: QuestionUpdateHandler;
 }) {
   const editing = Boolean(question);
   const formId = editing && question ? editQuestionFormId(question.id) : createQuestionFormId(type);
-  const action = editing ? updateQuestionBankQuestion : createQuestionBankTypedQuestion;
 
   return (
-    <form id={formId} action={action} key={question?.id || type}>
+    <form
+      id={formId}
+      action={editing ? undefined : createQuestionBankTypedQuestion}
+      key={question?.id || type}
+      onSubmit={editing && onUpdate ? ((event) => {
+        event.preventDefault();
+        onUpdate(new FormData(event.currentTarget));
+      }) as FormEventHandler<HTMLFormElement> : undefined}
+    >
       <input type="hidden" name="paperId" value={paperId} />
       <input type="hidden" name="questionType" value={type} />
       {question ? <input type="hidden" name="paperQuestionId" value={question.id} /> : null}
@@ -1714,6 +1769,8 @@ export function QuestionBankDetailWorkbench({ courseId, courseName, paperId, pap
   const [knowledgeTagMessage, setKnowledgeTagMessage] = useState("");
   const [questionTypeUpdatingId, setQuestionTypeUpdatingId] = useState("");
   const [questionTypeConfigOpen, setQuestionTypeConfigOpen] = useState(false);
+  const [questionSaving, setQuestionSaving] = useState(false);
+  const [questionSaveNotice, setQuestionSaveNotice] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const draggedQuestionIdRef = useRef("");
   const focusedQuestionIdRef = useRef("");
   const orderInputRef = useRef<HTMLInputElement | null>(null);
@@ -1779,7 +1836,40 @@ export function QuestionBankDetailWorkbench({ courseId, courseName, paperId, pap
 
   useEffect(() => {
     setKnowledgeTagMessage("");
+    setQuestionSaveNotice(null);
   }, [selectedQuestionId]);
+
+  async function saveSelectedQuestion(formData: FormData) {
+    if (questionSaving) {
+      return;
+    }
+    setQuestionSaving(true);
+    setQuestionSaveNotice(null);
+
+    try {
+      const savedQuestion = await updateQuestionBankQuestion(formData);
+      setOrderedQuestions((current) => current.map((question) => (
+        question.id === savedQuestion.paperQuestionId
+          ? {
+              ...question,
+              type: savedQuestion.type,
+              title: savedQuestion.stem,
+              options: savedQuestion.options,
+              answer: savedQuestion.answer,
+              analysis: savedQuestion.analysis
+            }
+          : question
+      )));
+      setQuestionSaveNotice({ tone: "success", message: "已保存" });
+    } catch (error) {
+      setQuestionSaveNotice({
+        tone: "error",
+        message: error instanceof Error ? error.message : "保存失败，请重试"
+      });
+    } finally {
+      setQuestionSaving(false);
+    }
+  }
 
   function submitQuestionOrder(nextQuestions: QuestionRow[]) {
     if (!orderInputRef.current || !reorderFormRef.current) {
@@ -2008,11 +2098,11 @@ export function QuestionBankDetailWorkbench({ courseId, courseName, paperId, pap
   const toolTypes: ToolItem[] = [
     ...questionToolTypes,
     {
-      label: "添加",
+      label: questionSaving ? "保存中" : "添加",
       icon: CopyPlus,
       tone: "normal",
       form: activeFormId,
-      disabled: !activeFormId
+      disabled: !activeFormId || questionSaving
     },
     {
       label: "删除",
@@ -2053,7 +2143,13 @@ export function QuestionBankDetailWorkbench({ courseId, courseName, paperId, pap
           题库列表
         </Link>
         <h1 className="truncate text-center text-sm font-black">{paperTitle}</h1>
-        <div />
+        <div className="justify-self-end text-xs font-bold">
+          {questionSaving ? (
+            <span className="inline-flex items-center gap-1.5 text-[#1d4ed8]"><Loader2 className="animate-spin" size={14} />正在保存</span>
+          ) : questionSaveNotice ? (
+            <span className={questionSaveNotice.tone === "success" ? "text-[#15803d]" : "text-[#dc2626]"}>{questionSaveNotice.message}</span>
+          ) : null}
+        </div>
       </header>
       <form ref={reorderFormRef} action={reorderQuestionBankPaperQuestions} className="hidden">
         <input type="hidden" name="paperId" value={paperId} />
@@ -2113,6 +2209,7 @@ export function QuestionBankDetailWorkbench({ courseId, courseName, paperId, pap
               question={selectedQuestion}
               type={selectedChoiceType}
               questionTypeControl={editorQuestionTypeControl}
+              onUpdate={saveSelectedQuestion}
             />
           ) : selectedQuestion && selectedEditableType === "true_false" ? (
             <TrueFalseQuestionForm
@@ -2120,6 +2217,7 @@ export function QuestionBankDetailWorkbench({ courseId, courseName, paperId, pap
               paperId={paperId}
               question={selectedQuestion}
               questionTypeControl={editorQuestionTypeControl}
+              onUpdate={saveSelectedQuestion}
             />
           ) : selectedQuestion && selectedEditableType === "fill_blank" ? (
             <FillBlankQuestionForm
@@ -2127,6 +2225,7 @@ export function QuestionBankDetailWorkbench({ courseId, courseName, paperId, pap
               paperId={paperId}
               question={selectedQuestion}
               questionTypeControl={editorQuestionTypeControl}
+              onUpdate={saveSelectedQuestion}
             />
           ) : selectedQuestion && selectedEditableType && isRichAnswerQuestionType(selectedEditableType) ? (
             <RichAnswerQuestionForm
@@ -2135,6 +2234,7 @@ export function QuestionBankDetailWorkbench({ courseId, courseName, paperId, pap
               question={selectedQuestion}
               type={selectedEditableType}
               questionTypeControl={editorQuestionTypeControl}
+              onUpdate={saveSelectedQuestion}
             />
           ) : selectedQuestion ? (
             <ReadonlyQuestionPreview paperId={paperId} question={selectedQuestion} />

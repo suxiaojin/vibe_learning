@@ -29,6 +29,15 @@ EXPECTED: dict[str, dict[str, Any]] = {
         "answers": 42,
         "stats": {"single_choice": 15, "multiple_choice": 10, "true_false": 10, "comprehensive": 7},
     },
+    "686845541fe8": {
+        "questions": 22,
+        "answers": 20,
+        "stats": {"single_choice": 22},
+        "answerValues": {
+            1: "A", 2: "C", 3: "D", 4: "B", 5: "A", 6: "D", 7: "C", 8: "A", 9: "D", 10: "B",
+            11: "B", 12: "A", 13: "B", 14: "C", 15: "C", 16: "A", 17: "D", 18: "D", 19: "C", 20: "B",
+        },
+    },
 }
 
 
@@ -55,11 +64,17 @@ def run_case(task_dir: Path) -> dict[str, Any]:
         request_id=f"regression-{task_dir.name}",
     )
     debug = result["debug"]
+    answer_values = {
+        int(question["number"]): "".join(question.get("answer") or [])
+        for question in result["payload"]["questions"]
+        if question.get("answer")
+    }
     return {
         "taskId": task_dir.name,
         "questionCount": debug["questionCount"],
         "answerCount": debug["answerCount"],
         "answeredQuestionCount": debug["answeredQuestionCount"],
+        "answerValues": answer_values,
         "stats": result["stats"],
         "questionMethod": debug["questionExtraction"]["method"],
         "answerMethod": debug["answerExtraction"]["method"],
@@ -86,8 +101,14 @@ def main() -> int:
                 report["questionCount"] == expected["questions"]
                 and report["answeredQuestionCount"] == expected["answers"]
                 and report["stats"] == expected["stats"]
+                and (
+                    "answerValues" not in expected
+                    or report["answerValues"] == expected["answerValues"]
+                )
             )
             failed = failed or not report["passed"]
+            if "answerValues" not in expected:
+                report.pop("answerValues", None)
         reports.append(report)
         print(json.dumps(report, ensure_ascii=False, indent=2))
     return 1 if failed else 0

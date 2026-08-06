@@ -11,6 +11,7 @@ import time
 import unicodedata
 import uuid
 from collections import Counter
+from difflib import SequenceMatcher
 from pathlib import Path
 from statistics import median
 from typing import Any
@@ -694,6 +695,41 @@ def parse_answers(answer_text: str, questions: list[dict[str, Any]] | None = Non
     )
     for match in legacy_pattern.finditer(normalized):
         save(int(match.group(1)), match.group(2), match.group(3), detailed=True)
+
+    # Some scanned answer sheets use two table rows: a numeric header row
+    # followed by an answer-only row. OCR may split or slightly scramble the
+    # header, so pair it only when the surrounding evidence is strong.
+    normalized_lines = [line.strip() for line in normalized.splitlines() if line.strip()]
+    table_separators = r"[,，、;；|\s]"
+    for line_index, line in enumerate(normalized_lines):
+        answer_row = re.sub(table_separators, "", line).upper()
+        if len(answer_row) < 4 or not re.fullmatch(r"[A-H]+", answer_row):
+            continue
+
+        header_parts: list[str] = []
+        for prior_line in reversed(normalized_lines[max(0, line_index - 3) : line_index]):
+            header_part = re.sub(table_separators, "", prior_line)
+            if not re.fullmatch(r"\d+", header_part):
+                break
+            header_parts.insert(0, header_part)
+        if not header_parts:
+            continue
+
+        candidates = [
+            number
+            for number, question_type in sorted(question_types.items())
+            if number not in answers and question_type in {"single_choice", "true_false"}
+        ][: len(answer_row)]
+        if len(candidates) != len(answer_row):
+            continue
+
+        observed_header = "".join(header_parts)
+        expected_header = "".join(str(number) for number in candidates)
+        if SequenceMatcher(None, observed_header, expected_header).ratio() < 0.65:
+            continue
+
+        for number, answer in zip(candidates, answer_row):
+            save(number, answer)
 
     for match in re.finditer(
         r"(?m)(?<!\d)(\d{1,3})[ \t]*题[ \t]*[,，、:：]?[ \t]*"
