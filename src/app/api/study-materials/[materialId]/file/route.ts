@@ -16,7 +16,7 @@ export async function GET(request: Request, context: RouteContext) {
   }
   try {
     const { materialId } = await context.params;
-    const material = await getPublicOfficialStudyMaterial(materialId);
+    const material = await getPublicOfficialStudyMaterial(materialId, user.id);
     const download = new URL(request.url).searchParams.get("download") === "1";
     return createOfficialStudyMaterialFileResponse(material, { download, admin: false });
   } catch (error) {

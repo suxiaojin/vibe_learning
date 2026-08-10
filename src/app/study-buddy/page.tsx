@@ -31,7 +31,7 @@ export default async function StudyBuddyPage({
     getSystemSettings(),
     listAiStudyProjects(user.id),
     listPublicAiStudyProjects(),
-    listPublicOfficialStudyMaterials()
+    listPublicOfficialStudyMaterials({ userId: user.id })
   ]);
   const error = params?.error ? errorMessages[params.error] || "操作失败，请稍后重试。" : "";
 
@@ -105,9 +105,7 @@ function PublicProjectSection({
     title: material.title,
     description: material.description || "",
     fileType: material.fileType,
-    fileName: material.originalFileName,
-    fileSizeBytes: material.fileSizeBytes,
-    courseName: material.major?.name || material.publicSubject?.name || material.course?.name || ""
+    fileSizeBytes: material.fileSizeBytes
   } satisfies OfficialStudyMaterialCardItem));
   const aiItems = buildProjectSectionItems(aiProjects, "public");
   return (

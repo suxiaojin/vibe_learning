@@ -7,9 +7,7 @@ export type OfficialStudyMaterialCardItem = {
   title: string;
   description: string;
   fileType: "pdf" | "word";
-  fileName: string;
   fileSizeBytes: number;
-  courseName: string;
 };
 
 export function OfficialStudyMaterialCard({ material }: { material: OfficialStudyMaterialCardItem }) {
@@ -38,8 +36,7 @@ export function OfficialStudyMaterialCard({ material }: { material: OfficialStud
         <BookOpen size={24} />
       </div>
 
-      <div className="absolute bottom-5 left-5 right-5 flex items-center justify-between gap-3 text-[12px] text-[#98a2b3]">
-        <span className="min-w-0 truncate">{material.courseName || material.fileName}</span>
+      <div className="absolute bottom-5 left-5 right-5 flex items-center justify-end text-[12px] text-[#98a2b3]">
         <span className="inline-flex shrink-0 items-center gap-1">
           <FileText size={12} />
           {formatBytes(material.fileSizeBytes)}

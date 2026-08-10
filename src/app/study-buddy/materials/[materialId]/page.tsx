@@ -14,10 +14,10 @@ export default async function OfficialStudyMaterialPage({
 }: {
   params: Promise<{ materialId: string }>;
 }) {
-  await requireUser();
+  const user = await requireUser();
   const { materialId } = await params;
   try {
-    const material = await getPublicOfficialStudyMaterial(materialId);
+    const material = await getPublicOfficialStudyMaterial(materialId, user.id);
     return (
       <main className="min-h-dvh bg-[#f8fafc] text-[#111827] lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
         <StudentSidebar active="study-buddy" />
