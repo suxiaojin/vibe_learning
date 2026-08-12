@@ -42,6 +42,7 @@ export type SyllabusPathSection = {
   status: SyllabusPathStatus;
   bestScore: number;
   passedAt: Date | null;
+  challengeVersionId?: string;
   questionSyllabusItemIds: string[];
 };
 
@@ -74,6 +75,7 @@ export type SyllabusPathGroup = {
 type SyllabusShape = {
   itemById: Map<string, SyllabusItemRecord>;
   childrenByParentId: Map<string | null, SyllabusItemRecord[]>;
+  displayChapterIdByItemId: Map<string, string>;
   displaySectionIdByItemId: Map<string, string>;
 };
 
@@ -121,6 +123,7 @@ function buildSyllabusShape(courses: CourseRecord[]): SyllabusShape {
     siblings.sort(compareByOutlineOrder);
   }
 
+  const displayChapterIdByItemId = new Map<string, string>();
   const displaySectionIdByItemId = new Map<string, string>();
   for (const item of itemById.values()) {
     const ancestors: SyllabusItemRecord[] = [];
@@ -133,13 +136,17 @@ function buildSyllabusShape(courses: CourseRecord[]): SyllabusShape {
       guard += 1;
     }
 
-    const displayItem = ancestors.length > 1 ? ancestors[1] : ancestors[0];
-    if (displayItem) {
-      displaySectionIdByItemId.set(item.id, displayItem.id);
+    const displayChapter = ancestors[0];
+    const displaySection = ancestors.length > 1 ? ancestors[1] : ancestors[0];
+    if (displayChapter) {
+      displayChapterIdByItemId.set(item.id, displayChapter.id);
+    }
+    if (displaySection) {
+      displaySectionIdByItemId.set(item.id, displaySection.id);
     }
   }
 
-  return { itemById, childrenByParentId, displaySectionIdByItemId };
+  return { itemById, childrenByParentId, displayChapterIdByItemId, displaySectionIdByItemId };
 }
 
 function collectDescendantIds(itemId: string, childrenByParentId: Map<string | null, SyllabusItemRecord[]>) {
@@ -161,19 +168,15 @@ function collectDescendantIds(itemId: string, childrenByParentId: Map<string | n
 }
 
 function questionScopeForSection(item: SyllabusItemRecord, shape: SyllabusShape) {
-  const childCount = shape.childrenByParentId.get(item.id)?.length || 0;
-  if (!item.parentId && childCount > 0) {
-    return [item.id];
-  }
   return collectDescendantIds(item.id, shape.childrenByParentId);
 }
 
-async function getQuestionCountsByDisplaySection(shape: SyllabusShape) {
+async function getQuestionCountsByDisplayItem(shape: SyllabusShape, displayItemIdByItemId: Map<string, string>) {
   const itemIds = Array.from(shape.itemById.keys());
-  const questionIdsBySectionId = new Map<string, Set<string>>();
+  const questionIdsByDisplayItemId = new Map<string, Set<string>>();
 
   if (itemIds.length === 0) {
-    return questionIdsBySectionId;
+    return questionIdsByDisplayItemId;
   }
 
   const tags = await prisma.questionKnowledgeTag.findMany({
@@ -205,8 +208,8 @@ async function getQuestionCountsByDisplaySection(shape: SyllabusShape) {
   });
 
   for (const tag of tags) {
-    const displaySectionId = shape.displaySectionIdByItemId.get(tag.syllabusItemId);
-    if (!displaySectionId) {
+    const displayItemId = displayItemIdByItemId.get(tag.syllabusItemId);
+    if (!displayItemId) {
       continue;
     }
     const hasRealQuestionBank = tag.question.paperQuestions.some(
@@ -215,12 +218,45 @@ async function getQuestionCountsByDisplaySection(shape: SyllabusShape) {
     if (!hasRealQuestionBank) {
       continue;
     }
-    const questionIds = questionIdsBySectionId.get(displaySectionId) || new Set<string>();
+    const questionIds = questionIdsByDisplayItemId.get(displayItemId) || new Set<string>();
     questionIds.add(tag.questionId);
-    questionIdsBySectionId.set(displaySectionId, questionIds);
+    questionIdsByDisplayItemId.set(displayItemId, questionIds);
   }
 
-  return questionIdsBySectionId;
+  return questionIdsByDisplayItemId;
+}
+
+function getQuestionCountsByDisplaySection(shape: SyllabusShape) {
+  return getQuestionCountsByDisplayItem(shape, shape.displaySectionIdByItemId);
+}
+
+async function getPublishedChallengesByChapter(shape: SyllabusShape) {
+  const chapterIds = (shape.childrenByParentId.get(null) || []).map((item) => item.id);
+  const versions = chapterIds.length
+    ? await prisma.chapterChallengeVersion.findMany({
+        where: { chapterId: { in: chapterIds }, status: "published" },
+        select: {
+          id: true,
+          chapterId: true,
+          version: true,
+          questions: {
+            select: { questionId: true },
+            orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+          }
+        },
+        orderBy: [{ chapterId: "asc" }, { version: "desc" }]
+      })
+    : [];
+  const challengeByChapterId = new Map<string, { id: string; questionIds: string[] }>();
+  for (const version of versions) {
+    if (!challengeByChapterId.has(version.chapterId) && version.questions.length > 0) {
+      challengeByChapterId.set(version.chapterId, {
+        id: version.id,
+        questionIds: version.questions.map((item) => item.questionId)
+      });
+    }
+  }
+  return challengeByChapterId;
 }
 
 function buildGroups(
@@ -232,7 +268,7 @@ function buildGroups(
     major: { name: string } | null;
   },
   shape: SyllabusShape,
-  questionIdsBySectionId: Map<string, Set<string>>,
+  challengeByChapterId: Map<string, { id: string; questionIds: string[] }>,
   progressBySectionId: Map<string, ProgressRecord>
 ) {
   const groups: SyllabusPathGroup[] = [];
@@ -273,7 +309,8 @@ function buildGroups(
       const roots = (shape.childrenByParentId.get(null) || []).filter((item) => item.courseId === course.id);
       const chapters = roots
         .map((root) => {
-          const rootQuestionCount = questionIdsBySectionId.get(root.id)?.size || 0;
+          const challenge = challengeByChapterId.get(root.id);
+          const rootQuestionCount = challenge?.questionIds.length || 0;
           const sections: SyllabusPathSection[] = [];
 
           if (rootQuestionCount > 0) {
@@ -288,32 +325,10 @@ function buildGroups(
               status,
               bestScore: progress?.bestScore || 0,
               passedAt: progress?.passedAt || null,
+              challengeVersionId: challenge?.id,
               questionSyllabusItemIds: questionScopeForSection(root, shape)
             });
             sectionIds.push(root.id);
-            previousSectionStatus = status;
-            groupSectionIndex += 1;
-          }
-
-          for (const child of shape.childrenByParentId.get(root.id) || []) {
-            const questionCount = questionIdsBySectionId.get(child.id)?.size || 0;
-            if (questionCount <= 0) {
-              continue;
-            }
-            const progress = progressBySectionId.get(child.id);
-            const status = resolvedSectionStatus(child.id);
-            sections.push({
-              id: child.id,
-              title: child.title,
-              description: child.description,
-              sortOrder: child.sortOrder,
-              questionCount,
-              status,
-              bestScore: progress?.bestScore || 0,
-              passedAt: progress?.passedAt || null,
-              questionSyllabusItemIds: questionScopeForSection(child, shape)
-            });
-            sectionIds.push(child.id);
             previousSectionStatus = status;
             groupSectionIndex += 1;
           }
@@ -351,26 +366,9 @@ function buildGroups(
   return groups;
 }
 
-export async function getStudentLearningPath(userId: string, requestedCourseType?: string | null) {
-  const profile = await getStudentFoundationProfile(userId);
-
-  if (!profile?.regionId || !profile.publicSubjectId || !profile.majorId) {
-    return {
-      completed: false,
-      profile,
-      groups: [] as SyllabusPathGroup[],
-      selectedGroup: null as SyllabusPathGroup | null
-    };
-  }
-
-  const courseSelection = {
-    regionId: profile.regionId,
-    publicSubjectId: profile.publicSubjectId,
-    majorId: profile.majorId
-  };
-
+async function getPublishedStudentCourses(profile: { regionId: string; publicSubjectId: string; majorId: string }) {
   const courses = await prisma.learningCourse.findMany({
-    where: studentCourseWhere(courseSelection),
+    where: studentCourseWhere(profile),
     select: {
       id: true,
       name: true,
@@ -396,10 +394,30 @@ export async function getStudentLearningPath(userId: string, requestedCourseType
     orderBy: [{ courseType: "asc" }, { sortOrder: "asc" }, { createdAt: "asc" }]
   });
 
-  const typedCourses = courses as CourseRecord[];
-  const shape = buildSyllabusShape(typedCourses);
-  const questionIdsBySectionId = await getQuestionCountsByDisplaySection(shape);
-  const groupsBeforeSync = buildGroups(typedCourses, profile, shape, questionIdsBySectionId, new Map());
+  return courses as CourseRecord[];
+}
+
+export async function getStudentLearningPath(userId: string, requestedCourseType?: string | null) {
+  const profile = await getStudentFoundationProfile(userId);
+
+  if (!profile?.regionId || !profile.publicSubjectId || !profile.majorId) {
+    return {
+      completed: false,
+      profile,
+      groups: [] as SyllabusPathGroup[],
+      selectedGroup: null as SyllabusPathGroup | null
+    };
+  }
+
+  const courses = await getPublishedStudentCourses({
+    regionId: profile.regionId,
+    publicSubjectId: profile.publicSubjectId,
+    majorId: profile.majorId
+  });
+
+  const shape = buildSyllabusShape(courses);
+  const challengeByChapterId = await getPublishedChallengesByChapter(shape);
+  const groupsBeforeSync = buildGroups(courses, profile, shape, challengeByChapterId, new Map());
 
   const allSectionIds = Array.from(new Set(groupsBeforeSync.flatMap((group) => group.sectionIds)));
   const progress = allSectionIds.length
@@ -419,13 +437,121 @@ export async function getStudentLearningPath(userId: string, requestedCourseType
       }
     ])
   );
-  const groups = buildGroups(typedCourses, profile, shape, questionIdsBySectionId, progressBySectionId);
+  const groups = buildGroups(courses, profile, shape, challengeByChapterId, progressBySectionId);
   const requested = normalizeOwnerType(requestedCourseType);
   const selectedGroup = groups.find((group) => group.key === requested) || groups.find((group) => group.key === "major") || groups[0] || null;
 
   return {
     completed: true,
     profile,
+    groups,
+    selectedGroup
+  };
+}
+
+function buildKnowledgeMapGroups(
+  courses: CourseRecord[],
+  shape: SyllabusShape,
+  questionIdsBySectionId: Map<string, Set<string>>,
+  learningGroups: SyllabusPathGroup[]
+) {
+  const courseById = new Map(courses.map((course) => [course.id, course]));
+
+  return learningGroups.map((group) => {
+    const sectionIds: string[] = [];
+    const knowledgeCourses = group.courses.map((learningCourse) => {
+      const course = courseById.get(learningCourse.id);
+      const roots = course ? (shape.childrenByParentId.get(null) || []).filter((item) => item.courseId === course.id) : [];
+      const chapters = roots
+        .map((root) => {
+          const learningChapter = learningCourse.chapters.find((chapter) => chapter.id === root.id);
+          const checkpoint = learningChapter?.sections[0];
+          const status = checkpoint?.status || "locked";
+          const bestScore = checkpoint?.bestScore || 0;
+          const passedAt = checkpoint?.passedAt || null;
+          const sections: SyllabusPathSection[] = [];
+          const rootQuestionCount = questionIdsBySectionId.get(root.id)?.size || 0;
+
+          if (rootQuestionCount > 0) {
+            sections.push({
+              id: root.id,
+              title: root.title,
+              description: root.description,
+              sortOrder: root.sortOrder,
+              questionCount: rootQuestionCount,
+              status,
+              bestScore,
+              passedAt,
+              questionSyllabusItemIds: [root.id]
+            });
+            sectionIds.push(root.id);
+          }
+
+          for (const child of shape.childrenByParentId.get(root.id) || []) {
+            const questionCount = questionIdsBySectionId.get(child.id)?.size || 0;
+            if (questionCount <= 0) {
+              continue;
+            }
+            sections.push({
+              id: child.id,
+              title: child.title,
+              description: child.description,
+              sortOrder: child.sortOrder,
+              questionCount,
+              status,
+              bestScore,
+              passedAt,
+              questionSyllabusItemIds: questionScopeForSection(child, shape)
+            });
+            sectionIds.push(child.id);
+          }
+
+          return {
+            id: root.id,
+            title: root.title,
+            description: root.description,
+            sortOrder: root.sortOrder,
+            passedCount: sections.filter((section) => section.status === "passed").length,
+            sections
+          };
+        })
+        .filter((chapter) => chapter.sections.length > 0);
+
+      return {
+        ...learningCourse,
+        chapters
+      };
+    });
+
+    return {
+      ...group,
+      courses: knowledgeCourses,
+      sectionIds
+    };
+  });
+}
+
+export async function getStudentKnowledgeMap(userId: string, requestedCourseType?: string | null) {
+  const learningPath = await getStudentLearningPath(userId, requestedCourseType);
+  const profile = learningPath.profile;
+
+  if (!profile?.regionId || !profile.publicSubjectId || !profile.majorId) {
+    return learningPath;
+  }
+
+  const courses = await getPublishedStudentCourses({
+    regionId: profile.regionId,
+    publicSubjectId: profile.publicSubjectId,
+    majorId: profile.majorId
+  });
+  const shape = buildSyllabusShape(courses);
+  const questionIdsBySectionId = await getQuestionCountsByDisplaySection(shape);
+  const groups = buildKnowledgeMapGroups(courses, shape, questionIdsBySectionId, learningPath.groups);
+  const requested = normalizeOwnerType(requestedCourseType);
+  const selectedGroup = groups.find((group) => group.key === requested) || groups.find((group) => group.key === "major") || groups[0] || null;
+
+  return {
+    ...learningPath,
     groups,
     selectedGroup
   };
@@ -455,79 +581,76 @@ export async function getSyllabusSectionForStudent(userId: string, sectionId: st
   return null;
 }
 
-export async function getSyllabusSectionQuestionsForStudent(userId: string, sectionId: string, includeAnswers = false) {
+export async function getSyllabusSectionQuestionsForStudent(
+  userId: string,
+  sectionId: string,
+  includeAnswers = false,
+  sessionId?: string
+) {
   const access = await getSyllabusSectionForStudent(userId, sectionId);
 
   if (!access || access.locked) {
     return null;
   }
 
-  const tags = await prisma.questionKnowledgeTag.findMany({
+  const session = sessionId
+    ? await prisma.quizSession.findFirst({
+        where: { id: sessionId, userId, syllabusItemId: sectionId },
+        select: { chapterChallengeVersionId: true }
+      })
+    : null;
+  const challengeVersionId = session?.chapterChallengeVersionId || access.section.challengeVersionId;
+  if (!challengeVersionId) {
+    return null;
+  }
+  const challengeVersion = await prisma.chapterChallengeVersion.findFirst({
     where: {
-      syllabusItemId: { in: access.section.questionSyllabusItemIds },
-      question: { status: "published" }
+      id: challengeVersionId,
+      chapterId: sectionId
     },
     select: {
-      question: {
+      id: true,
+      questions: {
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
         select: {
-          id: true,
-          type: true,
-          stem: true,
-          options: true,
-          answer: true,
-          analysis: true,
-          source: true,
-          sourceType: true,
-          sourceYear: true,
-          difficulty: true,
-          createdAt: true,
-          paperQuestions: {
-            where: { paper: { status: "published" } },
+          question: {
             select: {
-              sortOrder: true,
-              paper: {
+              id: true,
+              type: true,
+              stem: true,
+              options: true,
+              answer: true,
+              analysis: true,
+              source: true,
+              sourceType: true,
+              sourceYear: true,
+              difficulty: true,
+              paperQuestions: {
+                where: { paper: { status: "published" } },
                 select: {
-                  id: true,
-                  title: true,
-                  paperType: true,
                   sortOrder: true,
-                  year: true
-                }
+                  paper: {
+                    select: {
+                      id: true,
+                      title: true,
+                      paperType: true,
+                      sortOrder: true,
+                      year: true
+                    }
+                  }
+                },
+                orderBy: [{ paper: { sortOrder: "asc" } }, { sortOrder: "asc" }]
               }
-            },
-            orderBy: { sortOrder: "asc" }
+            }
           }
         }
       }
     }
   });
-
-  const seenQuestionIds = new Set<string>();
-  const questions = tags
-    .map((tag) => tag.question)
-    .map((question) => ({
-      ...question,
-      paperQuestions: question.paperQuestions.filter((paperQuestion) => isRealQuestionBankTitle(paperQuestion.paper.title))
-    }))
-    .filter((question) => question.paperQuestions.length > 0)
-    .filter((question) => {
-      if (seenQuestionIds.has(question.id)) {
-        return false;
-      }
-      seenQuestionIds.add(question.id);
-      return true;
-    })
-    .sort((left, right) => {
-      const leftPaperQuestion = left.paperQuestions[0];
-      const rightPaperQuestion = right.paperQuestions[0];
-      return (
-        (leftPaperQuestion?.paper.sortOrder ?? 9999) - (rightPaperQuestion?.paper.sortOrder ?? 9999) ||
-        (rightPaperQuestion?.paper.year ?? 0) - (leftPaperQuestion?.paper.year ?? 0) ||
-        (leftPaperQuestion?.sortOrder ?? 9999) - (rightPaperQuestion?.sortOrder ?? 9999) ||
-        left.createdAt.getTime() - right.createdAt.getTime()
-      );
-    })
-    .map(({ paperQuestions, createdAt: _createdAt, answer, analysis, ...question }) => {
+  if (!challengeVersion) {
+    return null;
+  }
+  const questions = challengeVersion.questions.map(({ question: { paperQuestions, answer, analysis, ...question } }) => {
       const paper = paperQuestions[0]?.paper || null;
       const questionBank = paper
         ? {
@@ -545,12 +668,13 @@ export async function getSyllabusSectionQuestionsForStudent(userId: string, sect
     course: access.course,
     chapter: access.chapter,
     section: access.section,
+    challengeVersionId: challengeVersion.id,
     questions
   };
 }
 
-export async function getSyllabusSectionQuestionForStudent(userId: string, sectionId: string, index: number) {
-  const result = await getSyllabusSectionQuestionsForStudent(userId, sectionId);
+export async function getSyllabusSectionQuestionForStudent(userId: string, sectionId: string, index: number, sessionId?: string) {
+  const result = await getSyllabusSectionQuestionsForStudent(userId, sectionId, false, sessionId);
   if (!result) {
     return null;
   }
@@ -570,9 +694,10 @@ export async function checkSyllabusSectionQuestionAnswer(
   userId: string,
   sectionId: string,
   questionId: string,
-  selectedAnswer: unknown
+  selectedAnswer: unknown,
+  sessionId?: string
 ) {
-  const result = await getSyllabusSectionQuestionsForStudent(userId, sectionId, true);
+  const result = await getSyllabusSectionQuestionsForStudent(userId, sectionId, true, sessionId);
   if (!result) {
     return null;
   }

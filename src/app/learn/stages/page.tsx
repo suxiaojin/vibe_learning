@@ -10,7 +10,7 @@ const text = {
   review: "\u590d\u4e60",
   locked: "\u672a\u89e3\u9501",
   course: "\u8bfe\u7a0b",
-  pieces: "\u4e2a\u8282",
+  questions: "\u9898",
   progress: "\u5b66\u4e60\u8fdb\u5ea6",
   empty: "\u5f53\u524d\u6ca1\u6709\u5df2\u53d1\u5e03\u7684\u95ef\u5173\u5185\u5bb9\u3002"
 };
@@ -79,7 +79,7 @@ export default async function StagesPage({
                     <div className="p-5">
                       <div>
                         <h2 className="text-xl font-semibold text-ink">{chapter.title}</h2>
-                        <p className="mt-1 text-sm font-semibold text-slate-500">{chapter.sections.length} {text.pieces}</p>
+                        <p className="mt-1 text-sm font-semibold text-slate-500">{chapter.sections[0]?.questionCount || 0} {text.questions}</p>
                         <div className="mt-5 flex items-center gap-3">
                           {locked ? <Lock className="shrink-0 text-slate-400" size={18} /> : <span className="grid size-6 shrink-0 place-items-center rounded-full bg-success text-white">{completed ? <Trophy size={16} /> : <Sparkles size={16} />}</span>}
                           <div className="h-3 flex-1 rounded-full bg-slate-100">

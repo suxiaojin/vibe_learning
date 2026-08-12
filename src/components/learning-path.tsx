@@ -29,10 +29,8 @@ type LearningPathProps = {
     title: string;
     courseType: "public_subject" | "major";
   };
-  chapter: {
-    id: string;
-    title: string;
-    sortOrder: number;
+  initialPointId?: string;
+  path: {
     passedCount: number;
     points: PathPoint[];
   };
@@ -47,17 +45,18 @@ const text = {
   questions: "\u9898"
 } as const;
 
-export function LearningPath({ course, chapter }: LearningPathProps) {
+export function LearningPath({ course, initialPointId, path }: LearningPathProps) {
   const firstActivePoint = useMemo(
     () =>
-      chapter.points.find((point) => point.status === "unlocked") ||
-      chapter.points.find((point) => point.status !== "locked") ||
-      chapter.points[0],
-    [chapter.points]
+      path.points.find((point) => point.id === initialPointId && point.status !== "locked") ||
+      path.points.find((point) => point.status === "unlocked") ||
+      path.points.find((point) => point.status !== "locked") ||
+      path.points[0],
+    [initialPointId, path.points]
   );
   const [activePointId, setActivePointId] = useState(firstActivePoint?.id || "");
 
-  const activePoint = chapter.points.find((point) => point.id === activePointId) || firstActivePoint;
+  const activePoint = path.points.find((point) => point.id === activePointId) || firstActivePoint;
 
   useEffect(() => {
     setActivePointId(firstActivePoint?.id || "");
@@ -82,7 +81,7 @@ export function LearningPath({ course, chapter }: LearningPathProps) {
       let nextId = activePointId;
       let bestDistance = Number.POSITIVE_INFINITY;
 
-      for (const point of chapter.points) {
+      for (const point of path.points) {
         const element = document.getElementById(`point-${point.id}`);
         if (!element) {
           continue;
@@ -103,7 +102,7 @@ export function LearningPath({ course, chapter }: LearningPathProps) {
     updateActivePoint();
     window.addEventListener("scroll", updateActivePoint, { passive: true });
     return () => window.removeEventListener("scroll", updateActivePoint);
-  }, [activePointId, chapter.points]);
+  }, [activePointId, path.points]);
 
   return (
     <div className="mx-auto max-w-2xl pb-24">
@@ -113,9 +112,9 @@ export function LearningPath({ course, chapter }: LearningPathProps) {
             <div className="min-w-0">
               <Link className="mb-1 inline-flex max-w-full items-center gap-2 text-sm font-semibold text-white/85 hover:text-white" href={`/learn/stages?course=${course.courseType}`}>
                 <ArrowLeft size={18} />
-                <span className="min-w-0 truncate">{course.title} / {chapter.title}</span>
+                <span className="min-w-0 truncate">{course.title}</span>
               </Link>
-              <h1 className="max-w-full break-words text-2xl font-bold leading-tight">{activePoint?.title || chapter.title}</h1>
+              <h1 className="max-w-full break-words text-2xl font-bold leading-tight">{activePoint?.title || course.title}</h1>
             </div>
             {activePoint ? (
               <Link
@@ -134,20 +133,20 @@ export function LearningPath({ course, chapter }: LearningPathProps) {
         <div className="mb-8 flex items-center gap-4 text-slate-400">
           <div className="h-px flex-1 bg-slate-200" />
           <div className="text-center">
-            <p className="text-xs font-semibold uppercase text-slate-400">{course.title}</p>
-            <h2 className="mt-1 text-lg font-semibold text-slate-500">{chapter.title}</h2>
-            <p className="mt-1 text-xs font-semibold">{chapter.passedCount}/{chapter.points.length} {text.passed}</p>
+            <p className="text-xs font-semibold text-slate-400">{"\u7ae0\u8282\u5173\u5361"}</p>
+            <h2 className="mt-1 text-lg font-semibold text-slate-500">{course.title}</h2>
+            <p className="mt-1 text-xs font-semibold">{path.passedCount}/{path.points.length} {text.passed}</p>
           </div>
           <div className="h-px flex-1 bg-slate-200" />
         </div>
 
         <div className="relative mx-auto flex max-w-md flex-col items-center gap-9">
-          {chapter.points.map((point, index) => {
+          {path.points.map((point, index) => {
             const locked = point.status === "locked";
             const offset = index % 4 === 1 ? "-translate-x-12" : index % 4 === 2 ? "translate-x-12" : "";
             return (
               <div id={`point-${point.id}`} key={point.id} className={cn("relative flex w-full scroll-mt-48 justify-center", offset)}>
-                {index < chapter.points.length - 1 ? <div className="absolute left-1/2 top-20 h-12 w-1 -translate-x-1/2 rounded-full bg-slate-200" /> : null}
+                {index < path.points.length - 1 ? <div className="absolute left-1/2 top-20 h-12 w-1 -translate-x-1/2 rounded-full bg-slate-200" /> : null}
                 <Link
                   href={locked ? "/learn" : `/learn/${point.id}`}
                   className={cn("group relative flex flex-col items-center text-center", locked && "cursor-not-allowed")}

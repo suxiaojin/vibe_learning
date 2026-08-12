@@ -8,6 +8,10 @@ function parseQuestionIndex(request: Request) {
   return Number.isInteger(rawIndex) && rawIndex >= 0 ? rawIndex : 0;
 }
 
+function parseSessionId(request: Request) {
+  return new URL(request.url).searchParams.get("sessionId") || undefined;
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ sectionId: string }> }
@@ -18,7 +22,7 @@ export async function GET(
   }
 
   const { sectionId } = await params;
-  const result = await getSyllabusSectionQuestionForStudent(user.id, sectionId, parseQuestionIndex(request));
+  const result = await getSyllabusSectionQuestionForStudent(user.id, sectionId, parseQuestionIndex(request), parseSessionId(request));
 
   if (!result) {
     return apiError("Syllabus section is unavailable.", 404, "SYLLABUS_SECTION_NOT_FOUND");
@@ -27,7 +31,7 @@ export async function GET(
     return apiError("Question is unavailable.", 404, "SYLLABUS_SECTION_QUESTION_NOT_FOUND");
   }
 
-  const { questionSyllabusItemIds: _questionSyllabusItemIds, ...section } = result.section;
+  const { challengeVersionId: _challengeVersionId, questionSyllabusItemIds: _questionSyllabusItemIds, ...section } = result.section;
   const { sections: _sections, ...chapter } = result.chapter;
   const { chapters: _chapters, ...course } = result.course;
   return apiOk({ course, chapter, section, index: result.index, total: result.total, question: result.question });

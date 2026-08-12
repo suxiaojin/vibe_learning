@@ -3,7 +3,7 @@ import { apiError, apiOk } from "@/lib/api-response";
 import { getCurrentUser } from "@/lib/auth";
 import { answersEqual, bumpStudyStat } from "@/lib/learning";
 import { prisma } from "@/lib/prisma";
-import { getSyllabusSectionQuestionsForStudent, recordSyllabusSectionProgress } from "@/lib/syllabus-learning";
+import { getSyllabusSectionForStudent, getSyllabusSectionQuestionsForStudent, recordSyllabusSectionProgress } from "@/lib/syllabus-learning";
 
 export async function POST(
   request: Request,
@@ -20,7 +20,8 @@ export async function POST(
   }
 
   const { sectionId } = await params;
-  const result = await getSyllabusSectionQuestionsForStudent(user.id, sectionId, true);
+  const session = await getOrCreateQuizSession(user.id, sectionId, body.sessionId);
+  const result = await getSyllabusSectionQuestionsForStudent(user.id, sectionId, true, session.id);
   const questionIndex = result?.questions.findIndex((item) => item.id === body.questionId) ?? -1;
   const question = questionIndex >= 0 ? result?.questions[questionIndex] : null;
 
@@ -28,7 +29,6 @@ export async function POST(
     return apiError("Question is unavailable.", 404, "SYLLABUS_SECTION_QUESTION_NOT_FOUND");
   }
 
-  const session = await getOrCreateQuizSession(user.id, sectionId, body.sessionId);
   const correct = answersEqual(toStoredAnswer(body.answer), question.answer);
   const existingAttempt = await prisma.questionAttempt.findFirst({
     where: {
@@ -123,6 +123,7 @@ async function getOrCreateQuizSession(userId: string, sectionId: string, session
         id: sessionId,
         userId,
         syllabusItemId: sectionId,
+        chapterChallengeVersionId: { not: null },
         status: "in_progress"
       }
     });
@@ -136,6 +137,7 @@ async function getOrCreateQuizSession(userId: string, sectionId: string, session
     where: {
       userId,
       syllabusItemId: sectionId,
+      chapterChallengeVersionId: { not: null },
       status: "in_progress"
     },
     orderBy: { updatedAt: "desc" }
@@ -145,10 +147,15 @@ async function getOrCreateQuizSession(userId: string, sectionId: string, session
     return latest;
   }
 
+  const access = await getSyllabusSectionForStudent(userId, sectionId);
+  if (!access || access.locked || !access.section.challengeVersionId) {
+    throw new Error("Published chapter challenge is unavailable");
+  }
   return prisma.quizSession.create({
     data: {
       userId,
-      syllabusItemId: sectionId
+      syllabusItemId: sectionId,
+      chapterChallengeVersionId: access.section.challengeVersionId
     }
   });
 }

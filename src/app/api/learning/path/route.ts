@@ -11,7 +11,7 @@ function stripInternalQuestionScopes(path: Awaited<ReturnType<typeof getStudentL
         ...course,
         chapters: course.chapters.map((chapter) => ({
           ...chapter,
-          sections: chapter.sections.map(({ questionSyllabusItemIds: _questionSyllabusItemIds, ...section }) => section)
+          sections: chapter.sections.map(({ challengeVersionId: _challengeVersionId, questionSyllabusItemIds: _questionSyllabusItemIds, ...section }) => section)
         }))
       }))
     })),
@@ -22,7 +22,7 @@ function stripInternalQuestionScopes(path: Awaited<ReturnType<typeof getStudentL
             ...course,
             chapters: course.chapters.map((chapter) => ({
               ...chapter,
-              sections: chapter.sections.map(({ questionSyllabusItemIds: _questionSyllabusItemIds, ...section }) => section)
+              sections: chapter.sections.map(({ challengeVersionId: _challengeVersionId, questionSyllabusItemIds: _questionSyllabusItemIds, ...section }) => section)
             }))
           }))
         }

@@ -25,7 +25,7 @@ export default async function GuidePage({
     redirect("/learn");
   }
 
-  const guideContent = access.section.description || `本节围绕「${access.section.title}」进行练习，完成本节题目并达到 80 分即可进入下一关。`;
+  const guideContent = access.section.description || `本章围绕「${access.section.title}」进行练习，完成本章题目并达到 80 分即可进入下一关。`;
 
   return (
     <StudentPageShell active="learn" maxWidthClassName="max-w-3xl">

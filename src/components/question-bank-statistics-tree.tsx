@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { BookOpen, ChevronRight, FileText, Folder, Search } from "lucide-react";
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import { BookOpen, ChevronRight, FileText, Folder, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type QuestionBankStatisticsSectionNode = {
@@ -41,6 +41,48 @@ type QuestionBankStatisticsTreeProps = {
   ownerKey: string;
 };
 
+type QuestionBankStatisticsUiContextValue = {
+  directoryCollapsed: boolean;
+  setDirectoryCollapsed: (value: boolean) => void;
+};
+
+const QuestionBankStatisticsUiContext = createContext<QuestionBankStatisticsUiContextValue | null>(null);
+
+function useQuestionBankStatisticsUi() {
+  const context = useContext(QuestionBankStatisticsUiContext);
+  if (!context) {
+    throw new Error("Question bank statistics UI must be used within its provider.");
+  }
+  return context;
+}
+
+export function QuestionBankStatisticsUiProvider({ children }: { children: ReactNode }) {
+  const [directoryCollapsed, setDirectoryCollapsed] = useState(false);
+
+  return (
+    <QuestionBankStatisticsUiContext.Provider value={{ directoryCollapsed, setDirectoryCollapsed }}>
+      {children}
+    </QuestionBankStatisticsUiContext.Provider>
+  );
+}
+
+export function QuestionBankStatisticsWorkspace({ children }: { children: ReactNode }) {
+  const { directoryCollapsed } = useQuestionBankStatisticsUi();
+
+  return (
+    <section
+      className={cn(
+        "grid min-h-0 gap-4 transition-[grid-template-columns] duration-200",
+        directoryCollapsed
+          ? "grid-cols-[64px_minmax(0,1fr)]"
+          : "grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[340px_minmax(0,1fr)] 2xl:grid-cols-[390px_minmax(0,1fr)]"
+      )}
+    >
+      {children}
+    </section>
+  );
+}
+
 function statisticsHref({
   province,
   examType,
@@ -77,6 +119,7 @@ function CountBadge({ count }: { count: number }) {
 }
 
 export function QuestionBankStatisticsTree({ tree, selectedScope, province, examType, ownerKey }: QuestionBankStatisticsTreeProps) {
+  const { directoryCollapsed, setDirectoryCollapsed } = useQuestionBankStatisticsUi();
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedCourses, setExpandedCourses] = useState<Set<string>>(() => new Set());
   const [expandedChapters, setExpandedChapters] = useState<Set<string>>(() => new Set());
@@ -161,20 +204,50 @@ export function QuestionBankStatisticsTree({ tree, selectedScope, province, exam
   }
 
   return (
-    <aside className="min-h-0 overflow-hidden rounded-lg border border-[#d8e0ec] bg-white shadow-sm">
-      <div className="flex h-12 items-center gap-3 border-b border-[#e2e8f0] px-4">
-        <h1 className="shrink-0 text-sm font-black">知识点目录</h1>
-        <label className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[#94a3b8]" size={15} />
-          <input
-            className="h-8 w-full rounded border border-[#d7dee8] bg-[#fbfcfe] pl-8 pr-3 text-xs font-medium text-[#071b38] outline-none focus:border-[#8fb3ff] focus:ring-2 focus:ring-[#dbeafe]"
-            placeholder="搜索知识点：数字视频"
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-          />
-        </label>
+    <aside className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-[#d8e0ec] bg-white shadow-sm">
+      <div className={cn("flex h-12 items-center border-b border-[#e2e8f0]", directoryCollapsed ? "justify-center px-2" : "gap-3 px-4")}>
+        {directoryCollapsed ? null : (
+          <>
+            <h1 className="shrink-0 text-sm font-black">知识点目录</h1>
+            <label className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[#94a3b8]" size={15} />
+              <input
+                aria-label="搜索知识点"
+                className="h-8 w-full rounded border border-[#d7dee8] bg-[#fbfcfe] pl-8 pr-3 text-xs font-medium text-[#071b38] outline-none focus:border-[#8fb3ff] focus:ring-2 focus:ring-[#dbeafe]"
+                placeholder="搜索知识点：数字视频"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+              />
+            </label>
+          </>
+        )}
+        <button
+          aria-label={directoryCollapsed ? "展开知识点目录" : "收缩知识点目录"}
+          className={cn(
+            "inline-flex h-8 items-center justify-center gap-1 rounded border border-[#d7dee8] text-xs font-bold text-[#475569] hover:border-[#aebbd0] hover:bg-[#f8fafc] hover:text-[#1d4ed8]",
+            directoryCollapsed ? "w-9" : "px-2"
+          )}
+          title={directoryCollapsed ? "展开知识点目录" : "收缩知识点目录"}
+          type="button"
+          onClick={() => setDirectoryCollapsed(!directoryCollapsed)}
+        >
+          {directoryCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+          {directoryCollapsed ? null : <span>收起</span>}
+        </button>
       </div>
-      <div className="h-full min-h-0 overflow-auto px-3 py-3 text-sm">
+      {directoryCollapsed ? (
+        <button
+          aria-label="展开知识点目录"
+          className="flex min-h-0 flex-1 flex-col items-center gap-3 px-2 py-4 text-[#64748b] hover:bg-[#f8fafc] hover:text-[#1d4ed8]"
+          title="展开知识点目录"
+          type="button"
+          onClick={() => setDirectoryCollapsed(false)}
+        >
+          <BookOpen size={18} />
+          <span className="text-xs font-black [writing-mode:vertical-rl]">知识点目录</span>
+        </button>
+      ) : (
+      <div className="min-h-0 flex-1 overflow-auto px-3 py-3 text-sm">
         {visibleTree.length === 0 ? (
           <div className="grid h-40 place-items-center text-sm text-[#94a3b8]">没有匹配的知识点。</div>
         ) : visibleTree.map((course) => {
@@ -244,6 +317,7 @@ export function QuestionBankStatisticsTree({ tree, selectedScope, province, exam
           );
         })}
       </div>
+      )}
     </aside>
   );
 }

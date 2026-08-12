@@ -13,28 +13,26 @@ export default async function SectionQuizPage({
 }) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const user = await requireUser();
-  const [access, questionResult] = await Promise.all([
-    getSyllabusSectionForStudent(user.id, id),
-    getSyllabusSectionQuestionsForStudent(user.id, id)
-  ]);
+  const access = await getSyllabusSectionForStudent(user.id, id);
 
-  if (!access || access.locked) {
+  if (!access || access.locked || !access.section.challengeVersionId) {
     redirect("/learn");
   }
 
-  const questions = questionResult?.questions || [];
   const shouldRestart = query?.restart === "1";
   let session = shouldRestart
     ? await prisma.quizSession.create({
         data: {
           userId: user.id,
-          syllabusItemId: id
+          syllabusItemId: id,
+          chapterChallengeVersionId: access.section.challengeVersionId
         }
       })
     : await prisma.quizSession.findFirst({
         where: {
           userId: user.id,
           syllabusItemId: id,
+          chapterChallengeVersionId: { not: null },
           status: "in_progress"
         },
         orderBy: { updatedAt: "desc" }
@@ -45,6 +43,7 @@ export default async function SectionQuizPage({
       where: {
         userId: user.id,
         syllabusItemId: id,
+        chapterChallengeVersionId: { not: null },
         status: "completed"
       },
       orderBy: [{ completedAt: "desc" }, { updatedAt: "desc" }]
@@ -59,10 +58,14 @@ export default async function SectionQuizPage({
     session = await prisma.quizSession.create({
       data: {
         userId: user.id,
-        syllabusItemId: id
+        syllabusItemId: id,
+        chapterChallengeVersionId: access.section.challengeVersionId
       }
     });
   }
+
+  const questionResult = await getSyllabusSectionQuestionsForStudent(user.id, id, false, session.id);
+  const questions = questionResult?.questions || [];
 
   const attempts = await prisma.questionAttempt.findMany({
     where: {
@@ -105,7 +108,7 @@ export default async function SectionQuizPage({
         initialCorrectCount={initialCorrectCount}
         initialIndex={initialIndex}
         initialRecordedAttempts={initialRecordedAttempts}
-        initialTotal={access.section.questionCount}
+        initialTotal={questions.length}
         sectionId={access.section.id}
         sessionId={session.id}
       />

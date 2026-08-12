@@ -612,25 +612,26 @@ model LearningCourse {
 }
 
 model SyllabusItem {
-  id              String                 @id @default(cuid())
-  courseId        String
-  parentId        String?
-  code            String?
-  title           String
-  description     String?
-  requirement     SyllabusRequirement?
-  sortOrder       Int                    @default(0)
-  status          ContentStatus          @default(draft)
-  course          LearningCourse         @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  parent          SyllabusItem?          @relation("SyllabusItemChildren", fields: [parentId], references: [id], onDelete: Cascade)
-  children        SyllabusItem[]         @relation("SyllabusItemChildren")
-  knowledgePoints KnowledgePoint[]
-  progress        UserSyllabusProgress[]
-  quizSessions    QuizSession[]
-  questions       Question[]
-  questionTags    QuestionKnowledgeTag[]
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
+  id                String                    @id @default(cuid())
+  courseId          String
+  parentId          String?
+  code              String?
+  title             String
+  description       String?
+  requirement       SyllabusRequirement?
+  sortOrder         Int                       @default(0)
+  status            ContentStatus             @default(draft)
+  course            LearningCourse            @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  parent            SyllabusItem?             @relation("SyllabusItemChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children          SyllabusItem[]            @relation("SyllabusItemChildren")
+  knowledgePoints   KnowledgePoint[]
+  progress          UserSyllabusProgress[]
+  quizSessions      QuizSession[]
+  challengeVersions ChapterChallengeVersion[] @relation("ChapterChallengeVersions")
+  questions         Question[]
+  questionTags      QuestionKnowledgeTag[]
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
 
   @@index([courseId, parentId, sortOrder])
   @@index([status, sortOrder])
@@ -692,29 +693,30 @@ model KnowledgePoint {
 }
 
 model Question {
-  id               String                 @id @default(cuid())
-  knowledgePointId String
-  syllabusItemId   String?
-  knowledgePoint   KnowledgePoint         @relation(fields: [knowledgePointId], references: [id], onDelete: Cascade)
-  syllabusItem     SyllabusItem?          @relation(fields: [syllabusItemId], references: [id], onDelete: SetNull)
-  type             QuestionType
-  stem             String
-  options          Json
-  answer           Json
-  analysis         String
-  aiDoubtAnswer    String?
-  source           String                 @default("人工录入")
-  sourceType       QuestionSourceType     @default(manual)
-  sourceYear       Int?
-  difficulty       Difficulty             @default(medium)
-  status           ContentStatus          @default(draft)
-  paperQuestions   ExamPaperQuestion[]
-  knowledgeTags    QuestionKnowledgeTag[]
-  attempts         QuestionAttempt[]
-  wrongQuestions   WrongQuestion[]
-  aiConversations  AiConversation[]
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
+  id                 String                     @id @default(cuid())
+  knowledgePointId   String
+  syllabusItemId     String?
+  knowledgePoint     KnowledgePoint             @relation(fields: [knowledgePointId], references: [id], onDelete: Cascade)
+  syllabusItem       SyllabusItem?              @relation(fields: [syllabusItemId], references: [id], onDelete: SetNull)
+  type               QuestionType
+  stem               String
+  options            Json
+  answer             Json
+  analysis           String
+  aiDoubtAnswer      String?
+  source             String                     @default("人工录入")
+  sourceType         QuestionSourceType         @default(manual)
+  sourceYear         Int?
+  difficulty         Difficulty                 @default(medium)
+  status             ContentStatus              @default(draft)
+  paperQuestions     ExamPaperQuestion[]
+  knowledgeTags      QuestionKnowledgeTag[]
+  attempts           QuestionAttempt[]
+  wrongQuestions     WrongQuestion[]
+  aiConversations    AiConversation[]
+  challengeQuestions ChapterChallengeQuestion[]
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
 
   @@index([knowledgePointId, status])
   @@index([syllabusItemId])
@@ -827,26 +829,62 @@ model QuestionAttempt {
 }
 
 model QuizSession {
-  id                  String            @id @default(cuid())
-  userId              String
-  syllabusItemId      String
-  status              QuizSessionStatus @default(in_progress)
-  currentIndex        Int               @default(0)
-  score               Int?
-  correctCount        Int               @default(0)
-  totalCount          Int               @default(0)
-  diamondRewardAmount Int               @default(0)
-  startedAt           DateTime          @default(now())
-  completedAt         DateTime?
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
-  user                User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  syllabusItem        SyllabusItem      @relation(fields: [syllabusItemId], references: [id], onDelete: Cascade)
-  attempts            QuestionAttempt[]
+  id                        String                   @id @default(cuid())
+  userId                    String
+  syllabusItemId            String
+  chapterChallengeVersionId String?
+  status                    QuizSessionStatus        @default(in_progress)
+  currentIndex              Int                      @default(0)
+  score                     Int?
+  correctCount              Int                      @default(0)
+  totalCount                Int                      @default(0)
+  diamondRewardAmount       Int                      @default(0)
+  startedAt                 DateTime                 @default(now())
+  completedAt               DateTime?
+  createdAt                 DateTime                 @default(now())
+  updatedAt                 DateTime                 @updatedAt
+  user                      User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  syllabusItem              SyllabusItem             @relation(fields: [syllabusItemId], references: [id], onDelete: Cascade)
+  chapterChallengeVersion   ChapterChallengeVersion? @relation(fields: [chapterChallengeVersionId], references: [id], onDelete: SetNull)
+  attempts                  QuestionAttempt[]
 
   @@index([userId, syllabusItemId, status, updatedAt])
   @@index([syllabusItemId])
+  @@index([chapterChallengeVersionId])
   @@map("quiz_sessions")
+}
+
+model ChapterChallengeVersion {
+  id                  String                     @id @default(cuid())
+  chapterId           String
+  version             Int
+  targetQuestionCount Int                        @default(10)
+  status              ContentStatus              @default(draft)
+  publishedAt         DateTime?
+  chapter             SyllabusItem               @relation("ChapterChallengeVersions", fields: [chapterId], references: [id], onDelete: Cascade)
+  questions           ChapterChallengeQuestion[]
+  quizSessions        QuizSession[]
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+
+  @@unique([chapterId, version])
+  @@index([chapterId, status, version])
+  @@map("chapter_challenge_versions")
+}
+
+model ChapterChallengeQuestion {
+  id                 String                  @id @default(cuid())
+  challengeVersionId String
+  questionId         String
+  sortOrder          Int                     @default(0)
+  challengeVersion   ChapterChallengeVersion @relation(fields: [challengeVersionId], references: [id], onDelete: Cascade)
+  question           Question                @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  createdAt          DateTime                @default(now())
+
+  @@unique([challengeVersionId, questionId])
+  @@index([challengeVersionId, sortOrder])
+  @@index([questionId])
+  @@map("chapter_challenge_questions")
 }
 
 model WrongQuestion {

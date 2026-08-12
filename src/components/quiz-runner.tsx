@@ -115,7 +115,7 @@ export function QuizRunner({
       setCorrectAnswer(null);
 
       try {
-        const response = await fetch(`/api/learning/sections/${encodeURIComponent(sectionId)}/questions?index=${currentIndex}`, {
+        const response = await fetch(`/api/learning/sections/${encodeURIComponent(sectionId)}/questions?index=${currentIndex}&sessionId=${encodeURIComponent(sessionId)}`, {
           cache: "no-store"
         });
         const payload = await response.json();
@@ -143,7 +143,7 @@ export function QuizRunner({
     return () => {
       cancelled = true;
     };
-  }, [currentIndex, initialTotal, sectionId]);
+  }, [currentIndex, initialTotal, sectionId, sessionId]);
 
   const selected = current ? answers[current.id] || [] : [];
   const progressPercent = totalQuestions
