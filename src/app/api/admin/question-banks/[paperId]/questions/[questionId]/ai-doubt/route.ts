@@ -51,11 +51,8 @@ async function getQuestionForAdmin(paperId: string, questionId: string) {
       paper: {
         select: {
           title: true,
-          course: {
-            select: {
-              name: true
-            }
-          }
+          major: { select: { name: true } },
+          publicSubject: { select: { name: true } }
         }
       }
     }
@@ -127,10 +124,10 @@ function buildAiDoubtMessages(record: NonNullable<Awaited<ReturnType<typeof getQ
       role: "user",
       content: [
         `题库：${record.paper.title}`,
-        `课程：${record.paper.course.name}`,
-        `知识点：${question.knowledgePoint.title}`,
-        `知识点摘要：${question.knowledgePoint.summary || ""}`,
-        `知识点正文：${stripHtml(question.knowledgePoint.content || "")}`,
+        `题库范围：${record.paper.major?.name || record.paper.publicSubject?.name || "未设置"}`,
+        `知识点：${question.knowledgePoint?.title || "未打标"}`,
+        `知识点摘要：${question.knowledgePoint?.summary || ""}`,
+        `知识点正文：${stripHtml(question.knowledgePoint?.content || "")}`,
         `题型：${question.type}`,
         `题干：${stripHtml(question.stem)}`,
         `选项：${JSON.stringify(question.options)}`,

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, Lock, RotateCcw, Sparkles, Trophy } from "lucide-react";
+import { ArrowLeft, BookOpenText, ChevronDown, Lock, RotateCcw, Sparkles, Trophy } from "lucide-react";
 import { StudentPageShell } from "@/components/student-page-shell";
 import { requireUser } from "@/lib/auth";
 import { getStudentLearningPath, type SyllabusPathGroup } from "@/lib/syllabus-learning";
@@ -9,7 +9,8 @@ const text = {
   current: "\u7ee7\u7eed",
   review: "\u590d\u4e60",
   locked: "\u672a\u89e3\u9501",
-  course: "\u8bfe\u7a0b",
+  course: "\u8bfe\u7a0b\uff1a",
+  guide: "\u6307\u5357",
   questions: "\u9898",
   progress: "\u5b66\u4e60\u8fdb\u5ea6",
   empty: "\u5f53\u524d\u6ca1\u6709\u5df2\u53d1\u5e03\u7684\u95ef\u5173\u5185\u5bb9\u3002"
@@ -59,11 +60,16 @@ export default async function StagesPage({
         {!group || group.sectionIds.length === 0 ? <div className="panel text-slate-600">{text.empty}</div> : null}
         <div className="space-y-5">
           {group?.courses.map((course) => (
-            <section key={course.id} className="space-y-3">
-              <div className="px-1">
-                <p className="text-xs font-semibold text-teal">{text.course}</p>
-                <h1 className="mt-1 text-2xl font-semibold text-ink">{course.title}</h1>
-              </div>
+            <details key={course.id} className="group space-y-3" open>
+              <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 rounded px-1 transition-colors hover:bg-surface active:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/30 [&::-webkit-details-marker]:hidden">
+                <h1 className="flex min-w-0 flex-1 items-baseline text-2xl font-semibold text-ink">
+                  <span className="shrink-0 text-sm text-teal">{text.course}</span>
+                  <span className="min-w-0">{course.title}</span>
+                </h1>
+                <span className="grid size-10 shrink-0 place-items-center text-slate-500" aria-hidden="true">
+                  <ChevronDown className="transition-transform duration-200 motion-reduce:transition-none group-open:rotate-180" size={22} />
+                </span>
+              </summary>
               {course.chapters.map((chapter) => {
                 const passedCount = chapter.sections.filter((section) => section.status === "passed").length;
                 const percent = chapter.sections.length ? Math.round((passedCount / chapter.sections.length) * 100) : 0;
@@ -73,13 +79,29 @@ export default async function StagesPage({
 
                 return (
                   <section
+                    id={`chapter-${chapter.id}`}
                     key={chapter.id}
-                    className={`overflow-hidden rounded-panel border border-border-soft/80 shadow-card ${current ? "bg-success-muted" : completed ? "bg-surface" : "bg-surface-muted"}`}
+                    className={`scroll-mt-4 overflow-hidden rounded-panel border border-border-soft/80 shadow-card ${current ? "bg-success-muted" : completed ? "bg-surface" : "bg-surface-muted"}`}
                   >
                     <div className="p-5">
                       <div>
-                        <h2 className="text-xl font-semibold text-ink">{chapter.title}</h2>
-                        <p className="mt-1 text-sm font-semibold text-slate-500">{chapter.sections[0]?.questionCount || 0} {text.questions}</p>
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <h2 className="break-words text-xl font-semibold text-ink">{chapter.title}</h2>
+                            <p className="mt-1 text-sm font-semibold text-slate-500">{chapter.sections[0]?.questionCount || 0} {text.questions}</p>
+                          </div>
+                          {locked ? (
+                            <button className="secondary-button shrink-0 px-3" type="button" disabled>
+                              <BookOpenText size={18} />
+                              {text.guide}
+                            </button>
+                          ) : (
+                            <Link className="secondary-button shrink-0 px-3" href={`/learn/${chapter.sections[0].id}/guide`}>
+                              <BookOpenText size={18} />
+                              {text.guide}
+                            </Link>
+                          )}
+                        </div>
                         <div className="mt-5 flex items-center gap-3">
                           {locked ? <Lock className="shrink-0 text-slate-400" size={18} /> : <span className="grid size-6 shrink-0 place-items-center rounded-full bg-success text-white">{completed ? <Trophy size={16} /> : <Sparkles size={16} />}</span>}
                           <div className="h-3 flex-1 rounded-full bg-slate-100">
@@ -104,7 +126,7 @@ export default async function StagesPage({
                   </section>
                 );
               })}
-            </section>
+            </details>
           ))}
         </div>
       </div>

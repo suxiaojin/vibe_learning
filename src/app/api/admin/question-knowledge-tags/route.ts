@@ -11,10 +11,11 @@ type SyllabusItemRow = {
   parentId: string | null;
 };
 
-type PaperCourse = {
-  courseType: "public_subject" | "major";
+type PaperScope = {
+  ownerType: "public_subject" | "major";
   publicSubjectId: string | null;
   majorId: string | null;
+  regionId: string;
 };
 
 async function requireAdminJson() {
@@ -22,10 +23,10 @@ async function requireAdminJson() {
   return user?.role === "admin";
 }
 
-function ownerCourseWhere(course: PaperCourse) {
-  return course.courseType === "public_subject"
-    ? { courseType: "public_subject" as const, publicSubjectId: course.publicSubjectId }
-    : { courseType: "major" as const, majorId: course.majorId };
+function ownerCourseWhere(scope: PaperScope) {
+  return scope.ownerType === "public_subject"
+    ? { courseType: "public_subject" as const, publicSubjectId: scope.publicSubjectId, regionId: scope.regionId }
+    : { courseType: "major" as const, majorId: scope.majorId, regionId: scope.regionId };
 }
 
 function buildDisplayIdMap(items: SyllabusItemRow[]) {
@@ -105,13 +106,10 @@ export async function POST(request: NextRequest) {
       paperId: true,
       paper: {
         select: {
-          course: {
-            select: {
-              courseType: true,
-              publicSubjectId: true,
-              majorId: true
-            }
-          }
+          ownerType: true,
+          publicSubjectId: true,
+          majorId: true,
+          regionId: true
         }
       },
       question: {
@@ -129,7 +127,7 @@ export async function POST(request: NextRequest) {
   const syllabusItems = await prisma.syllabusItem.findMany({
     where: {
       status: "published",
-      course: ownerCourseWhere(paperQuestion.paper.course)
+      course: ownerCourseWhere(paperQuestion.paper)
     },
     select: {
       id: true,
@@ -180,7 +178,7 @@ export async function POST(request: NextRequest) {
         where: { id: questionId },
         data: {
           syllabusItemId: targetDisplayId,
-          ...(pointId ? { knowledgePointId: pointId } : {})
+          knowledgePointId: pointId
         }
       });
     });
@@ -211,7 +209,7 @@ export async function POST(request: NextRequest) {
           where: { id: questionId },
           data: {
             syllabusItemId: nextSyllabusItemId,
-            ...(nextPointId ? { knowledgePointId: nextPointId } : {})
+            knowledgePointId: nextPointId
           }
         });
       }

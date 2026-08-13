@@ -61,10 +61,9 @@ export async function getMockTestContext(userId: string, courseKey: LearningOwne
 }
 
 export async function getAiGeneratedQuestionsForSections(group: SyllabusPathGroup, sections: MockTestSection[]) {
-  const courseIds = group.courses.map((course) => course.id);
   const syllabusItemIds = uniqueValues(sections.flatMap((section) => section.questionSyllabusItemIds));
 
-  if (courseIds.length === 0 || syllabusItemIds.length === 0) {
+  if (group.courses.length === 0 || syllabusItemIds.length === 0) {
     return [];
   }
 
@@ -94,7 +93,6 @@ export async function getAiGeneratedQuestionsForSections(group: SyllabusPathGrou
           paperQuestions: {
             where: {
               paper: {
-                courseId: { in: courseIds },
                 status: "published"
               }
             },

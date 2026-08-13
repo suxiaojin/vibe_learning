@@ -108,7 +108,11 @@ export default async function QuestionsPage({
             </div>
           ) : questions.map((question) => (
             <article key={question.id} className="rounded-2xl border border-slate-200 p-4">
-              <p className="text-xs text-slate-500">{question.knowledgePoint.chapter.title} / {question.knowledgePoint.title}</p>
+              <p className="text-xs text-slate-500">
+                {question.knowledgePoint
+                  ? `${question.knowledgePoint.chapter.title} / ${question.knowledgePoint.title}`
+                  : "未归类"}
+              </p>
               <h3 className="mt-1 line-clamp-2 font-semibold">{question.stem}</h3>
               <p className="mt-2 text-sm text-slate-600">{question.source} · {question.type} · {question.status}</p>
 
@@ -127,7 +131,8 @@ export default async function QuestionsPage({
                 <form action={updateQuestion} className="mt-4">
                   <input type="hidden" name="id" value={question.id} />
                   <label className="label">所属知识点</label>
-                  <select className="input" name="knowledgePointId" defaultValue={question.knowledgePointId} required>
+                  <select className="input" name="knowledgePointId" defaultValue={question.knowledgePointId || ""} required>
+                    <option value="" disabled>请选择知识点</option>
                     {points.map((point) => (
                       <option key={point.id} value={point.id}>{point.chapter.title} / {point.title}</option>
                     ))}

@@ -253,8 +253,8 @@ async function ensureOwnerRegionLink(tx: Prisma.TransactionClient, regionId: str
 async function ensureLearningCourse(tx: Prisma.TransactionClient, regionId: string, owner: ImportOwner, payload: ImportQuestionPaperPayload) {
   const where =
     owner.courseType === "public_subject"
-      ? { regionId, publicSubjectId: owner.id, courseType: owner.courseType }
-      : { regionId, majorId: owner.id, courseType: owner.courseType };
+      ? { regionId, publicSubjectId: owner.id, courseType: owner.courseType, name: payload.courseName }
+      : { regionId, majorId: owner.id, courseType: owner.courseType, name: payload.courseName };
 
   const existing = await tx.learningCourse.findFirst({
     where,
@@ -349,7 +349,10 @@ export async function importQuestionPaperPayload(
 
     let paper = await tx.examPaper.findFirst({
       where: {
-        courseId: course.id,
+        regionId: region.id,
+        ownerType: owner.courseType,
+        publicSubjectId: owner.courseType === "public_subject" ? owner.id : null,
+        majorId: owner.courseType === "major" ? owner.id : null,
         title: payload.title,
         year: payload.year
       },
@@ -358,7 +361,10 @@ export async function importQuestionPaperPayload(
     if (!paper) {
       paper = await tx.examPaper.create({
         data: {
-          courseId: course.id,
+          regionId: region.id,
+          ownerType: owner.courseType,
+          publicSubjectId: owner.courseType === "public_subject" ? owner.id : null,
+          majorId: owner.courseType === "major" ? owner.id : null,
           title: payload.title,
           year: payload.year,
           paperType: payload.paperType,

@@ -99,7 +99,6 @@ async function assertQuestionCanEnterChapter(chapterId: string, questionId: stri
       paperQuestions: {
         some: {
           paper: {
-            courseId: chapter.courseId,
             status: "published"
           }
         }
@@ -298,7 +297,7 @@ export async function saveChapterChallenge(formData: FormData) {
       id: { in: draft.questions.map((item) => item.questionId) },
       status: "published",
       knowledgeTags: { some: { syllabusItemId: { in: chapter.syllabusItemIds } } },
-      paperQuestions: { some: { paper: { courseId: chapter.courseId, status: "published" } } }
+      paperQuestions: { some: { paper: { status: "published" } } }
     }
   });
   if (validQuestionCount !== draft.questions.length || chapter.course.status !== "published") {

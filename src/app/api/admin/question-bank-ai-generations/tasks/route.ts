@@ -50,6 +50,12 @@ function ownerCourseWhere(ownerType: QuestionBankOwnerType, ownerId: string, reg
     : { courseType: ownerType, majorId: ownerId, regionId };
 }
 
+function ownerPaperWhere(ownerType: QuestionBankOwnerType, ownerId: string, regionId: string) {
+  return ownerType === "public_subject"
+    ? { ownerType, publicSubjectId: ownerId, regionId }
+    : { ownerType, majorId: ownerId, regionId };
+}
+
 function sortSyllabusItems(items: SyllabusItemRow[]) {
   return [...items].sort((left, right) => {
     const codeCompare = (left.code || "").localeCompare(right.code || "", "zh-Hans-CN", { numeric: true });
@@ -170,6 +176,7 @@ export async function POST(request: NextRequest) {
   }
 
   const courseWhere = ownerCourseWhere(body.ownerType, body.ownerId, body.regionId);
+  const paperWhere = ownerPaperWhere(body.ownerType, body.ownerId, body.regionId);
   const [region, owner, courses] = await Promise.all([
     prisma.region.findUnique({
       where: { id: body.regionId },
@@ -215,7 +222,7 @@ export async function POST(request: NextRequest) {
       count: await prisma.examPaperQuestion.count({
         where: {
           paper: {
-            course: courseWhere
+            ...paperWhere
           },
           question: {
             knowledgeTags: {
@@ -240,7 +247,7 @@ export async function POST(request: NextRequest) {
       paperQuestions: {
         some: {
           paper: {
-            course: courseWhere
+            ...paperWhere
           }
         }
       },

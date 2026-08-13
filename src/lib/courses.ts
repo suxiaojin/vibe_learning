@@ -42,6 +42,9 @@ export async function getAvailableLearningCoursesForStudent(userId: string) {
       id: true,
       name: true,
       courseType: true,
+      regionId: true,
+      publicSubjectId: true,
+      majorId: true,
       description: true,
       sortOrder: true,
       region: {
@@ -65,8 +68,7 @@ export async function getAvailableLearningCoursesForStudent(userId: string) {
       _count: {
         select: {
           chapters: true,
-          syllabusItems: true,
-          examPapers: true
+          syllabusItems: true
         }
       }
     },
@@ -95,6 +97,9 @@ export async function getLearningCourseForStudent(userId: string, courseId: stri
       id: true,
       name: true,
       courseType: true,
+      regionId: true,
+      publicSubjectId: true,
+      majorId: true,
       description: true,
       status: true,
       sortOrder: true,
@@ -175,8 +180,23 @@ export async function getLearningCourseOutlineForStudent(userId: string, courseI
     }),
     prisma.examPaper.findMany({
       where: {
-        courseId: course.id,
-        status: "published"
+        regionId: course.regionId,
+        ownerType: course.courseType,
+        ...(course.courseType === "public_subject"
+          ? { publicSubjectId: course.publicSubjectId }
+          : { majorId: course.majorId }),
+        status: "published",
+        questions: {
+          some: {
+            question: {
+              knowledgeTags: {
+                some: {
+                  syllabusItem: { courseId: course.id }
+                }
+              }
+            }
+          }
+        }
       },
       select: {
         id: true,

@@ -25,11 +25,11 @@ export default async function GuidePage({
     redirect("/learn");
   }
 
-  const guideContent = access.section.description || `本章围绕「${access.section.title}」进行练习，完成本章题目并达到 80 分即可进入下一关。`;
+  const guideContent = access.chapter.description ?? "";
 
   return (
     <StudentPageShell active="learn" maxWidthClassName="max-w-3xl">
-      <Link className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-teal" href={`/learn?course=${access.group.key}&chapter=${access.chapter.id}`}>
+      <Link className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-teal" href={`/learn/stages?course=${access.group.key}#chapter-${access.chapter.id}`}>
         <ArrowLeft size={22} />
         {text.back}
       </Link>

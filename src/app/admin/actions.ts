@@ -1093,6 +1093,35 @@ function ownerCourseWhere(ownerType: QuestionBankOwnerType, ownerId: string, reg
   };
 }
 
+function ownerPaperWhere(ownerType: QuestionBankOwnerType, ownerId: string, regionId?: string) {
+  return {
+    ownerType,
+    ...(ownerType === "public_subject" ? { publicSubjectId: ownerId } : { majorId: ownerId }),
+    ...(regionId ? { regionId } : {})
+  };
+}
+
+async function ensureQuestionBankOwnerRegion(ownerType: QuestionBankOwnerType, ownerId: string, regionId: string) {
+  await prisma.region.findUniqueOrThrow({ where: { id: regionId }, select: { id: true } });
+
+  if (ownerType === "public_subject") {
+    await prisma.publicSubject.findUniqueOrThrow({ where: { id: ownerId }, select: { id: true } });
+    await prisma.regionPublicSubject.upsert({
+      where: { regionId_publicSubjectId: { regionId, publicSubjectId: ownerId } },
+      update: {},
+      create: { regionId, publicSubjectId: ownerId }
+    });
+    return;
+  }
+
+  await prisma.major.findUniqueOrThrow({ where: { id: ownerId }, select: { id: true } });
+  await prisma.regionMajor.upsert({
+    where: { regionId_majorId: { regionId, majorId: ownerId } },
+    update: {},
+    create: { regionId, majorId: ownerId }
+  });
+}
+
 async function ensureQuestionBankCourse(ownerType: QuestionBankOwnerType, ownerId: string, regionId: string) {
   const existing = await prisma.learningCourse.findFirst({
     where: ownerCourseWhere(ownerType, ownerId, regionId),
@@ -1181,11 +1210,14 @@ export async function createQuestionBankPaper(formData: FormData) {
   await requireAdmin();
   const { ownerType, ownerId } = getQuestionBankOwner(formData);
   const regionId = String(formData.get("regionId") || "");
-  const course = await ensureQuestionBankCourse(ownerType, ownerId, regionId);
+  await ensureQuestionBankOwnerRegion(ownerType, ownerId, regionId);
 
   await prisma.examPaper.create({
     data: {
-      courseId: course.id,
+      regionId,
+      ownerType,
+      publicSubjectId: ownerType === "public_subject" ? ownerId : null,
+      majorId: ownerType === "major" ? ownerId : null,
       title: String(formData.get("title") || "").trim(),
       year: getPaperYear(formData),
       paperType: "real_exam",
@@ -1223,7 +1255,6 @@ export async function createQuestionBankOwner(formData: FormData) {
     }
   });
 
-  await ensureQuestionBankCourse("major", major.id, region.id);
   revalidatePath("/admin/question-banks");
   redirect(questionBankPath("major", major.id));
 }
@@ -1303,17 +1334,17 @@ export async function updateQuestionBankPaper(formData: FormData) {
   const paper = await prisma.examPaper.findFirstOrThrow({
     where: {
       id,
-      course: ownerCourseWhere(ownerType, ownerId)
+      ...ownerPaperWhere(ownerType, ownerId)
     },
-    include: { course: true }
+    select: { regionId: true, updatedAt: true }
   });
-  const regionId = String(formData.get("regionId") || paper.course.regionId);
-  const course = await ensureQuestionBankCourse(ownerType, ownerId, regionId);
+  const regionId = String(formData.get("regionId") || paper.regionId);
+  await ensureQuestionBankOwnerRegion(ownerType, ownerId, regionId);
 
   await prisma.examPaper.update({
     where: { id },
     data: {
-      courseId: course.id,
+      regionId,
       title: String(formData.get("title") || "").trim(),
       year: getPaperYear(formData),
       updatedAt: paper.updatedAt
@@ -1331,7 +1362,7 @@ export async function deleteQuestionBankPaper(formData: FormData) {
   await prisma.examPaper.findFirstOrThrow({
     where: {
       id,
-      course: ownerCourseWhere(ownerType, ownerId)
+      ...ownerPaperWhere(ownerType, ownerId)
     },
     select: { id: true }
   });
@@ -1347,7 +1378,7 @@ export async function toggleQuestionBankPaperStatus(formData: FormData) {
   const paper = await prisma.examPaper.findFirstOrThrow({
     where: {
       id,
-      course: ownerCourseWhere(ownerType, ownerId)
+      ...ownerPaperWhere(ownerType, ownerId)
     },
     select: { status: true, updatedAt: true }
   });
@@ -1672,34 +1703,6 @@ async function ensureCourseChapter(courseId: string, title: string) {
   });
 }
 
-async function ensureQuestionBankKnowledgePoint(courseId: string) {
-  const chapter = await ensureCourseChapter(courseId, "未归类题目");
-  const existing = await prisma.knowledgePoint.findFirst({
-    where: {
-      chapterId: chapter.id,
-      title: "未归类题目"
-    },
-    select: { id: true, syllabusItemId: true }
-  });
-
-  if (existing) {
-    return existing;
-  }
-
-  return prisma.knowledgePoint.create({
-    data: {
-      chapterId: chapter.id,
-      title: "未归类题目",
-      summary: "题库详情页手动录入题目的默认归类。",
-      content: "题库详情页手动录入题目的默认归类。",
-      sortOrder: await nextKnowledgePointSortOrder(chapter.id),
-      estimatedMinutes: 8,
-      status: "published"
-    },
-    select: { id: true, syllabusItemId: true }
-  });
-}
-
 function normalizeQuestionBankOptionKey(value: FormDataEntryValue | string) {
   return String(value).trim().toUpperCase().replace(/[^A-Z]/g, "").slice(0, 1);
 }
@@ -1848,16 +1851,12 @@ async function createQuestionBankQuestion(formData: FormData, type: QuestionBank
     where: { id: paperId },
     select: {
       id: true,
-      courseId: true,
       title: true,
       year: true
     }
   });
-  const point = await ensureQuestionBankKnowledgePoint(paper.courseId);
   const question = await prisma.question.create({
     data: {
-      knowledgePointId: point.id,
-      syllabusItemId: point.syllabusItemId,
       type,
       stem,
       options,
@@ -2001,23 +2000,14 @@ export async function updateQuestionBankQuestionType(formData: FormData) {
 export async function updateQuestionBankQuestionTypeConfig(formData: FormData) {
   await requireAdmin();
   const paperId = String(formData.get("paperId") || "");
-  const courseId = String(formData.get("courseId") || "");
   const config = parseQuestionBankQuestionTypeConfig(JSON.parse(String(formData.get("config") || "null")));
 
   if (!config) {
     throw new Error("At least one question type is required");
   }
 
-  await prisma.examPaper.findFirstOrThrow({
-    where: {
-      id: paperId,
-      courseId
-    },
-    select: { id: true }
-  });
-
-  await prisma.learningCourse.update({
-    where: { id: courseId },
+  await prisma.examPaper.update({
+    where: { id: paperId },
     data: { questionTypeConfig: config }
   });
 

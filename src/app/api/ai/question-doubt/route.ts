@@ -287,9 +287,9 @@ function buildFollowUpMessages(question: AccessibleQuestion, prompt: string): Ch
 
 function buildQuestionContext(question: AccessibleQuestion, studentPrompt: string) {
   return [
-    `知识点：${question.knowledgePoint.title}`,
-    `知识点摘要：${question.knowledgePoint.summary || ""}`,
-    `知识点正文：${question.knowledgePoint.content || ""}`,
+    `知识点：${question.knowledgePoint?.title || "未打标"}`,
+    `知识点摘要：${question.knowledgePoint?.summary || ""}`,
+    `知识点正文：${question.knowledgePoint?.content || ""}`,
     `题型：${question.type}`,
     `题干：${question.stem}`,
     `选项：${JSON.stringify(question.options)}`,

@@ -23,7 +23,7 @@ export default async function PublicSubjectCoursesPage({
         where: { courseType: "public_subject" },
         include: {
           region: true,
-          _count: { select: { chapters: true, syllabusItems: true, examPapers: true } }
+          _count: { select: { chapters: true, syllabusItems: true } }
         },
         orderBy: [{ region: { sortOrder: "asc" } }, { sortOrder: "asc" }, { createdAt: "desc" }]
       }
@@ -99,7 +99,7 @@ export default async function PublicSubjectCoursesPage({
                   </td>
                   <td className="px-4 py-4 text-slate-700">{course.region.name}</td>
                   <td className="px-4 py-4 text-slate-600">
-                    章节 {course._count.chapters} / 考察内容 {course._count.syllabusItems} / 试卷 {course._count.examPapers}
+                    章节 {course._count.chapters} / 考察内容 {course._count.syllabusItems}
                   </td>
                   <td className="px-4 py-4">
                     <form action={updatePublicSubjectCourseStatus} className="flex items-center gap-2">

@@ -40,9 +40,6 @@ export default async function PublicSubjectCourseDetailPage({
       },
       chapters: {
         orderBy: { sortOrder: "asc" }
-      },
-      examPapers: {
-        orderBy: [{ year: "desc" }, { sortOrder: "asc" }]
       }
     }
   });

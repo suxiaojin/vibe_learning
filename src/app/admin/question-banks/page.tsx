@@ -299,7 +299,11 @@ export default async function QuestionBanksPage({
         ? await prisma.examPaperQuestion.findMany({
             where: {
               paper: {
-                course: courseWhere
+                regionId: region.id,
+                ownerType: selectedOwner.type,
+                ...(selectedOwner.type === "public_subject"
+                  ? { publicSubjectId: selectedOwner.id }
+                  : { majorId: selectedOwner.id })
               },
               question: {
                 knowledgeTags: {
@@ -333,10 +337,8 @@ export default async function QuestionBanksPage({
   const aiReferenceKnowledgeTreesByRegion = Object.fromEntries(aiReferenceKnowledgeTreeEntries);
 
   const paperWhere = {
-    course: {
-      courseType: selectedOwner.type,
-      ...(selectedOwner.type === "public_subject" ? { publicSubjectId: selectedOwner.id } : { majorId: selectedOwner.id })
-    }
+    ownerType: selectedOwner.type,
+    ...(selectedOwner.type === "public_subject" ? { publicSubjectId: selectedOwner.id } : { majorId: selectedOwner.id })
   };
   const totalPapers = await prisma.examPaper.count({ where: paperWhere });
   const totalPages = Math.max(1, Math.ceil(totalPapers / pageSize));
@@ -346,11 +348,7 @@ export default async function QuestionBanksPage({
     prisma.examPaper.findMany({
       where: paperWhere,
       include: {
-        course: {
-          include: {
-            region: true
-          }
-        },
+        region: true,
         _count: {
           select: { questions: true }
         }
@@ -483,7 +481,7 @@ export default async function QuestionBanksPage({
                           </Link>
                         </td>
                         <td className="px-3 text-[#071b38]">{paper._count.questions}</td>
-                        <td className="px-3 text-[#071b38]">{paper.course.region.name}</td>
+                        <td className="px-3 text-[#071b38]">{paper.region.name}</td>
                         <td className="px-3 text-[#071b38]">{paper.year || "-"}</td>
                         <td className="px-3 text-[#071b38]">{formatDate(paper.updatedAt)}</td>
                         <td className="px-3">
@@ -500,7 +498,7 @@ export default async function QuestionBanksPage({
                                 <div className="grid grid-cols-[1fr_110px] gap-3">
                                   <div>
                                     <label className="label">区域信息</label>
-                                    <select className="input rounded-none" name="regionId" defaultValue={paper.course.regionId} required>
+                                    <select className="input rounded-none" name="regionId" defaultValue={paper.regionId} required>
                                       {regionOptions.map((region) => (
                                         <option key={region.id} value={region.id}>{region.name}</option>
                                       ))}

@@ -743,7 +743,14 @@ export default async function QuestionBankKnowledgeStatisticsPage({
     ? await prisma.examPaperQuestion.findMany({
         where: {
           paper: {
-            course: courseWhere,
+            ownerType: selectedOwner.type,
+            ...(selectedOwner.type === "public_subject"
+              ? { publicSubjectId: selectedOwner.id }
+              : { majorId: selectedOwner.id }),
+            region: {
+              province: selectedProvince,
+              studySystem: selectedExamType
+            },
             status: "published"
           },
           question: {

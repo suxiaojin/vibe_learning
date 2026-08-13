@@ -33,29 +33,24 @@ function toAnswerList(value: unknown) {
 }
 
 function ownerHref(paper: {
-  course: {
-    courseType: "public_subject" | "major";
-    publicSubjectId: string | null;
-    majorId: string | null;
-  };
+  ownerType: "public_subject" | "major";
+  publicSubjectId: string | null;
+  majorId: string | null;
 }) {
-  if (paper.course.courseType === "public_subject") {
-    return `/admin/question-banks?type=public_subject&id=${encodeURIComponent(paper.course.publicSubjectId || "")}`;
+  if (paper.ownerType === "public_subject") {
+    return `/admin/question-banks?type=public_subject&id=${encodeURIComponent(paper.publicSubjectId || "")}`;
   }
-  return `/admin/question-banks?type=major&id=${encodeURIComponent(paper.course.majorId || "")}`;
+  return `/admin/question-banks?type=major&id=${encodeURIComponent(paper.majorId || "")}`;
 }
 
 function paperQuestionTypeText(
   paper: {
     title: string;
-    course: {
-      name: string;
-      major: { name: string } | null;
-      publicSubject: { name: string } | null;
-    };
+    major: { name: string } | null;
+    publicSubject: { name: string } | null;
   }
 ) {
-  return [paper.title, paper.course.name, paper.course.major?.name, paper.course.publicSubject?.name].filter(Boolean).join(" ");
+  return [paper.title, paper.major?.name, paper.publicSubject?.name].filter(Boolean).join(" ");
 }
 
 type SyllabusItemRow = {
@@ -172,12 +167,8 @@ export default async function QuestionBankDetailPage({
   const paper = await prisma.examPaper.findUniqueOrThrow({
     where: { id: paperId },
     include: {
-      course: {
-        include: {
-          major: true,
-          publicSubject: true
-        }
-      },
+      major: true,
+      publicSubject: true,
       questions: {
         include: {
           question: {
@@ -201,9 +192,9 @@ export default async function QuestionBankDetailPage({
     }
   });
   const ownerCourseWhere =
-    paper.course.courseType === "public_subject"
-      ? { courseType: "public_subject" as const, publicSubjectId: paper.course.publicSubjectId }
-      : { courseType: "major" as const, majorId: paper.course.majorId };
+    paper.ownerType === "public_subject"
+      ? { courseType: "public_subject" as const, publicSubjectId: paper.publicSubjectId, regionId: paper.regionId }
+      : { courseType: "major" as const, majorId: paper.majorId, regionId: paper.regionId };
   const knowledgeCourses = await prisma.learningCourse.findMany({
     where: ownerCourseWhere,
     include: {
@@ -221,12 +212,11 @@ export default async function QuestionBankDetailPage({
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
   });
   const knowledgeDisplayById = buildKnowledgeDisplayMap(knowledgeCourses);
-  const configuredQuestionTypes = parseQuestionBankQuestionTypeConfig(paper.course.questionTypeConfig);
+  const configuredQuestionTypes = parseQuestionBankQuestionTypeConfig(paper.questionTypeConfig);
 
   return (
     <QuestionBankDetailWorkbench
-      courseId={paper.course.id}
-      courseName={paper.course.major?.name || paper.course.publicSubject?.name || paper.course.name}
+      ownerName={paper.major?.name || paper.publicSubject?.name || "题库"}
       paperId={paper.id}
       paperTitle={paper.title}
       ownerHref={ownerHref(paper)}
@@ -258,8 +248,8 @@ export default async function QuestionBankDetailPage({
           answer: toAnswerList(item.question.answer),
           analysis: item.question.analysis,
           aiDoubtAnswer: item.question.aiDoubtAnswer || "",
-          knowledgePointTitle: item.question.knowledgePoint.title,
-          chapterTitle: item.question.knowledgePoint.chapter.title,
+          knowledgePointTitle: item.question.knowledgePoint?.title || "未打标",
+          chapterTitle: item.question.knowledgePoint?.chapter.title || "未归类",
           knowledgeTagIds,
           knowledgeTagLabels
         };

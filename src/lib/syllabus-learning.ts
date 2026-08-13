@@ -196,7 +196,6 @@ async function getQuestionCountsByDisplayItem(shape: SyllabusShape, displayItemI
             select: {
               paper: {
                 select: {
-                  courseId: true,
                   title: true
                 }
               }

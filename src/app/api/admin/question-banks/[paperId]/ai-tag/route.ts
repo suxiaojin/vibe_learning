@@ -35,10 +35,11 @@ type SyllabusItemRow = {
   description: string | null;
 };
 
-type PaperCourse = {
-  courseType: "public_subject" | "major";
+type PaperScope = {
+  ownerType: "public_subject" | "major";
   publicSubjectId: string | null;
   majorId: string | null;
+  regionId: string;
 };
 
 async function requireAdminJson() {
@@ -46,10 +47,10 @@ async function requireAdminJson() {
   return user?.role === "admin";
 }
 
-function ownerCourseWhere(course: PaperCourse) {
-  return course.courseType === "public_subject"
-    ? { courseType: "public_subject" as const, publicSubjectId: course.publicSubjectId }
-    : { courseType: "major" as const, majorId: course.majorId };
+function ownerCourseWhere(scope: PaperScope) {
+  return scope.ownerType === "public_subject"
+    ? { courseType: "public_subject" as const, publicSubjectId: scope.publicSubjectId, regionId: scope.regionId }
+    : { courseType: "major" as const, majorId: scope.majorId, regionId: scope.regionId };
 }
 
 function stripHtml(value: string) {
@@ -284,7 +285,7 @@ async function saveAiTag({
       where: { id: questionId },
       data: {
         syllabusItemId,
-        ...(linkedKnowledgePoint ? { knowledgePointId: linkedKnowledgePoint.id } : {})
+        knowledgePointId: linkedKnowledgePoint?.id || null
       }
     });
   });
@@ -301,13 +302,10 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ p
     select: {
       id: true,
       title: true,
-      course: {
-        select: {
-          courseType: true,
-          publicSubjectId: true,
-          majorId: true
-        }
-      },
+      ownerType: true,
+      publicSubjectId: true,
+      majorId: true,
+      regionId: true,
       questions: {
         select: {
           id: true,
@@ -335,7 +333,7 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ p
   }
 
   const ownerCourses = await prisma.learningCourse.findMany({
-    where: ownerCourseWhere(paper.course),
+    where: ownerCourseWhere(paper),
     select: {
       id: true,
       name: true,

@@ -95,8 +95,7 @@ export type KnowledgeTreeCourse = {
 };
 
 type QuestionBankDetailWorkbenchProps = {
-  courseId: string;
-  courseName: string;
+  ownerName: string;
   paperId: string;
   paperTitle: string;
   ownerHref: string;
@@ -1542,15 +1541,13 @@ function AiDoubtReviewPanel({ paperId, question }: { paperId: string; question: 
 }
 
 function QuestionTypeConfigDialog({
-  courseId,
-  courseName,
+  ownerName,
   paperId,
   questionTypes,
   onClose,
   onSaved
 }: {
-  courseId: string;
-  courseName: string;
+  ownerName: string;
   paperId: string;
   questionTypes: QuestionBankQuestionTypeConfig[];
   onClose: () => void;
@@ -1605,7 +1602,6 @@ function QuestionTypeConfigDialog({
     setMessage("");
     const formData = new FormData();
     formData.set("paperId", paperId);
-    formData.set("courseId", courseId);
     formData.set("config", JSON.stringify(selectedTypes));
 
     try {
@@ -1636,7 +1632,7 @@ function QuestionTypeConfigDialog({
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-[#d7dee8] bg-[#f8fafc] px-5">
           <div className="min-w-0">
             <h2 id="question-type-config-title" className="text-base font-black text-[#071b38]">题型配置</h2>
-            <p className="truncate text-xs font-medium text-[#64748b]">{courseName}</p>
+            <p className="truncate text-xs font-medium text-[#64748b]">{ownerName}</p>
           </div>
           <button
             aria-label="关闭题型配置"
@@ -1753,7 +1749,7 @@ function QuestionTypeConfigDialog({
   );
 }
 
-export function QuestionBankDetailWorkbench({ courseId, courseName, paperId, paperTitle, ownerHref, questionTypes, knowledgeTree, questions }: QuestionBankDetailWorkbenchProps) {
+export function QuestionBankDetailWorkbench({ ownerName, paperId, paperTitle, ownerHref, questionTypes, knowledgeTree, questions }: QuestionBankDetailWorkbenchProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const focusedQuestionId = searchParams.get("question");
@@ -2442,8 +2438,7 @@ export function QuestionBankDetailWorkbench({ courseId, courseName, paperId, pap
       </section>
       {questionTypeConfigOpen ? (
         <QuestionTypeConfigDialog
-          courseId={courseId}
-          courseName={courseName}
+          ownerName={ownerName}
           paperId={paperId}
           questionTypes={questionTypes}
           onClose={() => setQuestionTypeConfigOpen(false)}

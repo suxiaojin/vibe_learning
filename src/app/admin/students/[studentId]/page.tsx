@@ -76,7 +76,7 @@ type WeakQuestionSource = Array<{
       id: string;
       title: string;
       chapter: { title: string };
-    };
+    } | null;
     syllabusItem: WeakSyllabusItem | null;
     knowledgeTags: Array<{ syllabusItem: WeakSyllabusItem }>;
   };
@@ -953,10 +953,18 @@ function getWeakAreaTarget(item: WeakQuestionSource[number]) {
     };
   }
 
+  if (item.question.knowledgePoint) {
+    return {
+      key: `point:${item.question.knowledgePoint.id}`,
+      title: item.question.knowledgePoint.title,
+      scope: item.question.knowledgePoint.chapter.title
+    };
+  }
+
   return {
-    key: `point:${item.question.knowledgePoint.id}`,
-    title: item.question.knowledgePoint.title,
-    scope: item.question.knowledgePoint.chapter.title
+    key: "unclassified",
+    title: "未归类题目",
+    scope: "尚未打知识点标签"
   };
 }
 

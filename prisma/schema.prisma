@@ -197,6 +197,11 @@ enum LearningCourseType {
   major
 }
 
+enum QuestionBankOwnerType {
+  public_subject
+  major
+}
+
 enum SyllabusRequirement {
   know
   understand
@@ -462,6 +467,7 @@ model Region {
   majors          RegionMajor[]
   studentProfiles StudentProfile[]
   learningCourses LearningCourse[]
+  examPapers      ExamPaper[]
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
@@ -480,6 +486,7 @@ model PublicSubject {
   regions                RegionPublicSubject[]
   studentProfiles        StudentProfile[]
   learningCourses        LearningCourse[]
+  examPapers             ExamPaper[]
   officialStudyMaterials OfficialStudyMaterial[]
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
@@ -497,6 +504,7 @@ model Major {
   regions                RegionMajor[]
   studentProfiles        StudentProfile[]
   learningCourses        LearningCourse[]
+  examPapers             ExamPaper[]
   officialStudyMaterials OfficialStudyMaterial[]
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
@@ -599,7 +607,6 @@ model LearningCourse {
   major                  Major?                  @relation(fields: [majorId], references: [id], onDelete: SetNull)
   chapters               Chapter[]
   syllabusItems          SyllabusItem[]
-  examPapers             ExamPaper[]
   aiStudyProjects        AiStudyProject[]
   officialStudyMaterials OfficialStudyMaterial[]
   createdAt              DateTime                @default(now())
@@ -694,9 +701,9 @@ model KnowledgePoint {
 
 model Question {
   id                 String                     @id @default(cuid())
-  knowledgePointId   String
+  knowledgePointId   String?
   syllabusItemId     String?
-  knowledgePoint     KnowledgePoint             @relation(fields: [knowledgePointId], references: [id], onDelete: Cascade)
+  knowledgePoint     KnowledgePoint?            @relation(fields: [knowledgePointId], references: [id], onDelete: SetNull)
   syllabusItem       SyllabusItem?              @relation(fields: [syllabusItemId], references: [id], onDelete: SetNull)
   type               QuestionType
   stem               String
@@ -744,20 +751,28 @@ model QuestionKnowledgeTag {
 }
 
 model ExamPaper {
-  id          String              @id @default(cuid())
-  courseId    String
-  title       String
-  year        Int?
-  paperType   PaperType           @default(real_exam)
-  description String?
-  status      ContentStatus       @default(draft)
-  sortOrder   Int                 @default(0)
-  course      LearningCourse      @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  questions   ExamPaperQuestion[]
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
+  id                 String                @id @default(cuid())
+  regionId           String
+  ownerType          QuestionBankOwnerType
+  publicSubjectId    String?
+  majorId            String?
+  title              String
+  year               Int?
+  paperType          PaperType             @default(real_exam)
+  description        String?
+  questionTypeConfig Json?
+  status             ContentStatus         @default(draft)
+  sortOrder          Int                   @default(0)
+  region             Region                @relation(fields: [regionId], references: [id], onDelete: Cascade)
+  publicSubject      PublicSubject?        @relation(fields: [publicSubjectId], references: [id], onDelete: Cascade)
+  major              Major?                @relation(fields: [majorId], references: [id], onDelete: Cascade)
+  questions          ExamPaperQuestion[]
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
 
-  @@index([courseId, status, sortOrder])
+  @@index([regionId, ownerType, status, sortOrder])
+  @@index([publicSubjectId])
+  @@index([majorId])
   @@index([year, paperType])
   @@map("exam_papers")
 }
