@@ -9,7 +9,7 @@ import { WrongQuestionAi } from "@/components/wrong-question-ai";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getNextSyllabusSectionForStudent, getSyllabusSectionForStudent } from "@/lib/syllabus-learning";
+import { getSyllabusSectionForStudent } from "@/lib/syllabus-learning";
 import { cn } from "@/lib/utils";
 
 type Option = {
@@ -69,7 +69,7 @@ export default async function QuizResultPage({
   searchParams?: Promise<{ sessionId?: string }>;
 }) {
   const [{ id }, query, user] = await Promise.all([params, searchParams, requireUser()]);
-  const [access, sessions, nextSection] = await Promise.all([
+  const [access, sessions, requestedSession] = await Promise.all([
     getSyllabusSectionForStudent(user.id, id),
     prisma.quizSession.findMany({
       where: {
@@ -86,16 +86,29 @@ export default async function QuizResultPage({
       orderBy: [{ completedAt: "desc" }, { updatedAt: "desc" }],
       take: 20
     }),
-    getNextSyllabusSectionForStudent(user.id, id)
+    query?.sessionId
+      ? prisma.quizSession.findFirst({
+          where: {
+            id: query.sessionId,
+            userId: user.id,
+            syllabusItemId: id,
+            status: "completed"
+          },
+          include: {
+            attempts: {
+              include: { question: true },
+              orderBy: { createdAt: "asc" }
+            }
+          }
+        })
+      : Promise.resolve(null)
   ]);
 
   if (!access) {
     redirect("/learn");
   }
 
-  const currentSession = query?.sessionId
-    ? sessions.find((session) => session.id === query.sessionId) || sessions[0]
-    : sessions[0];
+  const currentSession = requestedSession || sessions[0];
 
   if (!currentSession) {
     return (
@@ -118,6 +131,8 @@ export default async function QuizResultPage({
   const scorePercent = total ? Math.round((correct / total) * 100) : score;
   const passed = score >= 80;
   const submittedAt = currentSession.completedAt || currentSession.updatedAt;
+  const currentChapterIndex = access.course.chapters.findIndex((chapter) => chapter.id === access.chapter.id);
+  const hasNextChapterInCourse = currentChapterIndex >= 0 && currentChapterIndex < access.course.chapters.length - 1;
   const resultShareCard = buildResultShareCard({
     chapterTitle: access.chapter.title,
     correct,
@@ -159,14 +174,14 @@ export default async function QuizResultPage({
             <div className={passed ? "h-3 rounded-full bg-success" : "h-3 rounded-full bg-coral"} style={{ width: `${scorePercent}%` }} />
           </div>
           <p className="mt-3 text-sm font-semibold text-slate-600">
-            {passed ? "下一关已经为你准备好了，继续保持节奏。" : "达到 80 分即可解锁下一关，先把错题吃透再挑战。"}
+            {passed
+              ? hasNextChapterInCourse
+                ? "闯关成功，返回学习路线进入下一章"
+                : "闯关成功，已完成本课程全部章节"
+              : "还差一点，再练一次"}
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
-            {passed && nextSection ? (
-              <Link className="success-button" href={`/learn/${nextSection.section.id}`}>继续下一关</Link>
-            ) : (
-              <Link className="success-button" href={`/learn/${id}?restart=1`}>再练一次</Link>
-            )}
+            <Link className="success-button" href={`/learn/${id}?restart=1&fromSessionId=${currentSession.id}`}>再练一次</Link>
             <ShareToBuddyButton
               buttonClassName={passed ? "min-h-12 border-success/30 text-success-strong" : "min-h-12 border-coral/30 text-coral"}
               contentSuggestions={resultShareSuggestions}

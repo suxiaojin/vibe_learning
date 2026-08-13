@@ -115,6 +115,7 @@ type QuestionRow = {
   sortOrder: number;
   questionId: string;
   stem: string;
+  knowledgePointTitles: string[];
   type: string;
   difficulty: string;
   source: TagSource;
@@ -246,7 +247,7 @@ function sortSyllabusItems(items: SyllabusItemRow[]) {
 }
 
 function buildKnowledgeDisplayMap(courses: CourseRow[]) {
-  const labels = new Map<string, { id: string; path: string }>();
+  const labels = new Map<string, { id: string; path: string; title: string }>();
 
   courses.forEach((course) => {
     const itemById = new Map(course.syllabusItems.map((item) => [item.id, item]));
@@ -273,7 +274,8 @@ function buildKnowledgeDisplayMap(courses: CourseRow[]) {
       const displayTarget = displayItems[displayItems.length - 1] || item;
       labels.set(item.id, {
         id: displayTarget.id,
-        path: [course.name, ...displayItems.map((ancestor) => ancestor.title)].join(" - ")
+        path: [course.name, ...displayItems.map((ancestor) => ancestor.title)].join(" - "),
+        title: item.title
       });
     });
   });
@@ -789,6 +791,9 @@ export default async function QuestionBankKnowledgeStatisticsPage({
 
   paperQuestions.forEach((paperQuestion) => {
     const sourceBySection = new Map<string, TagSource>();
+    const knowledgePointTitles = uniqueValues(
+      paperQuestion.question.knowledgeTags.map((tag) => displayBySyllabusItemId.get(tag.syllabusItemId)?.title || "")
+    ).sort((left, right) => left.localeCompare(right, "zh-Hans-CN"));
     paperQuestion.question.knowledgeTags.forEach((tag) => {
       const display = displayBySyllabusItemId.get(tag.syllabusItemId);
       if (!display) {
@@ -810,6 +815,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
         sortOrder: paperQuestion.sortOrder,
         questionId: paperQuestion.question.id,
         stem: stripHtml(paperQuestion.question.stem),
+        knowledgePointTitles,
         type: paperQuestion.question.type,
         difficulty: paperQuestion.question.difficulty,
         source,
@@ -907,8 +913,17 @@ export default async function QuestionBankKnowledgeStatisticsPage({
     ? bankSourceFilteredRows
         .filter((row) => !selectedQuestionType || row.type === selectedQuestionType)
         .sort((left, right) => {
+          const leftKnowledgePoint = left.knowledgePointTitles.join(" / ");
+          const rightKnowledgePoint = right.knowledgePointTitles.join(" / ");
+          if (leftKnowledgePoint && !rightKnowledgePoint) {
+            return -1;
+          }
+          if (!leftKnowledgePoint && rightKnowledgePoint) {
+            return 1;
+          }
+          const knowledgePointCompare = leftKnowledgePoint.localeCompare(rightKnowledgePoint, "zh-Hans-CN");
           const yearCompare = (right.paperYear || 0) - (left.paperYear || 0);
-          return yearCompare || left.paperTitle.localeCompare(right.paperTitle, "zh-Hans-CN") || left.sortOrder - right.sortOrder;
+          return knowledgePointCompare || yearCompare || left.paperTitle.localeCompare(right.paperTitle, "zh-Hans-CN") || left.sortOrder - right.sortOrder;
         })
     : [];
   const selectedStatus = challengeStatus(selectedStats.total);
@@ -1258,10 +1273,11 @@ export default async function QuestionBankKnowledgeStatisticsPage({
               </div>
 
               <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-[#e2e8f0]">
-                <table className="w-full min-w-[820px] border-collapse text-left text-sm 2xl:min-w-[980px]">
+                <table className="w-full min-w-[1000px] border-collapse text-left text-sm 2xl:min-w-[1120px]">
                   <thead className="sticky top-0 bg-[#f1f5f9] text-xs text-[#334155]">
                     <tr className="h-10">
                       <th className="border-r border-[#e2e8f0] px-3 font-black">题干</th>
+                      <th className="w-[180px] border-r border-[#e2e8f0] px-3 font-black">所属知识点</th>
                       <th className="w-[260px] border-r border-[#e2e8f0] px-3 font-black">题库</th>
                       <th className="w-[88px] border-r border-[#e2e8f0] px-3 font-black">题型</th>
                       <th className="w-[100px] border-r border-[#e2e8f0] px-3 font-black">打标来源</th>
@@ -1271,13 +1287,20 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                   <tbody>
                     {selectedRows.length === 0 ? (
                       <tr>
-                        <td className="h-56 text-center text-sm text-[#94a3b8]" colSpan={5}>
+                        <td className="h-56 text-center text-sm text-[#94a3b8]" colSpan={6}>
                           当前筛选下暂无题目。
                         </td>
                       </tr>
                     ) : selectedRows.map((row) => (
                       <tr key={`${row.paperQuestionId}:${row.questionId}`} className="border-t border-[#e2e8f0] odd:bg-white even:bg-[#fbfdff]">
                         <td className="px-3 py-3 font-medium text-[#071b38]">{row.stem}</td>
+                        <td className="px-3 py-3">
+                          <div className="flex flex-wrap gap-1">
+                            {row.knowledgePointTitles.length ? row.knowledgePointTitles.map((title) => (
+                              <span className="rounded border border-[#c7d7fe] bg-[#eff6ff] px-2 py-0.5 text-xs font-bold text-[#1d4ed8]" key={title}>{title}</span>
+                            )) : <span className="text-xs text-[#94a3b8]">未标注</span>}
+                          </div>
+                        </td>
                         <td className="px-3 py-3 text-[#334155]">{row.paperTitle}</td>
                         <td className="px-3 py-3">
                           <span className={cn("rounded border px-2 py-0.5 text-xs font-black", questionTypeChipClass(row.type))}>{questionTypeLabel(row.type)}</span>

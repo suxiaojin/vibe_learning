@@ -234,7 +234,7 @@ async function getPublishedChallengesByChapter(shape: SyllabusShape) {
   const chapterIds = (shape.childrenByParentId.get(null) || []).map((item) => item.id);
   const versions = chapterIds.length
     ? await prisma.chapterChallengeVersion.findMany({
-        where: { chapterId: { in: chapterIds }, status: "published" },
+        where: { chapterId: { in: chapterIds }, status: "published", version: 1 },
         select: {
           id: true,
           chapterId: true,
@@ -244,7 +244,7 @@ async function getPublishedChallengesByChapter(shape: SyllabusShape) {
             orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
           }
         },
-        orderBy: [{ chapterId: "asc" }, { version: "desc" }]
+        orderBy: { chapterId: "asc" }
       })
     : [];
   const challengeByChapterId = new Map<string, { id: string; questionIds: string[] }>();
@@ -257,6 +257,33 @@ async function getPublishedChallengesByChapter(shape: SyllabusShape) {
     }
   }
   return challengeByChapterId;
+}
+
+export async function getNextChapterChallengeVersion(chapterId: string, currentChallengeVersionId: string | null) {
+  const versions = await prisma.chapterChallengeVersion.findMany({
+    where: {
+      chapterId,
+      status: "published",
+      questions: { some: {} }
+    },
+    select: {
+      id: true,
+      version: true
+    },
+    orderBy: { version: "asc" }
+  });
+
+  if (versions.length === 0) {
+    return null;
+  }
+
+  const currentIndex = currentChallengeVersionId
+    ? versions.findIndex((version) => version.id === currentChallengeVersionId)
+    : -1;
+
+  return currentIndex >= 0
+    ? versions[(currentIndex + 1) % versions.length]
+    : versions[0];
 }
 
 function buildGroups(
