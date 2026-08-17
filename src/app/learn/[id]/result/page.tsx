@@ -293,7 +293,7 @@ export default async function QuizResultPage({
             <div>
               <p className="text-sm font-medium text-white/85">{access.course.title} / {access.chapter.title}</p>
               <h1 className="mt-2 text-3xl font-bold leading-tight">{passed ? "闯关成功" : "还差一点"}</h1>
-              <p className="mt-2 text-sm font-medium text-white/90">通过本章任一关卡，即可解锁下一章关卡</p>
+              <p className="mt-2 text-sm font-medium text-white/90">本章任一关卡达到80分，即可解锁下一章</p>
             </div>
             <span className="grid size-16 place-items-center rounded-2xl border-2 border-white/20 bg-white/15">
               {passed ? <Trophy size={34} /> : <RotateCcw size={34} />}
@@ -435,7 +435,10 @@ function HistorySessionCard({
     >
       <div className="flex items-start justify-between gap-3">
         <p className="text-sm font-semibold text-slate-600">{formatHistoryDateTime(completedAt)}</p>
-        <span className="badge bg-sky-50 text-sky-500">{getChallengeLabel(session)}</span>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <span className="badge bg-teal/10 text-teal">AI解释</span>
+          <span className="badge bg-sky-50 text-sky-500">{getChallengeLabel(session)}</span>
+        </div>
       </div>
 
       <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-4">
@@ -521,7 +524,7 @@ function AttemptCard({ attempt, index, tone }: { attempt: AttemptWithQuestion; i
           <p className="mt-2 text-sm leading-6 text-slate-700">{attempt.question.analysis}</p>
         </div>
       ) : null}
-      {tone === "wrong" ? <WrongQuestionAi questionId={attempt.questionId} sessionId={attempt.sessionId || undefined} /> : null}
+      <WrongQuestionAi questionId={attempt.questionId} sessionId={attempt.sessionId || undefined} />
     </article>
   );
 }

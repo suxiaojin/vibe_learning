@@ -39,7 +39,9 @@ async function main() {
       { key: "daily_active_scholar", direction: "grant", amount: 20, enabled: true },
       { key: "daily_answer_bonus", direction: "grant", amount: 5, enabled: true },
       { key: "ai_study_project_create", direction: "consume", amount: 50, enabled: true },
-      { key: "ai_study_buddy_chat", direction: "consume", amount: 5, enabled: true }
+      { key: "ai_study_buddy_chat", direction: "consume", amount: 5, enabled: true },
+      { key: "wrong_question_ai_explanation", direction: "consume", amount: 5, enabled: true },
+      { key: "wrong_question_ai_follow_up", direction: "consume", amount: 2, enabled: true }
     ],
     skipDuplicates: true
   });

@@ -33,7 +33,7 @@ export async function resolveAiExplainPromptContext({
       where: {
         id: sessionId,
         userId,
-        attempts: { some: { questionId, isCorrect: false } }
+        attempts: { some: { questionId } }
       },
       select: {
         syllabusItem: {

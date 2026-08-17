@@ -165,6 +165,15 @@ export async function canExplainQuestion(userId: string, questionId: string) {
   return Boolean(wrongQuestion || wrongAttempt);
 }
 
+export async function canExplainAttemptedQuestion(userId: string, questionId: string) {
+  const attempt = await prisma.questionAttempt.findFirst({
+    where: { userId, questionId },
+    select: { id: true }
+  });
+
+  return Boolean(attempt);
+}
+
 export async function bumpStudyStat(
   userId: string,
   data: { questionsAnswered?: number; pointsPassed?: number; studySeconds?: number }

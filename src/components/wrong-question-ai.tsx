@@ -22,6 +22,8 @@ type FollowUpExchange = {
   answer: string;
 };
 
+class AiExplainRequestError extends Error {}
+
 export function WrongQuestionAi({
   questionId,
   sessionId,
@@ -41,6 +43,7 @@ export function WrongQuestionAi({
   const [followUps, setFollowUps] = useState<FollowUpExchange[]>([]);
   const [expandedFollowUpIds, setExpandedFollowUpIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [requestError, setRequestError] = useState("");
   const followUpIdRef = useRef(0);
   const historyLoadedRef = useRef(false);
 
@@ -83,8 +86,10 @@ export function WrongQuestionAi({
   async function askAi(nextPrompt?: string) {
     const content = nextPrompt?.trim() || "";
     const followUpId = content ? `local-${++followUpIdRef.current}` : null;
+    const requestId = content ? createAiRequestId() : undefined;
     setOpen(true);
     setLoading(true);
+    setRequestError("");
     if (followUpId === null) {
       setAnswer("");
       void loadFollowUpHistory();
@@ -112,11 +117,15 @@ export function WrongQuestionAi({
           Accept: "text/plain",
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({ questionId, ...(sessionId ? { sessionId } : {}), ...(content ? { prompt: content } : {}) }),
+        body: JSON.stringify({
+          questionId,
+          ...(sessionId ? { sessionId } : {}),
+          ...(content ? { prompt: content, requestId } : {})
+        }),
         signal: controller.signal
       });
       if (!response.ok) {
-        throw new Error("AI_EXPLAIN_FAILED");
+        throw new AiExplainRequestError(await readApiErrorMessage(response));
       }
       if (!response.body) {
         throw new Error("AI_EXPLAIN_EMPTY_STREAM");
@@ -138,8 +147,16 @@ export function WrongQuestionAi({
         setPrompt("");
       }
     } catch (error) {
-      const errorText = error instanceof Error && error.name === "AbortError" ? text.timeout : text.fallback;
-      updateTargetAnswer(streamedAnswer ? `${streamedAnswer}\n\n${errorText}` : errorText);
+      const errorText = error instanceof Error && error.name === "AbortError"
+        ? text.timeout
+        : error instanceof AiExplainRequestError
+          ? error.message
+          : text.fallback;
+      if (followUpId === null) {
+        setRequestError(streamedAnswer ? `${streamedAnswer}\n\n${errorText}` : errorText);
+      } else {
+        updateTargetAnswer(streamedAnswer ? `${streamedAnswer}\n\n${errorText}` : errorText);
+      }
     } finally {
       window.clearTimeout(timeoutId);
       setLoading(false);
@@ -190,6 +207,8 @@ export function WrongQuestionAi({
               </div>
             </section>
           ) : null}
+
+          {requestError ? <p className="text-sm font-semibold text-coral" role="alert">{requestError}</p> : null}
 
           {loading && activeFollowUpId === null ? (
             <p className={`${answer ? "mt-3 " : ""}flex items-center gap-2 text-sm text-slate-600`} role="status">
@@ -261,6 +280,20 @@ export function WrongQuestionAi({
       ) : null}
     </div>
   );
+}
+
+async function readApiErrorMessage(response: Response) {
+  const payload = (await response.json().catch(() => null)) as { error?: { message?: unknown } } | null;
+  return typeof payload?.error?.message === "string" && payload.error.message.trim()
+    ? payload.error.message
+    : text.fallback;
+}
+
+function createAiRequestId() {
+  if (typeof window.crypto?.randomUUID === "function") {
+    return window.crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
 function MarkdownText({ content }: { content: string }) {

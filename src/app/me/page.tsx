@@ -72,6 +72,14 @@ const diamondRuleTransactionPresentation: Record<string, { typeLabel: string; de
   ai_study_buddy_chat: {
     typeLabel: "AI 对话",
     description: "学习搭子：问问搭子"
+  },
+  wrong_question_ai_explanation: {
+    typeLabel: "AI 解释",
+    description: "错题答疑：AI解释"
+  },
+  wrong_question_ai_follow_up: {
+    typeLabel: "AI 追问",
+    description: "错题答疑：追问"
   }
 };
 
