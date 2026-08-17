@@ -1,4 +1,4 @@
-import { LearningCourseSwitcher, LearningPath, type PathCourse } from "@/components/learning-path";
+import { LearningPath } from "@/components/learning-path";
 import { StudentPageShell } from "@/components/student-page-shell";
 import { requireUser } from "@/lib/auth";
 import { getStudentLearningPath, type SyllabusPathGroup } from "@/lib/syllabus-learning";
@@ -63,19 +63,6 @@ export default async function LearnPage({
         )
       }
     : null;
-  const courseSwitcher = currentGroup
-    ? {
-        activeCourseId: currentGroup.key,
-        courses: pathState.groups.map(
-          (group): PathCourse => ({
-            id: group.key,
-            name: group.name,
-            courseType: group.key
-          })
-        )
-      }
-    : null;
-
   return (
     <StudentPageShell active="learn" maxWidthClassName="max-w-[1080px]">
       <div className="grid w-full gap-5 xl:grid-cols-[minmax(0,42rem)_180px] xl:items-start xl:justify-center xl:gap-8">
@@ -88,11 +75,6 @@ export default async function LearnPage({
             </div>
           ) : null}
         </div>
-        {courseSwitcher ? (
-          <div className="order-first flex min-w-0 justify-end xl:order-none xl:sticky xl:top-10 xl:z-30 xl:justify-start">
-            <LearningCourseSwitcher {...courseSwitcher} />
-          </div>
-        ) : null}
       </div>
     </StudentPageShell>
   );

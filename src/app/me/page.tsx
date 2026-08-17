@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import bcrypt from "bcryptjs";
-import { CheckCircle2, Crown, Gem, KeyRound, Mail, Medal, Pencil, Phone, School, Trash2, Trophy, UserRound } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Crown, Gem, KeyRound, Mail, Medal, Pencil, Phone, School, Trash2, Trophy, UserRound } from "lucide-react";
 import { revalidatePath } from "next/cache";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AutoDismissMessage } from "@/components/auto-dismiss-message";
 import { AvatarUploadForm } from "@/components/avatar-upload-form";
@@ -35,6 +36,7 @@ const avatarColors = [
 
 const avatarMaxBytes = 800 * 1024;
 const coverMaxBytes = 2 * 1024 * 1024;
+const diamondPageSize = 10;
 const allowedAvatarTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const dayMs = 24 * 60 * 60 * 1000;
 const heatmapWeekCount = 26;
@@ -108,23 +110,32 @@ export default async function MePage({
     profile?: string;
     password?: string;
     tab?: string;
+    diamondPage?: string;
   }>;
 }) {
   const user = await requireUser();
   const query = await searchParams;
   const activeTab = getActiveMeTab(query?.tab);
-  const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const requestedDiamondPage = getPositivePage(query?.diamondPage);
+  const diamondTransactionCount = activeTab === "diamonds"
+    ? await prisma.diamondTransaction.count({ where: { userId: user.id } })
+    : 0;
+  const diamondPageCount = Math.max(1, Math.ceil(diamondTransactionCount / diamondPageSize));
+  const diamondPage = Math.min(requestedDiamondPage, diamondPageCount);
   const heatmapStart = new Date(Date.now() - (heatmapWeekCount * 7 + 7) * dayMs);
   const [fullUser, transactions, totalAttempts, recentAttempts, schools, homeProfile, homePosts] = await Promise.all([
     prisma.user.findUnique({
       where: { id: user.id },
       include: { studentProfile: { include: { region: true, schoolOption: true } } }
     }),
-    prisma.diamondTransaction.findMany({
-      where: { userId: user.id, createdAt: { gte: oneWeekAgo } },
-      orderBy: { createdAt: "desc" },
-      take: 100
-    }),
+    activeTab === "diamonds"
+      ? prisma.diamondTransaction.findMany({
+          where: { userId: user.id },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          skip: (diamondPage - 1) * diamondPageSize,
+          take: diamondPageSize
+        })
+      : Promise.resolve([]),
     prisma.questionAttempt.count({ where: { userId: user.id } }),
     prisma.questionAttempt.findMany({
       where: { userId: user.id, createdAt: { gte: heatmapStart } },
@@ -179,12 +190,18 @@ export default async function MePage({
         {activeTab === "medals" ? (
           <MedalTrack
             dailyAttempts={dailyAttempts}
-            gender={fullUser.studentProfile?.gender || ""}
             totalAttempts={totalAttempts}
           />
         ) : null}
 
-        {activeTab === "diamonds" ? <DiamondPanel transactions={transactions} /> : null}
+        {activeTab === "diamonds" ? (
+          <DiamondPanel
+            currentPage={diamondPage}
+            totalCount={diamondTransactionCount}
+            totalPages={diamondPageCount}
+            transactions={transactions}
+          />
+        ) : null}
 
         {activeTab === "homepage" && homeProfile ? (
           <MyHomePagePanel
@@ -200,6 +217,11 @@ export default async function MePage({
 
 function getActiveMeTab(tab?: string): MeTab {
   return meTabs.some((item) => item.key === tab) ? (tab as MeTab) : "homepage";
+}
+
+function getPositivePage(value?: string) {
+  const page = Number(value);
+  return Number.isInteger(page) && page > 0 ? page : 1;
 }
 
 function SectionFrame({
@@ -376,8 +398,14 @@ function PasswordPanel({ status }: { status?: string }) {
 }
 
 function DiamondPanel({
+  currentPage,
+  totalCount,
+  totalPages,
   transactions
 }: {
+  currentPage: number;
+  totalCount: number;
+  totalPages: number;
   transactions: Array<{
     id: string;
     type: string;
@@ -391,8 +419,9 @@ function DiamondPanel({
   return (
     <SectionFrame icon={<Gem className="text-sky-500" size={22} />} title="我的钻石">
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.72fr)_280px] xl:items-start">
-        <div className="min-w-0 overflow-x-auto">
-          <table className="w-full min-w-[520px] text-left text-sm">
+        <div className="min-w-0">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[520px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs font-semibold text-slate-400">
                 <th className="py-3 pr-4">时间</th>
@@ -427,7 +456,43 @@ function DiamondPanel({
                 })
               )}
             </tbody>
-          </table>
+            </table>
+          </div>
+          {totalCount > 0 ? (
+            <nav className="mt-4 flex items-center justify-center gap-3 border-t border-slate-100 pt-4" aria-label="钻石记录分页">
+              {currentPage > 1 ? (
+                <Link className="grid size-10 place-items-center rounded text-slate-700 transition hover:bg-slate-100 hover:text-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/20" href={`/me?tab=diamonds&diamondPage=${currentPage - 1}`} aria-label="上一页" title="上一页">
+                  <ChevronLeft size={17} />
+                </Link>
+              ) : (
+                <span className="grid size-10 place-items-center text-slate-300" aria-hidden="true"><ChevronLeft size={17} /></span>
+              )}
+              <form action="/me" className="flex items-center gap-4" method="get">
+                <input name="tab" type="hidden" value="diamonds" />
+                <label className="sr-only" htmlFor="diamond-page-input">跳转到页码</label>
+                <input
+                  id="diamond-page-input"
+                  className="h-10 w-12 appearance-none rounded border border-slate-300 bg-white px-1 text-center text-sm font-semibold text-ink outline-none transition focus:border-teal focus:ring-2 focus:ring-teal/15 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  defaultValue={currentPage}
+                  inputMode="numeric"
+                  max={totalPages}
+                  min={1}
+                  name="diamondPage"
+                  step={1}
+                  type="number"
+                />
+                <span className="text-sm font-semibold text-slate-500">/</span>
+                <span className="min-w-4 text-center text-sm font-semibold text-ink">{totalPages}</span>
+              </form>
+              {currentPage < totalPages ? (
+                <Link className="grid size-10 place-items-center rounded text-slate-700 transition hover:bg-slate-100 hover:text-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/20" href={`/me?tab=diamonds&diamondPage=${currentPage + 1}`} aria-label="下一页" title="下一页">
+                  <ChevronRight size={17} />
+                </Link>
+              ) : (
+                <span className="grid size-10 place-items-center text-slate-300" aria-hidden="true"><ChevronRight size={17} /></span>
+              )}
+            </nav>
+          ) : null}
         </div>
         <aside className="rounded-2xl border border-slate-200/70 bg-sky-50/50 p-5">
           <h3 className="text-lg font-semibold text-ink">钻石充值</h3>
@@ -596,11 +661,9 @@ function getPostRepostSource(post: {
 
 function MedalTrack({
   dailyAttempts,
-  gender,
   totalAttempts
 }: {
   dailyAttempts: Record<string, number>;
-  gender: string;
   totalAttempts: number;
 }) {
   const expertTarget = medalRules.find((rule) => rule.level === "expert")?.minAttempts || 400;
@@ -619,11 +682,10 @@ function MedalTrack({
   const activeLearningShareContent = "晒一下最近的学习节奏，继续冲。";
   const activeLearningShareSuggestions = getActiveLearningShareSuggestions();
   const nodes = [
-    { label: "小白", threshold: 0, position: 0, icon: Medal },
-    { label: "达人", threshold: expertTarget, position: 50, icon: Trophy },
-    { label: "学霸", threshold: scholarTarget, position: 100, icon: Crown }
+    { label: "小白", threshold: 0, position: 0, icon: Medal, colorClass: "bg-[#B87333] text-white" },
+    { label: "达人", threshold: expertTarget, position: 50, icon: Trophy, colorClass: "bg-[#94A3B8] text-white" },
+    { label: "学霸", threshold: scholarTarget, position: 100, icon: Crown, colorClass: "bg-[#D4A017] text-white" }
   ];
-  const medalColor = gender === "female" ? "bg-pink-500" : "bg-sky-500";
 
   return (
     <SectionFrame icon={<Medal className="text-teal" size={22} />} title="我的勋章">
@@ -641,7 +703,7 @@ function MedalTrack({
                 return (
                   <div key={node.label} className="absolute top-0 z-10 w-20" style={{ left: `calc(8px + (100% - 16px) * ${node.position / 100})`, transform: nodeTransform(node.position) }}>
                     <p className="mb-4 text-center text-xs font-semibold text-ink">{node.label}</p>
-                    <span className={cn("mx-auto grid size-9 place-items-center rounded-full border-2 border-white shadow-soft", reached ? `${medalColor} text-white` : "bg-slate-200 text-slate-400")}>
+                    <span className={cn("mx-auto grid size-9 place-items-center rounded-full border-2 border-white shadow-soft", reached ? node.colorClass : "bg-slate-200 text-slate-400")}>
                       <Icon size={18} />
                     </span>
                     <p className="mt-2 text-center text-[11px] font-semibold text-slate-400">{node.threshold === 0 ? "默认" : `${node.threshold} 道`}</p>

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, ChevronDown, Lock, Sparkles } from "lucide-react";
+import { ArrowLeft, BookOpenText, Check, ChevronDown, Lock, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type PathPoint = {
@@ -38,6 +38,7 @@ type LearningPathProps = {
 
 const text = {
   back: "\u8fd4\u56de",
+  guide: "\u6307\u5357",
   myCourses: "\u6211\u7684\u8bfe\u7a0b",
   passed: "\u5df2\u901a\u8fc7",
   start: "\u5f00\u59cb",
@@ -104,15 +105,26 @@ export function LearningPath({ course, initialPointId, path }: LearningPathProps
   }, [activePointId, path.points]);
 
   return (
-    <div className="mx-auto max-w-2xl pb-24">
+    <div className="mx-auto max-w-2xl" style={{ paddingBottom: "max(6rem, calc(100vh - 20rem))" }}>
       <section className="sticky top-0 z-30 -mx-5 bg-mist/95 px-5 pb-4 pt-6 backdrop-blur">
         <div className="rounded-panel border-b-8 border-success-strong bg-success p-4 text-white shadow-card">
-          <div className="min-w-0">
-            <Link className="mb-1 inline-flex max-w-full items-center gap-2 text-sm font-semibold text-white/85 hover:text-white" href={`/learn/stages?course=${course.courseType}`}>
-              <ArrowLeft size={18} />
-              <span className="min-w-0 truncate">{course.title}</span>
-            </Link>
-            <h1 className="max-w-full break-words text-2xl font-bold leading-tight">{activePoint?.title || course.title}</h1>
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <Link className="mb-1 inline-flex max-w-full items-center gap-2 text-sm font-semibold text-white/85 hover:text-white" href={`/learn/stages?course=${course.courseType}`}>
+                <ArrowLeft size={18} />
+                <span className="min-w-0 truncate">{course.title}</span>
+              </Link>
+              <h1 className="max-w-full break-words text-2xl font-bold leading-tight">{activePoint?.title || course.title}</h1>
+            </div>
+            {activePoint ? (
+              <Link
+                className="inline-flex min-h-14 shrink-0 items-center gap-2 rounded-xl border border-white/25 border-b-4 border-b-black/10 bg-white/10 px-4 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                href={`/learn/${activePoint.id}/guide`}
+              >
+                <BookOpenText size={22} />
+                {text.guide}
+              </Link>
+            ) : null}
           </div>
         </div>
       </section>

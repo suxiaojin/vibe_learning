@@ -543,16 +543,19 @@ model RegionPublicSubject {
 }
 
 model RegionMajor {
-  id        String   @id @default(cuid())
-  regionId  String
-  majorId   String
-  region    Region   @relation(fields: [regionId], references: [id], onDelete: Cascade)
-  major     Major    @relation(fields: [majorId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
+  id                       String                  @id @default(cuid())
+  regionId                 String
+  majorId                  String
+  aiExplainPromptProfileId String?
+  region                   Region                  @relation(fields: [regionId], references: [id], onDelete: Cascade)
+  major                    Major                   @relation(fields: [majorId], references: [id], onDelete: Cascade)
+  aiExplainPromptProfile   AiExplainPromptProfile? @relation(fields: [aiExplainPromptProfileId], references: [id], onDelete: SetNull)
+  createdAt                DateTime                @default(now())
 
   @@unique([regionId, majorId])
   @@index([regionId])
   @@index([majorId])
+  @@index([aiExplainPromptProfileId])
   @@map("region_majors")
 }
 
@@ -592,29 +595,33 @@ model StudentProfile {
 }
 
 model LearningCourse {
-  id                     String                  @id @default(cuid())
-  regionId               String
-  publicSubjectId        String?
-  majorId                String?
-  name                   String
-  courseType             LearningCourseType
-  description            String?
-  questionTypeConfig     Json?
-  status                 ContentStatus           @default(draft)
-  sortOrder              Int                     @default(0)
-  region                 Region                  @relation(fields: [regionId], references: [id], onDelete: Cascade)
-  publicSubject          PublicSubject?          @relation(fields: [publicSubjectId], references: [id], onDelete: SetNull)
-  major                  Major?                  @relation(fields: [majorId], references: [id], onDelete: SetNull)
-  chapters               Chapter[]
-  syllabusItems          SyllabusItem[]
-  aiStudyProjects        AiStudyProject[]
-  officialStudyMaterials OfficialStudyMaterial[]
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @updatedAt
+  id                       String                  @id @default(cuid())
+  regionId                 String
+  publicSubjectId          String?
+  majorId                  String?
+  name                     String
+  courseType               LearningCourseType
+  description              String?
+  questionTypeConfig       Json?
+  status                   ContentStatus           @default(draft)
+  sortOrder                Int                     @default(0)
+  region                   Region                  @relation(fields: [regionId], references: [id], onDelete: Cascade)
+  publicSubject            PublicSubject?          @relation(fields: [publicSubjectId], references: [id], onDelete: SetNull)
+  major                    Major?                  @relation(fields: [majorId], references: [id], onDelete: SetNull)
+  chapters                 Chapter[]
+  syllabusItems            SyllabusItem[]
+  aiStudyProjects          AiStudyProject[]
+  officialStudyMaterials   OfficialStudyMaterial[]
+  aiExplainPromptProfileId String?
+  aiExplainPromptProfile   AiExplainPromptProfile? @relation(fields: [aiExplainPromptProfileId], references: [id], onDelete: SetNull)
+  aiConversations          AiConversation[]
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
 
   @@index([regionId, courseType, status, sortOrder])
   @@index([publicSubjectId])
   @@index([majorId])
+  @@index([aiExplainPromptProfileId])
   @@map("learning_courses")
 }
 
@@ -918,20 +925,69 @@ model WrongQuestion {
   @@map("wrong_questions")
 }
 
+model AiExplainPromptProfile {
+  id                 String                   @id @default(cuid())
+  name               String                   @unique
+  description        String?
+  isDefault          Boolean                  @default(false)
+  cacheInvalidatedAt DateTime?
+  activeVersionId    String?                  @unique
+  activeVersion      AiExplainPromptVersion?  @relation("AiExplainPromptActiveVersion", fields: [activeVersionId], references: [id], onDelete: SetNull)
+  versions           AiExplainPromptVersion[] @relation("AiExplainPromptProfileVersions")
+  courses            LearningCourse[]
+  regionMajors       RegionMajor[]
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  @@index([isDefault, updatedAt])
+  @@map("ai_explain_prompt_profiles")
+}
+
+model AiExplainPromptVersion {
+  id                 String                  @id @default(cuid())
+  profileId          String
+  version            Int
+  systemPrompt       String                  @db.Text
+  userPromptTemplate String                  @db.Text
+  changeNote         String?
+  invalidateExisting Boolean                 @default(false)
+  publishedAt        DateTime?
+  createdById        String?
+  createdByName      String?
+  profile            AiExplainPromptProfile  @relation("AiExplainPromptProfileVersions", fields: [profileId], references: [id], onDelete: Cascade)
+  activeForProfile   AiExplainPromptProfile? @relation("AiExplainPromptActiveVersion")
+  conversations      AiConversation[]
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  @@unique([profileId, version])
+  @@index([profileId, publishedAt, version])
+  @@map("ai_explain_prompt_versions")
+}
+
 model AiConversation {
-  id         String   @id @default(cuid())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  questionId String
-  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  purpose    String   @default("general")
-  messages   Json
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id                String                  @id @default(cuid())
+  userId            String
+  user              User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questionId        String
+  question          Question                @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  courseId          String?
+  course            LearningCourse?         @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  aiPromptVersionId String?
+  aiPromptVersion   AiExplainPromptVersion? @relation(fields: [aiPromptVersionId], references: [id], onDelete: SetNull)
+  purpose           String                  @default("general")
+  messages          Json
+  modelName         String?
+  answerSource      String?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
 
   @@index([userId, questionId])
   @@index([userId, questionId, purpose])
+  @@index([userId, questionId, courseId, purpose])
   @@index([questionId, purpose])
+  @@index([courseId])
+  @@index([aiPromptVersionId])
   @@map("ai_conversations")
 }
 
