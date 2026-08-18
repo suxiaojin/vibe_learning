@@ -95,6 +95,7 @@ export function WrongQuestionAi({
       void loadFollowUpHistory();
     } else {
       setFollowUps((current) => [...current, { id: followUpId, question: content, answer: "" }]);
+      setExpandedFollowUpIds((current) => current.includes(followUpId) ? current : [...current, followUpId]);
     }
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 60000);

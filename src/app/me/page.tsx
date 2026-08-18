@@ -80,6 +80,14 @@ const diamondRuleTransactionPresentation: Record<string, { typeLabel: string; de
   wrong_question_ai_follow_up: {
     typeLabel: "AI 追问",
     description: "错题答疑：追问"
+  },
+  special_practice_ai_doubt: {
+    typeLabel: "AI 答疑",
+    description: "专项练习：AI答疑"
+  },
+  special_practice_ai_follow_up: {
+    typeLabel: "AI 提问",
+    description: "专项练习：提问"
   }
 };
 

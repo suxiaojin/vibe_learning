@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   BookOpenCheck,
-  CheckCircle2,
   ChevronRight,
   Circle,
   Clock3,
@@ -54,7 +53,7 @@ type CurrentProfile = {
 } | null;
 
 type Feedback = {
-  type: "success" | "error";
+  type: "error";
   message: string;
 } | null;
 
@@ -62,6 +61,7 @@ export type CourseCenterOverview = {
   courses: Array<{
     key: "public_subject" | "major";
     title: string;
+    publishedCourseCount: number;
     chapterCount: number;
     sectionCount: number;
     passedCount: number;
@@ -103,13 +103,10 @@ const text = {
   studySystem: "学制",
   publicSubject: "公共课",
   major: "专业课",
-  redirecting: "马上跳转学习页面....",
-  cancelRedirect: "取消跳转",
   cancel: "取消",
   save: "保存学习方案",
   saving: "保存中",
   loading: "加载课程中",
-  saved: "学习方案已保存",
   chooseAll: "请选择完整课程信息。",
   loadFailed: "课程选项加载失败，请稍后再试。",
   saveFailed: "保存失败，请稍后再试。",
@@ -140,7 +137,6 @@ export function CourseCenterForm({
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [savedProfile, setSavedProfile] = useState(currentProfile);
-  const [redirectSeconds, setRedirectSeconds] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(!currentProfile);
 
   const provinces = useMemo(() => uniqueValues(options.regions.map((region) => region.province)), [options.regions]);
@@ -154,23 +150,6 @@ export function CourseCenterForm({
   const displayProfile = savedProfile || currentProfile;
   const savedPlanLabel = formatSavedPlanLabel(displayProfile);
   const canSave = Boolean(selectedRegionId && publicSubjectId && majorId && !loadingOptions && !saving);
-
-  useEffect(() => {
-    if (redirectSeconds === null) {
-      return;
-    }
-
-    if (redirectSeconds <= 0) {
-      router.push("/learn");
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setRedirectSeconds((current) => (current === null ? null : current - 1));
-    }, 1000);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [redirectSeconds, router]);
 
   useEffect(() => {
     if (!drawerOpen) {
@@ -239,12 +218,10 @@ export function CourseCenterForm({
 
   function closeDrawer() {
     setDrawerOpen(false);
-    setRedirectSeconds(null);
   }
 
   function updateProvince(province: string) {
     const nextRegion = options.regions.find((region) => region.province === province) || null;
-    setRedirectSeconds(null);
     setSelectedProvince(province);
     setSelectedStudySystem(nextRegion?.studySystem || "");
     setSelectedRegionId(nextRegion?.id || "");
@@ -253,18 +230,15 @@ export function CourseCenterForm({
   function updateStudySystem(studySystem: string) {
     const nextRegion =
       options.regions.find((region) => region.province === selectedProvince && region.studySystem === studySystem) || null;
-    setRedirectSeconds(null);
     setSelectedStudySystem(studySystem);
     setSelectedRegionId(nextRegion?.id || "");
   }
 
   function updatePublicSubject(nextPublicSubjectId: string) {
-    setRedirectSeconds(null);
     setPublicSubjectId(nextPublicSubjectId);
   }
 
   function updateMajor(nextMajorId: string) {
-    setRedirectSeconds(null);
     setMajorId(nextMajorId);
   }
 
@@ -298,8 +272,7 @@ export function CourseCenterForm({
         publicSubjectName: selectedPublicSubject?.name || "",
         majorName: selectedMajor?.name || ""
       });
-      setFeedback({ type: "success", message: text.saved });
-      setRedirectSeconds(5);
+      setDrawerOpen(false);
       router.refresh();
     } catch {
       setFeedback({ type: "error", message: text.saveFailed });
@@ -420,13 +393,10 @@ export function CourseCenterForm({
 
                 {feedback ? (
                   <div
-                    className={cn(
-                      "flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold",
-                      feedback.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
-                    )}
-                    role="status"
+                    className="flex items-center gap-2 rounded-xl bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
+                    role="alert"
                   >
-                    {feedback.type === "success" ? <CheckCircle2 size={18} /> : <Circle size={18} />}
+                    <Circle size={18} />
                     {feedback.message}
                   </div>
                 ) : null}
@@ -441,17 +411,6 @@ export function CourseCenterForm({
             </div>
 
             <footer className="border-t border-slate-200 bg-white px-6 py-5">
-              {redirectSeconds !== null ? (
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-teal/5 px-4 py-3 text-sm font-semibold text-slate-600">
-                  <span className="flex items-center gap-2">
-                    <Loader2 className="animate-spin text-teal" size={18} />
-                    {text.redirecting} <span className="text-teal">{redirectSeconds} 秒</span>
-                  </span>
-                  <button className="font-semibold text-teal hover:text-teal/80" type="button" onClick={() => setRedirectSeconds(null)}>
-                    {text.cancelRedirect}
-                  </button>
-                </div>
-              ) : null}
               <div className="flex justify-end gap-3">
                 <button className="secondary-button min-w-24 text-[15px]" type="button" onClick={closeDrawer}>{text.cancel}</button>
                 <button className="primary-button min-w-40 text-[15px]" type="button" disabled={!canSave} onClick={saveSelection}>
@@ -491,7 +450,7 @@ function CourseCard({ course }: { course: CourseCenterOverview["courses"][number
                 {isMajor ? "专业课" : "公共课"}
               </span>
             </div>
-            <p className="mt-1 text-sm font-medium text-slate-500">{course.chapterCount} 章 · {course.sectionCount} 个知识点</p>
+            <p className="mt-1 text-sm font-medium text-slate-500">已发布-{course.publishedCourseCount}门课程-{course.chapterCount}章关卡</p>
           </div>
         </div>
         <div className="shrink-0 text-right">
@@ -553,7 +512,7 @@ function CourseCard({ course }: { course: CourseCenterOverview["courses"][number
           <p className="mt-3 text-sm font-medium text-slate-400">{course.sectionCount === 0 ? "暂无已发布的课程内容" : "已完成当前课程的全部知识点"}</p>
         )}
         <Link className={cn("mt-4 inline-flex items-center gap-1 text-sm font-semibold", isMajor ? "text-teal" : "text-info")} href={`/course-center/knowledge-map?course=${course.key}`}>
-          查看全部 {course.sectionCount} 个知识点 <ChevronRight size={16} />
+          查看课程导图 <ChevronRight size={16} />
         </Link>
       </div>
 

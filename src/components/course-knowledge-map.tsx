@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import { ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, ChevronUp, Lock, Maximize2, Minimize2, Sparkles, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, ChevronUp, Maximize2, Minimize2, ZoomIn, ZoomOut } from "lucide-react";
 import type { SyllabusPathGroup, SyllabusPathStatus } from "@/lib/syllabus-learning";
 import { cn } from "@/lib/utils";
 
@@ -14,7 +14,6 @@ type MapNode = {
   subtitle?: string;
   kind: MapNodeKind;
   status?: SyllabusPathStatus;
-  href?: string;
   children: MapNode[];
 };
 
@@ -35,33 +34,10 @@ function clampZoom(value: number) {
   return Math.min(1.25, Math.max(0.55, Number(value.toFixed(2))));
 }
 
-function statusLabel(status?: SyllabusPathStatus) {
-  if (status === "passed") {
-    return "已通过";
-  }
-  if (status === "unlocked") {
-    return "可学习";
-  }
-  if (status === "locked") {
-    return "未解锁";
-  }
-  return "";
-}
-
-function groupSectionCount(group: SyllabusPathGroup) {
-  return group.courses.reduce(
-    (total, course) => total + course.chapters.reduce((courseTotal, chapter) => courseTotal + chapter.sections.length, 0),
-    0
-  );
-}
-
 function buildMapRoot(group: SyllabusPathGroup): MapNode {
-  const sectionCount = groupSectionCount(group);
-
   return {
     id: `group-${group.key}`,
     title: group.name,
-    subtitle: `${group.courses.length} 门课程 / ${sectionCount} 个知识点`,
     kind: "root",
     children: group.courses.map((course) => ({
       id: course.id,
@@ -71,15 +47,12 @@ function buildMapRoot(group: SyllabusPathGroup): MapNode {
       children: course.chapters.map((chapter) => ({
         id: chapter.id,
         title: chapter.title,
-        subtitle: `${chapter.passedCount}/${chapter.sections.length} 已通过`,
         kind: "chapter",
         children: chapter.sections.map((section) => ({
           id: section.id,
           title: section.title,
-          subtitle: `${section.questionCount} 题`,
           kind: "section",
           status: section.status,
-          href: section.status === "locked" ? undefined : `/learn/${section.id}`,
           children: []
         }))
       }))
@@ -103,16 +76,12 @@ function NodeBox({
   const palette = branchColors[colorIndex % branchColors.length];
   const isRoot = node.kind === "root";
   const isCourse = node.kind === "course";
-  const isSection = node.kind === "section";
   const locked = node.status === "locked";
-  const label = statusLabel(node.status);
-  const isLink = Boolean(node.href && !locked);
   const boxClassName = cn(
     "group/node relative z-10 inline-flex min-h-11 max-w-[340px] items-center gap-3 rounded-lg border px-4 py-2 text-left text-sm font-semibold leading-5 shadow-sm transition",
     isRoot && "min-h-16 min-w-52 px-6 text-base",
     isCourse && "min-h-12 text-white",
     !isRoot && !isCourse && "bg-white text-[#102033]",
-    isLink && "hover:-translate-y-0.5 hover:shadow-md",
     collapsible && "cursor-pointer hover:-translate-y-0.5 hover:shadow-md",
     locked && "bg-slate-50 text-slate-400"
   );
@@ -124,19 +93,6 @@ function NodeBox({
 
   const content = (
     <>
-      {isSection ? (
-        <span
-          aria-label={label}
-          className={cn(
-            "grid size-7 shrink-0 place-items-center rounded-full",
-            node.status === "passed" && "bg-emerald-100 text-emerald-600",
-            node.status === "unlocked" && "bg-sky-100 text-sky-600",
-            node.status === "locked" && "bg-slate-200 text-slate-400"
-          )}
-        >
-          {node.status === "passed" ? <CheckCircle2 size={17} /> : node.status === "unlocked" ? <Sparkles size={16} /> : <Lock size={15} />}
-        </span>
-      ) : null}
       <span className="min-w-0">
         <span className={cn("block break-words", isRoot && "text-lg font-black text-ink")}>{node.title}</span>
         {node.subtitle ? (
@@ -144,7 +100,6 @@ function NodeBox({
         ) : null}
       </span>
       {collapsible ? <ChevronRight className={cn("shrink-0 transition", !collapsed && "rotate-90", isCourse ? "text-white/75" : "text-slate-400")} size={16} /> : null}
-      {isLink ? <ChevronRight className="shrink-0 text-slate-400" size={16} /> : null}
     </>
   );
 
@@ -170,14 +125,6 @@ function NodeBox({
       >
         {content}
       </button>
-    );
-  }
-
-  if (isLink && node.href) {
-    return (
-      <Link className={boxClassName} data-no-pan href={node.href} style={boxStyle} title={node.title}>
-        {content}
-      </Link>
     );
   }
 
@@ -354,12 +301,7 @@ export function CourseKnowledgeMap({ selectedGroup }: CourseKnowledgeMapProps) {
       </header>
 
       <div ref={mapShellRef} className={cn("mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-[#dfe5ea] shadow-sm", isFullscreen && "mt-0 h-dvh rounded-none border-0")}>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-4 py-3">
-          <div className="flex flex-wrap items-center gap-3 text-xs font-black text-slate-500">
-            <span className="inline-flex items-center gap-1"><CheckCircle2 className="text-emerald-500" size={16} />已通过</span>
-            <span className="inline-flex items-center gap-1"><Sparkles className="text-sky-500" size={16} />可学习</span>
-            <span className="inline-flex items-center gap-1"><Lock className="text-slate-400" size={15} />未解锁</span>
-          </div>
+        <div className="flex flex-wrap items-center justify-end gap-3 border-b border-slate-200 bg-white/90 px-4 py-3">
           <div className="flex items-center gap-2">
             <button className="icon-button size-9" type="button" aria-label="缩小" onClick={() => zoomBy(-0.08)}>
               <ZoomOut size={18} />

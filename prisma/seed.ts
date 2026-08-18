@@ -41,7 +41,9 @@ async function main() {
       { key: "ai_study_project_create", direction: "consume", amount: 50, enabled: true },
       { key: "ai_study_buddy_chat", direction: "consume", amount: 5, enabled: true },
       { key: "wrong_question_ai_explanation", direction: "consume", amount: 5, enabled: true },
-      { key: "wrong_question_ai_follow_up", direction: "consume", amount: 2, enabled: true }
+      { key: "wrong_question_ai_follow_up", direction: "consume", amount: 2, enabled: true },
+      { key: "special_practice_ai_doubt", direction: "consume", amount: 5, enabled: true },
+      { key: "special_practice_ai_follow_up", direction: "consume", amount: 2, enabled: true }
     ],
     skipDuplicates: true
   });

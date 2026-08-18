@@ -105,6 +105,26 @@ export const diamondRuleDefinitions = [
     defaultAmount: 2,
     defaultEnabled: true,
     sortOrder: 140
+  },
+  {
+    key: "special_practice_ai_doubt",
+    direction: "consume",
+    label: "专项练习 - AI答疑",
+    description: "学生在专项练习页面首次请求某道题的 AI 答疑时扣减钻石。",
+    triggerTiming: "首次答疑请求通过校验并创建 AI 对话记录时",
+    defaultAmount: 5,
+    defaultEnabled: true,
+    sortOrder: 150
+  },
+  {
+    key: "special_practice_ai_follow_up",
+    direction: "consume",
+    label: "专项练习 - 提问",
+    description: "学生在专项练习 AI 答疑弹窗每次提交问题并准备调用大模型时扣减钻石。",
+    triggerTiming: "每次提问请求通过校验并创建 AI 对话记录时",
+    defaultAmount: 2,
+    defaultEnabled: true,
+    sortOrder: 160
   }
 ] as const satisfies readonly DiamondRuleDefinitionShape[];
 

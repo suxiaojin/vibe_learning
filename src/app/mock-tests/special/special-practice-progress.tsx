@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 type StoredPracticeState = {
   answers?: unknown;
   answerStates?: unknown;
-  questionIdsSignature?: string;
 };
 
 type ProgressTone = {
@@ -22,28 +21,28 @@ const tones: ProgressTone[] = [
 ];
 
 export function SpecialPracticeProgress({
-  fallbackTotal,
+  questionIds,
   sectionId,
   toneIndex
 }: {
-  fallbackTotal: number;
+  questionIds: string[];
   sectionId: string;
   toneIndex: number;
 }) {
-  const [progress, setProgress] = useState(() => readPracticeProgress(sectionId, fallbackTotal));
+  const [progress, setProgress] = useState(() => readPracticeProgress(sectionId, questionIds));
   const tone = tones[toneIndex % tones.length];
   const percent = progress.total > 0 ? Math.min(100, Math.round((progress.attempted / progress.total) * 100)) : 0;
-  const label = progress.total > 0 ? `已答 ${progress.attempted}/${progress.total}` : "未开始";
+  const label = `已答 ${progress.attempted}/${progress.total}`;
 
   useEffect(() => {
     function refresh() {
-      setProgress(readPracticeProgress(sectionId, fallbackTotal));
+      setProgress(readPracticeProgress(sectionId, questionIds));
     }
 
     refresh();
     window.addEventListener("storage", refresh);
     return () => window.removeEventListener("storage", refresh);
-  }, [fallbackTotal, sectionId]);
+  }, [questionIds, sectionId]);
 
   return (
     <div className="flex min-w-0 items-center gap-3">
@@ -55,8 +54,9 @@ export function SpecialPracticeProgress({
   );
 }
 
-function readPracticeProgress(sectionId: string, fallbackTotal: number) {
-  const fallback = { attempted: 0, total: Math.max(0, fallbackTotal) };
+function readPracticeProgress(sectionId: string, questionIds: string[]) {
+  const currentQuestionIds = new Set(questionIds);
+  const fallback = { attempted: 0, total: currentQuestionIds.size };
 
   if (typeof window === "undefined") {
     return fallback;
@@ -69,26 +69,18 @@ function readPracticeProgress(sectionId: string, fallbackTotal: number) {
     }
 
     const stored = JSON.parse(raw) as StoredPracticeState;
-    const questionIds = parseQuestionIds(stored.questionIdsSignature);
-    const total = questionIds.length || fallback.total;
     const attemptedIds = new Set<string>();
 
     collectAttemptedIds(stored.answerStates, attemptedIds);
     collectAttemptedIds(stored.answers, attemptedIds);
 
     return {
-      attempted: Math.min(attemptedIds.size, total),
-      total
+      attempted: Array.from(attemptedIds).filter((questionId) => currentQuestionIds.has(questionId)).length,
+      total: currentQuestionIds.size
     };
   } catch {
     return fallback;
   }
-}
-
-function parseQuestionIds(signature: unknown) {
-  return typeof signature === "string" && signature.trim()
-    ? signature.split("|").map((item) => item.trim()).filter(Boolean)
-    : [];
 }
 
 function collectAttemptedIds(value: unknown, target: Set<string>) {

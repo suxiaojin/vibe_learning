@@ -4,7 +4,13 @@ import { ArrowLeft, CircleMinus } from "lucide-react";
 import { EmptyMockTestState, MockTestPageFrame } from "@/app/mock-tests/mock-test-components";
 import { SpecialPracticeProgress } from "@/app/mock-tests/special/special-practice-progress";
 import { requireUser } from "@/lib/auth";
-import { getMockTestContext, normalizeMockTestCourseKey, type MockTestSection } from "@/lib/mock-tests";
+import {
+  getAiGeneratedQuestionsBySection,
+  getMockTestContext,
+  normalizeMockTestCourseKey,
+  type MockTestQuestion,
+  type MockTestSection
+} from "@/lib/mock-tests";
 
 const PAGE_SIZE = 10;
 
@@ -21,6 +27,9 @@ export default async function SpecialPracticePage({
   const currentPage = normalizePage(query?.page, totalPages);
   const offset = (currentPage - 1) * PAGE_SIZE;
   const visibleSections = context.passedSections.slice(offset, offset + PAGE_SIZE);
+  const questionsBySectionId = context.group
+    ? await getAiGeneratedQuestionsBySection(context.group, visibleSections)
+    : new Map<string, MockTestQuestion[]>();
 
   return (
     <MockTestPageFrame>
@@ -36,6 +45,7 @@ export default async function SpecialPracticePage({
         <SpecialPracticeTable
           courseKey={courseKey}
           currentPage={currentPage}
+          questionsBySectionId={questionsBySectionId}
           sections={visibleSections}
           totalPages={totalPages}
           totalSections={totalSections}
@@ -47,12 +57,14 @@ export default async function SpecialPracticePage({
 
 function SpecialPracticeTable({
   courseKey,
+  questionsBySectionId,
   sections,
   currentPage,
   totalPages,
   totalSections
 }: {
   courseKey: "public_subject" | "major";
+  questionsBySectionId: ReadonlyMap<string, MockTestQuestion[]>;
   sections: MockTestSection[];
   currentPage: number;
   totalPages: number;
@@ -70,7 +82,13 @@ function SpecialPracticeTable({
 
           <div className="py-2">
             {sections.map((section, index) => (
-              <SpecialPracticeRow key={section.id} courseKey={courseKey} section={section} toneIndex={index} />
+              <SpecialPracticeRow
+                key={section.id}
+                courseKey={courseKey}
+                questionIds={(questionsBySectionId.get(section.id) || []).map((question) => question.id)}
+                section={section}
+                toneIndex={index}
+              />
             ))}
           </div>
         </div>
@@ -98,10 +116,12 @@ function SpecialPracticeTable({
 
 function SpecialPracticeRow({
   courseKey,
+  questionIds,
   section,
   toneIndex
 }: {
   courseKey: "public_subject" | "major";
+  questionIds: string[];
   section: MockTestSection;
   toneIndex: number;
 }) {
@@ -111,7 +131,7 @@ function SpecialPracticeRow({
         <CircleMinus className="shrink-0 text-teal" size={22} strokeWidth={2.5} />
         <span className="truncate font-semibold text-ink">{section.title}</span>
       </div>
-      <SpecialPracticeProgress fallbackTotal={section.questionCount} sectionId={section.id} toneIndex={toneIndex} />
+      <SpecialPracticeProgress questionIds={questionIds} sectionId={section.id} toneIndex={toneIndex} />
       <div className="text-right">
         <Link
           className="inline-flex min-h-11 items-center justify-center rounded-xl bg-teal px-4 text-sm font-semibold text-white transition hover:bg-teal/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/25"

@@ -3,6 +3,7 @@ import { Link2, Plus, RotateCcw, Save, Trash2, X } from "lucide-react";
 import {
   createAiExplainPromptProfile,
   deleteAiExplainPromptProfile,
+  deleteAiExplainPromptVersion,
   discardAiExplainPromptDraft,
   publishAiExplainPromptDraft,
   rollbackAiExplainPromptVersion,
@@ -12,6 +13,7 @@ import {
 import { AdminAiPromptEditor } from "@/components/admin-ai-prompt-editor";
 import { AdminAiPromptMajorBindingForm } from "@/components/admin-ai-prompt-major-binding-form";
 import { AdminAiPromptProfileDeleteButton } from "@/components/admin-ai-prompt-profile-delete-button";
+import { AdminAiPromptVersionDeleteButton } from "@/components/admin-ai-prompt-version-delete-button";
 import {
   defaultAiExplainSystemPrompt,
   defaultAiExplainUserPromptTemplate
@@ -19,8 +21,11 @@ import {
 import { prisma } from "@/lib/prisma";
 import { cn } from "@/lib/utils";
 
-function promptHref(profileId: string, query: string, status: string) {
+function promptHref(profileId: string, query: string, status: string, versionId?: string) {
   const params = new URLSearchParams({ tab: "prompt", promptProfileId: profileId });
+  if (versionId) {
+    params.set("promptVersionId", versionId);
+  }
   if (query) {
     params.set("promptQuery", query);
   }
@@ -52,11 +57,13 @@ function regionMajorLabel(regionMajor: { region: { name: string }; major: { name
 export async function AdminAiPromptSettings({
   promptProfileId,
   promptQuery = "",
-  promptStatus = "all"
+  promptStatus = "all",
+  promptVersionId
 }: {
   promptProfileId?: string;
   promptQuery?: string;
   promptStatus?: string;
+  promptVersionId?: string;
 }) {
   const [profiles, regionMajorOptions] = await Promise.all([
     prisma.aiExplainPromptProfile.findMany({
@@ -103,10 +110,11 @@ export async function AdminAiPromptSettings({
 
   const draft = selectedProfile.versions.find((version) => !version.publishedAt) || null;
   const activeVersion = selectedProfile.activeVersion;
-  const editorVersion = draft?.version || (selectedProfile.versions[0]?.version || 0) + 1;
-  const editorSystemPrompt = draft?.systemPrompt || activeVersion?.systemPrompt || defaultAiExplainSystemPrompt;
-  const editorUserPrompt = draft?.userPromptTemplate || activeVersion?.userPromptTemplate || defaultAiExplainUserPromptTemplate;
   const publishedVersions = selectedProfile.versions.filter((version) => version.publishedAt);
+  const selectedPublishedVersion = publishedVersions.find((version) => version.id === promptVersionId) || null;
+  const editorVersion = draft?.version || (selectedProfile.versions[0]?.version || 0) + 1;
+  const editorSystemPrompt = selectedPublishedVersion?.systemPrompt || draft?.systemPrompt || activeVersion?.systemPrompt || defaultAiExplainSystemPrompt;
+  const editorUserPrompt = selectedPublishedVersion?.userPromptTemplate || draft?.userPromptTemplate || activeVersion?.userPromptTemplate || defaultAiExplainUserPromptTemplate;
 
   return (
     <section className="grid min-w-0 gap-4 xl:grid-cols-[250px_minmax(0,1fr)_340px]">
@@ -182,7 +190,9 @@ export async function AdminAiPromptSettings({
       <section className="min-w-0 border border-slate-200 bg-white shadow-sm">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
           <div>
-            <h2 className="text-lg font-black text-ink">{selectedProfile.name} · 草稿 v{editorVersion}</h2>
+            <h2 className="text-lg font-black text-ink">
+              {selectedProfile.name} · {selectedPublishedVersion ? `历史版本 v${selectedPublishedVersion.version}` : `草稿 v${editorVersion}`}
+            </h2>
             {selectedProfile.description ? <p className="mt-1 text-xs font-semibold text-slate-500">{selectedProfile.description}</p> : null}
           </div>
           <span className="border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-black text-slate-600">
@@ -192,8 +202,16 @@ export async function AdminAiPromptSettings({
 
         <form action={saveAiExplainPromptDraft} className="p-5">
           <input name="profileId" type="hidden" value={selectedProfile.id} />
+          {selectedPublishedVersion ? (
+            <div className="mb-5 border border-blue-200 bg-blue-50 p-3 text-xs font-semibold leading-5 text-blue-800">
+              <p className="font-black">正在编辑历史版本 v{selectedPublishedVersion.version} 的内容</p>
+              <p className="mt-1">
+                保存草稿后，{draft ? `草稿 v${draft.version} 将更新` : `将创建草稿 v${editorVersion}`}；历史版本 v{selectedPublishedVersion.version} 不会被覆盖。发布时选择“仅影响后续新生成内容”后，不会改动已有解释。
+              </p>
+            </div>
+          ) : null}
           <AdminAiPromptEditor
-            key={draft?.id || `profile-${selectedProfile.id}-v${editorVersion}`}
+            key={selectedPublishedVersion?.id || draft?.id || `profile-${selectedProfile.id}-v${editorVersion}`}
             initialSystemPrompt={editorSystemPrompt}
             initialUserPromptTemplate={editorUserPrompt}
           />
@@ -285,13 +303,25 @@ export async function AdminAiPromptSettings({
               <p className="p-4 text-xs font-semibold text-slate-500">暂无已发布版本。</p>
             ) : publishedVersions.map((version) => {
               const active = version.id === activeVersion?.id;
+              const selected = version.id === selectedPublishedVersion?.id;
               return (
-                <div key={version.id} className="p-3">
-                  <div className="flex items-start justify-between gap-2">
+                <div key={version.id} className={cn("flex items-start gap-2 p-3", selected ? "bg-blue-50 ring-1 ring-inset ring-blue-300" : "hover:bg-slate-50")}>
+                  <Link
+                    aria-current={selected ? "true" : undefined}
+                    className="min-w-0 flex-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    href={promptHref(selectedProfile.id, promptQuery, normalizedStatus, version.id)}
+                  >
                     <div>
-                      <p className="text-xs font-black text-ink">v{version.version} {active ? <span className="ml-1 bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">当前线上</span> : null}</p>
+                      <p className="text-xs font-black text-ink">
+                        v{version.version}
+                        {active ? <span className="ml-1 bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">当前线上</span> : null}
+                        {selected ? <span className="ml-1 bg-blue-100 px-1.5 py-0.5 text-[10px] text-blue-700">编辑中</span> : null}
+                      </p>
                       <p className="mt-1 text-[11px] font-semibold text-slate-500">{formatPublishedAt(version.publishedAt)} · {version.createdByName || "管理员"}</p>
                     </div>
+                    {version.changeNote ? <p className="mt-2 text-xs font-semibold leading-5 text-slate-600">{version.changeNote}</p> : null}
+                  </Link>
+                  <div className="flex shrink-0 items-start gap-1">
                     {!active && !draft ? (
                       <form action={rollbackAiExplainPromptVersion}>
                         <input name="profileId" type="hidden" value={selectedProfile.id} />
@@ -299,10 +329,22 @@ export async function AdminAiPromptSettings({
                         <button className="flex min-h-9 items-center gap-1 px-2 text-[11px] font-black text-blue-700 hover:bg-blue-50" type="submit"><RotateCcw size={13} />回滚</button>
                       </form>
                     ) : !active && draft ? (
-                      <span className="text-[10px] font-bold text-slate-400">先处理草稿</span>
+                      <span className="pt-2 text-[10px] font-bold text-slate-400">先处理草稿</span>
                     ) : null}
+                    {selectedProfile.isDefault ? (
+                      <span className="mt-2 bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-500">默认保护</span>
+                    ) : (
+                      <form action={deleteAiExplainPromptVersion}>
+                        <input name="profileId" type="hidden" value={selectedProfile.id} />
+                        <input name="versionId" type="hidden" value={version.id} />
+                        <AdminAiPromptVersionDeleteButton
+                          isActive={active}
+                          profileName={selectedProfile.name}
+                          version={version.version}
+                        />
+                      </form>
+                    )}
                   </div>
-                  {version.changeNote ? <p className="mt-2 text-xs font-semibold leading-5 text-slate-600">{version.changeNote}</p> : null}
                 </div>
               );
             })}

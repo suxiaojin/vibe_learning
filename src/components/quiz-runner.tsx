@@ -187,7 +187,7 @@ export function QuizRunner({
     });
   }
 
-  function updateFillBlankAnswer(question: Question, value: string) {
+  function updateTextAnswer(question: Question, value: string) {
     if (checkState !== "idle") {
       return;
     }
@@ -311,19 +311,42 @@ export function QuizRunner({
 
         {current.type === "fill_blank" || isQuestionBankRichAnswerQuestionType(current.type) ? (
           <div className="mt-6">
-            <input
-              className={cn(
-                "min-h-14 w-full rounded-xl border-2 bg-surface px-5 py-3 text-base font-bold outline-none transition",
-                checkState === "correct"
-                  ? "border-success bg-success-muted"
-                  : checkState === "wrong"
-                    ? "border-coral bg-coral/10"
-                    : "border-border-soft focus:border-info"
-              )}
-              disabled={checkState !== "idle"}
-              value={selected[0] || ""}
-              onChange={(event) => updateFillBlankAnswer(current, event.target.value)}
-            />
+            {current.type === "fill_blank" ? (
+              <input
+                aria-label="请输入答案"
+                autoComplete="off"
+                className={cn(
+                  "min-h-14 w-full rounded-xl border-2 bg-surface px-5 py-3 text-base font-bold outline-none transition placeholder:font-medium placeholder:text-slate-400",
+                  checkState === "correct"
+                    ? "border-success bg-success-muted"
+                    : checkState === "wrong"
+                      ? "border-coral bg-coral/10"
+                      : "border-border-soft focus:border-info focus:ring-4 focus:ring-info/10"
+                )}
+                disabled={checkState !== "idle"}
+                placeholder="请输入答案"
+                type="text"
+                value={selected[0] || ""}
+                onChange={(event) => updateTextAnswer(current, event.target.value)}
+              />
+            ) : (
+              <textarea
+                aria-label="请输入你的作答"
+                className={cn(
+                  "min-h-36 w-full resize-y rounded-xl border-2 bg-surface px-5 py-4 text-base font-medium leading-7 outline-none transition placeholder:text-slate-400",
+                  checkState === "correct"
+                    ? "border-success bg-success-muted"
+                    : checkState === "wrong"
+                      ? "border-coral bg-coral/10"
+                      : "border-border-soft focus:border-info focus:ring-4 focus:ring-info/10"
+                )}
+                disabled={checkState !== "idle"}
+                placeholder="请输入你的作答"
+                rows={6}
+                value={selected[0] || ""}
+                onChange={(event) => updateTextAnswer(current, event.target.value)}
+              />
+            )}
           </div>
         ) : (
           <div className="mt-6 grid gap-3">

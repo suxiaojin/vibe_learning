@@ -68,6 +68,7 @@ function buildCourseCenterOverview(groups: SyllabusPathGroup[]): CourseCenterOve
     return {
       key: group.key,
       title: group.name,
+      publishedCourseCount: group.courses.length,
       chapterCount: group.courses.reduce((total, course) => total + course.chapters.length, 0),
       sectionCount: totalSections,
       passedCount: passedSections.length,

@@ -488,60 +488,58 @@ function buildKnowledgeMapGroups(
     const knowledgeCourses = group.courses.map((learningCourse) => {
       const course = courseById.get(learningCourse.id);
       const roots = course ? (shape.childrenByParentId.get(null) || []).filter((item) => item.courseId === course.id) : [];
-      const chapters = roots
-        .map((root) => {
-          const learningChapter = learningCourse.chapters.find((chapter) => chapter.id === root.id);
-          const checkpoint = learningChapter?.sections[0];
-          const status = checkpoint?.status || "locked";
-          const bestScore = checkpoint?.bestScore || 0;
-          const passedAt = checkpoint?.passedAt || null;
-          const sections: SyllabusPathSection[] = [];
-          const rootQuestionCount = questionIdsBySectionId.get(root.id)?.size || 0;
+      const chapters = roots.map((root) => {
+        const learningChapter = learningCourse.chapters.find((chapter) => chapter.id === root.id);
+        const checkpoint = learningChapter?.sections[0];
+        const status = checkpoint?.status || "locked";
+        const bestScore = checkpoint?.bestScore || 0;
+        const passedAt = checkpoint?.passedAt || null;
+        const sections: SyllabusPathSection[] = [];
+        const rootQuestionCount = questionIdsBySectionId.get(root.id)?.size || 0;
 
-          if (rootQuestionCount > 0) {
-            sections.push({
-              id: root.id,
-              title: root.title,
-              description: root.description,
-              sortOrder: root.sortOrder,
-              questionCount: rootQuestionCount,
-              status,
-              bestScore,
-              passedAt,
-              questionSyllabusItemIds: [root.id]
-            });
-            sectionIds.push(root.id);
-          }
-
-          for (const child of shape.childrenByParentId.get(root.id) || []) {
-            const questionCount = questionIdsBySectionId.get(child.id)?.size || 0;
-            if (questionCount <= 0) {
-              continue;
-            }
-            sections.push({
-              id: child.id,
-              title: child.title,
-              description: child.description,
-              sortOrder: child.sortOrder,
-              questionCount,
-              status,
-              bestScore,
-              passedAt,
-              questionSyllabusItemIds: questionScopeForSection(child, shape)
-            });
-            sectionIds.push(child.id);
-          }
-
-          return {
+        if (rootQuestionCount > 0) {
+          sections.push({
             id: root.id,
             title: root.title,
             description: root.description,
             sortOrder: root.sortOrder,
-            passedCount: sections.filter((section) => section.status === "passed").length,
-            sections
-          };
-        })
-        .filter((chapter) => chapter.sections.length > 0);
+            questionCount: rootQuestionCount,
+            status,
+            bestScore,
+            passedAt,
+            questionSyllabusItemIds: [root.id]
+          });
+          sectionIds.push(root.id);
+        }
+
+        for (const child of shape.childrenByParentId.get(root.id) || []) {
+          const questionCount = questionIdsBySectionId.get(child.id)?.size || 0;
+          if (questionCount <= 0) {
+            continue;
+          }
+          sections.push({
+            id: child.id,
+            title: child.title,
+            description: child.description,
+            sortOrder: child.sortOrder,
+            questionCount,
+            status,
+            bestScore,
+            passedAt,
+            questionSyllabusItemIds: questionScopeForSection(child, shape)
+          });
+          sectionIds.push(child.id);
+        }
+
+        return {
+          id: root.id,
+          title: root.title,
+          description: root.description,
+          sortOrder: root.sortOrder,
+          passedCount: sections.filter((section) => section.status === "passed").length,
+          sections
+        };
+      });
 
       return {
         ...learningCourse,

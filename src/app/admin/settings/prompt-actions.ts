@@ -186,6 +186,67 @@ export async function deleteAiExplainPromptProfile(formData: FormData) {
   redirect(promptSettingsPath(undefined, "notice", "prompt-profile-deleted"));
 }
 
+export async function deleteAiExplainPromptVersion(formData: FormData) {
+  await requireAdmin();
+  const profileId = requiredText(formData, "profileId");
+  const versionId = requiredText(formData, "versionId");
+
+  const result = await prisma.$transaction(async (tx) => {
+    const profile = await tx.aiExplainPromptProfile.findUnique({
+      where: { id: profileId },
+      select: { id: true, isDefault: true, activeVersionId: true }
+    });
+    if (!profile) {
+      return "profile-missing" as const;
+    }
+    if (profile.isDefault) {
+      return "default-protected" as const;
+    }
+
+    const target = await tx.aiExplainPromptVersion.findFirst({
+      where: { id: versionId, profileId, publishedAt: { not: null } },
+      select: { id: true }
+    });
+    if (!target) {
+      return "version-missing" as const;
+    }
+
+    let status: "history-deleted" | "active-replaced" | "active-fallback" = "history-deleted";
+    if (profile.activeVersionId === target.id) {
+      const replacement = await tx.aiExplainPromptVersion.findFirst({
+        where: {
+          profileId,
+          id: { not: target.id },
+          publishedAt: { not: null }
+        },
+        orderBy: { version: "desc" },
+        select: { id: true }
+      });
+      await tx.aiExplainPromptProfile.update({
+        where: { id: profileId },
+        data: { activeVersionId: replacement?.id || null }
+      });
+      status = replacement ? "active-replaced" : "active-fallback";
+    }
+
+    await tx.aiExplainPromptVersion.delete({ where: { id: target.id } });
+    return status;
+  });
+
+  if (result === "profile-missing") {
+    redirect(promptSettingsPath(undefined, "error", "prompt-profile-not-found"));
+  }
+  if (result === "default-protected") {
+    redirect(promptSettingsPath(profileId, "error", "prompt-default-version-cannot-delete"));
+  }
+  if (result === "version-missing") {
+    redirect(promptSettingsPath(profileId, "error", "prompt-version-not-found"));
+  }
+
+  revalidatePath("/admin/settings");
+  redirect(promptSettingsPath(profileId, "notice", `prompt-version-${result}`));
+}
+
 export async function rollbackAiExplainPromptVersion(formData: FormData) {
   const admin = await requireAdmin();
   const profileId = requiredText(formData, "profileId");

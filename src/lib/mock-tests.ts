@@ -21,6 +21,11 @@ export type MockTestQuestion = {
   };
 };
 
+type OrderedMockTestQuestion = MockTestQuestion & {
+  createdAt: Date;
+  sortOrder: number;
+};
+
 export type MockTestSection = SyllabusPathSection & {
   chapterTitle: string;
   courseTitle: string;
@@ -60,11 +65,21 @@ export async function getMockTestContext(userId: string, courseKey: LearningOwne
   };
 }
 
-export async function getAiGeneratedQuestionsForSections(group: SyllabusPathGroup, sections: MockTestSection[]) {
+export async function getAiGeneratedQuestionsBySection(group: SyllabusPathGroup, sections: MockTestSection[]) {
+  const questionsBySectionId = new Map<string, MockTestQuestion[]>(sections.map((section) => [section.id, []]));
   const syllabusItemIds = uniqueValues(sections.flatMap((section) => section.questionSyllabusItemIds));
 
   if (group.courses.length === 0 || syllabusItemIds.length === 0) {
-    return [];
+    return questionsBySectionId;
+  }
+
+  const sectionIdsBySyllabusItemId = new Map<string, Set<string>>();
+  for (const section of sections) {
+    for (const syllabusItemId of section.questionSyllabusItemIds) {
+      const sectionIds = sectionIdsBySyllabusItemId.get(syllabusItemId) || new Set<string>();
+      sectionIds.add(section.id);
+      sectionIdsBySyllabusItemId.set(syllabusItemId, sectionIds);
+    }
   }
 
   const tags = await prisma.questionKnowledgeTag.findMany({
@@ -73,6 +88,7 @@ export async function getAiGeneratedQuestionsForSections(group: SyllabusPathGrou
       question: { status: "published" }
     },
     select: {
+      syllabusItemId: true,
       syllabusItem: {
         select: {
           title: true
@@ -115,7 +131,9 @@ export async function getAiGeneratedQuestionsForSections(group: SyllabusPathGrou
     }
   });
 
-  const byQuestionId = new Map<string, MockTestQuestion & { createdAt: Date; sortOrder: number }>();
+  const orderedQuestionsBySectionId = new Map<string, Map<string, OrderedMockTestQuestion>>(
+    sections.map((section) => [section.id, new Map<string, OrderedMockTestQuestion>()])
+  );
 
   for (const tag of tags) {
     const aiPaperQuestions = tag.question.paperQuestions
@@ -123,11 +141,11 @@ export async function getAiGeneratedQuestionsForSections(group: SyllabusPathGrou
       .sort((left, right) => left.paper.sortOrder - right.paper.sortOrder || left.sortOrder - right.sortOrder);
     const firstPaperQuestion = aiPaperQuestions[0];
 
-    if (!firstPaperQuestion || byQuestionId.has(tag.question.id)) {
+    if (!firstPaperQuestion) {
       continue;
     }
 
-    byQuestionId.set(tag.question.id, {
+    const question: OrderedMockTestQuestion = {
       id: tag.question.id,
       type: tag.question.type,
       stem: tag.question.stem,
@@ -146,12 +164,42 @@ export async function getAiGeneratedQuestionsForSections(group: SyllabusPathGrou
         year: firstPaperQuestion.paper.year,
         paperType: firstPaperQuestion.paper.paperType
       }
-    });
+    };
+
+    for (const sectionId of sectionIdsBySyllabusItemId.get(tag.syllabusItemId) || []) {
+      const byQuestionId = orderedQuestionsBySectionId.get(sectionId);
+      if (byQuestionId && !byQuestionId.has(question.id)) {
+        byQuestionId.set(question.id, question);
+      }
+    }
   }
 
-  return Array.from(byQuestionId.values())
-    .sort((left, right) => left.sortOrder - right.sortOrder || left.createdAt.getTime() - right.createdAt.getTime())
-    .map(({ createdAt: _createdAt, sortOrder: _sortOrder, ...question }) => question);
+  for (const section of sections) {
+    const orderedQuestions = Array.from(orderedQuestionsBySectionId.get(section.id)?.values() || []);
+    questionsBySectionId.set(
+      section.id,
+      orderedQuestions
+        .sort((left, right) => left.sortOrder - right.sortOrder || left.createdAt.getTime() - right.createdAt.getTime())
+        .map(({ createdAt: _createdAt, sortOrder: _sortOrder, ...question }) => question)
+    );
+  }
+
+  return questionsBySectionId;
+}
+
+export async function getAiGeneratedQuestionsForSections(group: SyllabusPathGroup, sections: MockTestSection[]) {
+  const questionsBySectionId = await getAiGeneratedQuestionsBySection(group, sections);
+  const uniqueQuestions = new Map<string, MockTestQuestion>();
+
+  for (const section of sections) {
+    for (const question of questionsBySectionId.get(section.id) || []) {
+      if (!uniqueQuestions.has(question.id)) {
+        uniqueQuestions.set(question.id, question);
+      }
+    }
+  }
+
+  return Array.from(uniqueQuestions.values());
 }
 
 export function pickRandomMockQuestions(questions: MockTestQuestion[], limit = 10) {

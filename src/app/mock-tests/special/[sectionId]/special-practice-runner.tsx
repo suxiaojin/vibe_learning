@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Bot, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Loader2, Send, X } from "lucide-react";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
-import { getQuestionBankTypeLabel } from "@/lib/question-bank-types";
+import { getQuestionBankTypeLabel, isQuestionBankRichAnswerQuestionType } from "@/lib/question-bank-types";
 
 type PracticeQuestion = {
   id: string;
@@ -34,6 +34,13 @@ type AiMessage = {
   id: string;
   role: "assistant" | "user";
   content: string;
+  exchangeId?: string;
+};
+
+type AiFollowUpExchange = {
+  id: string;
+  question: string;
+  answer: string;
 };
 
 type StoredPracticeState = {
@@ -71,6 +78,7 @@ export function SpecialPracticeRunner({
   const [hydrated, setHydrated] = useState(false);
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
   const [aiMessagesByQuestionId, setAiMessagesByQuestionId] = useState<Record<string, AiMessage[]>>({});
+  const [aiHistoryLoadedByQuestionId, setAiHistoryLoadedByQuestionId] = useState<Record<string, boolean>>({});
   const [aiLoadingQuestionId, setAiLoadingQuestionId] = useState<string | null>(null);
   const [followUpText, setFollowUpText] = useState("");
   const question = questions[currentIndex];
@@ -80,6 +88,7 @@ export function SpecialPracticeRunner({
   const aiMessages = aiMessagesByQuestionId[question.id] || [];
   const aiLoading = aiLoadingQuestionId === question.id;
   const options = useMemo(() => normalizeOptions(question.options), [question.options]);
+  const hasTextAnswer = question.type === "fill_blank" || isQuestionBankRichAnswerQuestionType(question.type);
   const correctAnswer = normalizeAnswer(question.answer);
   const previousEnabled = currentIndex > 0;
   const isLastQuestion = currentIndex === questions.length - 1;
@@ -155,6 +164,14 @@ export function SpecialPracticeRunner({
     });
   }
 
+  function updateTextAnswer(value: string) {
+    if (revealed || judgedState) {
+      return;
+    }
+
+    setAnswers((current) => ({ ...current, [question.id]: value.trim() ? [value] : [] }));
+  }
+
   function toggleAnswer() {
     if (!revealed) {
       judgeCurrentQuestion({ markUnansweredWrong: true });
@@ -201,8 +218,67 @@ export function SpecialPracticeRunner({
   function openAiDoubt() {
     setAiDialogOpen(true);
     setFollowUpText("");
-    if (aiMessages.length === 0 && !aiLoading) {
-      void requestAiDoubt(question.id);
+    if (!aiHistoryLoadedByQuestionId[question.id] && !aiLoading) {
+      void loadAiDoubtHistory(question.id);
+    }
+  }
+
+  async function loadAiDoubtHistory(questionId: string) {
+    setAiLoadingQuestionId(questionId);
+    let requestedDefaultAnswer = false;
+
+    try {
+      const response = await fetch(`/api/ai/question-doubt?questionId=${encodeURIComponent(questionId)}`, {
+        cache: "no-store"
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        answer?: unknown;
+        error?: unknown;
+        followUps?: Array<{ id?: unknown; question?: unknown; answer?: unknown }>;
+      } | null;
+
+      if (!response.ok) {
+        throw new Error(String(payload?.error || "AI 答疑记录加载失败，请稍后重试。"));
+      }
+
+      const answer = typeof payload?.answer === "string" ? payload.answer : "";
+      const followUps = (payload?.followUps || []).flatMap((exchange) => {
+        return typeof exchange.id === "string" &&
+          typeof exchange.question === "string" &&
+          typeof exchange.answer === "string"
+          ? [{ id: exchange.id, question: exchange.question, answer: exchange.answer }]
+          : [];
+      });
+      const restoredMessages: AiMessage[] = [
+        ...(answer ? [{ id: `default-${questionId}`, role: "assistant" as const, content: answer }] : []),
+        ...followUps.flatMap((exchange) => [
+          { id: `${exchange.id}-user`, exchangeId: exchange.id, role: "user" as const, content: exchange.question },
+          { id: `${exchange.id}-assistant`, exchangeId: exchange.id, role: "assistant" as const, content: exchange.answer }
+        ])
+      ];
+
+      setAiMessagesByQuestionId((current) => ({ ...current, [questionId]: restoredMessages }));
+      setAiHistoryLoadedByQuestionId((current) => ({ ...current, [questionId]: true }));
+
+      if (!answer) {
+        requestedDefaultAnswer = true;
+        await requestAiDoubt(questionId);
+      }
+    } catch (error) {
+      setAiMessagesByQuestionId((current) => ({
+        ...current,
+        [questionId]: [
+          {
+            id: `history-error-${questionId}`,
+            role: "assistant",
+            content: error instanceof Error ? error.message : "AI 答疑记录加载失败，请稍后重试。"
+          }
+        ]
+      }));
+    } finally {
+      if (!requestedDefaultAnswer) {
+        setAiLoadingQuestionId((current) => (current === questionId ? null : current));
+      }
     }
   }
 
@@ -216,12 +292,17 @@ export function SpecialPracticeRunner({
   }
 
   async function requestAiDoubt(questionId: string, prompt?: string) {
+    const exchangeId = prompt ? createClientId() : undefined;
     const assistantMessageId = createClientId();
     setAiLoadingQuestionId(questionId);
     setAiMessagesByQuestionId((current) => {
       const existing = current[questionId] || [];
       const nextMessages = prompt
-        ? [...existing, { id: createClientId(), role: "user" as const, content: prompt }, { id: assistantMessageId, role: "assistant" as const, content: "" }]
+        ? [
+            ...existing,
+            { id: `${exchangeId}-user`, exchangeId, role: "user" as const, content: prompt },
+            { id: assistantMessageId, exchangeId, role: "assistant" as const, content: "" }
+          ]
         : [...existing, { id: assistantMessageId, role: "assistant" as const, content: "" }];
       return { ...current, [questionId]: nextMessages };
     });
@@ -230,7 +311,7 @@ export function SpecialPracticeRunner({
       const response = await fetch("/api/ai/question-doubt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionId, prompt })
+        body: JSON.stringify({ questionId, prompt, requestId: exchangeId })
       });
 
       if (!response.ok) {
@@ -263,6 +344,9 @@ export function SpecialPracticeRunner({
       }
     } catch (error) {
       replaceAiMessage(questionId, assistantMessageId, error instanceof Error ? error.message : "AI 服务暂时不可用，请稍后重试。");
+      if (!prompt) {
+        setAiHistoryLoadedByQuestionId((current) => ({ ...current, [questionId]: false }));
+      }
     } finally {
       setAiLoadingQuestionId((current) => (current === questionId ? null : current));
     }
@@ -295,7 +379,32 @@ export function SpecialPracticeRunner({
               {currentIndex + 1}、{question.stem}
             </h2>
 
-            {options.length > 0 ? (
+            {hasTextAnswer ? (
+              <div className="mt-6 max-w-3xl">
+                {question.type === "fill_blank" ? (
+                  <input
+                    aria-label="请输入答案"
+                    autoComplete="off"
+                    className="min-h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3 text-base font-medium text-ink outline-none transition placeholder:text-slate-400 hover:border-teal/30 focus:border-teal/50 focus:bg-white focus:ring-4 focus:ring-teal/10 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                    disabled={revealed || Boolean(judgedState)}
+                    placeholder="请输入答案"
+                    type="text"
+                    value={selected[0] || ""}
+                    onChange={(event) => updateTextAnswer(event.target.value)}
+                  />
+                ) : (
+                  <textarea
+                    aria-label="请输入你的作答"
+                    className="min-h-36 w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-base font-medium leading-7 text-ink outline-none transition placeholder:text-slate-400 hover:border-teal/30 focus:border-teal/50 focus:bg-white focus:ring-4 focus:ring-teal/10 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                    disabled={revealed || Boolean(judgedState)}
+                    placeholder="请输入你的作答"
+                    rows={6}
+                    value={selected[0] || ""}
+                    onChange={(event) => updateTextAnswer(event.target.value)}
+                  />
+                )}
+              </div>
+            ) : options.length > 0 ? (
               <div className="mt-6 grid max-w-3xl gap-3">
                 {options.map((option) => {
                   const selectedOption = selected.includes(option.key);
@@ -463,6 +572,29 @@ function AiDoubtDialog({
   onClose: () => void;
   onSubmitFollowUp: () => void;
 }) {
+  const initialAnswer = messages.find((message) => message.role === "assistant" && !message.exchangeId)?.content || "";
+  const followUps = useMemo(() => buildAiFollowUpExchanges(messages), [messages]);
+  const [expandedFollowUpIds, setExpandedFollowUpIds] = useState<string[]>([]);
+  const latestMessage = messages.at(-1);
+  const activeFollowUpId = loading && latestMessage?.role === "assistant"
+    ? latestMessage.exchangeId || null
+    : null;
+
+  useEffect(() => {
+    if (!activeFollowUpId) {
+      return;
+    }
+    setExpandedFollowUpIds((current) => current.includes(activeFollowUpId) ? current : [...current, activeFollowUpId]);
+  }, [activeFollowUpId]);
+
+  function toggleFollowUp(exchangeId: string) {
+    setExpandedFollowUpIds((current) => {
+      return current.includes(exchangeId)
+        ? current.filter((id) => id !== exchangeId)
+        : [...current, exchangeId];
+    });
+  }
+
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 px-5 py-6">
       <section className="flex h-[min(900px,calc(100dvh-48px))] w-full max-w-5xl flex-col overflow-hidden rounded-[22px] bg-white shadow-2xl">
@@ -480,25 +612,63 @@ function AiDoubtDialog({
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-10 py-8">
-          <div className="mx-auto max-w-4xl space-y-6 text-base leading-8 text-ink">
-            {messages.length === 0 ? (
+          <div className="mx-auto max-w-4xl text-base leading-8 text-ink">
+            {!initialAnswer && followUps.length === 0 ? (
               <p className="flex items-center gap-2 text-slate-500">
-                <Loader2 className="animate-spin" size={20} />
-                AI正在组织答案...
+                {loading ? <Loader2 className="animate-spin" size={20} /> : null}
+                {loading ? "AI正在组织答案..." : "暂时没有可展示的答疑内容。"}
               </p>
-            ) : (
-              messages.map((message) =>
-                message.role === "user" ? (
-                  <div key={message.id} className="flex justify-end">
-                    <p className="max-w-[78%] rounded-2xl bg-teal/10 px-5 py-3 text-base leading-7 text-ink">{message.content}</p>
-                  </div>
-                ) : (
-                  <div key={message.id} className="rounded-2xl bg-white text-ink">
-                    {message.content ? <AiAnswerText content={message.content} /> : <StreamingPlaceholder />}
-                  </div>
-                )
-              )
-            )}
+            ) : null}
+
+            {initialAnswer ? (
+              <section aria-label="AI答疑">
+                <p className="text-xs font-bold text-slate-500">AI答疑</p>
+                <div className="mt-2 rounded-2xl bg-white text-ink">
+                  <AiAnswerText content={initialAnswer} />
+                </div>
+              </section>
+            ) : null}
+
+            {followUps.length > 0 ? (
+              <div className={`${initialAnswer ? "mt-6 border-t border-slate-200 pt-6" : ""} space-y-3`}>
+                {followUps.map((exchange) => {
+                  const expanded = expandedFollowUpIds.includes(exchange.id);
+                  const answerId = `special-follow-up-answer-${exchange.id}`;
+                  const title = `你的追问：${exchange.question}`;
+
+                  return (
+                    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white" key={exchange.id}>
+                      <button
+                        aria-controls={answerId}
+                        aria-expanded={expanded}
+                        className="flex min-h-11 w-full cursor-pointer items-center gap-3 bg-sky-50 px-4 py-2 text-left transition-colors hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-inset"
+                        title={title}
+                        type="button"
+                        onClick={() => toggleFollowUp(exchange.id)}
+                      >
+                        <span className="min-w-0 flex-1 truncate text-sm font-bold text-ink">{title}</span>
+                        <ChevronRight
+                          aria-hidden="true"
+                          className={`shrink-0 text-slate-500 transition-transform duration-200 motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
+                          size={18}
+                        />
+                      </button>
+                      {expanded ? (
+                        <div className="border-t border-slate-200 p-4" id={answerId}>
+                          {exchange.answer ? <AiAnswerText content={exchange.answer} /> : null}
+                          {loading && exchange.id === activeFollowUpId ? (
+                            <p className={`${exchange.answer ? "mt-3 " : ""}flex items-center gap-2 text-sm text-slate-600`} role="status">
+                              <Loader2 className="animate-spin" size={16} />
+                              {exchange.answer ? "正在继续输出..." : "正在回答这个追问..."}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </section>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -532,6 +702,29 @@ function AiDoubtDialog({
       </section>
     </div>
   );
+}
+
+function buildAiFollowUpExchanges(messages: AiMessage[]) {
+  const exchanges = new Map<string, AiFollowUpExchange>();
+
+  for (const message of messages) {
+    if (!message.exchangeId) {
+      continue;
+    }
+    const current = exchanges.get(message.exchangeId) || {
+      id: message.exchangeId,
+      question: "",
+      answer: ""
+    };
+    if (message.role === "user") {
+      current.question = message.content;
+    } else {
+      current.answer = message.content;
+    }
+    exchanges.set(message.exchangeId, current);
+  }
+
+  return [...exchanges.values()].filter((exchange) => exchange.question);
 }
 
 function StreamingPlaceholder() {
