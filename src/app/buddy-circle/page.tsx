@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
-import { Ban, Check, ChevronDown, MoreHorizontal, Search, Send, SlidersHorizontal, Trash2, UserCheck, UserMinus, UserPlus } from "lucide-react";
+import { Ban, Check, ChevronDown, MoreHorizontal, Search, SlidersHorizontal, Trash2, UserCheck, UserMinus, UserPlus } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { BuddyFeedLoadMore } from "@/components/buddy-feed-load-more";
+import { BuddyPostComposer } from "@/components/buddy-post-composer";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { DismissibleDetails } from "@/components/dismissible-details";
 import { PostSuccessNoticeTrigger } from "@/components/post-success-toast";
@@ -212,21 +213,7 @@ function FeedTab({
 function PostComposer({ returnTo }: { returnTo: string }) {
   return (
     <SurfaceCard>
-      <form action={publishPost} className="space-y-3.5">
-        <input name="returnTo" type="hidden" value={returnTo} />
-        <textarea
-          className="input min-h-28 resize-y rounded-2xl border-0 bg-slate-50/90 px-4 py-3 text-[15px] font-medium leading-7 text-ink shadow-none placeholder:text-slate-400"
-          name="content"
-          placeholder="有什么想分享？"
-        />
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-[13px] font-medium text-slate-500">仅支持文字和表情，不能包含超链接、图片、视频或音频。</p>
-          <button className="primary-button min-h-12 rounded-2xl px-5 text-[15px]" type="submit">
-            <Send size={17} />
-            发帖
-          </button>
-        </div>
-      </form>
+      <BuddyPostComposer action={publishPost} returnTo={returnTo} />
     </SurfaceCard>
   );
 }

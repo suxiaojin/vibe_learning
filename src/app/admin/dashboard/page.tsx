@@ -3,7 +3,6 @@ import {
   Activity,
   Bot,
   BrainCircuit,
-  CircleDollarSign,
   ClipboardCheck,
   LogIn,
   Medal,
@@ -12,7 +11,7 @@ import {
   UsersRound
 } from "lucide-react";
 import { DashboardMajorFilters, DashboardRankingFilters } from "@/components/admin-dashboard-filters";
-import { DashboardTrendChart, DashboardUnavailableTrend } from "@/components/admin-dashboard-chart";
+import { DashboardTrendChart } from "@/components/admin-dashboard-chart";
 import {
   dashboardPeriods,
   getCurrentTrendSelection,
@@ -40,8 +39,6 @@ type SearchParams = {
   registrationMonth?: string;
   activeYear?: string;
   activeMonth?: string;
-  rechargeYear?: string;
-  rechargeMonth?: string;
   answerUsersYear?: string;
   answerUsersMonth?: string;
   answerCountYear?: string;
@@ -234,14 +231,12 @@ export default async function DashboardPage({
 
   const registrationSelection = parseTrendSelection(params, "registrationYear", "registrationMonth", currentSelection);
   const activeSelection = parseTrendSelection(params, "activeYear", "activeMonth", currentSelection);
-  const rechargeSelection = parseTrendSelection(params, "rechargeYear", "rechargeMonth", currentSelection);
   const answerUsersSelection = parseTrendSelection(params, "answerUsersYear", "answerUsersMonth", currentSelection);
   const answerCountSelection = parseTrendSelection(params, "answerCountYear", "answerCountMonth", currentSelection);
   const allSelectedYears = [
     currentSelection.year,
     registrationSelection.year,
     activeSelection.year,
-    rechargeSelection.year,
     answerUsersSelection.year,
     answerCountSelection.year
   ];
@@ -290,7 +285,7 @@ export default async function DashboardPage({
         </div>
       </header>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-[repeat(7,minmax(0,1fr))]">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-[repeat(6,minmax(0,1fr))]">
         <MetricCard
           title="总用户数"
           value={overview.totalUsers}
@@ -336,13 +331,6 @@ export default async function DashboardPage({
           description="周期内至少成功获得一次 AI 回答的去重用户。"
           icon={Bot}
           tone="#ea580c"
-        />
-        <MetricCard
-          title="充值人数"
-          value="--"
-          description="充值功能未接入，暂不统计。"
-          icon={CircleDollarSign}
-          tone="#94a3b8"
         />
       </section>
 
@@ -454,14 +442,6 @@ export default async function DashboardPage({
             monthParam="activeMonth"
             availableYears={availableYears}
             preservedParams={preservedParams(params, ["activeYear", "activeMonth"])}
-          />
-          <DashboardUnavailableTrend
-            title="充值人数趋势"
-            selection={rechargeSelection}
-            yearParam="rechargeYear"
-            monthParam="rechargeMonth"
-            availableYears={availableYears}
-            preservedParams={preservedParams(params, ["rechargeYear", "rechargeMonth"])}
           />
           <DashboardTrendChart
             title="答题人数趋势"
