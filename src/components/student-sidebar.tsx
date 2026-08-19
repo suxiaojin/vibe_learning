@@ -12,7 +12,6 @@ import { cn } from "@/lib/utils";
 type StudentNavKey = "learn" | "course-center" | "study-buddy" | "buddy-circle" | "me" | "notifications" | "settings";
 
 const text = {
-  subtitle: "\u4e13\u8f6c\u672c\u95ef\u5173\u5b66\u4e60",
   learn: "\u5b66\u4e60",
   courseCenter: "\u8bfe\u7a0b\u4e2d\u5fc3",
   studyBuddy: "学习搭子",
@@ -35,7 +34,6 @@ export async function StudentSidebar({ active }: { active: StudentNavKey }) {
       <div className="sticky top-0 flex min-h-dvh flex-col px-5 py-6">
         <div className="mb-8 px-2">
           <p className="text-[28px] font-bold leading-tight text-teal">Vibe Learning</p>
-          <p className="mt-1 text-[13px] font-medium text-slate-500">{text.subtitle}</p>
         </div>
         <nav className="space-y-2.5">
           <StudentNavItem active={active === "learn"} href="/learn" icon={<GraduationCap size={22} />} label={text.learn} />

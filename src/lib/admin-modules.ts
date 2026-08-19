@@ -21,7 +21,8 @@ const defaultAdminModules: AdminModuleNavItem[] = [
   { key: "students", label: "学生管理", href: "/admin/students", icon: "users", status: "published", sortOrder: 6, builtIn: true },
   { key: "notifications", label: "通知管理", href: "/admin/notifications", icon: "bell", status: "published", sortOrder: 7, builtIn: true },
   { key: "ai-study-projects", label: "项目管理", href: "/admin/ai-study-projects", icon: "project", status: "published", sortOrder: 8, builtIn: true },
-  { key: "settings", label: "系统设置", href: "/admin/settings", icon: "settings", status: "published", sortOrder: 99, builtIn: true }
+  { key: "settings", label: "系统设置", href: "/admin/settings", icon: "settings", status: "published", sortOrder: 99, builtIn: true },
+  { key: "prompt-settings", label: "提示词设置", href: "/admin/prompt-settings", icon: "prompt", status: "published", sortOrder: 100, builtIn: true }
 ];
 
 async function ensureDefaultAdminModules() {

@@ -622,8 +622,7 @@ function AiDoubtDialog({
 
             {initialAnswer ? (
               <section aria-label="AI答疑">
-                <p className="text-xs font-bold text-slate-500">AI答疑</p>
-                <div className="mt-2 rounded-2xl bg-white text-ink">
+                <div className="rounded-2xl bg-white text-ink">
                   <AiAnswerText content={initialAnswer} />
                 </div>
               </section>
@@ -634,7 +633,7 @@ function AiDoubtDialog({
                 {followUps.map((exchange) => {
                   const expanded = expandedFollowUpIds.includes(exchange.id);
                   const answerId = `special-follow-up-answer-${exchange.id}`;
-                  const title = `你的追问：${exchange.question}`;
+                  const title = exchange.question;
 
                   return (
                     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white" key={exchange.id}>

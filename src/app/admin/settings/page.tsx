@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ImageUp, Plus, Save, Trash2 } from "lucide-react";
 import type { ShareCopyContext } from "@prisma/client";
 import {
@@ -14,7 +15,6 @@ import {
   updateSystemSettings
 } from "@/app/admin/actions";
 import { AdminDiamondRuleSettings } from "@/components/admin-diamond-rule-settings";
-import { AdminAiPromptSettings } from "@/components/admin-ai-prompt-settings";
 import { requireAdmin } from "@/lib/auth";
 import { listDiamondRuleSettings } from "@/lib/diamond-rules";
 import { prisma } from "@/lib/prisma";
@@ -23,15 +23,14 @@ import { studyBuddyHeroEffectOptions } from "@/lib/study-buddy-title-effects";
 import { getSystemSettings } from "@/lib/system-settings";
 import { cn } from "@/lib/utils";
 
-type SettingsTab = "login" | "agreements" | "study-buddy" | "share-copy" | "diamonds" | "prompt";
+type SettingsTab = "login" | "agreements" | "study-buddy" | "share-copy" | "diamonds";
 
 const tabs: Array<{ key: SettingsTab; label: string }> = [
   { key: "login", label: "登录页配置" },
   { key: "agreements", label: "协议内容" },
   { key: "study-buddy", label: "学习搭子" },
   { key: "share-copy", label: "分享文案" },
-  { key: "diamonds", label: "钻石设置" },
-  { key: "prompt", label: "Prompt配置" }
+  { key: "diamonds", label: "钻石设置" }
 ];
 
 const noticeText: Record<string, string> = {
@@ -40,18 +39,7 @@ const noticeText: Record<string, string> = {
   "study-buddy-hero-title-saved": "顶部标题已保存。",
   "study-buddy-hero-effect-saved": "标题效果已保存。",
   "share-copy-saved": "分享文案已保存。",
-  "diamond-rule-saved": "钻石规则已保存，后续新事件将使用最新配置。",
-  "prompt-profile-created": "Prompt 档案已创建，请继续完善并发布。",
-  "prompt-profile-deleted": "Prompt 档案已删除，原绑定专业将使用通用兜底 Prompt。",
-  "prompt-draft-saved": "Prompt 草稿已保存；发布后才会影响后续新生成内容。",
-  "prompt-version-published": "Prompt 新版本已发布。",
-  "prompt-version-history-deleted": "历史版本已删除，当前线上版本未改变。",
-  "prompt-version-active-replaced": "当前线上版本已删除，已自动切换到剩余版本中版本号最高的一版。",
-  "prompt-version-active-fallback": "最后一个线上版本已删除，该档案将回退使用通用 AI解释。",
-  "prompt-draft-discarded": "Prompt 草稿已放弃。",
-  "prompt-version-rolled-back": "已通过新版本安全回滚 Prompt。",
-  "prompt-course-bound": "专业已绑定到该 Prompt 档案。",
-  "prompt-course-unbound": "专业已解除绑定，将使用通用兜底 Prompt。"
+  "diamond-rule-saved": "钻石规则已保存，后续新事件将使用最新配置。"
 };
 
 const errorText: Record<string, string> = {
@@ -60,18 +48,7 @@ const errorText: Record<string, string> = {
   "invalid-study-buddy-hero-image-type": "请上传 WEBP 图片或动画。",
   "study-buddy-hero-image-too-large": "学习搭子顶部动画不能超过 5MB。",
   "invalid-diamond-rule": "钻石规则不存在或尚未接入代码。",
-  "invalid-diamond-rule-amount": "钻石数量必须是 1 到 1,000,000 之间的整数。",
-  "invalid-prompt-profile-name": "Prompt 档案名称不能为空且不能超过 80 个字。",
-  "duplicate-prompt-profile-name": "已经存在同名 Prompt 档案。",
-  "invalid-prompt-template": "Prompt 模板无效，请检查必要变量、未知变量和长度限制。",
-  "prompt-profile-not-found": "Prompt 档案不存在。",
-  "prompt-default-profile-cannot-delete": "通用 AI解释是系统兜底档案，不能删除。",
-  "invalid-prompt-publish-note": "发布前请填写 1 到 200 个字的更改说明。",
-  "prompt-draft-not-found": "没有可以发布的 Prompt 草稿，请先保存草稿。",
-  "prompt-version-not-found": "目标 Prompt 版本不存在或已删除。",
-  "prompt-default-version-cannot-delete": "通用 AI解释是系统兜底档案，其版本不能删除。",
-  "prompt-discard-draft-before-rollback": "当前还有未发布草稿，请先发布或放弃草稿，再执行回滚。",
-  "prompt-course-binding-invalid": "Prompt 档案、区域学制或专业不存在，无法完成绑定。"
+  "invalid-diamond-rule-amount": "钻石数量必须是 1 到 1,000,000 之间的整数。"
 };
 
 const marketingIconOptions = [
@@ -124,6 +101,16 @@ export default async function AdminSettingsPage({
 }) {
   await requireAdmin();
   const [settings, params] = await Promise.all([getSystemSettings(), searchParams]);
+  if (params?.tab === "prompt") {
+    const query = new URLSearchParams();
+    for (const key of ["notice", "error", "promptProfileId", "promptVersionId", "promptQuery", "promptStatus"] as const) {
+      const value = params[key];
+      if (value) {
+        query.set(key, value);
+      }
+    }
+    redirect(`/admin/prompt-settings${query.size ? `?${query.toString()}` : ""}`);
+  }
   const activeTab = resolveTab(params?.tab);
   const activeShareContext = resolveShareCopyContext(params?.context);
   const shareCopyStyles = activeTab === "share-copy"
@@ -146,7 +133,7 @@ export default async function AdminSettingsPage({
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-black text-ink">系统设置</h1>
-          <p className="mt-1 text-sm font-semibold text-slate-500">管理用户端内容、学习搭子、钻石规则和 AI 提示词。</p>
+          <p className="mt-1 text-sm font-semibold text-slate-500">管理用户端内容、学习搭子和钻石规则。</p>
         </div>
         {activeTab === "login" ? (
           <Link className="secondary-button rounded-none" href="/login" target="_blank">
@@ -456,15 +443,6 @@ export default async function AdminSettingsPage({
       ) : null}
 
       {activeTab === "diamonds" ? <AdminDiamondRuleSettings rules={diamondRules} /> : null}
-
-      {activeTab === "prompt" ? (
-        <AdminAiPromptSettings
-          promptProfileId={params?.promptProfileId}
-          promptQuery={params?.promptQuery}
-          promptStatus={params?.promptStatus}
-          promptVersionId={params?.promptVersionId}
-        />
-      ) : null}
     </main>
   );
 }

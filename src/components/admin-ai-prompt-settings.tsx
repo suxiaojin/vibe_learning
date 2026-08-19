@@ -22,7 +22,7 @@ import { prisma } from "@/lib/prisma";
 import { cn } from "@/lib/utils";
 
 function promptHref(profileId: string, query: string, status: string, versionId?: string) {
-  const params = new URLSearchParams({ tab: "prompt", promptProfileId: profileId });
+  const params = new URLSearchParams({ promptProfileId: profileId });
   if (versionId) {
     params.set("promptVersionId", versionId);
   }
@@ -32,7 +32,7 @@ function promptHref(profileId: string, query: string, status: string, versionId?
   if (status !== "all") {
     params.set("promptStatus", status);
   }
-  return `/admin/settings?${params.toString()}`;
+  return `/admin/prompt-settings?${params.toString()}`;
 }
 
 function formatPublishedAt(value: Date | null) {
@@ -140,7 +140,6 @@ export async function AdminAiPromptSettings({
           </div>
 
           <form className="mt-4 grid gap-2" method="get">
-            <input name="tab" type="hidden" value="prompt" />
             <input className="input rounded-none" defaultValue={promptQuery} name="promptQuery" placeholder="搜索档案名称" />
             <select className="input rounded-none" defaultValue={normalizedStatus} name="promptStatus">
               <option value="all">全部状态</option>

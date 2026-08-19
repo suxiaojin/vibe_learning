@@ -11,14 +11,14 @@ import {
 import { prisma } from "@/lib/prisma";
 
 function promptSettingsPath(profileId?: string, key: "notice" | "error" = "notice", value?: string) {
-  const query = new URLSearchParams({ tab: "prompt" });
+  const query = new URLSearchParams();
   if (profileId) {
     query.set("promptProfileId", profileId);
   }
   if (value) {
     query.set(key, value);
   }
-  return `/admin/settings?${query.toString()}`;
+  return `/admin/prompt-settings?${query.toString()}`;
 }
 
 function requiredText(formData: FormData, key: string) {
@@ -55,7 +55,7 @@ export async function createAiExplainPromptProfile(formData: FormData) {
     return createdProfile;
   });
 
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/prompt-settings");
   redirect(promptSettingsPath(profile.id, "notice", "prompt-profile-created"));
 }
 
@@ -104,7 +104,7 @@ export async function saveAiExplainPromptDraft(formData: FormData) {
     throw error;
   });
 
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/prompt-settings");
   redirect(promptSettingsPath(profileId, "notice", "prompt-draft-saved"));
 }
 
@@ -149,7 +149,7 @@ export async function publishAiExplainPromptDraft(formData: FormData) {
     redirect(promptSettingsPath(profileId, "error", "prompt-draft-not-found"));
   }
 
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/prompt-settings");
   redirect(promptSettingsPath(profileId, "notice", "prompt-version-published"));
 }
 
@@ -163,7 +163,7 @@ export async function discardAiExplainPromptDraft(formData: FormData) {
   if (draft) {
     await prisma.aiExplainPromptVersion.delete({ where: { id: draft.id } });
   }
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/prompt-settings");
   redirect(promptSettingsPath(profileId, "notice", "prompt-draft-discarded"));
 }
 
@@ -182,7 +182,7 @@ export async function deleteAiExplainPromptProfile(formData: FormData) {
   }
 
   await prisma.aiExplainPromptProfile.delete({ where: { id: profile.id } });
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/prompt-settings");
   redirect(promptSettingsPath(undefined, "notice", "prompt-profile-deleted"));
 }
 
@@ -243,7 +243,7 @@ export async function deleteAiExplainPromptVersion(formData: FormData) {
     redirect(promptSettingsPath(profileId, "error", "prompt-version-not-found"));
   }
 
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/prompt-settings");
   redirect(promptSettingsPath(profileId, "notice", `prompt-version-${result}`));
 }
 
@@ -289,7 +289,7 @@ export async function rollbackAiExplainPromptVersion(formData: FormData) {
   if (rolledBack === "draft") {
     redirect(promptSettingsPath(profileId, "error", "prompt-discard-draft-before-rollback"));
   }
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/prompt-settings");
   redirect(promptSettingsPath(profileId, "notice", "prompt-version-rolled-back"));
 }
 
@@ -312,7 +312,7 @@ export async function bindMajorAiExplainPrompt(formData: FormData) {
     where: { id: regionMajor.id },
     data: { aiExplainPromptProfileId: profileId }
   });
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/prompt-settings");
   redirect(promptSettingsPath(profileId, "notice", "prompt-course-bound"));
 }
 
@@ -324,6 +324,6 @@ export async function unbindMajorAiExplainPrompt(formData: FormData) {
     where: { id: regionMajorId, aiExplainPromptProfileId: profileId },
     data: { aiExplainPromptProfileId: null }
   });
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/prompt-settings");
   redirect(promptSettingsPath(profileId, "notice", "prompt-course-unbound"));
 }

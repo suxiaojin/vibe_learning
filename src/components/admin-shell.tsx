@@ -9,9 +9,9 @@ import {
   Database,
   GraduationCap,
   LayoutDashboard,
-  LifeBuoy,
   LogOut,
   MapPinned,
+  MessageSquareText,
   Settings,
   UsersRound
 } from "lucide-react";
@@ -25,6 +25,7 @@ const iconMap = {
   dashboard: LayoutDashboard,
   graduation: GraduationCap,
   map: MapPinned,
+  prompt: MessageSquareText,
   project: BookOpenCheck,
   settings: Settings,
   users: UsersRound
@@ -60,8 +61,7 @@ export function AdminShell({ children, modules }: { children: React.ReactNode; m
     <div className="min-h-screen bg-[#f5f6fa] text-[#20242a] lg:pl-64">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-[#2d3235] text-white lg:flex">
         <div className="border-b border-white/10 px-6 py-6">
-          <h1 className="text-xl font-black leading-snug">江苏专转本后台题库管理系统</h1>
-          <p className="mt-2 text-xs font-semibold text-white/55">管理控制台</p>
+          <h1 className="text-xl font-black leading-snug">后台题库管理系统</h1>
         </div>
 
         <div className="px-5 py-5">
@@ -95,10 +95,6 @@ export function AdminShell({ children, modules }: { children: React.ReactNode; m
         </nav>
 
         <div className="border-t border-white/10 px-3 py-4">
-          <Link href="/admin/regions" className="mb-1 flex min-h-11 items-center gap-3 px-4 text-sm font-bold text-white/75 hover:bg-white/5 hover:text-white">
-            <LifeBuoy size={18} />
-            帮助支持
-          </Link>
           <form action="/api/auth/admin-logout" method="post">
             <button className="flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm font-bold text-white/75 hover:bg-white/5 hover:text-white" type="submit">
               <LogOut size={18} />
