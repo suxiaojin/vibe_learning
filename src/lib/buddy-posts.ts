@@ -98,6 +98,22 @@ type BuddyPostDto = {
   originalPost: BuddyPostSourceDto | null;
 };
 
+type BuddyHotCursor = {
+  createdAt: Date;
+  hotScore: number;
+  id: string;
+  rankingAt: Date;
+};
+
+type BuddyHotPostRow = {
+  createdAt: Date;
+  hotScore: number;
+  id: string;
+};
+
+const buddyHotWindowMs = 30 * 24 * 60 * 60 * 1000;
+const buddyHotHalfLifeSeconds = 7 * 24 * 60 * 60;
+
 export async function createBuddyPost(authorId: string, contentInput: string, shareInput?: unknown) {
   const content = normalizePostContent(contentInput);
   if (!content) {
@@ -109,15 +125,17 @@ export async function createBuddyPost(authorId: string, contentInput: string, sh
     assertPostContentAllowed(JSON.stringify(share));
   }
 
-  return prisma.buddyPost.create({
+  const post = await prisma.buddyPost.create({
     data: {
       authorId,
       type: "original",
       content,
       sharePayload: share ? share as Prisma.InputJsonValue : undefined,
       shareType: share?.type
-    }
+    },
+    include: postDetailsInclude(authorId)
   });
+  return toBuddyPostDto(post, authorId);
 }
 
 export async function deleteBuddyPost(authorId: string, postId: string) {
@@ -147,34 +165,192 @@ export async function listBuddyFeed(userId: string, input?: BuddyFeedFilters) {
   }
   const where = getFeedWhere(scope, userId, input, followingIds, blockedIds);
 
-  const take = sort === "hot" ? Math.max(limit + 1, 120) : limit + 1;
+  if (sort === "hot") {
+    return listHotBuddyFeed(userId, limit, input, followingIds, blockedIds, where);
+  }
+
   const posts = await prisma.buddyPost.findMany({
     where,
     include: postDetailsInclude(userId),
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    ...(sort === "latest" && input?.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
-    take
+    ...(input?.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
+    take: limit + 1
   });
 
+  const pagePosts = posts.slice(0, limit);
   const items = [];
-  for (const post of posts) {
+  for (const post of pagePosts) {
     items.push(await toBuddyPostDto(post, userId));
   }
 
-  if (sort === "hot") {
-    items.sort((left, right) => {
-      if (right.likeCount !== left.likeCount) {
-        return right.likeCount - left.likeCount;
-      }
-      return right.createdAt.getTime() - left.createdAt.getTime();
-    });
+  return {
+    items,
+    nextCursor: posts.length > limit ? pagePosts[pagePosts.length - 1]?.id || null : null
+  };
+}
+
+async function listHotBuddyFeed(
+  userId: string,
+  limit: number,
+  input: BuddyFeedFilters | undefined,
+  followingIds: string[],
+  blockedIds: string[],
+  where: Prisma.BuddyPostWhereInput
+) {
+  const cursor = input?.cursor ? decodeBuddyHotCursor(input.cursor) : null;
+  const rankingAt = cursor?.rankingAt || new Date();
+  const windowStart = new Date(rankingAt.getTime() - buddyHotWindowMs);
+  const rankingAtIso = rankingAt.toISOString();
+  const windowStartIso = windowStart.toISOString();
+  const scope = input?.scope === "following" ? "following" : "discover";
+  const visibilityConditions: Prisma.Sql[] = [
+    Prisma.sql`p."deletedAt" IS NULL`,
+    Prisma.sql`p."createdAt" >= CAST(${windowStartIso} AS timestamp)`,
+    Prisma.sql`p."createdAt" <= CAST(${rankingAtIso} AS timestamp)`,
+    Prisma.sql`author.role = 'student'`,
+    Prisma.sql`author.status = 'active'`,
+    Prisma.sql`NOT EXISTS (
+      SELECT 1
+      FROM "social_blocks" author_block
+      WHERE author_block."blockerId" = p."authorId"
+        AND author_block."blockedId" = ${userId}
+    )`
+  ];
+
+  if (scope === "following") {
+    visibilityConditions.push(Prisma.sql`p."authorId" IN (${Prisma.join(followingIds)})`);
+  } else {
+    const excludedAuthorIds = Array.from(new Set([...followingIds, ...blockedIds]));
+    if (excludedAuthorIds.length > 0) {
+      visibilityConditions.push(Prisma.sql`p."authorId" NOT IN (${Prisma.join(excludedAuthorIds)})`);
+    }
+  }
+  if (input?.majorId) {
+    visibilityConditions.push(Prisma.sql`profile."majorId" = ${input.majorId}`);
+  }
+  if (input?.province) {
+    visibilityConditions.push(Prisma.sql`region.province = ${input.province}`);
+  }
+  if (input?.studySystem) {
+    visibilityConditions.push(Prisma.sql`region."studySystem" = ${input.studySystem}`);
   }
 
-  const pageItems = items.slice(0, limit);
+  const cursorFilter = cursor
+    ? Prisma.sql`WHERE (
+        ranked."hotScore" < ${cursor.hotScore}
+        OR (ranked."hotScore" = ${cursor.hotScore} AND ranked."createdAt" < CAST(${cursor.createdAt.toISOString()} AS timestamp))
+        OR (
+          ranked."hotScore" = ${cursor.hotScore}
+          AND ranked."createdAt" = CAST(${cursor.createdAt.toISOString()} AS timestamp)
+          AND ranked.id < ${cursor.id}
+        )
+      )`
+    : Prisma.empty;
+
+  const rows = await prisma.$queryRaw<BuddyHotPostRow[]>(Prisma.sql`
+    WITH ranked AS (
+      SELECT
+        p.id,
+        p."createdAt",
+        (
+          1
+          + COUNT(DISTINCT post_like.id) FILTER (
+            WHERE post_like.active = TRUE
+              AND post_like."createdAt" <= CAST(${rankingAtIso} AS timestamp)
+          )
+          + 2 * COUNT(DISTINCT repost.id) FILTER (
+            WHERE repost."createdAt" <= CAST(${rankingAtIso} AS timestamp)
+              AND (repost."deletedAt" IS NULL OR repost."deletedAt" > CAST(${rankingAtIso} AS timestamp))
+          )
+        ) * POWER(
+          0.5::double precision,
+          GREATEST(
+            0,
+            EXTRACT(EPOCH FROM (CAST(${rankingAtIso} AS timestamp) - p."createdAt")) / ${buddyHotHalfLifeSeconds}
+          )
+        ) AS "hotScore"
+      FROM "buddy_posts" p
+      INNER JOIN "users" author ON author.id = p."authorId"
+      LEFT JOIN "student_profiles" profile ON profile."userId" = author.id
+      LEFT JOIN "regions" region ON region.id = profile."regionId"
+      LEFT JOIN "buddy_post_likes" post_like ON post_like."postId" = p.id
+      LEFT JOIN "buddy_posts" repost ON repost."originalPostId" = p.id
+      WHERE ${Prisma.join(visibilityConditions, " AND ")}
+      GROUP BY p.id, p."createdAt"
+    )
+    SELECT ranked.id, ranked."createdAt", ranked."hotScore"
+    FROM ranked
+    ${cursorFilter}
+    ORDER BY ranked."hotScore" DESC, ranked."createdAt" DESC, ranked.id DESC
+    LIMIT ${limit + 1}
+  `);
+
+  const pageRows = rows.slice(0, limit);
+  const postIds = pageRows.map((row) => row.id);
+  const posts = postIds.length > 0
+    ? await prisma.buddyPost.findMany({
+        where: { AND: [where, { id: { in: postIds } }] },
+        include: postDetailsInclude(userId)
+      })
+    : [];
+  const postsById = new Map(posts.map((post) => [post.id, post]));
+  const items = [];
+  for (const row of pageRows) {
+    const post = postsById.get(row.id);
+    if (post) {
+      items.push(await toBuddyPostDto(post, userId));
+    }
+  }
+
   return {
-    items: pageItems,
-    nextCursor: sort === "latest" && posts.length > limit ? posts[limit].id : null
+    items,
+    nextCursor: rows.length > limit && pageRows.length > 0
+      ? encodeBuddyHotCursor({
+          createdAt: pageRows[pageRows.length - 1].createdAt,
+          hotScore: Number(pageRows[pageRows.length - 1].hotScore),
+          id: pageRows[pageRows.length - 1].id,
+          rankingAt
+        })
+      : null
   };
+}
+
+function encodeBuddyHotCursor(cursor: BuddyHotCursor) {
+  return Buffer.from(JSON.stringify({
+    v: 1,
+    rankingAt: cursor.rankingAt.toISOString(),
+    hotScore: cursor.hotScore,
+    createdAt: cursor.createdAt.toISOString(),
+    id: cursor.id
+  })).toString("base64url");
+}
+
+function decodeBuddyHotCursor(value: string): BuddyHotCursor {
+  try {
+    const payload = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as {
+      v?: unknown;
+      rankingAt?: unknown;
+      hotScore?: unknown;
+      createdAt?: unknown;
+      id?: unknown;
+    };
+    const rankingAt = new Date(String(payload.rankingAt || ""));
+    const createdAt = new Date(String(payload.createdAt || ""));
+    const hotScore = Number(payload.hotScore);
+    if (
+      payload.v !== 1
+      || !Number.isFinite(rankingAt.getTime())
+      || !Number.isFinite(createdAt.getTime())
+      || !Number.isFinite(hotScore)
+      || typeof payload.id !== "string"
+      || !payload.id
+    ) {
+      throw new Error("INVALID_CURSOR");
+    }
+    return { rankingAt, createdAt, hotScore, id: payload.id };
+  } catch {
+    throw new BuddyError("BUDDY_FEED_CURSOR_INVALID", "信息流游标无效，请刷新页面后重试。", 400);
+  }
 }
 
 export async function getFollowingFeedUnreadCount(userId: string) {

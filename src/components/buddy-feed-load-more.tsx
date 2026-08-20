@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DismissibleDetails } from "@/components/dismissible-details";
 import { SocialPostCard, type SocialPostNode } from "@/components/social-post-card";
 import { SocialPostActions } from "@/components/social-post-actions";
+import { EmptyState } from "@/components/student-ui";
 import type { BuddyShareCard, BuddyShareType } from "@/lib/buddy-share-cards";
 import { cn } from "@/lib/utils";
 
@@ -30,7 +31,7 @@ type FeedPostSource = {
   id: string;
   type: "original" | "repost";
   content: string;
-  createdAt: string;
+  createdAt: Date | string;
   sharePayload: BuddyShareCard | null;
   shareType: BuddyShareType | null;
   author: FeedUser;
@@ -44,11 +45,11 @@ type FeedPostSource = {
   originalPost: FeedPostSource | null;
 };
 
-type FeedPost = {
+export type FeedPost = {
   id: string;
   type: "original" | "repost";
   content: string;
-  createdAt: string;
+  createdAt: Date | string;
   sharePayload: BuddyShareCard | null;
   shareType: BuddyShareType | null;
   author: FeedUser;
@@ -72,6 +73,7 @@ type FeedResponse = {
 };
 
 export function BuddyFeedLoadMore({
+  initialItems,
   initialNextCursor,
   majorId,
   province,
@@ -79,6 +81,7 @@ export function BuddyFeedLoadMore({
   sort,
   studySystem
 }: {
+  initialItems: FeedPost[];
   initialNextCursor: string | null;
   majorId?: string;
   province?: string;
@@ -86,9 +89,10 @@ export function BuddyFeedLoadMore({
   sort: FeedSort;
   studySystem?: string;
 }) {
-  const [items, setItems] = useState<FeedPost[]>([]);
+  const [items, setItems] = useState<FeedPost[]>(initialItems);
   const [nextCursor, setNextCursor] = useState(initialNextCursor);
   const [hiddenIds, setHiddenIds] = useState<string[]>([]);
+  const [loadError, setLoadError] = useState(false);
   const [loading, setLoading] = useState(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
@@ -104,14 +108,32 @@ export function BuddyFeedLoadMore({
   }, [majorId, province, scope, sort, studySystem]);
 
   useEffect(() => {
-    setItems([]);
+    setItems(initialItems);
     setNextCursor(initialNextCursor);
     setHiddenIds([]);
-  }, [initialNextCursor, queryBase]);
+    setLoadError(false);
+  }, [initialItems, initialNextCursor, queryBase]);
+
+  useEffect(() => {
+    if (scope !== "discover" || sort !== "latest" || province || studySystem || majorId) {
+      return;
+    }
+
+    function prependCreatedPost(event: Event) {
+      const post = (event as CustomEvent<FeedPost>).detail;
+      if (!post?.id) {
+        return;
+      }
+      setItems((current) => current.some((item) => item.id === post.id) ? current : [post, ...current]);
+    }
+
+    window.addEventListener("buddy-post-created", prependCreatedPost);
+    return () => window.removeEventListener("buddy-post-created", prependCreatedPost);
+  }, [majorId, province, scope, sort, studySystem]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
-    if (!sentinel || !nextCursor || sort !== "latest") {
+    if (!sentinel || !nextCursor || loadError) {
       return;
     }
 
@@ -125,13 +147,14 @@ export function BuddyFeedLoadMore({
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [loading, nextCursor, queryBase, sort]);
+  }, [loadError, loading, nextCursor, queryBase]);
 
   async function loadMore() {
-    if (!nextCursor || loading || sort !== "latest") {
+    if (!nextCursor || loading) {
       return;
     }
     setLoading(true);
+    setLoadError(false);
     try {
       const params = new URLSearchParams(queryBase);
       params.set("cursor", nextCursor);
@@ -141,22 +164,31 @@ export function BuddyFeedLoadMore({
         throw new Error("LOAD_MORE_FAILED");
       }
       const data = payload.data;
-      setItems((current) => [...current, ...data.items]);
+      setItems((current) => {
+        const existingIds = new Set(current.map((item) => item.id));
+        return [...current, ...data.items.filter((item) => !existingIds.has(item.id))];
+      });
       setNextCursor(data.nextCursor);
     } catch {
-      setNextCursor(null);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
   }
 
-  if (!initialNextCursor && items.length === 0) {
-    return null;
+  const visibleItems = items.filter((post) => !hiddenIds.includes(post.id));
+  if (!nextCursor && visibleItems.length === 0) {
+    return (
+      <EmptyState
+        title={scope === "following" ? "关注动态为空" : "暂时没有帖子"}
+        description={scope === "following" ? "你关注的人还没有发帖，可以先去发现页看看新的学习搭子。" : "暂时没有符合条件的帖子，换个筛选条件试试看。"}
+      />
+    );
   }
 
   return (
     <>
-      {items.filter((post) => !hiddenIds.includes(post.id)).map((post) => (
+      {visibleItems.map((post) => (
         <ClientBuddyPostCard
           key={post.id}
           post={post}
@@ -170,7 +202,15 @@ export function BuddyFeedLoadMore({
             <Loader2 className="animate-spin" size={17} />
             正在加载
           </span>
-        ) : nextCursor && sort === "latest" ? (
+        ) : loadError ? (
+          <button
+            className="secondary-button min-h-11 rounded-xl px-4 text-sm"
+            type="button"
+            onClick={() => void loadMore()}
+          >
+            加载失败，点击重试
+          </button>
+        ) : nextCursor ? (
           "继续下滑加载更多"
         ) : null}
       </div>
@@ -178,7 +218,7 @@ export function BuddyFeedLoadMore({
   );
 }
 
-function ClientBuddyPostCard({
+export function ClientBuddyPostCard({
   onHidden,
   post,
   scope

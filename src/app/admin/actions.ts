@@ -33,6 +33,7 @@ const alphabetOptionKeys = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 const loginHeroUploadDir = "uploads/system-settings";
 const maxLoginHeroImageSize = 5 * 1024 * 1024;
 const maxStudyBuddyHeroImageSize = 5 * 1024 * 1024;
+const maxDiamondRechargeQrCodeSize = 2 * 1024 * 1024;
 const imageMimeExtensions: Record<string, string> = {
   "image/gif": ".gif",
   "image/jpeg": ".jpg",
@@ -63,6 +64,11 @@ function shareCopySettingsPath(context?: ShareCopyContext) {
 
 function diamondRuleSettingsPath(kind: "notice" | "error", value: string) {
   const query = new URLSearchParams({ tab: "diamonds", [kind]: value });
+  return `/admin/settings?${query.toString()}`;
+}
+
+function adminConfigurationSettingsPath(kind: "notice" | "error", value: string) {
+  const query = new URLSearchParams({ tab: "admin", [kind]: value });
   return `/admin/settings?${query.toString()}`;
 }
 
@@ -287,6 +293,20 @@ async function saveStudyBuddyHeroImage(file: File) {
   return `data:image/webp;base64,${buffer.toString("base64")}`;
 }
 
+async function saveDiamondRechargeQrCode(file: File) {
+  const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+  if (!allowedTypes.has(file.type)) {
+    redirect(adminConfigurationSettingsPath("error", "invalid-diamond-recharge-qr-type"));
+  }
+
+  if (file.size > maxDiamondRechargeQrCodeSize) {
+    redirect(adminConfigurationSettingsPath("error", "diamond-recharge-qr-too-large"));
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  return `data:${file.type};base64,${buffer.toString("base64")}`;
+}
+
 async function updateSystemSettingsPatch(data: Partial<typeof systemSettingsDefaults>) {
   await prisma.systemSetting.upsert({
     where: { id: systemSettingsId },
@@ -470,6 +490,22 @@ export async function updateStudyBuddyHeroImageSettings(formData: FormData) {
   revalidatePath("/admin/settings");
   revalidatePath("/study-buddy");
   redirect("/admin/settings?tab=study-buddy&notice=study-buddy-hero-image-saved");
+}
+
+export async function updateDiamondRechargeQrSettings(formData: FormData) {
+  await requireAdmin();
+  const diamondRechargeQrCodeFile = formData.get("diamondRechargeQrCodeFile");
+
+  if (!(diamondRechargeQrCodeFile instanceof File) || diamondRechargeQrCodeFile.size === 0) {
+    redirect(adminConfigurationSettingsPath("error", "diamond-recharge-qr-required"));
+  }
+
+  const diamondRechargeQrCodeUrl = await saveDiamondRechargeQrCode(diamondRechargeQrCodeFile);
+  await updateSystemSettingsPatch({ diamondRechargeQrCodeUrl });
+
+  revalidatePath("/admin/settings");
+  revalidatePath("/me");
+  redirect(adminConfigurationSettingsPath("notice", "diamond-recharge-qr-saved"));
 }
 
 export async function updateStudyBuddyHeroTitleSettings(formData: FormData) {

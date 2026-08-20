@@ -3,6 +3,8 @@
 import { type ChangeEvent, type DragEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, ChevronRight, FileText, Info, X } from "lucide-react";
+import { DiamondInsufficientMessage } from "@/components/diamond-insufficient-message";
+import { isDiamondInsufficientMessage } from "@/lib/diamond-insufficient";
 
 const maxStudyMaterialBytes = 80 * 1024 * 1024;
 
@@ -379,7 +381,13 @@ export function StudyMaterialImporter() {
               </div>
             </section>
 
-            {error ? <p className="mt-3 text-sm font-semibold text-[#d92d20]">{error}</p> : null}
+            {error ? (
+              isDiamondInsufficientMessage(error) ? (
+                <DiamondInsufficientMessage className="mt-3 text-sm font-semibold text-[#d92d20]" />
+              ) : (
+                <p className="mt-3 text-sm font-semibold text-[#d92d20]">{error}</p>
+              )
+            ) : null}
 
             <div className="mt-7 flex items-center justify-between gap-4">
               <p className="flex items-center gap-2 text-[12px] font-medium text-[#98a2b3]">

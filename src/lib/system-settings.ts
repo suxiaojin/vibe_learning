@@ -13,6 +13,7 @@ export const systemSettingsDefaults = {
   privacyPolicyContent: "test",
   platformAgreementContent: "test",
   customerServiceEmail: "714399532@qq.com",
+  diamondRechargeQrCodeUrl: "",
   studyBuddyHeroImageUrl: "/ai-study/study-buddy-hero.webp",
   studyBuddyHeroTitle: "好好学习，早日上岸",
   studyBuddyHeroEffect: "typewriter",

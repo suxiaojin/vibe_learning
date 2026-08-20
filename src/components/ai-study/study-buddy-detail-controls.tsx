@@ -3,6 +3,8 @@
 import { type FormEvent, type KeyboardEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Bot, Loader2, MessageCircle, Pause, Send, Sparkles, X } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { DiamondInsufficientMessage } from "@/components/diamond-insufficient-message";
+import { isDiamondInsufficientMessage } from "@/lib/diamond-insufficient";
 import { cn } from "@/lib/utils";
 
 type NavigationNode = {
@@ -430,7 +432,11 @@ export function StudyBuddyDetailControls({
                           )}
                         >
                           {renderedContent ? (
-                            renderedContent
+                            isDiamondInsufficientMessage(renderedContent) ? (
+                              <DiamondInsufficientMessage />
+                            ) : (
+                              renderedContent
+                            )
                           ) : (
                             <span className="inline-flex items-center gap-2 text-[#667085]">
                               <Loader2 className="animate-spin" size={15} />

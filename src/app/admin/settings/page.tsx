@@ -15,6 +15,7 @@ import {
   updateSystemSettings
 } from "@/app/admin/actions";
 import { AdminDiamondRuleSettings } from "@/components/admin-diamond-rule-settings";
+import { AdminRechargeQrUploadForm } from "@/components/admin-recharge-qr-upload-form";
 import { requireAdmin } from "@/lib/auth";
 import { listDiamondRuleSettings } from "@/lib/diamond-rules";
 import { prisma } from "@/lib/prisma";
@@ -23,10 +24,11 @@ import { studyBuddyHeroEffectOptions } from "@/lib/study-buddy-title-effects";
 import { getSystemSettings } from "@/lib/system-settings";
 import { cn } from "@/lib/utils";
 
-type SettingsTab = "login" | "agreements" | "study-buddy" | "share-copy" | "diamonds";
+type SettingsTab = "login" | "admin" | "agreements" | "study-buddy" | "share-copy" | "diamonds";
 
 const tabs: Array<{ key: SettingsTab; label: string }> = [
   { key: "login", label: "登录页配置" },
+  { key: "admin", label: "管理员配置" },
   { key: "agreements", label: "协议内容" },
   { key: "study-buddy", label: "学习搭子" },
   { key: "share-copy", label: "分享文案" },
@@ -35,6 +37,7 @@ const tabs: Array<{ key: SettingsTab; label: string }> = [
 
 const noticeText: Record<string, string> = {
   saved: "系统设置已保存。",
+  "diamond-recharge-qr-saved": "钻石充值客服二维码已保存。",
   "study-buddy-hero-image-saved": "顶部动画已保存。",
   "study-buddy-hero-title-saved": "顶部标题已保存。",
   "study-buddy-hero-effect-saved": "标题效果已保存。",
@@ -45,6 +48,9 @@ const noticeText: Record<string, string> = {
 const errorText: Record<string, string> = {
   "image-too-large": "图片不能超过 5MB。",
   "invalid-image-type": "请上传 PNG、JPG、WEBP 或 GIF 图片。",
+  "diamond-recharge-qr-required": "请选择要上传的钻石充值客服二维码。",
+  "invalid-diamond-recharge-qr-type": "钻石充值客服二维码仅支持 PNG、JPG 或 WEBP 图片。",
+  "diamond-recharge-qr-too-large": "钻石充值客服二维码不能超过 2MB。",
   "invalid-study-buddy-hero-image-type": "请上传 WEBP 图片或动画。",
   "study-buddy-hero-image-too-large": "学习搭子顶部动画不能超过 5MB。",
   "invalid-diamond-rule": "钻石规则不存在或尚未接入代码。",
@@ -133,7 +139,7 @@ export default async function AdminSettingsPage({
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-black text-ink">系统设置</h1>
-          <p className="mt-1 text-sm font-semibold text-slate-500">管理用户端内容、学习搭子和钻石规则。</p>
+          <p className="mt-1 text-sm font-semibold text-slate-500">管理用户端内容、管理员配置、学习搭子和钻石规则。</p>
         </div>
         {activeTab === "login" ? (
           <Link className="secondary-button rounded-none" href="/login" target="_blank">
@@ -308,6 +314,10 @@ export default async function AdminSettingsPage({
         </section>
 
       </form>
+
+      {activeTab === "admin" ? (
+        <AdminRechargeQrUploadForm currentQrCodeUrl={settings.diamondRechargeQrCodeUrl} />
+      ) : null}
 
       {activeTab === "study-buddy" ? (
         <section className="border border-slate-200 bg-white p-5 shadow-sm">

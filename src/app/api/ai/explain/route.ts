@@ -14,6 +14,7 @@ import { canExplainAttemptedQuestion } from "@/lib/learning";
 import { streamQwen } from "@/lib/qwen";
 import { prisma } from "@/lib/prisma";
 import { consumeDiamondsByRule, InsufficientDiamondBalanceError } from "@/lib/rewards";
+import { diamondInsufficientMessage } from "@/lib/diamond-insufficient";
 
 export const runtime = "nodejs";
 
@@ -473,7 +474,7 @@ async function reserveAiConversationOrError({
     return null;
   } catch (error) {
     if (error instanceof InsufficientDiamondBalanceError) {
-      return apiError("钻石不足，请充值后再试。", 402, "AI_EXPLAIN_INSUFFICIENT_DIAMONDS");
+      return apiError(diamondInsufficientMessage, 402, "AI_EXPLAIN_INSUFFICIENT_DIAMONDS");
     }
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       const replay = await getAiConversationReplayResponse({

@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { z } from "zod";
 import type { AiStudyGenerationTask, AiStudyProgressStatus, AiStudyTaskStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { diamondInsufficientMessage } from "@/lib/diamond-insufficient";
 import { uploadAiStudyObject } from "@/lib/ai-study-storage";
 import { enqueueAiStudyTask } from "@/lib/ai-study-task-queue";
 import {
@@ -83,7 +84,7 @@ export function formatAiStudyError(error: unknown) {
 function rethrowAiStudyDiamondError(error: unknown): never {
   if (error instanceof InsufficientDiamondBalanceError) {
     throw new AiStudyError(
-      "钻石不足，请充值后再试。",
+      diamondInsufficientMessage,
       402,
       "AI_STUDY_INSUFFICIENT_DIAMONDS"
     );

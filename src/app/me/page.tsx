@@ -21,6 +21,7 @@ import { isDefaultAvatarSrc } from "@/lib/default-avatars";
 import { prisma } from "@/lib/prisma";
 import { medalRules } from "@/lib/rewards";
 import { getSocialProfile } from "@/lib/social";
+import { getSystemSettings } from "@/lib/system-settings";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -139,7 +140,7 @@ export default async function MePage({
   const diamondPageCount = Math.max(1, Math.ceil(diamondTransactionCount / diamondPageSize));
   const diamondPage = Math.min(requestedDiamondPage, diamondPageCount);
   const heatmapStart = new Date(Date.now() - (heatmapWeekCount * 7 + 7) * dayMs);
-  const [fullUser, transactions, totalAttempts, recentAttempts, schools, homeProfile, homePosts] = await Promise.all([
+  const [fullUser, transactions, totalAttempts, recentAttempts, schools, homeProfile, homePosts, systemSettings] = await Promise.all([
     prisma.user.findUnique({
       where: { id: user.id },
       include: { studentProfile: { include: { region: true, schoolOption: true } } }
@@ -162,7 +163,8 @@ export default async function MePage({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
     }),
     activeTab === "homepage" ? getSocialProfile(user.id, user.id) : Promise.resolve(null),
-    activeTab === "homepage" ? listProfileBuddyPosts(user.id, user.id, { includeInteractions: true, tab: "posts", limit: 30 }) : Promise.resolve({ items: [], nextCursor: null })
+    activeTab === "homepage" ? listProfileBuddyPosts(user.id, user.id, { includeInteractions: true, tab: "posts", limit: 30 }) : Promise.resolve({ items: [], nextCursor: null }),
+    activeTab === "diamonds" ? getSystemSettings() : Promise.resolve(null)
   ]);
 
   if (!fullUser) {
@@ -216,6 +218,7 @@ export default async function MePage({
             totalCount={diamondTransactionCount}
             totalPages={diamondPageCount}
             transactions={transactions}
+            rechargeQrCodeUrl={systemSettings?.diamondRechargeQrCodeUrl || ""}
           />
         ) : null}
 
@@ -417,11 +420,13 @@ function DiamondPanel({
   currentPage,
   totalCount,
   totalPages,
-  transactions
+  transactions,
+  rechargeQrCodeUrl
 }: {
   currentPage: number;
   totalCount: number;
   totalPages: number;
+  rechargeQrCodeUrl: string;
   transactions: Array<{
     id: string;
     type: string;
@@ -434,7 +439,7 @@ function DiamondPanel({
 }) {
   return (
     <SectionFrame icon={<Gem className="text-sky-500" size={22} />} title="我的钻石">
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.72fr)_280px] xl:items-start">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.72fr)_360px] xl:items-start">
         <div className="min-w-0">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[520px] text-left text-sm">
@@ -512,7 +517,23 @@ function DiamondPanel({
         </div>
         <aside className="rounded-2xl border border-slate-200/70 bg-sky-50/50 p-5">
           <h3 className="text-lg font-semibold text-ink">钻石充值</h3>
-          <p className="mt-3 text-sm font-semibold leading-6 text-slate-500">充值功能即将上线，敬请关注~</p>
+          {rechargeQrCodeUrl ? (
+            <>
+              <a
+                aria-label="查看微信客服二维码大图"
+                className="mt-4 block overflow-hidden rounded-xl border border-sky-100 bg-white p-2 shadow-sm transition hover:border-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/20"
+                href={rechargeQrCodeUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <img alt="钻石充值微信客服二维码" className="h-auto w-full object-contain" src={rechargeQrCodeUrl} />
+              </a>
+              <p className="mt-3 text-sm font-semibold leading-6 text-slate-600">请使用微信扫码添加客服，联系人工充值。</p>
+              <p className="mt-1 text-xs font-semibold leading-5 text-slate-400">点击二维码可查看大图</p>
+            </>
+          ) : (
+            <p className="mt-3 text-sm font-semibold leading-6 text-slate-500">充值二维码暂未配置，请稍后再试。</p>
+          )}
         </aside>
       </div>
     </SectionFrame>

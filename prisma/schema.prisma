@@ -418,6 +418,7 @@ model SystemSetting {
   privacyPolicyContent      String   @default("test")
   platformAgreementContent  String   @default("test")
   customerServiceEmail      String   @default("714399532@qq.com")
+  diamondRechargeQrCodeUrl  String   @default("")
   studyBuddyHeroImageUrl    String   @default("/ai-study/study-buddy-hero.webp")
   studyBuddyHeroTitle       String   @default("好好学习，早日上岸")
   studyBuddyHeroEffect      String   @default("typewriter")
@@ -1296,6 +1297,7 @@ model BuddyPost {
   @@unique([authorId, originalPostId])
   @@index([authorId, deletedAt, createdAt])
   @@index([originalPostId])
+  @@index([originalPostId, deletedAt, createdAt])
   @@index([shareType, createdAt])
   @@index([deletedAt, createdAt])
   @@map("buddy_posts")
@@ -1313,6 +1315,7 @@ model BuddyPostLike {
 
   @@unique([postId, userId])
   @@index([postId, active])
+  @@index([postId, active, createdAt])
   @@index([userId, createdAt])
   @@map("buddy_post_likes")
 }

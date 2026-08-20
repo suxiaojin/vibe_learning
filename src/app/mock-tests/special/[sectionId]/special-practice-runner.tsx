@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Bot, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Loader2, Send, X } from "lucide-react";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
+import { DiamondInsufficientMessage } from "@/components/diamond-insufficient-message";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
+import { isDiamondInsufficientMessage } from "@/lib/diamond-insufficient";
 import { getQuestionBankTypeLabel, isQuestionBankRichAnswerQuestionType } from "@/lib/question-bank-types";
 
 type PracticeQuestion = {
@@ -736,6 +738,10 @@ function StreamingPlaceholder() {
 }
 
 function AiAnswerText({ content }: { content: string }) {
+  if (isDiamondInsufficientMessage(content)) {
+    return <DiamondInsufficientMessage className="text-base font-semibold leading-8 text-ink" />;
+  }
+
   const blocks = parseAiAnswerBlocks(content);
 
   return (

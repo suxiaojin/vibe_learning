@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { isAiGeneratedQuestionBankTitle } from "@/lib/question-bank-source";
 import { type ChatMessage, streamQwen } from "@/lib/qwen";
 import { consumeDiamondsByRule, InsufficientDiamondBalanceError } from "@/lib/rewards";
+import { diamondInsufficientMessage } from "@/lib/diamond-insufficient";
 import { getStudentLearningPath } from "@/lib/syllabus-learning";
 
 export const runtime = "nodejs";
@@ -469,7 +470,7 @@ async function reserveAiConversationOrError({
     if (error instanceof InsufficientDiamondBalanceError) {
       return NextResponse.json(
         {
-          error: "钻石不足，请充值后再试。",
+          error: diamondInsufficientMessage,
           code: "AI_QUESTION_DOUBT_INSUFFICIENT_DIAMONDS"
         },
         { status: 402 }

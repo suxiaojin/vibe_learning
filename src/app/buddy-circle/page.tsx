@@ -2,18 +2,17 @@ import type { ReactNode } from "react";
 import { Ban, Check, ChevronDown, MoreHorizontal, SlidersHorizontal, Trash2, UserMinus, UserPlus } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { BuddyErrorNotice } from "@/components/buddy-error-notice";
 import { BuddyFeedLoadMore } from "@/components/buddy-feed-load-more";
 import { BuddyPostComposer } from "@/components/buddy-post-composer";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { DismissibleDetails } from "@/components/dismissible-details";
 import { FollowingFeedReadMarker } from "@/components/following-feed-read-marker";
-import { PostSuccessNoticeTrigger } from "@/components/post-success-toast";
 import { SocialAvatar, SocialPostCard, type SocialPostNode } from "@/components/social-post-card";
 import { SocialPostActions } from "@/components/social-post-actions";
 import { StudentPageShell } from "@/components/student-page-shell";
-import { EmptyState, SurfaceCard } from "@/components/student-ui";
+import { SurfaceCard } from "@/components/student-ui";
 import {
-  createBuddyPost,
   deleteBuddyPost,
   getFollowingFeedUnreadCount,
   likeBuddyPost,
@@ -96,7 +95,6 @@ export default async function BuddyCirclePage({
 
   return (
     <StudentPageShell active="buddy-circle" maxWidthClassName="max-w-[1520px]">
-      <PostSuccessNoticeTrigger active={params?.notice === "post-sent"} />
       {scope === "following" ? (
         <FollowingFeedReadMarker action={markFollowingFeedAsRead} readThroughAt={followingReadThroughAt.toISOString()} />
       ) : null}
@@ -105,26 +103,13 @@ export default async function BuddyCirclePage({
         <div className="min-w-0 space-y-4">
           <FeedHeader followingUnreadCount={followingUnreadCount} params={params} scope={scope} sort={sort} />
 
-          {params?.error ? (
-            <p className="rounded-2xl bg-coral/10 px-4 py-3 text-sm font-semibold text-coral">
-              {errorText[params.error] || errorText.UNKNOWN}
-            </p>
-          ) : null}
+          {params?.error ? <BuddyErrorNotice code={params.error} message={errorText[params.error] || errorText.UNKNOWN} /> : null}
 
-          <PostComposer returnTo={returnTo} />
+          <PostComposer />
 
           <section className="space-y-4">
-            {feed.items.length === 0 ? (
-              <EmptyState
-                title={scope === "following" ? "关注动态为空" : "暂时没有帖子"}
-                description={scope === "following" ? "你关注的人还没有发帖，可以先去发现页看看新的学习搭子。" : "暂时没有符合条件的帖子，换个筛选条件试试看。"}
-              />
-            ) : (
-              feed.items.map((post) => (
-                <BuddyPostCard key={post.id} post={post} returnTo={returnTo} scope={scope} />
-              ))
-            )}
             <BuddyFeedLoadMore
+              initialItems={feed.items}
               initialNextCursor={feed.nextCursor}
               majorId={params?.majorId || undefined}
               province={params?.province || undefined}
@@ -226,12 +211,8 @@ function FeedTab({
   );
 }
 
-function PostComposer({ returnTo }: { returnTo: string }) {
-  return (
-    <SurfaceCard>
-      <BuddyPostComposer action={publishPost} returnTo={returnTo} />
-    </SurfaceCard>
-  );
+function PostComposer() {
+  return <BuddyPostComposer />;
 }
 
 function FeedFilters({
@@ -497,19 +478,6 @@ function formatDateTime(value: Date | string) {
   });
 }
 
-async function publishPost(formData: FormData) {
-  "use server";
-  const user = await requireUser();
-  try {
-    await createBuddyPost(user.id, String(formData.get("content") || ""));
-  } catch (error) {
-    redirectWithError(formData, error);
-  }
-  revalidatePath("/buddy-circle");
-  revalidatePath("/me");
-  redirect(withPostSentNotice(getReturnTo(formData)));
-}
-
 async function markFollowingFeedAsRead(readThroughAt: string) {
   "use server";
   const user = await requireUser();
@@ -627,12 +595,6 @@ async function blockFromCircle(formData: FormData) {
 function getReturnTo(formData: FormData) {
   const returnTo = String(formData.get("returnTo") || "/buddy-circle");
   return returnTo.startsWith("/buddy-circle") ? returnTo : "/buddy-circle";
-}
-
-function withPostSentNotice(returnTo: string) {
-  const url = new URL(`http://local${returnTo}`);
-  url.searchParams.set("notice", "post-sent");
-  return `${url.pathname}${url.search}`;
 }
 
 function redirectWithError(formData: FormData, error: unknown): never {

@@ -2,6 +2,8 @@
 
 import { useRef, useState, type ReactNode } from "react";
 import { ChevronRight, HelpCircle, Loader2 } from "lucide-react";
+import { DiamondInsufficientMessage } from "@/components/diamond-insufficient-message";
+import { isDiamondInsufficientMessage } from "@/lib/diamond-insufficient";
 
 const text = {
   button: "\u0041\u0049\u89e3\u91ca",
@@ -209,7 +211,13 @@ export function WrongQuestionAi({
             </section>
           ) : null}
 
-          {requestError ? <p className="text-sm font-semibold text-coral" role="alert">{requestError}</p> : null}
+          {requestError ? (
+            isDiamondInsufficientMessage(requestError) ? (
+              <DiamondInsufficientMessage className="text-sm font-semibold text-coral" />
+            ) : (
+              <p className="text-sm font-semibold text-coral" role="alert">{requestError}</p>
+            )
+          ) : null}
 
           {loading && activeFollowUpId === null ? (
             <p className={`${answer ? "mt-3 " : ""}flex items-center gap-2 text-sm text-slate-600`} role="status">
@@ -298,6 +306,10 @@ function createAiRequestId() {
 }
 
 function MarkdownText({ content }: { content: string }) {
+  if (isDiamondInsufficientMessage(content)) {
+    return <DiamondInsufficientMessage className="text-sm font-semibold leading-7 text-coral" />;
+  }
+
   const blocks = toBlocks(content);
 
   return (
