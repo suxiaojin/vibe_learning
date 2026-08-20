@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
-import { Ban, Check, ChevronDown, MoreHorizontal, Search, SlidersHorizontal, Trash2, UserCheck, UserMinus, UserPlus } from "lucide-react";
+import { Ban, Check, ChevronDown, MoreHorizontal, SlidersHorizontal, Trash2, UserMinus, UserPlus } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { BuddyFeedLoadMore } from "@/components/buddy-feed-load-more";
 import { BuddyPostComposer } from "@/components/buddy-post-composer";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { DismissibleDetails } from "@/components/dismissible-details";
+import { FollowingFeedReadMarker } from "@/components/following-feed-read-marker";
 import { PostSuccessNoticeTrigger } from "@/components/post-success-toast";
 import { SocialAvatar, SocialPostCard, type SocialPostNode } from "@/components/social-post-card";
 import { SocialPostActions } from "@/components/social-post-actions";
@@ -14,8 +15,10 @@ import { EmptyState, SurfaceCard } from "@/components/student-ui";
 import {
   createBuddyPost,
   deleteBuddyPost,
+  getFollowingFeedUnreadCount,
   likeBuddyPost,
   listBuddyFeed,
+  markFollowingFeedRead,
   repostBuddyPost,
   unlikeBuddyPost,
   unrepostBuddyPost,
@@ -25,7 +28,7 @@ import {
 import { formatBuddyError } from "@/lib/buddies";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { blockUser, followUser, listRecommendedFollows, searchUsersByNickname, unfollowUser, type SocialRecommendation, type SocialUserSearchResult } from "@/lib/social";
+import { blockUser, followUser, listRecommendedFollows, unfollowUser, type SocialRecommendation } from "@/lib/social";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +40,6 @@ type CircleSearchParams = {
   majorId?: string;
   notice?: string;
   province?: string;
-  q?: string;
   sort?: string;
   studySystem?: string;
   tab?: string;
@@ -69,8 +71,8 @@ export default async function BuddyCirclePage({
   const params = await searchParams;
   const scope = getScope(params?.tab);
   const sort = getSort(params?.sort);
-  const query = params?.q?.trim() || "";
-  const [regions, majors, feed, searchResult, recommendedFollows] = await Promise.all([
+  const followingReadThroughAt = new Date();
+  const [regions, majors, feed, recommendedFollows, followingUnreadCount] = await Promise.all([
     prisma.region.findMany({
       where: { status: "active" },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
@@ -87,18 +89,21 @@ export default async function BuddyCirclePage({
       studySystem: params?.studySystem || undefined,
       limit: 20
     }),
-    query ? searchUsersByNickname(user.id, query) : Promise.resolve({ items: [] }),
-    listRecommendedFollows(user.id, { limit: 5 })
+    listRecommendedFollows(user.id, { limit: 5 }),
+    scope === "following" ? Promise.resolve(0) : getFollowingFeedUnreadCount(user.id)
   ]);
   const returnTo = buildCircleHref(params);
 
   return (
     <StudentPageShell active="buddy-circle" maxWidthClassName="max-w-[1520px]">
       <PostSuccessNoticeTrigger active={params?.notice === "post-sent"} />
+      {scope === "following" ? (
+        <FollowingFeedReadMarker action={markFollowingFeedAsRead} readThroughAt={followingReadThroughAt.toISOString()} />
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(680px,1fr)_320px]">
         <div className="min-w-0 space-y-4">
-          <FeedHeader params={params} scope={scope} sort={sort} />
+          <FeedHeader followingUnreadCount={followingUnreadCount} params={params} scope={scope} sort={sort} />
 
           {params?.error ? (
             <p className="rounded-2xl bg-coral/10 px-4 py-3 text-sm font-semibold text-coral">
@@ -107,8 +112,6 @@ export default async function BuddyCirclePage({
           ) : null}
 
           <PostComposer returnTo={returnTo} />
-
-          {query ? <UserSearchResults query={query} returnTo={returnTo} users={searchResult.items} /> : null}
 
           <section className="space-y-4">
             {feed.items.length === 0 ? (
@@ -133,7 +136,6 @@ export default async function BuddyCirclePage({
         </div>
 
         <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
-          <SearchPanel params={params} query={query} scope={scope} sort={sort} />
           <FeedFilters majors={majors} params={params} regions={regions} scope={scope} sort={sort} />
           <RecommendedFollowPanel returnTo={returnTo} users={recommendedFollows.items} />
         </aside>
@@ -143,10 +145,12 @@ export default async function BuddyCirclePage({
 }
 
 function FeedHeader({
+  followingUnreadCount,
   params,
   scope,
   sort
 }: {
+  followingUnreadCount: number;
   params?: CircleSearchParams;
   scope: BuddyFeedScope;
   sort: BuddyFeedSort;
@@ -154,8 +158,8 @@ function FeedHeader({
   return (
     <section className="surface-card sticky top-0 z-30 overflow-visible bg-surface/95 p-0 backdrop-blur">
       <div className="grid min-h-[64px] grid-cols-2">
-        <FeedTab active={scope === "discover"} label="发现" params={params} sort={sort} tab="discover" />
-        <FeedTab active={scope === "following"} label="关注" params={params} sort={sort} tab="following" />
+        <FeedTab active={scope === "discover"} label="发现" params={params} sort={sort} tab="discover" unreadCount={0} />
+        <FeedTab active={scope === "following"} label="关注" params={params} sort={sort} tab="following" unreadCount={followingUnreadCount} />
       </div>
     </section>
   );
@@ -166,13 +170,15 @@ function FeedTab({
   label,
   params,
   sort,
-  tab
+  tab,
+  unreadCount
 }: {
   active: boolean;
   label: string;
   params?: CircleSearchParams;
   sort: BuddyFeedSort;
   tab: BuddyFeedScope;
+  unreadCount: number;
 }) {
   const options: Array<{ key: BuddyFeedSort; label: string }> = [
     { key: "hot", label: "热门" },
@@ -191,7 +197,17 @@ function FeedTab({
         className="inline-flex min-h-12 items-center justify-center gap-1 px-8 outline-none focus-visible:ring-2 focus-visible:ring-teal/30"
         href={`/buddy-circle?tab=${tab}`}
       >
-        {label}
+        <span className={cn("relative inline-flex items-center", unreadCount > 0 && "mr-4")}>
+          {label}
+          {unreadCount > 0 ? (
+            <span
+              aria-label={`${unreadCount > 10 ? "10条以上" : unreadCount}未读帖子`}
+              className="absolute -right-5 -top-3 flex h-5 min-w-5 items-center justify-center rounded-full bg-coral px-1 text-[11px] font-bold leading-none text-white shadow-sm"
+            >
+              {unreadCount > 10 ? "10+" : unreadCount}
+            </span>
+          ) : null}
+        </span>
         <ChevronDown className="transition group-hover:rotate-180 group-focus-within:rotate-180" size={16} />
       </a>
       <div className="invisible absolute top-full z-40 w-36 overflow-hidden rounded-2xl border border-border-soft bg-white py-2 opacity-0 shadow-popover transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
@@ -214,37 +230,6 @@ function PostComposer({ returnTo }: { returnTo: string }) {
   return (
     <SurfaceCard>
       <BuddyPostComposer action={publishPost} returnTo={returnTo} />
-    </SurfaceCard>
-  );
-}
-
-function SearchPanel({
-  params,
-  query,
-  scope,
-  sort
-}: {
-  params?: CircleSearchParams;
-  query: string;
-  scope: BuddyFeedScope;
-  sort: BuddyFeedSort;
-}) {
-  return (
-    <SurfaceCard className="border-border-soft/70 bg-surface/80 p-3 shadow-none">
-      <form className="relative" method="get">
-        <input name="tab" type="hidden" value={scope} />
-        <input name="sort" type="hidden" value={sort} />
-        {params?.province ? <input name="province" type="hidden" value={params.province} /> : null}
-        {params?.studySystem ? <input name="studySystem" type="hidden" value={params.studySystem} /> : null}
-        {params?.majorId ? <input name="majorId" type="hidden" value={params.majorId} /> : null}
-        <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-        <input
-          className="input min-h-12 rounded-xl pl-10 text-sm"
-          name="q"
-          defaultValue={query}
-          placeholder="搜索昵称"
-        />
-      </form>
     </SurfaceCard>
   );
 }
@@ -274,7 +259,6 @@ function FeedFilters({
       <form className="space-y-3" method="get">
         <input name="tab" type="hidden" value={scope} />
         <input name="sort" type="hidden" value={sort} />
-        {params?.q ? <input name="q" type="hidden" value={params.q} /> : null}
         <label className="block">
           <span className="label">省份</span>
           <select className="input min-h-11 rounded-xl text-sm" name="province" defaultValue={params?.province || ""}>
@@ -327,49 +311,6 @@ function RecommendedFollowPanel({ returnTo, users }: { returnTo: string; users: 
                 <input name="returnTo" type="hidden" value={returnTo} />
                 <button className="secondary-button min-h-9 rounded-full px-4 text-sm" type="submit">
                   关注
-                </button>
-              </form>
-            </div>
-          ))
-        )}
-      </div>
-    </SurfaceCard>
-  );
-}
-
-function UserSearchResults({
-  query,
-  returnTo,
-  users
-}: {
-  query: string;
-  returnTo: string;
-  users: SocialUserSearchResult[];
-}) {
-  return (
-    <SurfaceCard>
-      <h2 className="text-lg font-semibold text-ink">昵称搜索：{query}</h2>
-      <div className="mt-4 space-y-3">
-        {users.length === 0 ? (
-          <p className="rounded-2xl bg-surface-muted px-4 py-6 text-center text-sm font-medium text-slate-500">没有找到匹配昵称的用户。</p>
-        ) : (
-          users.map((user) => (
-            <div key={user.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border-soft/80 bg-surface p-4">
-              <a className="flex min-w-0 items-center gap-3" href={`/students/${user.id}`}>
-                <SocialAvatar size="sm" user={user} />
-                <span className="min-w-0">
-                  <span className="block truncate text-[15px] font-semibold text-ink">{user.nickname}</span>
-                  <span className="mt-1 block truncate text-[13px] font-medium text-slate-500">
-                    {[user.province, user.studySystem, user.majorName].filter(Boolean).join(" · ") || user.bio || "暂未填写简介"}
-                  </span>
-                </span>
-              </a>
-              <form action={user.isFollowing ? unfollowFromCircle : followFromCircle}>
-                <input name="targetId" type="hidden" value={user.id} />
-                <input name="returnTo" type="hidden" value={returnTo} />
-                <button className={user.isFollowing ? "secondary-button min-h-11 rounded-xl px-4 text-sm" : "primary-button min-h-11 rounded-xl px-4 text-sm"} type="submit">
-                  {user.isFollowing ? <UserCheck size={16} /> : <UserPlus size={16} />}
-                  {user.isFollowing ? "已关注" : "关注"}
                 </button>
               </form>
             </div>
@@ -541,7 +482,6 @@ function buildCircleHref(params?: CircleSearchParams, overrides?: { sort?: Buddy
   if (params?.province) query.set("province", params.province);
   if (params?.studySystem) query.set("studySystem", params.studySystem);
   if (params?.majorId) query.set("majorId", params.majorId);
-  if (params?.q) query.set("q", params.q);
   return `/buddy-circle?${query.toString()}`;
 }
 
@@ -568,6 +508,19 @@ async function publishPost(formData: FormData) {
   revalidatePath("/buddy-circle");
   revalidatePath("/me");
   redirect(withPostSentNotice(getReturnTo(formData)));
+}
+
+async function markFollowingFeedAsRead(readThroughAt: string) {
+  "use server";
+  const user = await requireUser();
+  if (user.role !== "student") {
+    return;
+  }
+  const parsedReadThroughAt = new Date(readThroughAt);
+  if (!Number.isFinite(parsedReadThroughAt.getTime())) {
+    return;
+  }
+  await markFollowingFeedRead(user.id, parsedReadThroughAt);
 }
 
 async function deletePost(formData: FormData) {

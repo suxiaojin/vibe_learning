@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { BuddyShareCardView } from "@/components/buddy-share-card";
+import { CollapsiblePostText } from "@/components/collapsible-post-text";
 import { SocialPostAuthorHeader } from "@/components/social-post-author-header";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import type { MedalLevel } from "@/lib/rewards";
@@ -117,7 +118,7 @@ export function SocialPostCard({
             <SocialPostBody content={post.content} sharePayload={post.sharePayload} />
           ) : (
             <div className="mt-4 min-w-0 space-y-3">
-              {post.content ? <p className="whitespace-pre-wrap text-[15px] font-medium leading-7 text-ink/85">{post.content}</p> : null}
+              {post.content ? <CollapsiblePostText content={post.content} /> : null}
               <SocialRepostSourceCard
                 getDateLabel={getDateLabel}
                 originalPost={post.originalPost}
@@ -191,9 +192,7 @@ function SocialPostBody({
 }) {
   return (
     <div className={cn(compact ? "mt-2" : "mt-4", "space-y-3")}>
-      {content ? (
-        <p className={cn("whitespace-pre-wrap font-medium leading-7 text-ink/85", compact ? "text-sm" : "text-[15px]")}>{content}</p>
-      ) : null}
+      {content ? <CollapsiblePostText compact={compact} content={content} /> : null}
       <BuddyShareCardView card={sharePayload} compact={compact} />
     </div>
   );

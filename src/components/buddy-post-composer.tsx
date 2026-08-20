@@ -16,6 +16,16 @@ type EmojibaseItem = {
 };
 
 const emojiDataUrl = "https://cdn.jsdelivr.net/npm/emojibase-data@17.0.0/zh/compact.json";
+const composerMinHeight = 56;
+const composerMaxHeight = 400;
+
+function resizeComposerTextarea(textarea: HTMLTextAreaElement) {
+  textarea.style.height = "0px";
+  const contentHeight = textarea.scrollHeight;
+  const nextHeight = Math.min(Math.max(contentHeight, composerMinHeight), composerMaxHeight);
+  textarea.style.height = `${nextHeight}px`;
+  textarea.style.overflowY = contentHeight > composerMaxHeight ? "auto" : "hidden";
+}
 
 export function BuddyPostComposer({
   action,
@@ -30,6 +40,29 @@ export function BuddyPostComposer({
   const [pickerStatus, setPickerStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const pickerRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    resizeComposerTextarea(textarea);
+    let observedWidth = Math.round(textarea.getBoundingClientRect().width);
+    const resizeObserver = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(([entry]) => {
+        const nextWidth = Math.round(entry.contentRect.width);
+        if (nextWidth === observedWidth) {
+          return;
+        }
+        observedWidth = nextWidth;
+        resizeComposerTextarea(textarea);
+      });
+    resizeObserver?.observe(textarea);
+
+    return () => resizeObserver?.disconnect();
+  }, []);
 
   useEffect(() => {
     if (!pickerOpen) {
@@ -103,6 +136,9 @@ export function BuddyPostComposer({
     const nextCursor = start + emoji.length;
     setContent(nextContent);
     window.requestAnimationFrame(() => {
+      if (textarea) {
+        resizeComposerTextarea(textarea);
+      }
       textarea?.focus();
       textarea?.setSelectionRange(nextCursor, nextCursor);
     });
@@ -113,11 +149,15 @@ export function BuddyPostComposer({
       <input name="returnTo" type="hidden" value={returnTo} />
       <textarea
         ref={textareaRef}
-        className="input min-h-28 resize-y rounded-2xl border-0 bg-slate-50/90 px-4 py-3 text-[15px] font-medium leading-7 text-ink shadow-none placeholder:text-slate-400"
+        aria-describedby="buddy-post-content-hint"
+        className="input min-h-14 max-h-[400px] resize-none overflow-y-hidden rounded-2xl border-0 bg-slate-50/90 px-4 py-3 text-[15px] font-medium leading-7 text-ink shadow-none placeholder:text-slate-400"
         name="content"
         placeholder="有什么想分享？"
         value={content}
-        onChange={(event) => setContent(event.target.value)}
+        onChange={(event) => {
+          setContent(event.target.value);
+          resizeComposerTextarea(event.currentTarget);
+        }}
       />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -182,7 +222,7 @@ export function BuddyPostComposer({
             ) : null}
           </div>
 
-          <p className="min-w-0 text-[13px] font-medium text-slate-500">仅支持文字和表情，不能包含超链接、图片、视频或音频。</p>
+          <p id="buddy-post-content-hint" className="min-w-0 text-[13px] font-medium text-slate-500">仅支持文字和表情，不能包含超链接、图片、视频或音频。</p>
         </div>
 
         <button className="primary-button min-h-12 rounded-2xl px-5 text-[15px]" type="submit">

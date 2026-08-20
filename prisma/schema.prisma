@@ -360,6 +360,7 @@ model User {
   buddyPostLikes                     BuddyPostLike[]
   following                          SocialFollow[]                  @relation("SocialFollowFollower")
   followers                          SocialFollow[]                  @relation("SocialFollowFollowing")
+  buddyFeedReadState                 BuddyFeedReadState?
   blockedUsers                       SocialBlock[]                   @relation("SocialBlockBlocker")
   blockedBy                          SocialBlock[]                   @relation("SocialBlockBlocked")
   userEventNotificationsReceived     UserEventNotification[]         @relation("UserEventNotificationRecipient")
@@ -1328,6 +1329,16 @@ model SocialFollow {
   @@index([followerId, createdAt])
   @@index([followingId, createdAt])
   @@map("social_follows")
+}
+
+model BuddyFeedReadState {
+  userId          String   @id
+  followingReadAt DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("buddy_feed_read_states")
 }
 
 model SocialBlock {

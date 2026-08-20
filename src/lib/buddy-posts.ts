@@ -177,6 +177,108 @@ export async function listBuddyFeed(userId: string, input?: BuddyFeedFilters) {
   };
 }
 
+export async function getFollowingFeedUnreadCount(userId: string) {
+  const existingReadState = await prisma.buddyFeedReadState.findUnique({
+    where: { userId },
+    select: { followingReadAt: true }
+  });
+  if (!existingReadState) {
+    const initializedAt = new Date();
+    await prisma.buddyFeedReadState.upsert({
+      where: { userId },
+      create: { userId, followingReadAt: initializedAt },
+      update: {}
+    });
+    return 0;
+  }
+
+  const [follows, blockedIds] = await Promise.all([
+    prisma.socialFollow.findMany({
+      where: {
+        followerId: userId,
+        following: {
+          role: "student",
+          status: "active"
+        }
+      },
+      select: {
+        followingId: true,
+        createdAt: true
+      }
+    }),
+    getBlockedUserIds(userId)
+  ]);
+  const blockedIdSet = new Set(blockedIds);
+  const unreadWindows = follows
+    .filter((follow) => !blockedIdSet.has(follow.followingId))
+    .map((follow) => ({
+      authorId: follow.followingId,
+      createdAt: {
+        gt: follow.createdAt > existingReadState.followingReadAt
+          ? follow.createdAt
+          : existingReadState.followingReadAt
+      }
+    }));
+  if (unreadWindows.length === 0) {
+    return 0;
+  }
+
+  const unreadPosts = await prisma.buddyPost.findMany({
+    where: {
+      deletedAt: null,
+      author: {
+        role: "student",
+        status: "active",
+        blockedUsers: { none: { blockedId: userId } }
+      },
+      OR: unreadWindows
+    },
+    select: { id: true },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: 11
+  });
+
+  return unreadPosts.length;
+}
+
+export async function markFollowingFeedRead(userId: string, readThroughAt: Date) {
+  if (!Number.isFinite(readThroughAt.getTime())) {
+    return;
+  }
+  const safeReadThroughAt = new Date(Math.min(readThroughAt.getTime(), Date.now()));
+  const updateReadState = () => prisma.buddyFeedReadState.updateMany({
+    where: {
+      userId,
+      followingReadAt: { lt: safeReadThroughAt }
+    },
+    data: { followingReadAt: safeReadThroughAt }
+  });
+
+  const updated = await updateReadState();
+  if (updated.count > 0) {
+    return;
+  }
+  const existing = await prisma.buddyFeedReadState.findUnique({
+    where: { userId },
+    select: { userId: true }
+  });
+  if (existing) {
+    return;
+  }
+
+  try {
+    await prisma.buddyFeedReadState.create({
+      data: { userId, followingReadAt: safeReadThroughAt }
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      await updateReadState();
+      return;
+    }
+    throw error;
+  }
+}
+
 export async function listProfileBuddyPosts(
   viewerId: string,
   targetId: string,
