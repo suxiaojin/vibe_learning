@@ -739,7 +739,7 @@ function StreamingPlaceholder() {
 
 function AiAnswerText({ content }: { content: string }) {
   if (isDiamondInsufficientMessage(content)) {
-    return <DiamondInsufficientMessage className="text-base font-semibold leading-8 text-ink" />;
+    return <DiamondInsufficientMessage className="text-base leading-8" />;
   }
 
   const blocks = parseAiAnswerBlocks(content);

@@ -213,7 +213,7 @@ export function WrongQuestionAi({
 
           {requestError ? (
             isDiamondInsufficientMessage(requestError) ? (
-              <DiamondInsufficientMessage className="text-sm font-semibold text-coral" />
+              <DiamondInsufficientMessage className="text-sm" />
             ) : (
               <p className="text-sm font-semibold text-coral" role="alert">{requestError}</p>
             )
@@ -307,7 +307,7 @@ function createAiRequestId() {
 
 function MarkdownText({ content }: { content: string }) {
   if (isDiamondInsufficientMessage(content)) {
-    return <DiamondInsufficientMessage className="text-sm font-semibold leading-7 text-coral" />;
+    return <DiamondInsufficientMessage className="text-sm leading-7" />;
   }
 
   const blocks = toBlocks(content);

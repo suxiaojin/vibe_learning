@@ -165,7 +165,7 @@ export async function POST(request: Request) {
                 questionId: question.id,
                 sessionId
               }),
-              note: "错题答疑：AI解释",
+              note: "课程闯关：AI解释",
               ruleKey: "wrong_question_ai_explanation"
             },
         conversationId,
@@ -253,7 +253,7 @@ export async function POST(request: Request) {
             questionId: question.id,
             sessionId
           }),
-          note: "错题答疑：追问",
+          note: "课程闯关：AI追问",
           ruleKey: "wrong_question_ai_follow_up"
         }
       : priorExplanation
@@ -267,7 +267,7 @@ export async function POST(request: Request) {
               questionId: question.id,
               sessionId
             }),
-            note: "错题答疑：AI解释",
+            note: "课程闯关：AI解释",
             ruleKey: "wrong_question_ai_explanation"
           },
     conversationId,

@@ -75,12 +75,12 @@ const diamondRuleTransactionPresentation: Record<string, { typeLabel: string; de
     description: "学习搭子：问问搭子"
   },
   wrong_question_ai_explanation: {
-    typeLabel: "AI 解释",
-    description: "错题答疑：AI解释"
+    typeLabel: "AI解释",
+    description: "课程闯关：AI解释"
   },
   wrong_question_ai_follow_up: {
-    typeLabel: "AI 追问",
-    description: "错题答疑：追问"
+    typeLabel: "AI追问",
+    description: "课程闯关：AI追问"
   },
   special_practice_ai_doubt: {
     typeLabel: "AI 答疑",
@@ -439,7 +439,7 @@ function DiamondPanel({
 }) {
   return (
     <SectionFrame icon={<Gem className="text-sky-500" size={22} />} title="我的钻石">
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.72fr)_360px] xl:items-start">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
         <div className="min-w-0">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[520px] text-left text-sm">
@@ -528,8 +528,6 @@ function DiamondPanel({
               >
                 <img alt="钻石充值微信客服二维码" className="h-auto w-full object-contain" src={rechargeQrCodeUrl} />
               </a>
-              <p className="mt-3 text-sm font-semibold leading-6 text-slate-600">请使用微信扫码添加客服，联系人工充值。</p>
-              <p className="mt-1 text-xs font-semibold leading-5 text-slate-400">点击二维码可查看大图</p>
             </>
           ) : (
             <p className="mt-3 text-sm font-semibold leading-6 text-slate-500">充值二维码暂未配置，请稍后再试。</p>

@@ -383,7 +383,7 @@ export function StudyMaterialImporter() {
 
             {error ? (
               isDiamondInsufficientMessage(error) ? (
-                <DiamondInsufficientMessage className="mt-3 text-sm font-semibold text-[#d92d20]" />
+                <DiamondInsufficientMessage className="mt-3 block text-sm" />
               ) : (
                 <p className="mt-3 text-sm font-semibold text-[#d92d20]">{error}</p>
               )

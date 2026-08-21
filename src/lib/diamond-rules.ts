@@ -89,8 +89,8 @@ export const diamondRuleDefinitions = [
   {
     key: "wrong_question_ai_explanation",
     direction: "consume",
-    label: "错题答疑 - AI解释",
-    description: "学生在答题结果页首次请求某道错题的 AI 解释时扣减钻石。",
+    label: "课程闯关 - AI解释",
+    description: "学生在答题结果页首次请求某道已作答题目的 AI 解释时扣减钻石。",
     triggerTiming: "首次解释请求通过校验并创建 AI 对话记录时",
     defaultAmount: 5,
     defaultEnabled: true,
@@ -99,8 +99,8 @@ export const diamondRuleDefinitions = [
   {
     key: "wrong_question_ai_follow_up",
     direction: "consume",
-    label: "错题答疑 - 追问",
-    description: "学生在答题结果页针对错题每次提交追问并准备调用大模型时扣减钻石。",
+    label: "课程闯关 - AI追问",
+    description: "学生在答题结果页针对已作答题目每次提交追问并准备调用大模型时扣减钻石。",
     triggerTiming: "每次追问请求通过校验并创建 AI 对话记录时",
     defaultAmount: 2,
     defaultEnabled: true,
