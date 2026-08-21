@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { AutoDismissMessage } from "@/components/auto-dismiss-message";
 import { AvatarUploadForm } from "@/components/avatar-upload-form";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
+import { DiamondRechargeQrPreview } from "@/components/diamond-recharge-qr-preview";
 import { HomeProfileEditor } from "@/components/home-profile-editor";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
 import { SocialPostCard, type SocialPostNode } from "@/components/social-post-card";
@@ -518,17 +519,7 @@ function DiamondPanel({
         <aside className="rounded-2xl border border-slate-200/70 bg-sky-50/50 p-5">
           <h3 className="text-lg font-semibold text-ink">钻石充值</h3>
           {rechargeQrCodeUrl ? (
-            <>
-              <a
-                aria-label="查看微信客服二维码大图"
-                className="mt-4 block overflow-hidden rounded-xl border border-sky-100 bg-white p-2 shadow-sm transition hover:border-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/20"
-                href={rechargeQrCodeUrl}
-                rel="noreferrer"
-                target="_blank"
-              >
-                <img alt="钻石充值微信客服二维码" className="h-auto w-full object-contain" src={rechargeQrCodeUrl} />
-              </a>
-            </>
+            <DiamondRechargeQrPreview src={rechargeQrCodeUrl} />
           ) : (
             <p className="mt-3 text-sm font-semibold leading-6 text-slate-500">充值二维码暂未配置，请稍后再试。</p>
           )}
