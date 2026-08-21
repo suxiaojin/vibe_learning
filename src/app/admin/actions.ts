@@ -471,6 +471,7 @@ export async function updateSystemSettings(formData: FormData) {
     userAgreementContent: getRequiredSettingText(formData, "userAgreementContent"),
     privacyPolicyContent: getRequiredSettingText(formData, "privacyPolicyContent"),
     platformAgreementContent: getRequiredSettingText(formData, "platformAgreementContent"),
+    faqContent: getRequiredSettingText(formData, "faqContent"),
     customerServiceEmail: getRequiredSettingText(formData, "customerServiceEmail")
   };
 
@@ -482,6 +483,7 @@ export async function updateSystemSettings(formData: FormData) {
   revalidatePath("/user-agreement");
   revalidatePath("/privacy-policy");
   revalidatePath("/platform-agreement");
+  revalidatePath("/help");
   revalidatePath("/forgot-password");
   revalidatePath("/study-buddy");
   redirect("/admin/settings?notice=saved");

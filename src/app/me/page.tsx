@@ -582,9 +582,9 @@ function MyHomePagePanel({
             </div>
             {profile.user.bio ? <p className="mt-3 max-w-2xl whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-600">{profile.user.bio}</p> : null}
             <div className="mt-5 flex flex-wrap gap-5 text-sm">
-              <StatValue label="粉丝" value={profile.stats.followerCount} />
+              <StatValue href="/settings?tab=followers" label="粉丝" value={profile.stats.followerCount} />
               <StatValue label="获赞" value={profile.stats.likedCount} />
-              <StatValue label="关注" value={profile.stats.followingCount} />
+              <StatValue href="/settings?tab=following" label="关注" value={profile.stats.followingCount} />
               <StatValue label="帖子" value={profile.stats.postCount} />
             </div>
           </div>
@@ -618,12 +618,22 @@ function MyHomePagePanel({
   );
 }
 
-function StatValue({ label, value }: { label: string; value: number }) {
-  return (
-    <span className="font-semibold text-slate-500">
-      <strong className="mr-1 text-base text-ink">{value}</strong>{label}
-    </span>
-  );
+function StatValue({ href, label, value }: { href?: string; label: string; value: number }) {
+  const content = <><strong className="mr-1 text-base text-ink transition group-hover:text-teal group-focus-visible:text-teal">{value}</strong>{label}</>;
+
+  if (href) {
+    return (
+      <Link
+        aria-label={`查看我的${label}列表，共 ${value} 人`}
+        className="group inline-flex min-h-11 items-center rounded-md font-semibold text-slate-500 transition hover:text-teal hover:underline focus:outline-none focus-visible:text-teal focus-visible:ring-2 focus-visible:ring-teal/40 focus-visible:ring-offset-2"
+        href={href}
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return <span className="inline-flex min-h-11 items-center font-semibold text-slate-500">{content}</span>;
 }
 
 function HomePostCard({ post }: { post: ProfilePost }) {

@@ -282,7 +282,7 @@ export default async function AdminSettingsPage({
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
             <div>
               <h2 className="text-lg font-black text-ink">协议内容</h2>
-              <p className="mt-1 text-sm font-semibold text-slate-500">登录注册页协议链接读取这里的内容。</p>
+              <p className="mt-1 text-sm font-semibold text-slate-500">协议页和前端帮助页读取这里的内容，支持 Markdown 标题、列表、表格、加粗和链接。</p>
             </div>
             <button className="primary-button rounded-none" type="submit">
               <Save size={16} />
@@ -290,8 +290,8 @@ export default async function AdminSettingsPage({
             </button>
           </div>
 
-          <div className="mt-5 grid gap-5 xl:grid-cols-3">
-            <FieldBlock label="用户协议内容">
+          <div className="mt-5 grid gap-5 xl:grid-cols-2">
+            <FieldBlock description="前端不额外添加标题，Markdown 正文需自带完整标题。" label="用户协议内容">
               <textarea
                 className="input min-h-72 rounded-none"
                 name="userAgreementContent"
@@ -299,7 +299,7 @@ export default async function AdminSettingsPage({
                 required
               />
             </FieldBlock>
-            <FieldBlock label="隐私政策内容">
+            <FieldBlock description="前端不额外添加标题，Markdown 正文需自带完整标题。" label="隐私政策内容">
               <textarea
                 className="input min-h-72 rounded-none"
                 name="privacyPolicyContent"
@@ -307,11 +307,19 @@ export default async function AdminSettingsPage({
                 required
               />
             </FieldBlock>
-            <FieldBlock label="平台使用协议内容">
+            <FieldBlock description="前端不额外添加标题，Markdown 正文需自带完整标题。" label="平台使用协议内容">
               <textarea
                 className="input min-h-72 rounded-none"
                 name="platformAgreementContent"
                 defaultValue={settings.platformAgreementContent}
+                required
+              />
+            </FieldBlock>
+            <FieldBlock description="学生端“更多—帮助”打开此内容；Markdown 正文需自带完整标题。" label="常见问题内容">
+              <textarea
+                className="input min-h-72 rounded-none"
+                name="faqContent"
+                defaultValue={settings.faqContent}
                 required
               />
             </FieldBlock>

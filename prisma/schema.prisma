@@ -417,6 +417,7 @@ model SystemSetting {
   userAgreementContent      String   @default("test")
   privacyPolicyContent      String   @default("test")
   platformAgreementContent  String   @default("test")
+  faqContent                String   @default("常见问题内容正在完善中。")
   customerServiceEmail      String   @default("714399532@qq.com")
   diamondRechargeQrCodeUrl  String   @default("")
   profileHomepageBackgroundImageUrl String @default("")

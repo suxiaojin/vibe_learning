@@ -12,6 +12,7 @@ export const systemSettingsDefaults = {
   userAgreementContent: "test",
   privacyPolicyContent: "test",
   platformAgreementContent: "test",
+  faqContent: "常见问题内容正在完善中。",
   customerServiceEmail: "714399532@qq.com",
   diamondRechargeQrCodeUrl: "",
   profileHomepageBackgroundImageUrl: "",

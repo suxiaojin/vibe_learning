@@ -7,6 +7,8 @@ import { createUserEventNotification } from "@/lib/user-event-notifications";
 
 export type SocialUserSearchResult = Awaited<ReturnType<typeof searchUsersByNickname>>["items"][number];
 export type SocialRecommendation = Awaited<ReturnType<typeof listRecommendedFollows>>["items"][number];
+export type SocialFollower = Awaited<ReturnType<typeof listFollowers>>["items"][number];
+export type SocialFollowing = Awaited<ReturnType<typeof listFollowing>>["items"][number];
 export type BlockedUser = Awaited<ReturnType<typeof listBlockedUsers>>["items"][number];
 
 function resolveProfileCoverImage({
@@ -218,6 +220,89 @@ export async function unblockUser(blockerId: string, blockedId: string) {
   await prisma.socialBlock.deleteMany({
     where: { blockerId, blockedId }
   });
+}
+
+export async function listFollowers(userId: string) {
+  const follows = await prisma.socialFollow.findMany({
+    where: {
+      followingId: userId,
+      follower: {
+        role: "student",
+        status: "active"
+      }
+    },
+    include: {
+      follower: {
+        include: {
+          studentProfile: {
+            include: {
+              region: true,
+              major: true
+            }
+          },
+          followers: {
+            where: { followerId: userId },
+            select: { id: true }
+          }
+        }
+      }
+    },
+    orderBy: { createdAt: "desc" }
+  });
+
+  return {
+    items: follows.map((follow) => ({
+      followedAt: follow.createdAt,
+      id: follow.follower.id,
+      username: follow.follower.username,
+      nickname: follow.follower.studentProfile?.nickname || follow.follower.username,
+      avatarImage: follow.follower.studentProfile?.avatarImage || "",
+      avatarColor: follow.follower.studentProfile?.avatarColor || "green",
+      province: follow.follower.studentProfile?.region?.province || null,
+      studySystem: follow.follower.studentProfile?.region?.studySystem || null,
+      majorName: follow.follower.studentProfile?.major?.name || null,
+      isFollowing: follow.follower.followers.length > 0
+    }))
+  };
+}
+
+export async function listFollowing(userId: string) {
+  const follows = await prisma.socialFollow.findMany({
+    where: {
+      followerId: userId,
+      following: {
+        role: "student",
+        status: "active"
+      }
+    },
+    include: {
+      following: {
+        include: {
+          studentProfile: {
+            include: {
+              region: true,
+              major: true
+            }
+          }
+        }
+      }
+    },
+    orderBy: { createdAt: "desc" }
+  });
+
+  return {
+    items: follows.map((follow) => ({
+      followedAt: follow.createdAt,
+      id: follow.following.id,
+      username: follow.following.username,
+      nickname: follow.following.studentProfile?.nickname || follow.following.username,
+      avatarImage: follow.following.studentProfile?.avatarImage || "",
+      avatarColor: follow.following.studentProfile?.avatarColor || "green",
+      province: follow.following.studentProfile?.region?.province || null,
+      studySystem: follow.following.studentProfile?.region?.studySystem || null,
+      majorName: follow.following.studentProfile?.major?.name || null
+    }))
+  };
 }
 
 export async function listBlockedUsers(userId: string) {

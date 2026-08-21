@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { cn } from "@/lib/utils";
 
-type StudentNavKey = "learn" | "course-center" | "study-buddy" | "buddy-circle" | "me" | "notifications" | "settings";
+type StudentNavKey = "learn" | "course-center" | "study-buddy" | "buddy-circle" | "me" | "notifications" | "settings" | "help";
 
 export function StudentPageShell({
   active,

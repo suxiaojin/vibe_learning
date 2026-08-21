@@ -9,7 +9,7 @@ import { ensureDiamondAccount } from "@/lib/rewards";
 import { getNotificationBellData } from "@/lib/user-event-notifications";
 import { cn } from "@/lib/utils";
 
-type StudentNavKey = "learn" | "course-center" | "study-buddy" | "buddy-circle" | "me" | "notifications" | "settings";
+type StudentNavKey = "learn" | "course-center" | "study-buddy" | "buddy-circle" | "me" | "notifications" | "settings" | "help";
 
 const text = {
   learn: "\u5b66\u4e60",
@@ -41,7 +41,7 @@ export async function StudentSidebar({ active }: { active: StudentNavKey }) {
           <StudentNavItem active={active === "study-buddy"} href="/study-buddy" icon={<Sparkles size={22} />} label={text.studyBuddy} />
           <StudentNavItem active={active === "buddy-circle"} href="/buddy-circle" icon={<UsersRound size={22} />} label={text.buddyCircle} />
           <StudentNavItem active={active === "me"} href="/me" icon={<UserRound size={22} />} label={text.profile} />
-          <MoreMenu active={active === "notifications" || active === "settings"} />
+          <MoreMenu active={active === "notifications" || active === "settings" || active === "help"} />
         </nav>
         <div className="mt-auto px-1 pt-6">{footer}</div>
       </div>
@@ -141,10 +141,10 @@ function MoreMenu({ active }: { active: boolean }) {
             <Settings size={18} />
             {text.settings}
           </Link>
-          <button className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-semibold text-slate-500 hover:bg-slate-50" type="button">
+          <Link className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-semibold text-slate-500 hover:bg-slate-50" href="/help">
             <HelpCircle size={18} />
             {text.help}
-          </button>
+          </Link>
           <form action="/api/auth/logout" method="post">
             <button className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-semibold text-slate-500 hover:bg-slate-50" type="submit">
               <LogOut size={18} />
