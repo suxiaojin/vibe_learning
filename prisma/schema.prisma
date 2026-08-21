@@ -419,6 +419,8 @@ model SystemSetting {
   platformAgreementContent  String   @default("test")
   customerServiceEmail      String   @default("714399532@qq.com")
   diamondRechargeQrCodeUrl  String   @default("")
+  profileHomepageBackgroundImageUrl String @default("")
+  profileHomepageBackgroundUpdatedAt DateTime?
   studyBuddyHeroImageUrl    String   @default("/ai-study/study-buddy-hero.webp")
   studyBuddyHeroTitle       String   @default("好好学习，早日上岸")
   studyBuddyHeroEffect      String   @default("typewriter")
@@ -572,6 +574,7 @@ model StudentProfile {
   avatarColor      String         @default("green")
   avatarImage      String?
   coverImage       String?
+  coverImageUpdatedAt DateTime?
   bio              String?
   gender           StudentGender?
   school           String?

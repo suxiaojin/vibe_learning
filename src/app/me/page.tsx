@@ -1069,12 +1069,13 @@ async function updateHomeProfile(formData: FormData) {
     sizeRedirect: "/me?tab=homepage&profile=cover_size",
     typeRedirect: "/me?tab=homepage&profile=cover_type"
   });
-  const imageData: { avatarImage?: string; coverImage?: string } = {};
+  const imageData: { avatarImage?: string; coverImage?: string; coverImageUpdatedAt?: Date } = {};
   if (avatarImage) {
     imageData.avatarImage = avatarImage;
   }
   if (coverImage) {
     imageData.coverImage = coverImage;
+    imageData.coverImageUpdatedAt = new Date();
   }
 
   await prisma.studentProfile.upsert({

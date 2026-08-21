@@ -15,6 +15,7 @@ import {
   updateSystemSettings
 } from "@/app/admin/actions";
 import { AdminDiamondRuleSettings } from "@/components/admin-diamond-rule-settings";
+import { AdminProfileBackgroundUploadForm } from "@/components/admin-profile-background-upload-form";
 import { AdminRechargeQrUploadForm } from "@/components/admin-recharge-qr-upload-form";
 import { requireAdmin } from "@/lib/auth";
 import { listDiamondRuleSettings } from "@/lib/diamond-rules";
@@ -38,6 +39,7 @@ const tabs: Array<{ key: SettingsTab; label: string }> = [
 const noticeText: Record<string, string> = {
   saved: "系统设置已保存。",
   "diamond-recharge-qr-saved": "钻石充值客服二维码已保存。",
+  "profile-homepage-background-saved": "个人主页背景图已保存，并已覆盖当前用户的背景显示。",
   "study-buddy-hero-image-saved": "顶部动画已保存。",
   "study-buddy-hero-title-saved": "顶部标题已保存。",
   "study-buddy-hero-effect-saved": "标题效果已保存。",
@@ -51,6 +53,9 @@ const errorText: Record<string, string> = {
   "diamond-recharge-qr-required": "请选择要上传的钻石充值客服二维码。",
   "invalid-diamond-recharge-qr-type": "钻石充值客服二维码仅支持 PNG、JPG 或 WEBP 图片。",
   "diamond-recharge-qr-too-large": "钻石充值客服二维码不能超过 2MB。",
+  "profile-homepage-background-required": "请选择要上传的个人主页背景图。",
+  "invalid-profile-homepage-background-type": "个人主页背景图仅支持 PNG、JPG 或 WEBP 图片。",
+  "profile-homepage-background-too-large": "个人主页背景图不能超过 2MB。",
   "invalid-study-buddy-hero-image-type": "请上传 WEBP 图片或动画。",
   "study-buddy-hero-image-too-large": "学习搭子顶部动画不能超过 5MB。",
   "invalid-diamond-rule": "钻石规则不存在或尚未接入代码。",
@@ -316,7 +321,10 @@ export default async function AdminSettingsPage({
       </form>
 
       {activeTab === "admin" ? (
-        <AdminRechargeQrUploadForm currentQrCodeUrl={settings.diamondRechargeQrCodeUrl} />
+        <div className="grid gap-4">
+          <AdminRechargeQrUploadForm currentQrCodeUrl={settings.diamondRechargeQrCodeUrl} />
+          <AdminProfileBackgroundUploadForm currentBackgroundImageUrl={settings.profileHomepageBackgroundImageUrl} />
+        </div>
       ) : null}
 
       {activeTab === "study-buddy" ? (

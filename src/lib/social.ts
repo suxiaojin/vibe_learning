@@ -2,11 +2,38 @@ import { Prisma } from "@prisma/client";
 import { BuddyError } from "@/lib/buddies";
 import { prisma } from "@/lib/prisma";
 import { getMedalLevel, getMedalRule } from "@/lib/rewards";
+import { getSystemSettings } from "@/lib/system-settings";
 import { createUserEventNotification } from "@/lib/user-event-notifications";
 
 export type SocialUserSearchResult = Awaited<ReturnType<typeof searchUsersByNickname>>["items"][number];
 export type SocialRecommendation = Awaited<ReturnType<typeof listRecommendedFollows>>["items"][number];
 export type BlockedUser = Awaited<ReturnType<typeof listBlockedUsers>>["items"][number];
+
+function resolveProfileCoverImage({
+  personalImage,
+  personalUpdatedAt,
+  systemImage,
+  systemUpdatedAt
+}: {
+  personalImage: string;
+  personalUpdatedAt: Date | null;
+  systemImage: string;
+  systemUpdatedAt: Date | null;
+}) {
+  if (!systemImage) {
+    return personalImage;
+  }
+  if (!personalImage) {
+    return systemImage;
+  }
+  if (!systemUpdatedAt) {
+    return personalImage;
+  }
+  if (!personalUpdatedAt) {
+    return systemImage;
+  }
+  return systemUpdatedAt.getTime() > personalUpdatedAt.getTime() ? systemImage : personalImage;
+}
 
 export async function getFollowingIds(userId: string) {
   const follows = await prisma.socialFollow.findMany({
@@ -33,7 +60,7 @@ export async function getBlockedUserIds(userId: string) {
 }
 
 export async function getSocialProfile(viewerId: string, targetId: string) {
-  const [target, totalAttempts, postCount, followingCount, followerCount, likedCount, isFollowing] = await Promise.all([
+  const [target, totalAttempts, postCount, followingCount, followerCount, likedCount, isFollowing, settings] = await Promise.all([
     prisma.user.findFirst({
       where: { id: targetId, role: "student", status: "active" },
       include: {
@@ -62,7 +89,8 @@ export async function getSocialProfile(viewerId: string, targetId: string) {
     }),
     viewerId === targetId
       ? Promise.resolve(false)
-      : prisma.socialFollow.count({ where: { followerId: viewerId, followingId: targetId } })
+      : prisma.socialFollow.count({ where: { followerId: viewerId, followingId: targetId } }),
+    getSystemSettings()
   ]);
 
   if (!target) {
@@ -70,6 +98,12 @@ export async function getSocialProfile(viewerId: string, targetId: string) {
   }
 
   const medal = getMedalRule(getMedalLevel(totalAttempts));
+  const coverImage = resolveProfileCoverImage({
+    personalImage: target.studentProfile?.coverImage || "",
+    personalUpdatedAt: target.studentProfile?.coverImageUpdatedAt || null,
+    systemImage: settings.profileHomepageBackgroundImageUrl,
+    systemUpdatedAt: settings.profileHomepageBackgroundUpdatedAt
+  });
   return {
     user: {
       id: target.id,
@@ -77,7 +111,7 @@ export async function getSocialProfile(viewerId: string, targetId: string) {
       nickname: target.studentProfile?.nickname || target.username,
       avatarImage: target.studentProfile?.avatarImage || "",
       avatarColor: target.studentProfile?.avatarColor || "green",
-      coverImage: target.studentProfile?.coverImage || "",
+      coverImage,
       bio: target.studentProfile?.bio || "",
       gender: target.studentProfile?.gender || null,
       province: target.studentProfile?.region?.province || target.studentProfile?.schoolOption?.province || null,

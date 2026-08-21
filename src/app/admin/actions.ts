@@ -34,6 +34,7 @@ const loginHeroUploadDir = "uploads/system-settings";
 const maxLoginHeroImageSize = 5 * 1024 * 1024;
 const maxStudyBuddyHeroImageSize = 5 * 1024 * 1024;
 const maxDiamondRechargeQrCodeSize = 2 * 1024 * 1024;
+const maxProfileHomepageBackgroundImageSize = 2 * 1024 * 1024;
 const imageMimeExtensions: Record<string, string> = {
   "image/gif": ".gif",
   "image/jpeg": ".jpg",
@@ -307,6 +308,20 @@ async function saveDiamondRechargeQrCode(file: File) {
   return `data:${file.type};base64,${buffer.toString("base64")}`;
 }
 
+async function saveProfileHomepageBackgroundImage(file: File) {
+  const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+  if (!allowedTypes.has(file.type)) {
+    redirect(adminConfigurationSettingsPath("error", "invalid-profile-homepage-background-type"));
+  }
+
+  if (file.size > maxProfileHomepageBackgroundImageSize) {
+    redirect(adminConfigurationSettingsPath("error", "profile-homepage-background-too-large"));
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  return `data:${file.type};base64,${buffer.toString("base64")}`;
+}
+
 async function updateSystemSettingsPatch(data: Partial<typeof systemSettingsDefaults>) {
   await prisma.systemSetting.upsert({
     where: { id: systemSettingsId },
@@ -506,6 +521,33 @@ export async function updateDiamondRechargeQrSettings(formData: FormData) {
   revalidatePath("/admin/settings");
   revalidatePath("/me");
   redirect(adminConfigurationSettingsPath("notice", "diamond-recharge-qr-saved"));
+}
+
+export async function updateProfileHomepageBackgroundSettings(formData: FormData) {
+  await requireAdmin();
+  const profileHomepageBackgroundFile = formData.get("profileHomepageBackgroundFile");
+
+  if (!(profileHomepageBackgroundFile instanceof File) || profileHomepageBackgroundFile.size === 0) {
+    redirect(adminConfigurationSettingsPath("error", "profile-homepage-background-required"));
+  }
+
+  const profileHomepageBackgroundImageUrl = await saveProfileHomepageBackgroundImage(profileHomepageBackgroundFile);
+  const profileHomepageBackgroundUpdatedAt = new Date();
+  await prisma.systemSetting.upsert({
+    where: { id: systemSettingsId },
+    update: { profileHomepageBackgroundImageUrl, profileHomepageBackgroundUpdatedAt },
+    create: {
+      ...systemSettingsDefaults,
+      profileHomepageBackgroundImageUrl,
+      profileHomepageBackgroundUpdatedAt,
+      id: systemSettingsId
+    }
+  });
+
+  revalidatePath("/admin/settings");
+  revalidatePath("/me");
+  revalidatePath("/students/[userId]", "page");
+  redirect(adminConfigurationSettingsPath("notice", "profile-homepage-background-saved"));
 }
 
 export async function updateStudyBuddyHeroTitleSettings(formData: FormData) {
