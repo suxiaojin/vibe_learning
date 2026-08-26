@@ -157,7 +157,7 @@ export async function canExplainQuestion(userId: string, questionId: string) {
       select: { id: true }
     }),
     prisma.questionAttempt.findFirst({
-      where: { userId, questionId, isCorrect: false },
+      where: { userId, questionId, gradingStatus: "auto_graded", isCorrect: false },
       select: { id: true }
     })
   ]);

@@ -1,6 +1,7 @@
 import { getStudentFoundationProfile } from "@/lib/foundation";
 import { prisma } from "@/lib/prisma";
 import { isRealQuestionBankTitle } from "@/lib/question-bank-source";
+import { isQuestionBankAutoGradedQuestionType } from "@/lib/question-bank-types";
 
 export type LearningOwnerType = "public_subject" | "major";
 export type SyllabusPathStatus = "locked" | "unlocked" | "passed";
@@ -733,7 +734,10 @@ export async function checkSyllabusSectionQuestionAnswer(
 
   return {
     questionId: question.id,
-    correct: JSON.stringify(normalizeAnswerForCheck(selectedAnswer)) === JSON.stringify(normalizeAnswerForCheck(question.answer)),
+    correct: isQuestionBankAutoGradedQuestionType(question.type)
+      ? JSON.stringify(normalizeAnswerForCheck(selectedAnswer)) === JSON.stringify(normalizeAnswerForCheck(question.answer))
+      : null,
+    gradingStatus: isQuestionBankAutoGradedQuestionType(question.type) ? "auto_graded" as const : "ungraded" as const,
     correctAnswer: question.answer
   };
 }
@@ -746,7 +750,7 @@ function normalizeAnswerForCheck(value: unknown) {
     .sort();
 }
 
-export async function recordSyllabusSectionProgress(userId: string, sectionId: string, score: number, passed: boolean) {
+export async function recordSyllabusSectionProgress(userId: string, sectionId: string, score: number | null, passed: boolean) {
   const current = await prisma.userSyllabusProgress.findUnique({
     where: { userId_syllabusItemId: { userId, syllabusItemId: sectionId } },
     select: { status: true, bestScore: true, passedAt: true }
@@ -756,14 +760,14 @@ export async function recordSyllabusSectionProgress(userId: string, sectionId: s
     where: { userId_syllabusItemId: { userId, syllabusItemId: sectionId } },
     update: {
       status: passed ? "passed" : current?.status || "unlocked",
-      bestScore: Math.max(current?.bestScore || 0, score),
+      bestScore: score === null ? current?.bestScore || 0 : Math.max(current?.bestScore || 0, score),
       passedAt: passed ? new Date() : current?.passedAt
     },
     create: {
       userId,
       syllabusItemId: sectionId,
       status: passed ? "passed" : "unlocked",
-      bestScore: score,
+      bestScore: score ?? 0,
       passedAt: passed ? new Date() : null
     }
   });

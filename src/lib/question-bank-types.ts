@@ -27,14 +27,19 @@ export const questionBankRichAnswerQuestionTypes = [
   "comprehensive_essay"
 ] as const;
 
-export const questionBankEditableQuestionTypes = [
+export const questionBankAutoGradedQuestionTypes = [
   ...questionBankChoiceQuestionTypes,
   "true_false",
-  "fill_blank",
+  "fill_blank"
+] as const;
+
+export const questionBankEditableQuestionTypes = [
+  ...questionBankAutoGradedQuestionTypes,
   ...questionBankRichAnswerQuestionTypes
 ] as const;
 
 export type QuestionBankChoiceQuestionType = (typeof questionBankChoiceQuestionTypes)[number];
+export type QuestionBankAutoGradedQuestionType = (typeof questionBankAutoGradedQuestionTypes)[number];
 export type QuestionBankRichAnswerQuestionType = (typeof questionBankRichAnswerQuestionTypes)[number];
 export type QuestionBankEditableQuestionType = (typeof questionBankEditableQuestionTypes)[number];
 
@@ -235,6 +240,10 @@ export function isQuestionBankChoiceQuestionType(type?: string): type is Questio
 
 export function isQuestionBankRichAnswerQuestionType(type?: string): type is QuestionBankRichAnswerQuestionType {
   return questionBankRichAnswerQuestionTypes.includes(type as QuestionBankRichAnswerQuestionType);
+}
+
+export function isQuestionBankAutoGradedQuestionType(type?: string): type is QuestionBankAutoGradedQuestionType {
+  return questionBankAutoGradedQuestionTypes.includes(type as QuestionBankAutoGradedQuestionType);
 }
 
 export function isQuestionBankEditableQuestionType(type?: string): type is QuestionBankEditableQuestionType {

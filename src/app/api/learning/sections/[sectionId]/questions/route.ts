@@ -48,6 +48,7 @@ export async function GET(
           id: true,
           selectedAnswer: true,
           isCorrect: true,
+          gradingStatus: true,
           question: {
             select: { answer: true }
           }
@@ -59,6 +60,7 @@ export async function GET(
         id: recordedAttempt.id,
         selectedAnswer: recordedAttempt.selectedAnswer,
         isCorrect: recordedAttempt.isCorrect,
+        gradingStatus: recordedAttempt.gradingStatus,
         correctAnswer: recordedAttempt.question.answer
       }
     : null;

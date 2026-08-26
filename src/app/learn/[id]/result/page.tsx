@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
-import { CheckCircle2, ChevronRight, Circle, Flame, Gem, RotateCcw, Trophy, XCircle } from "lucide-react";
+import { BookOpenCheck, CheckCircle2, ChevronRight, Circle, Flame, Gem, RotateCcw, Trophy, XCircle } from "lucide-react";
 import { redirect } from "next/navigation";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
 import { StudentPageShell } from "@/components/student-page-shell";
@@ -78,7 +78,7 @@ function hasMeaningfulRichText(value: string) {
 
 function RichTextContent({ className, value }: { className?: string; value: string }) {
   if (!richTextHtmlPattern.test(value)) {
-    return <span className={className}>{value}</span>;
+    return <span className={cn("whitespace-pre-wrap", className)}>{value}</span>;
   }
   return (
     <div
@@ -277,32 +277,39 @@ export default async function QuizResultPage({
     );
   }
 
-  const total = currentSession.totalCount || currentSession.attempts.length || access.section.questionCount;
-  const correct = currentSession.correctCount || currentSession.attempts.filter((attempt) => attempt.isCorrect).length;
-  const score = currentSession.score ?? (total ? Math.round((correct / total) * 100) : 0);
-  const scorePercent = total ? Math.round((correct / total) * 100) : score;
-  const passed = score >= 80;
+  const gradedAttempts = currentSession.attempts.filter((attempt) => attempt.gradingStatus === "auto_graded");
+  const ungradedAttempts = currentSession.attempts.filter((attempt) => attempt.gradingStatus === "ungraded");
+  const submittedUngradedCount = ungradedAttempts.filter((attempt) => answerText(attempt.selectedAnswer).trim()).length;
+  const total = currentSession.totalCount || gradedAttempts.length;
+  const correct = currentSession.correctCount || gradedAttempts.filter((attempt) => attempt.isCorrect).length;
+  const hasScoredQuestions = total > 0;
+  const score = hasScoredQuestions ? currentSession.score ?? Math.round((correct / total) * 100) : null;
+  const scorePercent = score ?? 0;
+  const passed = !hasScoredQuestions || scorePercent >= 80;
   const currentChallengeNumber = getChallengeNumber(currentSession);
   const submittedAt = currentSession.completedAt || currentSession.updatedAt;
   const currentChapterIndex = access.course.chapters.findIndex((chapter) => chapter.id === access.chapter.id);
   const hasNextChapterInCourse = currentChapterIndex >= 0 && currentChapterIndex < access.course.chapters.length - 1;
-  const resultShareCard = buildResultShareCard({
-    chapterTitle: access.chapter.title,
-    correct,
-    courseTitle: access.course.title,
-    diamondRewardAmount: currentSession.diamondRewardAmount,
-    passed,
-    score,
-    sectionTitle: access.section.title,
-    submittedAt,
-    total
-  });
+  const resultShareCard = hasScoredQuestions
+    ? buildResultShareCard({
+        chapterTitle: access.chapter.title,
+        correct,
+        courseTitle: access.course.title,
+        diamondRewardAmount: currentSession.diamondRewardAmount,
+        passed,
+        score: scorePercent,
+        sectionTitle: access.section.title,
+        submittedAt,
+        total
+      })
+    : null;
   const resultShareContent = passed ? "刚闯关成功，下一关继续保持节奏。" : "刚完成一次闯关复盘，把错题吃透再冲。";
   const resultShareSuggestions = getResultShareSuggestions(passed);
   const historyGroups = groupHistorySessions(visibleSessions);
   const showHistoryDetails = query?.details === "1";
-  const selectedCorrectAttempts = currentSession.attempts.filter((attempt) => attempt.isCorrect);
-  const selectedWrongAttempts = currentSession.attempts.filter((attempt) => !attempt.isCorrect);
+  const selectedCorrectAttempts = gradedAttempts.filter((attempt) => attempt.isCorrect);
+  const selectedWrongAttempts = gradedAttempts.filter((attempt) => !attempt.isCorrect);
+  const selectedUngradedAttempts = ungradedAttempts;
   const nextHistoryLimit = Math.min(MAX_HISTORY_LIMIT, historyLimit + HISTORY_PAGE_SIZE, historyCount);
   const moreHistoryHref = buildHistoryHref({
     sectionId: id,
@@ -325,8 +332,12 @@ export default async function QuizResultPage({
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-sm font-medium text-white/85">{access.course.title} / {access.chapter.title}</p>
-              <h1 className="mt-2 text-3xl font-bold leading-tight">{passed ? "闯关成功" : "还差一点"}</h1>
-              <p className="mt-2 text-sm font-medium text-white/90">本章任一关卡达到80分，即可解锁下一章</p>
+              <h1 className="mt-2 text-3xl font-bold leading-tight">
+                {!hasScoredQuestions ? "练习完成" : passed ? "闯关成功" : "还差一点"}
+              </h1>
+              <p className="mt-2 text-sm font-medium text-white/90">
+                {hasScoredQuestions ? "本章任一关卡达到80分，即可解锁下一章" : "本次均为主观题，不计分，请对照参考答案复盘"}
+              </p>
             </div>
             <span className="grid size-16 place-items-center rounded-2xl border-2 border-white/20 bg-white/15">
               {passed ? <Trophy size={34} /> : <RotateCcw size={34} />}
@@ -335,7 +346,12 @@ export default async function QuizResultPage({
         </div>
 
         <div className="grid gap-4 p-5 sm:grid-cols-3">
-          <ResultMetric icon={<CheckCircle2 size={22} />} label="正确题数" value={`${correct}/${total}`} tone={passed ? "success" : "danger"} />
+          <ResultMetric
+            icon={hasScoredQuestions ? <CheckCircle2 size={22} /> : <BookOpenCheck size={22} />}
+            label={hasScoredQuestions ? "客观题正确" : "主观题"}
+            value={hasScoredQuestions ? `${correct}/${total}` : `${submittedUngradedCount}/${ungradedAttempts.length} 题已提交`}
+            tone={passed ? "success" : "danger"}
+          />
           <ResultMetric icon={<Gem size={22} />} label="获得钻石" value={`+${currentSession.diamondRewardAmount} 钻石`} tone="sky" />
           <ResultMetric
             icon={<Flame size={22} />}
@@ -346,11 +362,15 @@ export default async function QuizResultPage({
         </div>
 
         <div className="px-5 pb-5">
-          <div className="h-3 rounded-full bg-slate-100">
-            <div className={passed ? "h-3 rounded-full bg-success" : "h-3 rounded-full bg-coral"} style={{ width: `${scorePercent}%` }} />
-          </div>
+          {hasScoredQuestions ? (
+            <div className="h-3 rounded-full bg-slate-100">
+              <div className={passed ? "h-3 rounded-full bg-success" : "h-3 rounded-full bg-coral"} style={{ width: `${scorePercent}%` }} />
+            </div>
+          ) : null}
           <p className="mt-3 text-sm font-semibold text-slate-600">
-            {passed
+            {!hasScoredQuestions
+              ? "主观题答案已记录，不影响成绩和章节解锁"
+              : passed
               ? hasNextChapterInCourse
                 ? "闯关成功，返回学习路线进入下一章"
                 : "闯关成功，已完成本课程全部章节"
@@ -358,14 +378,16 @@ export default async function QuizResultPage({
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
             <Link className="success-button" href={`/learn/${id}?restart=1&fromSessionId=${currentSession.id}`}>再练一次</Link>
-            <ShareToBuddyButton
-              buttonClassName={passed ? "min-h-12 border-success/30 text-success-strong" : "min-h-12 border-coral/30 text-coral"}
-              contentSuggestions={resultShareSuggestions}
-              copyContext={passed ? "quiz_passed" : "quiz_failed"}
-              defaultContent={resultShareContent}
-              shareCard={resultShareCard}
-              sourceLabel="闯关结果"
-            />
+            {resultShareCard ? (
+              <ShareToBuddyButton
+                buttonClassName={passed ? "min-h-12 border-success/30 text-success-strong" : "min-h-12 border-coral/30 text-coral"}
+                contentSuggestions={resultShareSuggestions}
+                copyContext={passed ? "quiz_passed" : "quiz_failed"}
+                defaultContent={resultShareContent}
+                shareCard={resultShareCard}
+                sourceLabel="闯关结果"
+              />
+            ) : null}
             <Link className="secondary-button" href={`/learn?course=${access.group.key}&chapter=${access.chapter.id}`}>返回学习路线</Link>
           </div>
         </div>
@@ -419,13 +441,19 @@ export default async function QuizResultPage({
             <div>
               <p className="text-xs font-semibold text-teal">答题详情</p>
               <h2 className="mt-1 text-xl font-semibold text-ink">{formatDateTime(submittedAt)}</h2>
-              <p className="mt-1 text-sm font-semibold text-slate-500">正确 {selectedCorrectAttempts.length} 题，错误 {selectedWrongAttempts.length} 题</p>
+              <p className="mt-1 text-sm font-semibold text-slate-500">
+                正确 {selectedCorrectAttempts.length} 题，错误 {selectedWrongAttempts.length} 题
+                {selectedUngradedAttempts.length > 0 ? `，主观题 ${selectedUngradedAttempts.length} 题不计分` : ""}
+              </p>
             </div>
             <Link className="secondary-button min-h-10 px-4" href={closeHistoryDetailsHref}>收起详情</Link>
           </div>
 
           <AttemptGroup attempts={selectedCorrectAttempts} title="做对的题" tone="correct" />
           <AttemptGroup attempts={selectedWrongAttempts} title="做错的题" tone="wrong" />
+          {selectedUngradedAttempts.length > 0 ? (
+            <AttemptGroup attempts={selectedUngradedAttempts} title="主观题（不计分）" tone="ungraded" />
+          ) : null}
         </section>
       ) : null}
     </StudentPageShell>
@@ -443,12 +471,15 @@ function HistorySessionCard({
   sectionId: string;
   historyLimit: number;
 }) {
-  const correctCount = session.correctCount || session.attempts.filter((attempt) => attempt.isCorrect).length;
-  const totalCount = session.totalCount || session.attempts.length;
+  const gradedAttempts = session.attempts.filter((attempt) => attempt.gradingStatus === "auto_graded");
+  const ungradedCount = session.attempts.filter((attempt) => attempt.gradingStatus === "ungraded").length;
+  const correctCount = session.correctCount || gradedAttempts.filter((attempt) => attempt.isCorrect).length;
+  const totalCount = session.totalCount || gradedAttempts.length;
   const wrongCount = Math.max(0, totalCount - correctCount);
-  const score = session.score ?? (totalCount ? Math.round((correctCount / totalCount) * 100) : 0);
-  const scorePercent = Math.max(0, Math.min(100, score));
-  const passed = score >= 80;
+  const hasScoredQuestions = totalCount > 0;
+  const score = hasScoredQuestions ? session.score ?? Math.round((correctCount / totalCount) * 100) : null;
+  const scorePercent = Math.max(0, Math.min(100, score ?? 0));
+  const passed = !hasScoredQuestions || scorePercent >= 80;
   const isCurrent = session.id === currentSessionId;
   const completedAt = session.completedAt || session.updatedAt;
   const detailsHref = buildHistoryHref({
@@ -476,18 +507,25 @@ function HistorySessionCard({
 
       <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-4">
         <div className="min-w-0">
-          <p className={cn("text-2xl font-bold leading-none", passed ? "text-success-strong" : "text-coral")}>{score} 分</p>
-          <p className="mt-2 text-sm font-semibold text-slate-600">正确 {correctCount} 题 · 错误 {wrongCount} 题</p>
-          <div
-            aria-label={`本次答题得分 ${scorePercent}%`}
-            aria-valuemax={100}
-            aria-valuemin={0}
-            aria-valuenow={scorePercent}
-            className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100"
-            role="progressbar"
-          >
-            <div className={cn("h-full rounded-full", passed ? "bg-success" : "bg-coral")} style={{ width: `${scorePercent}%` }} />
-          </div>
+          <p className={cn("text-2xl font-bold leading-none", passed ? "text-success-strong" : "text-coral")}>
+            {hasScoredQuestions ? `${scorePercent} 分` : "已完成"}
+          </p>
+          <p className="mt-2 text-sm font-semibold text-slate-600">
+            {hasScoredQuestions ? `正确 ${correctCount} 题 · 错误 ${wrongCount} 题` : `主观题 ${ungradedCount} 题 · 不计分`}
+            {hasScoredQuestions && ungradedCount > 0 ? ` · 主观题 ${ungradedCount} 题不计分` : ""}
+          </p>
+          {hasScoredQuestions ? (
+            <div
+              aria-label={`本次答题得分 ${scorePercent}%`}
+              aria-valuemax={100}
+              aria-valuemin={0}
+              aria-valuenow={scorePercent}
+              className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100"
+              role="progressbar"
+            >
+              <div className={cn("h-full rounded-full", passed ? "bg-success" : "bg-coral")} style={{ width: `${scorePercent}%` }} />
+            </div>
+          ) : null}
         </div>
 
         <Link
@@ -503,11 +541,11 @@ function HistorySessionCard({
   );
 }
 
-function AttemptGroup({ attempts, title, tone }: { attempts: AttemptWithQuestion[]; title: string; tone: "correct" | "wrong" }) {
+function AttemptGroup({ attempts, title, tone }: { attempts: AttemptWithQuestion[]; title: string; tone: "correct" | "wrong" | "ungraded" }) {
   return (
     <section className="mt-5">
-      <div className={cn("flex items-center gap-2", tone === "correct" ? "text-success-strong" : "text-coral")}>
-        {tone === "correct" ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
+      <div className={cn("flex items-center gap-2", tone === "correct" ? "text-success-strong" : tone === "wrong" ? "text-coral" : "text-teal")}>
+        {tone === "correct" ? <CheckCircle2 size={18} /> : tone === "wrong" ? <XCircle size={18} /> : <BookOpenCheck size={18} />}
         <h4 className="font-semibold">{title}</h4>
       </div>
       {attempts.length === 0 ? (
@@ -523,8 +561,9 @@ function AttemptGroup({ attempts, title, tone }: { attempts: AttemptWithQuestion
   );
 }
 
-function AttemptCard({ attempt, tone }: { attempt: AttemptWithQuestion; tone: "correct" | "wrong" }) {
+function AttemptCard({ attempt, tone }: { attempt: AttemptWithQuestion; tone: "correct" | "wrong" | "ungraded" }) {
   const options = coerceOptions(attempt.question.options);
+  const ungraded = tone === "ungraded";
   return (
     <article className="rounded-panel border border-border-soft bg-surface p-4">
       <h3 className="text-lg font-bold leading-relaxed">{attempt.question.stem}</h3>
@@ -536,11 +575,11 @@ function AttemptCard({ attempt, tone }: { attempt: AttemptWithQuestion; tone: "c
         ))}
       </div>
       <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-        <p className={cn("rounded-xl p-4", tone === "correct" ? "bg-success-muted text-success-strong" : "bg-coral/10 text-coral")}>
-          <span className="font-semibold">你的答案：</span>{answerText(attempt.selectedAnswer)}
+        <p className={cn("whitespace-pre-wrap rounded-xl p-4", tone === "correct" ? "bg-success-muted text-success-strong" : tone === "wrong" ? "bg-coral/10 text-coral" : "bg-slate-50 text-ink")}>
+          <span className="font-semibold">你的答案：</span>{answerText(attempt.selectedAnswer) || "未作答"}
         </p>
         <div className="rounded-xl bg-teal/10 p-4 text-teal">
-          <span className="font-semibold">正确答案：</span>
+          <span className="font-semibold">{ungraded ? "参考答案：" : "正确答案："}</span>
           <RichTextContent className="leading-6" value={answerText(attempt.question.answer)} />
         </div>
       </div>
@@ -550,7 +589,7 @@ function AttemptCard({ attempt, tone }: { attempt: AttemptWithQuestion; tone: "c
           <RichTextContent className="mt-2 block text-sm leading-6 text-slate-700" value={attempt.question.analysis} />
         </div>
       ) : null}
-      <WrongQuestionAi questionId={attempt.questionId} sessionId={attempt.sessionId || undefined} />
+      {!ungraded ? <WrongQuestionAi questionId={attempt.questionId} sessionId={attempt.sessionId || undefined} /> : null}
     </article>
   );
 }

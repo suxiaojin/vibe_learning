@@ -192,6 +192,11 @@ enum QuizSessionStatus {
   completed
 }
 
+enum QuestionAttemptGradingStatus {
+  auto_graded
+  ungraded
+}
+
 enum LearningCourseType {
   public_subject
   major
@@ -840,19 +845,22 @@ model UserSyllabusProgress {
 }
 
 model QuestionAttempt {
-  id             String       @id @default(cuid())
-  userId         String
-  sessionId      String?
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  session        QuizSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  questionId     String
-  question       Question     @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  id            String                       @id @default(cuid())
+  userId        String
+  sessionId     String?
+  user          User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session       QuizSession?                 @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  questionId    String
+  question      Question                     @relation(fields: [questionId], references: [id], onDelete: Cascade)
   selectedAnswer Json
-  isCorrect      Boolean
-  createdAt      DateTime     @default(now())
+  isCorrect     Boolean
+  gradingStatus QuestionAttemptGradingStatus @default(auto_graded)
+  createdAt     DateTime                     @default(now())
 
   @@index([userId, questionId])
+  @@index([userId, gradingStatus, isCorrect])
   @@index([sessionId, questionId])
+  @@index([sessionId, gradingStatus, isCorrect])
   @@map("question_attempts")
 }
 

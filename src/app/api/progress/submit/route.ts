@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { apiError, apiOk } from "@/lib/api-response";
 import { getCurrentUser } from "@/lib/auth";
 import { answersEqual, bumpStudyStat } from "@/lib/learning";
+import { isQuestionBankAutoGradedQuestionType } from "@/lib/question-bank-types";
 import { recordSyllabusSectionProgress, getSyllabusSectionForStudent, getSyllabusSectionQuestionsForStudent } from "@/lib/syllabus-learning";
 import { prisma } from "@/lib/prisma";
 
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
 
   const submittedAt = new Date();
   let correct = 0;
+  let scoredTotal = 0;
   let newlyRecordedQuestions = 0;
   const wrongAttemptIds: string[] = [];
   const questions = result.questions as Array<(typeof result.questions)[number] & { answer: unknown }>;
@@ -39,21 +41,28 @@ export async function POST(request: Request) {
         userId: user.id,
         questionId: question.id
       },
-      select: { id: true, isCorrect: true }
+      select: { id: true, isCorrect: true, gradingStatus: true }
     });
 
     if (existingAttempt) {
-      if (existingAttempt.isCorrect) {
-        correct += 1;
-      } else {
-        wrongAttemptIds.push(existingAttempt.id);
+      if (existingAttempt.gradingStatus === "auto_graded") {
+        scoredTotal += 1;
+        if (existingAttempt.isCorrect) {
+          correct += 1;
+        } else {
+          wrongAttemptIds.push(existingAttempt.id);
+        }
       }
       continue;
     }
 
     const selected = body.answers[question.id] || [];
-    const isCorrect = answersEqual(selected, question.answer);
-    if (isCorrect) {
+    const gradingStatus = isQuestionBankAutoGradedQuestionType(question.type) ? "auto_graded" : "ungraded";
+    const isCorrect = gradingStatus === "auto_graded" && answersEqual(selected, question.answer);
+    if (gradingStatus === "auto_graded") {
+      scoredTotal += 1;
+    }
+    if (gradingStatus === "auto_graded" && isCorrect) {
       correct += 1;
     }
 
@@ -63,12 +72,13 @@ export async function POST(request: Request) {
         sessionId: session.id,
         questionId: question.id,
         selectedAnswer: selected,
-        isCorrect
+        isCorrect,
+        gradingStatus
       }
     });
     newlyRecordedQuestions += 1;
 
-    if (!isCorrect) {
+    if (gradingStatus === "auto_graded" && !isCorrect) {
       wrongAttemptIds.push(attempt.id);
       await prisma.wrongQuestion.upsert({
         where: { userId_questionId: { userId: user.id, questionId: question.id } },
@@ -78,9 +88,8 @@ export async function POST(request: Request) {
     }
   }
 
-  const total = questions.length;
-  const score = total === 0 ? 0 : Math.round((correct / total) * 100);
-  const passed = score >= 80;
+  const score = scoredTotal === 0 ? null : Math.round((correct / scoredTotal) * 100);
+  const passed = scoredTotal === 0 || (score || 0) >= 80;
 
   const newlyPassed = await recordSyllabusSectionProgress(user.id, body.sectionId, score, passed);
   const diamondRewards = await bumpStudyStat(user.id, {
@@ -94,17 +103,17 @@ export async function POST(request: Request) {
     data: {
       status: "completed",
       completedAt: new Date(),
-      currentIndex: total,
+      currentIndex: questions.length,
       score,
       correctCount: correct,
-      totalCount: total,
+      totalCount: scoredTotal,
       diamondRewardAmount: diamondRewardAmount > 0 ? { increment: diamondRewardAmount } : undefined
     }
   });
   revalidatePath("/me");
 
   const resultPath = `/learn/${body.sectionId}/result?sessionId=${session.id}`;
-  return apiOk({ score, passed, correct, total, wrongAttemptIds, diamondRewards, sessionId: session.id, resultPath });
+  return apiOk({ score, passed, correct, total: scoredTotal, wrongAttemptIds, diamondRewards, sessionId: session.id, resultPath });
 }
 
 async function getOrCreateQuizSession(userId: string, sectionId: string, sessionId?: string) {

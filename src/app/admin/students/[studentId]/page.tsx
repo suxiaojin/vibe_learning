@@ -167,6 +167,7 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
   const postFetchLimit = Math.min(postPage * portraitPageSize + 1, 50);
   const [
     totalAttempts,
+    gradedAttempts,
     correctAttempts,
     latestAttempt,
     sevenDayAttempts,
@@ -178,7 +179,8 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
     learningPath
   ] = await Promise.all([
     prisma.questionAttempt.count({ where: { userId: student.id } }),
-    prisma.questionAttempt.count({ where: { userId: student.id, isCorrect: true } }),
+    prisma.questionAttempt.count({ where: { userId: student.id, gradingStatus: "auto_graded" } }),
+    prisma.questionAttempt.count({ where: { userId: student.id, gradingStatus: "auto_graded", isCorrect: true } }),
     prisma.questionAttempt.findFirst({
       where: { userId: student.id },
       orderBy: { createdAt: "desc" },
@@ -265,7 +267,7 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
   const returnTo = `/admin/students/${student.id}?tab=${activeTab}`;
   const currentStages = getUnlockedStages(learningPath);
   const selectedSpecialty = getSelectedSpecialty(profile);
-  const correctRate = totalAttempts > 0 ? Math.round((correctAttempts / totalAttempts) * 100) : 0;
+  const correctRate = gradedAttempts > 0 ? Math.round((correctAttempts / gradedAttempts) * 100) : 0;
   const passedStageCount = getPassedStageCount(learningPath);
   const weakAreas = buildWeakAreas(wrongQuestions);
   const userPostPageItems = userPosts.items.slice((postPage - 1) * portraitPageSize, postPage * portraitPageSize);
@@ -625,18 +627,21 @@ function RecentQuizSessionsTable({ sessions }: { sessions: RecentQuizSession[] }
         </thead>
         <tbody>
           {sessions.map((session) => {
-            const passed = (session.score || 0) >= 80;
+            const hasScoredQuestions = session.totalCount > 0;
+            const passed = !hasScoredQuestions || (session.score || 0) >= 80;
             return (
               <tr key={session.id} className="border-b border-slate-100 last:border-0">
                 <td className="py-2 pr-4 font-semibold text-slate-600">
                   {session.syllabusItem.course.name}：{session.syllabusItem.parent?.title ? `${session.syllabusItem.parent.title} / ` : ""}
                   {session.syllabusItem.title}
                 </td>
-                <td className="py-2 pr-4 font-bold text-ink">{session.score ?? "-"}</td>
+                <td className="py-2 pr-4 font-bold text-ink">{hasScoredQuestions ? session.score ?? "-" : "不计分"}</td>
                 <td className="py-2 pr-4 text-slate-600">
-                  {session.correctCount}/{session.totalCount}
+                  {hasScoredQuestions ? `${session.correctCount}/${session.totalCount}` : "-"}
                 </td>
-                <td className={cn("py-2 pr-4 font-bold", passed ? "text-teal" : "text-coral")}>{passed ? "通过" : "未通过"}</td>
+                <td className={cn("py-2 pr-4 font-bold", passed ? "text-teal" : "text-coral")}>
+                  {!hasScoredQuestions ? "已完成" : passed ? "通过" : "未通过"}
+                </td>
                 <td className="py-2 text-slate-500">{session.completedAt ? formatDateTime(session.completedAt) : "-"}</td>
               </tr>
             );

@@ -2,10 +2,12 @@ import { redirect } from "next/navigation";
 import { QuizRunner } from "@/components/quiz-runner";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isQuestionBankAutoGradedQuestionType } from "@/lib/question-bank-types";
 import {
   getNextChapterChallengeVersion,
   getSyllabusSectionForStudent,
-  getSyllabusSectionQuestionsForStudent
+  getSyllabusSectionQuestionsForStudent,
+  recordSyllabusSectionProgress
 } from "@/lib/syllabus-learning";
 
 export default async function SectionQuizPage({
@@ -98,15 +100,20 @@ export default async function SectionQuizPage({
     select: {
       id: true,
       questionId: true,
-      isCorrect: true
+      isCorrect: true,
+      gradingStatus: true
     }
   });
   const recordedByQuestionId = new Map(attempts.map((attempt) => [attempt.questionId, attempt]));
   const firstUnansweredIndex = questions.findIndex((question) => !recordedByQuestionId.has(question.id));
 
   if (questions.length > 0 && firstUnansweredIndex === -1) {
-    const correctCount = attempts.filter((attempt) => attempt.isCorrect).length;
-    const score = Math.round((correctCount / questions.length) * 100);
+    const scoredAttempts = attempts.filter((attempt) => attempt.gradingStatus === "auto_graded");
+    const scoredTotal = scoredAttempts.length;
+    const correctCount = scoredAttempts.filter((attempt) => attempt.isCorrect).length;
+    const score = scoredTotal > 0 ? Math.round((correctCount / scoredTotal) * 100) : null;
+    const passed = scoredTotal === 0 || (score || 0) >= 80;
+    await recordSyllabusSectionProgress(user.id, id, score, passed);
     const completedSession = await prisma.quizSession.update({
       where: { id: session.id },
       data: {
@@ -115,7 +122,7 @@ export default async function SectionQuizPage({
         currentIndex: questions.length,
         score,
         correctCount,
-        totalCount: questions.length
+        totalCount: scoredTotal
       }
     });
     redirect(`/learn/${id}/result?sessionId=${completedSession.id}`);
@@ -123,7 +130,8 @@ export default async function SectionQuizPage({
 
   const initialIndex = Math.max(0, firstUnansweredIndex);
   const initialRecordedAttempts = Object.fromEntries(attempts.map((attempt) => [attempt.questionId, attempt.id]));
-  const initialCorrectCount = attempts.filter((attempt) => attempt.isCorrect).length;
+  const initialCorrectCount = attempts.filter((attempt) => attempt.gradingStatus === "auto_graded" && attempt.isCorrect).length;
+  const initialScoredTotal = questions.filter((question) => isQuestionBankAutoGradedQuestionType(question.type)).length;
 
   return (
     <main className="h-dvh overflow-hidden bg-white">
@@ -131,6 +139,7 @@ export default async function SectionQuizPage({
         initialCorrectCount={initialCorrectCount}
         initialIndex={initialIndex}
         initialRecordedAttempts={initialRecordedAttempts}
+        initialScoredTotal={initialScoredTotal}
         initialTotal={questions.length}
         sectionId={access.section.id}
         sessionId={session.id}

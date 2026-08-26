@@ -30,7 +30,7 @@ type PracticeOption = {
   text: string;
 };
 
-type AnswerState = "unanswered" | "correct" | "wrong";
+type AnswerState = "unanswered" | "correct" | "wrong" | "submitted";
 
 type AiMessage = {
   id: string;
@@ -91,6 +91,7 @@ export function SpecialPracticeRunner({
   const aiLoading = aiLoadingQuestionId === question.id;
   const options = useMemo(() => normalizeOptions(question.options), [question.options]);
   const hasTextAnswer = question.type === "fill_blank" || isQuestionBankRichAnswerQuestionType(question.type);
+  const isRichAnswerQuestion = isQuestionBankRichAnswerQuestionType(question.type);
   const correctAnswer = normalizeAnswer(question.answer);
   const previousEnabled = currentIndex > 0;
   const isLastQuestion = currentIndex === questions.length - 1;
@@ -118,8 +119,18 @@ export function SpecialPracticeRunner({
     try {
       const stored = readStoredPracticeState(storageKey, questionIds, questionIdsSignature, initialIndex);
       if (stored) {
+        const restoredAnswerStates = { ...stored.answerStates };
+        for (const storedQuestion of questions) {
+          if (isQuestionBankRichAnswerQuestionType(storedQuestion.type) && restoredAnswerStates[storedQuestion.id]) {
+            if ((stored.answers[storedQuestion.id]?.length || 0) > 0) {
+              restoredAnswerStates[storedQuestion.id] = "submitted";
+            } else {
+              delete restoredAnswerStates[storedQuestion.id];
+            }
+          }
+        }
         setAnswers(stored.answers);
-        setAnswerStates(stored.answerStates);
+        setAnswerStates(restoredAnswerStates);
         setRevealedQuestionIds(stored.revealedQuestionIds);
         setCurrentIndex(stored.currentIndex);
       } else {
@@ -189,6 +200,13 @@ export function SpecialPracticeRunner({
       return;
     }
 
+    if (isRichAnswerQuestion) {
+      if (selected.length > 0) {
+        setAnswerStates((current) => (current[question.id] ? current : { ...current, [question.id]: "submitted" }));
+      }
+      return;
+    }
+
     const status = isAnswerCorrect(selected, correctAnswer) ? "correct" : "wrong";
     setAnswerStates((current) => (current[question.id] ? current : { ...current, [question.id]: status }));
   }
@@ -198,12 +216,18 @@ export function SpecialPracticeRunner({
       return;
     }
     judgeCurrentQuestion({ markUnansweredWrong: false });
+    if (isRichAnswerQuestion && selected.length > 0) {
+      setRevealedQuestionIds((current) => ({ ...current, [question.id]: true }));
+    }
     setCurrentIndex((value) => value - 1);
   }
 
   function goToQuestion(index: number) {
     if (index !== currentIndex) {
       judgeCurrentQuestion({ markUnansweredWrong: false });
+      if (isRichAnswerQuestion && selected.length > 0) {
+        setRevealedQuestionIds((current) => ({ ...current, [question.id]: true }));
+      }
     }
     setCurrentIndex(index);
   }
@@ -211,9 +235,15 @@ export function SpecialPracticeRunner({
   function goToNextQuestion() {
     if (isLastQuestion) {
       judgeCurrentQuestion({ markUnansweredWrong: true });
+      if (isRichAnswerQuestion && selected.length > 0) {
+        setRevealedQuestionIds((current) => ({ ...current, [question.id]: true }));
+      }
       return;
     }
     judgeCurrentQuestion({ markUnansweredWrong: false });
+    if (isRichAnswerQuestion && selected.length > 0) {
+      setRevealedQuestionIds((current) => ({ ...current, [question.id]: true }));
+    }
     setCurrentIndex((value) => value + 1);
   }
 
@@ -440,28 +470,33 @@ export function SpecialPracticeRunner({
                 <Bot size={22} />
                 AI答疑
               </button>
-              <ShareToBuddyButton
-                buttonClassName="!min-h-10 !rounded-lg !border-0 !bg-transparent !px-1 !py-0 !font-medium !text-slate-500 hover:!border-transparent hover:!bg-transparent hover:!text-teal disabled:!border-0"
-                buttonIconSize={24}
-                buttonLabel="分享"
-                contentSuggestions={questionShareSuggestions}
-                copyContext={shareWasCorrect ? "question_correct" : "question_wrong"}
-                defaultContent={questionShareContent}
-                shareCard={questionShareCard}
-                sourceLabel={`题 ${currentIndex + 1} / ${questions.length}`}
-              />
+              {!isRichAnswerQuestion ? (
+                <ShareToBuddyButton
+                  buttonClassName="!min-h-10 !rounded-lg !border-0 !bg-transparent !px-1 !py-0 !font-medium !text-slate-500 hover:!border-transparent hover:!bg-transparent hover:!text-teal disabled:!border-0"
+                  buttonIconSize={24}
+                  buttonLabel="分享"
+                  contentSuggestions={questionShareSuggestions}
+                  copyContext={shareWasCorrect ? "question_correct" : "question_wrong"}
+                  defaultContent={questionShareContent}
+                  shareCard={questionShareCard}
+                  sourceLabel={`题 ${currentIndex + 1} / ${questions.length}`}
+                />
+              ) : null}
             </div>
 
             {revealed ? (
               <section className="mt-5 max-w-3xl rounded-2xl border border-slate-200 bg-slate-50 px-5 py-5 text-sm leading-7 text-ink">
-                <p>
+                {isRichAnswerQuestion && judgedState === "submitted" ? (
+                  <p className="mb-3 font-semibold text-teal">答案已提交，本题不计分。</p>
+                ) : null}
+                <div>
                   <span className="font-semibold">参考答案：</span>
-                  <span className="ml-2 font-semibold text-teal">{answerText(correctAnswer) || "暂无"}</span>
-                </p>
-                <p className="mt-3">
+                  <RichTextContent className="mt-2 text-slate-700" value={answerText(correctAnswer) || "暂无"} />
+                </div>
+                <div className="mt-3">
                   <span className="font-semibold">文字解析：</span>
-                  <span className="text-slate-600">{question.analysis || "暂无解析。"}</span>
-                </p>
+                  <RichTextContent className="mt-2 text-slate-600" value={question.analysis || "暂无解析。"} />
+                </div>
               </section>
             ) : null}
           </article>
@@ -553,6 +588,7 @@ function AnswerCard({
       <div className="mt-7 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-medium text-slate-600">
         <LegendDot className="bg-emerald-500" label="正确" />
         <LegendDot className="bg-red-500" label="错误" />
+        <LegendDot className="bg-teal" label="已提交" />
         <LegendDot className="bg-[#d1d5db]" label="未答" />
       </div>
     </aside>
@@ -963,7 +999,7 @@ function sanitizeStoredAnswerStates(value: unknown, questionIds: string[]) {
     if (!allowedIds.has(questionId)) {
       continue;
     }
-    if (state === "correct" || state === "wrong") {
+    if (state === "correct" || state === "wrong" || state === "submitted") {
       result[questionId] = state;
     }
   }
@@ -1068,6 +1104,20 @@ function answerText(answer: string[]) {
   return answer.join("、");
 }
 
+const richTextHtmlPattern = /<\/?[a-z][\s\S]*>/i;
+
+function RichTextContent({ className, value }: { className?: string; value: string }) {
+  if (!richTextHtmlPattern.test(value)) {
+    return <p className={`whitespace-pre-wrap break-words ${className || ""}`}>{value}</p>;
+  }
+  return (
+    <div
+      className={`overflow-x-auto break-words [&_div]:my-1 [&_img]:my-2 [&_img]:h-auto [&_img]:max-w-full [&_li]:my-0.5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1 [&_table]:my-2 [&_table]:max-w-full [&_table]:border-collapse [&_td]:border [&_td]:border-current [&_td]:p-2 [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-5 ${className || ""}`}
+      dangerouslySetInnerHTML={{ __html: value }}
+    />
+  );
+}
+
 function isAnswerCorrect(selected: string[], correctAnswer: string[]) {
   if (selected.length === 0) {
     return false;
@@ -1164,6 +1214,9 @@ function answerCardButtonClassName({ active, state }: { active: boolean; state: 
   }
   if (state === "wrong") {
     return `${base} bg-red-500 text-white${activeRing}`;
+  }
+  if (state === "submitted") {
+    return `${base} bg-teal text-white${activeRing}`;
   }
   return `${base} bg-slate-100 text-slate-500 hover:bg-teal/10 hover:text-teal${activeRing}`;
 }
