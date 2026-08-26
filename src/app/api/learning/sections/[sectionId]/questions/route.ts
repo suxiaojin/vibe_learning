@@ -1,5 +1,6 @@
 import { apiError, apiOk } from "@/lib/api-response";
 import { getCurrentUser } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { getSyllabusSectionQuestionForStudent } from "@/lib/syllabus-learning";
 
 function parseQuestionIndex(request: Request) {
@@ -22,7 +23,8 @@ export async function GET(
   }
 
   const { sectionId } = await params;
-  const result = await getSyllabusSectionQuestionForStudent(user.id, sectionId, parseQuestionIndex(request), parseSessionId(request));
+  const sessionId = parseSessionId(request);
+  const result = await getSyllabusSectionQuestionForStudent(user.id, sectionId, parseQuestionIndex(request), sessionId);
 
   if (!result) {
     return apiError("Syllabus section is unavailable.", 404, "SYLLABUS_SECTION_NOT_FOUND");
@@ -34,5 +36,32 @@ export async function GET(
   const { challengeVersionId: _challengeVersionId, questionSyllabusItemIds: _questionSyllabusItemIds, ...section } = result.section;
   const { sections: _sections, ...chapter } = result.chapter;
   const { chapters: _chapters, ...course } = result.course;
-  return apiOk({ course, chapter, section, index: result.index, total: result.total, question: result.question });
+  const recordedAttempt = sessionId
+    ? await prisma.questionAttempt.findFirst({
+        where: {
+          sessionId,
+          userId: user.id,
+          questionId: result.question.id,
+          session: { is: { syllabusItemId: sectionId } }
+        },
+        select: {
+          id: true,
+          selectedAnswer: true,
+          isCorrect: true,
+          question: {
+            select: { answer: true }
+          }
+        }
+      })
+    : null;
+  const attempt = recordedAttempt
+    ? {
+        id: recordedAttempt.id,
+        selectedAnswer: recordedAttempt.selectedAnswer,
+        isCorrect: recordedAttempt.isCorrect,
+        correctAnswer: recordedAttempt.question.answer
+      }
+    : null;
+
+  return apiOk({ course, chapter, section, index: result.index, total: result.total, question: result.question, attempt });
 }

@@ -1095,6 +1095,27 @@ export async function updateMajorCourse(formData: FormData) {
   redirect(`/admin/majors/${majorId}/courses`);
 }
 
+export async function deleteMajorCourse(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") || "");
+  const majorId = String(formData.get("majorId") || "");
+
+  await prisma.learningCourse.findFirstOrThrow({
+    where: {
+      id,
+      majorId,
+      courseType: "major"
+    },
+    select: { id: true }
+  });
+  await prisma.learningCourse.delete({ where: { id } });
+
+  revalidatePath(`/admin/majors/${majorId}/courses`);
+  revalidatePath("/admin/question-banks");
+  revalidatePath("/admin/question-banks/knowledge-points");
+  redirect(`/admin/majors/${majorId}/courses`);
+}
+
 export async function cycleMajorCourseStatus(formData: FormData) {
   await requireAdmin();
   const id = String(formData.get("id"));

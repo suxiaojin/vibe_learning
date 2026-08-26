@@ -58,6 +58,39 @@ function answerText(answer: Prisma.JsonValue) {
   return Array.isArray(answer) ? answer.map(String).join("、") : String(answer || "");
 }
 
+const richTextHtmlPattern = /<\/?[a-z][\s\S]*>/i;
+const richTextMediaPattern = /<(?:img|table)\b/i;
+const richTextWhitespaceEntityPattern = /(?:&nbsp;|&#160;|&#x0*a0;)/gi;
+
+function hasMeaningfulRichText(value: string) {
+  if (!value) {
+    return false;
+  }
+  if (richTextMediaPattern.test(value)) {
+    return true;
+  }
+  return value
+    .replace(/<[^>]*>/g, "")
+    .replace(richTextWhitespaceEntityPattern, "")
+    .trim()
+    .length > 0;
+}
+
+function RichTextContent({ className, value }: { className?: string; value: string }) {
+  if (!richTextHtmlPattern.test(value)) {
+    return <span className={className}>{value}</span>;
+  }
+  return (
+    <div
+      className={cn(
+        "overflow-x-auto break-words [&_img]:my-2 [&_img]:h-auto [&_img]:max-w-full [&_li]:my-0.5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1 [&_table]:my-2 [&_table]:max-w-full [&_table]:border-collapse [&_td]:border [&_td]:border-current [&_td]:p-2 [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-5",
+        className
+      )}
+      dangerouslySetInnerHTML={{ __html: value }}
+    />
+  );
+}
+
 function formatDateTime(date: Date) {
   return date.toLocaleString("zh-CN", {
     year: "numeric",
@@ -481,8 +514,8 @@ function AttemptGroup({ attempts, title, tone }: { attempts: AttemptWithQuestion
         <p className="mt-3 rounded-2xl bg-mist px-4 py-3 text-sm font-medium text-slate-500">暂无</p>
       ) : (
         <div className="mt-3 space-y-4">
-          {attempts.map((attempt, index) => (
-            <AttemptCard key={attempt.id} attempt={attempt} index={index} tone={tone} />
+          {attempts.map((attempt) => (
+            <AttemptCard key={attempt.id} attempt={attempt} tone={tone} />
           ))}
         </div>
       )}
@@ -490,19 +523,11 @@ function AttemptGroup({ attempts, title, tone }: { attempts: AttemptWithQuestion
   );
 }
 
-function AttemptCard({ attempt, index, tone }: { attempt: AttemptWithQuestion; index: number; tone: "correct" | "wrong" }) {
+function AttemptCard({ attempt, tone }: { attempt: AttemptWithQuestion; tone: "correct" | "wrong" }) {
   const options = coerceOptions(attempt.question.options);
   return (
     <article className="rounded-panel border border-border-soft bg-surface p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className={cn("text-sm font-semibold", tone === "correct" ? "text-success-strong" : "text-coral")}>{tone === "correct" ? "对题" : "错题"} {index + 1}</p>
-          <h3 className="mt-2 text-lg font-bold leading-relaxed">{attempt.question.stem}</h3>
-        </div>
-        <span className={cn("badge", tone === "correct" ? "bg-success-muted text-success-strong" : "bg-coral/10 text-coral")}>
-          {tone === "correct" ? "已掌握" : "需要复习"}
-        </span>
-      </div>
+      <h3 className="text-lg font-bold leading-relaxed">{attempt.question.stem}</h3>
       <div className="mt-4 grid gap-2">
         {options.map((option) => (
           <div key={option.key} className="rounded-xl border border-border-soft bg-surface px-4 py-3 text-sm leading-6">
@@ -514,14 +539,15 @@ function AttemptCard({ attempt, index, tone }: { attempt: AttemptWithQuestion; i
         <p className={cn("rounded-xl p-4", tone === "correct" ? "bg-success-muted text-success-strong" : "bg-coral/10 text-coral")}>
           <span className="font-semibold">你的答案：</span>{answerText(attempt.selectedAnswer)}
         </p>
-        <p className="rounded-xl bg-teal/10 p-4 text-teal">
-          <span className="font-semibold">正确答案：</span>{answerText(attempt.question.answer)}
-        </p>
+        <div className="rounded-xl bg-teal/10 p-4 text-teal">
+          <span className="font-semibold">正确答案：</span>
+          <RichTextContent className="leading-6" value={answerText(attempt.question.answer)} />
+        </div>
       </div>
-      {attempt.question.analysis ? (
+      {hasMeaningfulRichText(attempt.question.analysis) ? (
         <div className="mt-3 rounded-xl bg-mist p-4">
           <p className="text-xs font-semibold text-slate-500">解析</p>
-          <p className="mt-2 text-sm leading-6 text-slate-700">{attempt.question.analysis}</p>
+          <RichTextContent className="mt-2 block text-sm leading-6 text-slate-700" value={attempt.question.analysis} />
         </div>
       ) : null}
       <WrongQuestionAi questionId={attempt.questionId} sessionId={attempt.sessionId || undefined} />

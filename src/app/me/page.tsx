@@ -63,7 +63,7 @@ const transactionLabels: Record<string, string> = {
   daily_answer_bonus: "每日答题",
   purchase: "购买充值",
   admin_adjust: "后台调整",
-  ai_consumption: "AI 消耗"
+  ai_consumption: "模型调用"
 };
 
 const diamondRuleTransactionPresentation: Record<string, { typeLabel: string; description: string }> = {
@@ -72,23 +72,23 @@ const diamondRuleTransactionPresentation: Record<string, { typeLabel: string; de
     description: "学习搭子：创建项目"
   },
   ai_study_buddy_chat: {
-    typeLabel: "AI 对话",
+    typeLabel: "模型调用",
     description: "学习搭子：问问搭子"
   },
   wrong_question_ai_explanation: {
-    typeLabel: "AI解释",
+    typeLabel: "模型调用",
     description: "课程闯关：AI解释"
   },
   wrong_question_ai_follow_up: {
-    typeLabel: "AI追问",
+    typeLabel: "模型调用",
     description: "课程闯关：AI追问"
   },
   special_practice_ai_doubt: {
-    typeLabel: "AI 答疑",
+    typeLabel: "模型调用",
     description: "专项练习：AI答疑"
   },
   special_practice_ai_follow_up: {
-    typeLabel: "AI 提问",
+    typeLabel: "模型调用",
     description: "专项练习：提问"
   }
 };

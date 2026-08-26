@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Heart, Loader2, X, XCircle } from "lucide-react";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
@@ -29,6 +29,13 @@ type Option = {
 
 type CheckState = "idle" | "correct" | "wrong";
 
+type RecordedAttempt = {
+  id: string;
+  selectedAnswer: unknown;
+  isCorrect: boolean;
+  correctAnswer: unknown;
+};
+
 const text = {
   empty: "\u8fd9\u4e2a\u77e5\u8bc6\u70b9\u8fd8\u6ca1\u6709\u53d1\u5e03\u9898\u76ee\uff0c\u8bf7\u5148\u5728\u540e\u53f0\u5f55\u5165\u9898\u76ee\u3002",
   loading: "\u9898\u76ee\u52a0\u8f7d\u4e2d...",
@@ -36,6 +43,7 @@ const text = {
   exit: "\u9000\u51fa\u7ec3\u4e60",
   exitConfirm: "\u786e\u8ba4\u9000\u51fa\u672c\u6b21\u7ec3\u4e60\uff1f",
   question: "\u9898",
+  previous: "\u4e0a\u4e00\u9898",
   skip: "\u8df3\u8fc7",
   check: "\u68c0\u67e5",
   done: "\u5b8c\u6210",
@@ -43,6 +51,8 @@ const text = {
   correct: "\u7b54\u5bf9\u4e86\uff01",
   wrong: "\u8fd9\u9898\u7b54\u9519\u4e86",
   rightAnswer: "\u6b63\u786e\u7b54\u6848\uff1a",
+  referenceAnswer: "\u53c2\u8003\u7b54\u6848",
+  viewReferenceAnswer: "\u8bf7\u5728\u4e0a\u65b9\u67e5\u770b\u53c2\u8003\u7b54\u6848",
   source: "\u9898\u5e93\uff1a"
 };
 
@@ -75,6 +85,23 @@ function answerText(answer: unknown) {
   return normalizeAnswer(answer).join("\u3001");
 }
 
+const richTextHtmlPattern = /<\/?[a-z][\s\S]*>/i;
+
+function RichTextContent({ className, value }: { className?: string; value: string }) {
+  if (!richTextHtmlPattern.test(value)) {
+    return <p className={cn("whitespace-pre-wrap", className)}>{value}</p>;
+  }
+  return (
+    <div
+      className={cn(
+        "overflow-x-auto break-words [&_div]:my-1 [&_img]:my-2 [&_img]:h-auto [&_img]:max-w-full [&_li]:my-0.5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1 [&_table]:my-2 [&_table]:max-w-full [&_table]:border-collapse [&_td]:border [&_td]:border-current [&_td]:p-2 [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-5",
+        className
+      )}
+      dangerouslySetInnerHTML={{ __html: value }}
+    />
+  );
+}
+
 export function QuizRunner({
   initialCorrectCount = 0,
   initialIndex = 0,
@@ -91,6 +118,7 @@ export function QuizRunner({
   sessionId: string;
 }) {
   const router = useRouter();
+  const richAnswerFeedbackRef = useRef<HTMLElement | null>(null);
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [current, setCurrent] = useState<Question | null>(null);
@@ -104,6 +132,8 @@ export function QuizRunner({
   const [checking, setChecking] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [completionResultPath, setCompletionResultPath] = useState<string | null>(null);
+  const [pendingRichAnswerScrollQuestionId, setPendingRichAnswerScrollQuestionId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -125,8 +155,20 @@ export function QuizRunner({
         if (cancelled) {
           return;
         }
-        setCurrent(payload.data.question);
+        const question = payload.data.question as Question;
+        const recordedAttempt = (payload.data.attempt || null) as RecordedAttempt | null;
+        setCurrent(question);
         setTotalQuestions(payload.data.total || initialTotal);
+        if (recordedAttempt) {
+          setAnswers((currentAnswers) => ({
+            ...currentAnswers,
+            [question.id]: normalizeAnswer(recordedAttempt.selectedAnswer)
+          }));
+          setRecordedAttempts((value) => ({ ...value, [question.id]: recordedAttempt.id }));
+          setCheckedQuestionIds((value) => new Set(value).add(question.id));
+          setCorrectAnswer(recordedAttempt.correctAnswer);
+          setCheckState(recordedAttempt.isCorrect ? "correct" : "wrong");
+        }
       } catch {
         if (!cancelled) {
           setCurrent(null);
@@ -145,11 +187,26 @@ export function QuizRunner({
     };
   }, [currentIndex, initialTotal, sectionId, sessionId]);
 
+  const isRichAnswerQuestion = Boolean(current && isQuestionBankRichAnswerQuestionType(current.type));
+
+  useEffect(() => {
+    if (!pendingRichAnswerScrollQuestionId || pendingRichAnswerScrollQuestionId !== current?.id || checkState === "idle") {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      richAnswerFeedbackRef.current?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+      setPendingRichAnswerScrollQuestionId(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [checkState, current?.id, pendingRichAnswerScrollQuestionId]);
+
   const selected = current ? answers[current.id] || [] : [];
   const progressPercent = totalQuestions
     ? Math.max(0, Math.min(100, Math.round((correctCount / totalQuestions) * 100)))
     : 0;
   const canCheck = Boolean(current && selected.length > 0 && checkState === "idle" && !checking && !questionLoading);
+  const canGoPrevious = currentIndex > 0 && !checking && !loading && !questionLoading;
   const isLast = currentIndex >= totalQuestions - 1;
 
   const options = useMemo(() => coerceOptions(current?.options), [current]);
@@ -214,8 +271,14 @@ export function QuizRunner({
       const correct = Boolean(payload.data.correct);
       setCorrectAnswer(payload.data.correctAnswer);
       setCheckState(correct ? "correct" : "wrong");
+      if (isQuestionBankRichAnswerQuestionType(current.type)) {
+        setPendingRichAnswerScrollQuestionId(current.id);
+      }
       if (typeof payload.data.attemptId === "string") {
         setRecordedAttempts((value) => ({ ...value, [current.id]: payload.data.attemptId }));
+      }
+      if (typeof payload.data.resultPath === "string") {
+        setCompletionResultPath(payload.data.resultPath);
       }
       if (correct && !checkedQuestionIds.has(current.id)) {
         setCorrectCount((value) => value + 1);
@@ -245,11 +308,22 @@ export function QuizRunner({
   }
 
   function nextQuestion() {
+    if (completionResultPath) {
+      router.push(completionResultPath);
+      return;
+    }
     if (isLast) {
       void finish();
       return;
     }
     setCurrentIndex((value) => value + 1);
+  }
+
+  function previousQuestion() {
+    if (!canGoPrevious) {
+      return;
+    }
+    setCurrentIndex((value) => Math.max(0, value - 1));
   }
 
   function skipQuestion() {
@@ -298,7 +372,12 @@ export function QuizRunner({
         </div>
       </div>
 
-      <article className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center overflow-y-auto px-5 py-5">
+      <article
+        className={cn(
+          "mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-y-auto px-5 py-5",
+          isRichAnswerQuestion && checkState !== "idle" ? "justify-start" : "justify-center"
+        )}
+      >
         <p className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-semibold text-teal">
           <span>{text.question} {currentIndex + 1} / {totalQuestions} · {questionTypeLabel}</span>
           {sourceTitle ? (
@@ -376,6 +455,19 @@ export function QuizRunner({
             })}
           </div>
         )}
+
+        {isRichAnswerQuestion && checkState !== "idle" ? (
+          <section
+            ref={richAnswerFeedbackRef}
+            aria-labelledby={`reference-answer-${current.id}`}
+            className="mt-5 rounded-2xl border border-teal/20 bg-teal/5 p-5 text-ink"
+          >
+            <h4 id={`reference-answer-${current.id}`} className="text-base font-semibold text-teal">
+              {text.referenceAnswer}
+            </h4>
+            <RichTextContent className="mt-3 text-base leading-8" value={answerText(correctAnswer) || "\u6682\u65e0\u53c2\u8003\u7b54\u6848"} />
+          </section>
+        ) : null}
       </article>
 
       <div
@@ -386,17 +478,31 @@ export function QuizRunner({
       >
         <div className="mx-auto flex min-h-16 w-full max-w-5xl flex-wrap items-center justify-between gap-4">
           {checkState === "idle" ? (
-            <button className="secondary-button" type="button" disabled={loading || checking || questionLoading} onClick={skipQuestion}>
-              {text.skip}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button className="secondary-button" type="button" disabled={!canGoPrevious} onClick={previousQuestion}>
+                {text.previous}
+              </button>
+              <button className="secondary-button" type="button" disabled={loading || checking || questionLoading} onClick={skipQuestion}>
+                {text.skip}
+              </button>
+            </div>
           ) : (
-            <div className={cn("flex min-w-0 items-center gap-3", checkState === "correct" ? "text-success-strong" : "text-coral")}>
-              <span className="grid size-11 shrink-0 place-items-center rounded-full bg-surface">
-                {checkState === "correct" ? <CheckCircle2 size={26} /> : <XCircle size={26} />}
-              </span>
-              <div className="min-w-0">
-                <p className="text-lg font-semibold">{checkState === "correct" ? text.correct : text.wrong}</p>
-                {checkState === "wrong" ? <p className="truncate text-sm font-semibold">{text.rightAnswer}{answerText(correctAnswer)}</p> : null}
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
+              <button className="secondary-button" type="button" disabled={!canGoPrevious} onClick={previousQuestion}>
+                {text.previous}
+              </button>
+              <div className={cn("flex min-w-0 items-center gap-3", checkState === "correct" ? "text-success-strong" : "text-coral")}>
+                <span className="grid size-11 shrink-0 place-items-center rounded-full bg-surface">
+                  {checkState === "correct" ? <CheckCircle2 size={26} /> : <XCircle size={26} />}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-lg font-semibold">{checkState === "correct" ? text.correct : text.wrong}</p>
+                  {checkState === "wrong" ? (
+                    <p className={cn("text-sm font-semibold", !isRichAnswerQuestion && "truncate")}>
+                      {isRichAnswerQuestion ? text.viewReferenceAnswer : `${text.rightAnswer}${answerText(correctAnswer)}`}
+                    </p>
+                  ) : null}
+                </div>
               </div>
             </div>
           )}
@@ -432,7 +538,7 @@ export function QuizRunner({
                 onClick={nextQuestion}
               >
                 {loading ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
-                {isLast ? text.done : text.continue}
+                {isLast || completionResultPath ? text.done : text.continue}
               </button>
             )}
           </div>

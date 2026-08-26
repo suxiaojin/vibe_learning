@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, Plus } from "lucide-react";
-import { createMajorCourse, updateMajorCourse, updateMajorCourseStatus } from "@/app/admin/actions";
+import { createMajorCourse, deleteMajorCourse, updateMajorCourse, updateMajorCourseStatus } from "@/app/admin/actions";
+import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -132,9 +133,20 @@ export default async function MajorCoursesPage({
                           </select>
                         </div>
                         <input className="input rounded-none" name="description" defaultValue={course.description || ""} />
-                        <div className="flex justify-end">
+                        <div className="flex justify-end gap-3">
+                          <ConfirmSubmitButton
+                            className="danger-button rounded-none"
+                            form={`delete-major-course-${course.id}`}
+                            message={`确认删除课程“${course.name}”吗？课程大纲将一并删除，章节及其他关联记录会解除课程关联。此操作不可恢复。`}
+                          >
+                            删除
+                          </ConfirmSubmitButton>
                           <button className="primary-button rounded-none" type="submit">保存</button>
                         </div>
+                      </form>
+                      <form id={`delete-major-course-${course.id}`} action={deleteMajorCourse}>
+                        <input type="hidden" name="id" value={course.id} />
+                        <input type="hidden" name="majorId" value={major.id} />
                       </form>
                     </details>
                   </td>
