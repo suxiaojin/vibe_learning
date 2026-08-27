@@ -155,7 +155,7 @@ async function nextPublicSubjectCourseSortOrder(regionId: string, publicSubjectI
 
 async function nextSyllabusItemSortOrder(courseId: string, parentId: string | null) {
   const latest = await prisma.syllabusItem.findFirst({
-    where: { courseId, parentId },
+    where: { courseId, parentId, checkpointScope: null },
     orderBy: { sortOrder: "desc" },
     select: { sortOrder: true }
   });
@@ -166,12 +166,12 @@ async function nextSyllabusItemCode(courseId: string, parentId: string | null) {
   const [parent, siblings] = await Promise.all([
     parentId
       ? prisma.syllabusItem.findFirstOrThrow({
-          where: { id: parentId, courseId },
+          where: { id: parentId, courseId, checkpointScope: null },
           select: { code: true }
         })
       : Promise.resolve(null),
     prisma.syllabusItem.findMany({
-      where: { courseId, parentId },
+      where: { courseId, parentId, checkpointScope: null },
       select: { code: true, sortOrder: true }
     })
   ]);
@@ -1524,13 +1524,13 @@ export async function updateSyllabusItem(formData: FormData) {
   const id = String(formData.get("id") || "");
   const courseId = String(formData.get("courseId") || "");
   const current = await prisma.syllabusItem.findFirstOrThrow({
-    where: { id, courseId },
+    where: { id, courseId, checkpointScope: null },
     select: { id: true, parentId: true, code: true, sortOrder: true }
   });
   const parentId = formData.has("parentId") ? String(formData.get("parentId") || "") || null : current.parentId;
   if (parentId) {
     await prisma.syllabusItem.findFirstOrThrow({
-      where: { id: parentId, courseId },
+      where: { id: parentId, courseId, checkpointScope: null },
       select: { id: true }
     });
   }
@@ -1556,7 +1556,7 @@ export async function updateSyllabusItem(formData: FormData) {
 export async function updateSyllabusItemStatus(formData: FormData) {
   await requireAdmin();
   await prisma.syllabusItem.update({
-    where: { id: String(formData.get("id") || "") },
+    where: { id: String(formData.get("id") || ""), checkpointScope: null },
     data: { status: getStatus(formData) }
   });
   revalidatePath(courseDetailPath(formData));
@@ -1567,7 +1567,7 @@ export async function deleteSyllabusItem(formData: FormData) {
   const id = String(formData.get("id") || "");
   const courseId = String(formData.get("courseId") || "");
   await prisma.syllabusItem.findFirstOrThrow({
-    where: { id, courseId },
+    where: { id, courseId, checkpointScope: null },
     select: { id: true }
   });
   await prisma.syllabusItem.delete({ where: { id } });
@@ -1598,7 +1598,7 @@ export async function createQuestionBankKnowledgeMapItem(formData: FormData) {
 
   if (parentId) {
     await prisma.syllabusItem.findFirstOrThrow({
-      where: { id: parentId, courseId: course.id },
+      where: { id: parentId, courseId: course.id, checkpointScope: null },
       select: { id: true }
     });
   }
@@ -1719,6 +1719,7 @@ export async function renameQuestionBankKnowledgeMapItem(formData: FormData) {
     where: {
       id,
       courseId,
+      checkpointScope: null,
       course: ownerCourseWhere(ownerType, ownerId)
     },
     select: { id: true }
@@ -1763,6 +1764,7 @@ export async function deleteQuestionBankKnowledgeMapItem(formData: FormData) {
     where: {
       id,
       courseId,
+      checkpointScope: null,
       course: ownerCourseWhere(ownerType, ownerId)
     },
     select: { id: true }
@@ -2189,7 +2191,7 @@ export async function createCourseKnowledgePoint(formData: FormData) {
   const courseId = String(formData.get("courseId") || "");
   const syllabusItemId = String(formData.get("syllabusItemId") || "");
   const syllabusItem = await prisma.syllabusItem.findFirstOrThrow({
-    where: { id: syllabusItemId, courseId },
+    where: { id: syllabusItemId, courseId, checkpointScope: null },
     select: { id: true, code: true, title: true }
   });
   const chapterTitle = String(formData.get("chapterTitle") || "").trim() || buildSyllabusChapterTitle(syllabusItem);
@@ -2220,7 +2222,7 @@ export async function updateCourseKnowledgePoint(formData: FormData) {
 
   if (syllabusItemId) {
     await prisma.syllabusItem.findFirstOrThrow({
-      where: { id: syllabusItemId, courseId },
+      where: { id: syllabusItemId, courseId, checkpointScope: null },
       select: { id: true }
     });
   }

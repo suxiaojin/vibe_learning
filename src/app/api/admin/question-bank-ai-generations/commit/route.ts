@@ -32,6 +32,7 @@ async function validReferenceSectionIds(ownerType: QuestionBankOwnerType, ownerI
     where: ownerCourseWhere(ownerType, ownerId, regionId),
     select: {
       syllabusItems: {
+        where: { checkpointScope: null },
         select: {
           id: true,
           parentId: true

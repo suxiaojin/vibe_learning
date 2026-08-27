@@ -21,6 +21,7 @@ export default async function PublicSubjectCourseDetailPage({
       region: true,
       publicSubject: true,
       syllabusItems: {
+        where: { checkpointScope: null },
         include: {
           knowledgePoints: {
             include: {

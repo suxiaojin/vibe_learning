@@ -68,7 +68,7 @@ export async function getAvailableLearningCoursesForStudent(userId: string) {
       _count: {
         select: {
           chapters: true,
-          syllabusItems: true
+          syllabusItems: { where: { checkpointScope: null } }
         }
       }
     },
@@ -165,7 +165,8 @@ export async function getLearningCourseOutlineForStudent(userId: string, courseI
     prisma.syllabusItem.findMany({
       where: {
         courseId: course.id,
-        status: "published"
+        status: "published",
+        checkpointScope: null
       },
       select: {
         id: true,

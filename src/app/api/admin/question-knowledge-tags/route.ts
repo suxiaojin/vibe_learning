@@ -127,6 +127,7 @@ export async function POST(request: NextRequest) {
   const syllabusItems = await prisma.syllabusItem.findMany({
     where: {
       status: "published",
+      checkpointScope: null,
       course: ownerCourseWhere(paperQuestion.paper)
     },
     select: {

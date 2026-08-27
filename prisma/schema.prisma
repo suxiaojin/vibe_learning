@@ -202,6 +202,15 @@ enum LearningCourseType {
   major
 }
 
+enum LearningChallengeMode {
+  chapter
+  course
+}
+
+enum LearningCheckpointScope {
+  course
+}
+
 enum QuestionBankOwnerType {
   public_subject
   major
@@ -612,6 +621,7 @@ model LearningCourse {
   majorId                  String?
   name                     String
   courseType               LearningCourseType
+  challengeMode            LearningChallengeMode     @default(chapter)
   description              String?
   questionTypeConfig       Json?
   status                   ContentStatus           @default(draft)
@@ -640,6 +650,7 @@ model SyllabusItem {
   id                String                    @id @default(cuid())
   courseId          String
   parentId          String?
+  checkpointScope   LearningCheckpointScope?
   code              String?
   title             String
   description       String?
@@ -659,6 +670,7 @@ model SyllabusItem {
   updatedAt         DateTime                  @updatedAt
 
   @@index([courseId, parentId, sortOrder])
+  @@unique([courseId, checkpointScope])
   @@index([status, sortOrder])
   @@map("syllabus_items")
 }

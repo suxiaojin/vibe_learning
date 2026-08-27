@@ -14,6 +14,7 @@ type SyllabusItemRecord = {
   title: string;
   description: string | null;
   sortOrder: number;
+  checkpointScope: "course" | null;
 };
 
 type CourseRecord = {
@@ -22,6 +23,7 @@ type CourseRecord = {
   courseType: LearningOwnerType;
   description: string | null;
   sortOrder: number;
+  challengeMode: "chapter" | "course";
   publicSubject: { id: string; name: string } | null;
   major: { id: string; name: string } | null;
   syllabusItems: SyllabusItemRecord[];
@@ -333,7 +335,14 @@ function buildGroups(
     }
 
     const pathCourses = courseList.map((course) => {
-      const roots = (shape.childrenByParentId.get(null) || []).filter((item) => item.courseId === course.id);
+      const courseRoots = (shape.childrenByParentId.get(null) || []).filter((item) => item.courseId === course.id);
+      const realCourseItems = course.syllabusItems.filter((item) => item.checkpointScope === null);
+      const courseCheckpoint = courseRoots.find((item) => item.checkpointScope === "course");
+      const useCourseCheckpoint = course.challengeMode === "course"
+        && Boolean(courseCheckpoint && challengeByChapterId.get(courseCheckpoint.id)?.questionIds.length);
+      const roots = useCourseCheckpoint
+        ? [courseCheckpoint!]
+        : courseRoots.filter((item) => item.checkpointScope === null);
       const chapters = roots
         .map((root) => {
           const challenge = challengeByChapterId.get(root.id);
@@ -353,7 +362,9 @@ function buildGroups(
               bestScore: progress?.bestScore || 0,
               passedAt: progress?.passedAt || null,
               challengeVersionId: challenge?.id,
-              questionSyllabusItemIds: questionScopeForSection(root, shape)
+              questionSyllabusItemIds: root.checkpointScope === "course"
+                ? realCourseItems.map((item) => item.id)
+                : questionScopeForSection(root, shape)
             });
             sectionIds.push(root.id);
             previousSectionStatus = status;
@@ -402,6 +413,7 @@ async function getPublishedStudentCourses(profile: { regionId: string; publicSub
       courseType: true,
       description: true,
       sortOrder: true,
+      challengeMode: true,
       publicSubject: { select: { id: true, name: true } },
       major: { select: { id: true, name: true } },
       syllabusItems: {
@@ -413,7 +425,8 @@ async function getPublishedStudentCourses(profile: { regionId: string; publicSub
           code: true,
           title: true,
           description: true,
-          sortOrder: true
+          sortOrder: true,
+          checkpointScope: true
         },
         orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
       }
@@ -488,10 +501,19 @@ function buildKnowledgeMapGroups(
     const sectionIds: string[] = [];
     const knowledgeCourses = group.courses.map((learningCourse) => {
       const course = courseById.get(learningCourse.id);
-      const roots = course ? (shape.childrenByParentId.get(null) || []).filter((item) => item.courseId === course.id) : [];
+      const roots = course
+        ? (shape.childrenByParentId.get(null) || []).filter(
+            (item) => item.courseId === course.id && item.checkpointScope === null
+          )
+        : [];
+      const courseCheckpoint = course?.challengeMode === "course"
+        ? learningCourse.chapters.find((chapter) =>
+            course.syllabusItems.some((item) => item.id === chapter.id && item.checkpointScope === "course")
+          )?.sections[0]
+        : null;
       const chapters = roots.map((root) => {
         const learningChapter = learningCourse.chapters.find((chapter) => chapter.id === root.id);
-        const checkpoint = learningChapter?.sections[0];
+        const checkpoint = courseCheckpoint || learningChapter?.sections[0];
         const status = checkpoint?.status || "locked";
         const bestScore = checkpoint?.bestScore || 0;
         const passedAt = checkpoint?.passedAt || null;

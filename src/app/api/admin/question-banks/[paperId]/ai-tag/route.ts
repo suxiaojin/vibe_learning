@@ -338,7 +338,7 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ p
       id: true,
       name: true,
       syllabusItems: {
-        where: { status: "published" },
+        where: { status: "published", checkpointScope: null },
         select: {
           id: true,
           parentId: true,

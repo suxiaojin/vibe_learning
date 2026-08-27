@@ -192,6 +192,7 @@ export async function POST(request: NextRequest) {
         name: true,
         sortOrder: true,
         syllabusItems: {
+          where: { checkpointScope: null },
           select: {
             id: true,
             parentId: true,

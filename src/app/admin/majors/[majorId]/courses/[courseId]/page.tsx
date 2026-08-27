@@ -21,6 +21,7 @@ export default async function MajorCourseDetailPage({
       region: true,
       major: true,
       syllabusItems: {
+        where: { checkpointScope: null },
         include: {
           knowledgePoints: {
             include: {

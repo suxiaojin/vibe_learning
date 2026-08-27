@@ -6,7 +6,8 @@ import {
   moveChapterChallengeQuestion,
   removeQuestionFromChapterChallenge,
   saveChapterChallenge,
-  updateChapterChallengeTarget
+  updateChapterChallengeTarget,
+  updateCourseChallengeMode
 } from "@/app/admin/question-banks/challenge-actions";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import {
@@ -19,7 +20,7 @@ import { requireAdmin } from "@/lib/auth";
 import { ensureDefaultQuestionBankCatalog, type QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 import { prisma } from "@/lib/prisma";
 import { isAiGeneratedQuestionBankTitle, isRealQuestionBankTitle } from "@/lib/question-bank-source";
-import { questionBankTypeDefaultLabels } from "@/lib/question-bank-types";
+import { isQuestionBankAutoGradedQuestionType, questionBankTypeDefaultLabels } from "@/lib/question-bank-types";
 import { cn } from "@/lib/utils";
 
 type SearchParams = {
@@ -64,6 +65,7 @@ type CourseRow = {
   id: string;
   name: string;
   sortOrder: number;
+  challengeMode: "chapter" | "course";
   syllabusItems: SyllabusItemRow[];
 };
 
@@ -723,7 +725,9 @@ export default async function QuestionBankKnowledgeStatisticsPage({
       id: true,
       name: true,
       sortOrder: true,
+      challengeMode: true,
       syllabusItems: {
+        where: { checkpointScope: null },
         select: {
           id: true,
           parentId: true,
@@ -840,10 +844,33 @@ export default async function QuestionBankKnowledgeStatisticsPage({
         ? { type: "section" as const, id: params.syllabusItemId }
         : null;
   const selectedScope = findScope(tree, requestedScope);
-  const challengeVersions = selectedScope?.type === "chapter"
+  const selectedCourse = selectedScope
+    ? courses.find((course) =>
+        course.id === selectedScope.id || course.syllabusItems.some((item) => item.id === selectedScope.id)
+      ) || null
+    : null;
+  const challengeScopeType = selectedCourse?.challengeMode === "course" && selectedScope?.type === "course"
+    ? "course" as const
+    : selectedCourse?.challengeMode === "chapter" && selectedScope?.type === "chapter"
+      ? "chapter" as const
+      : null;
+  const courseCheckpoint = challengeScopeType === "course"
+    ? await prisma.syllabusItem.findFirst({
+        where: { courseId: selectedCourse!.id, checkpointScope: "course" },
+        select: { id: true }
+      })
+    : null;
+  const challengeScope = challengeScopeType && selectedScope
+    ? {
+        type: challengeScopeType,
+        id: challengeScopeType === "course" ? selectedCourse!.id : selectedScope.id,
+        checkpointId: challengeScopeType === "course" ? courseCheckpoint?.id || null : selectedScope.id
+      }
+    : null;
+  const challengeVersions = challengeScope?.checkpointId
     ? await prisma.chapterChallengeVersion.findMany({
         where: {
-          chapterId: selectedScope.id,
+          chapterId: challengeScope.checkpointId,
           status: { in: ["draft", "published"] }
         },
         select: {
@@ -934,15 +961,21 @@ export default async function QuestionBankKnowledgeStatisticsPage({
         })
     : [];
   const selectedStatus = challengeStatus(selectedStats.total);
-  const chapterChallengePanel = selectedScope?.type === "chapter" ? (
+  const challengeHasAutoGradedQuestion = Boolean(
+    challengeVersion?.questions.some((item) => isQuestionBankAutoGradedQuestionType(item.question.type))
+  );
+  const chapterChallengePanel = challengeScope ? (
     <aside className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-[#d8e0ec] bg-white shadow-sm">
       <div className="border-b border-[#e2e8f0] px-4 py-3">
-        <h3 className="text-sm font-black text-[#071b38]">章关卡组题</h3>
+        <h3 className="text-sm font-black text-[#071b38]">
+          {challengeScope.type === "course" ? "课程关卡组题" : "章关卡组题"}
+        </h3>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <form action={updateChapterChallengeTarget} className="flex items-end gap-2">
-          <input name="chapterId" type="hidden" value={selectedScope.id} />
+          <input name="scopeType" type="hidden" value={challengeScope.type} />
+          <input name="scopeId" type="hidden" value={challengeScope.id} />
           <input name="challengeVersionId" type="hidden" value={challengeVersion?.id || ""} />
           <label className="grid min-w-0 flex-1 gap-1 text-xs font-bold text-[#475569]">
             本关题数
@@ -984,21 +1017,24 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                   </p>
                   <div className="mt-2 flex items-center gap-1">
                     <form action={moveChapterChallengeQuestion}>
-                      <input name="chapterId" type="hidden" value={selectedScope.id} />
+                      <input name="scopeType" type="hidden" value={challengeScope.type} />
+                      <input name="scopeId" type="hidden" value={challengeScope.id} />
                       <input name="challengeVersionId" type="hidden" value={challengeVersion.id} />
                       <input name="questionId" type="hidden" value={item.questionId} />
                       <input name="direction" type="hidden" value="up" />
                       <button aria-label="上移题目" className="grid size-7 place-items-center rounded border border-[#d7dee8] text-[#475569] disabled:opacity-30" disabled={index === 0} type="submit"><ArrowUp size={13} /></button>
                     </form>
                     <form action={moveChapterChallengeQuestion}>
-                      <input name="chapterId" type="hidden" value={selectedScope.id} />
+                      <input name="scopeType" type="hidden" value={challengeScope.type} />
+                      <input name="scopeId" type="hidden" value={challengeScope.id} />
                       <input name="challengeVersionId" type="hidden" value={challengeVersion.id} />
                       <input name="questionId" type="hidden" value={item.questionId} />
                       <input name="direction" type="hidden" value="down" />
                       <button aria-label="下移题目" className="grid size-7 place-items-center rounded border border-[#d7dee8] text-[#475569] disabled:opacity-30" disabled={index === challengeVersion.questions.length - 1} type="submit"><ArrowDown size={13} /></button>
                     </form>
                     <form action={removeQuestionFromChapterChallenge}>
-                      <input name="chapterId" type="hidden" value={selectedScope.id} />
+                      <input name="scopeType" type="hidden" value={challengeScope.type} />
+                      <input name="scopeId" type="hidden" value={challengeScope.id} />
                       <input name="challengeVersionId" type="hidden" value={challengeVersion.id} />
                       <input name="questionId" type="hidden" value={item.questionId} />
                       <button aria-label="移出关卡" className="grid size-7 place-items-center rounded border border-[#fecaca] text-[#dc2626] hover:bg-[#fef2f2]" type="submit"><Trash2 size={13} /></button>
@@ -1010,19 +1046,24 @@ export default async function QuestionBankKnowledgeStatisticsPage({
           </div>
         ) : (
           <div className="mt-4 rounded border border-dashed border-[#cfd8e6] px-4 py-8 text-center text-xs leading-5 text-[#94a3b8]">
-            尚未选择题目，请从中间题目列表加入本章关卡。
+            尚未选择题目，请从中间题目列表加入{challengeScope.type === "course" ? "本课程" : "本章"}关卡。
           </div>
         )}
       </div>
 
       <div className="border-t border-[#e2e8f0] bg-[#f8fafc] p-4">
         <p className="mb-3 text-xs leading-5 text-[#64748b]">
-          {challengeVersion?.status === "draft" ? "保存要求已选题数与本关题数完全一致。" : "已保存关卡可继续增删题目、调整顺序或修改本关题数，修改立即生效。"}
+          {challengeVersion?.status === "draft"
+            ? challengeScope.type === "course"
+              ? "保存要求题数完全一致，并至少包含一道可自动判分题。"
+              : "保存要求已选题数与本关题数完全一致。"
+            : "已保存关卡可继续增删题目、调整顺序或修改本关题数，修改立即生效。"}
         </p>
         {challengeVersion ? (
           <div className="flex gap-2">
             <form action={deleteChapterChallenge} id={`delete-challenge-${challengeVersion.id}`}>
-              <input name="chapterId" type="hidden" value={selectedScope.id} />
+              <input name="scopeType" type="hidden" value={challengeScope.type} />
+              <input name="scopeId" type="hidden" value={challengeScope.id} />
               <input name="challengeVersionId" type="hidden" value={challengeVersion.id} />
             </form>
             <ConfirmSubmitButton
@@ -1035,11 +1076,15 @@ export default async function QuestionBankKnowledgeStatisticsPage({
             </ConfirmSubmitButton>
             {challengeVersion.status === "draft" ? (
               <form action={saveChapterChallenge} className="min-w-0 flex-1">
-                <input name="chapterId" type="hidden" value={selectedScope.id} />
+                <input name="scopeType" type="hidden" value={challengeScope.type} />
+                <input name="scopeId" type="hidden" value={challengeScope.id} />
                 <input name="challengeVersionId" type="hidden" value={challengeVersion.id} />
                 <button
                   className="h-10 w-full rounded bg-[#16a34a] px-4 text-xs font-black text-white hover:bg-[#15803d] disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
-                  disabled={challengeVersion.questions.length !== challengeVersion.targetQuestionCount}
+                  disabled={
+                    challengeVersion.questions.length !== challengeVersion.targetQuestionCount
+                    || (challengeScope.type === "course" && !challengeHasAutoGradedQuestion)
+                  }
                   type="submit"
                 >
                   保存
@@ -1148,6 +1193,30 @@ export default async function QuestionBankKnowledgeStatisticsPage({
             </div>
 
             <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
+              {selectedScope?.type === "course" && selectedCourse ? (
+                <form action={updateCourseChallengeMode} className="flex shrink-0 items-end gap-3 rounded-lg border border-[#dbe4f0] bg-[#f8fbff] p-3">
+                  <input name="courseId" type="hidden" value={selectedCourse.id} />
+                  <label className="grid min-w-0 flex-1 gap-1 text-xs font-bold text-[#475569]">
+                    闯关组织方式
+                    <select
+                      className="h-9 w-full rounded border border-[#cfd8e6] bg-white px-3 text-sm font-bold text-[#071b38]"
+                      defaultValue={selectedCourse.challengeMode}
+                      name="challengeMode"
+                    >
+                      <option value="chapter">逐章设置关卡</option>
+                      <option value="course">整门课程合并为一个关卡</option>
+                    </select>
+                  </label>
+                  <button className="h-9 shrink-0 rounded bg-[#3562ff] px-4 text-xs font-black text-white hover:bg-[#1d4ed8]" type="submit">
+                    保存设置
+                  </button>
+                </form>
+              ) : null}
+              {selectedScope?.type === "chapter" && selectedCourse?.challengeMode === "course" ? (
+                <p className="shrink-0 rounded-lg border border-[#bfdbfe] bg-[#eff6ff] px-4 py-3 text-xs font-bold text-[#1d4ed8]">
+                  当前课程使用整门课程综合闯关，请选择左侧课程节点进行组题。
+                </p>
+              ) : null}
               <div className="grid shrink-0 grid-flow-col auto-cols-[minmax(132px,160px)] gap-2 overflow-x-auto pb-1">
                 <MetricCard label="题库题目数" value={selectedStats.total} icon={<BarChart3 size={15} />} tone="blue" />
                 <MetricCard label="去重题目数" value={selectedStats.uniqueQuestionIds.size} icon={<CheckCircle2 size={15} />} tone="green" />
@@ -1167,7 +1236,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                   tone="amber"
                   href={selectedScope ? statisticsHref({ province: selectedProvince, examType: selectedExamType, owner: selectedOwner, scopeType: selectedScope.type, scopeId: selectedScope.id, source: "manual", bankSource: bankSourceFilter, challengeId: challengeVersion?.id }) : undefined}
                 />
-                {selectedScope?.type === "chapter"
+                {challengeScope
                   ? [...challengeVersions].sort((left, right) => left.version - right.version).map((version) => {
                       const active = challengeVersion?.id === version.id;
                       return (
@@ -1182,8 +1251,8 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                             province: selectedProvince,
                             examType: selectedExamType,
                             owner: selectedOwner,
-                            scopeType: selectedScope.type,
-                            scopeId: selectedScope.id,
+                            scopeType: selectedScope?.type,
+                            scopeId: selectedScope?.id,
                             source: sourceFilter,
                             bankSource: bankSourceFilter,
                             questionType: selectedQuestionType || undefined,
@@ -1317,7 +1386,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                         </td>
                         <td className="px-3 py-3">
                           <div className="flex items-center gap-3">
-                            {selectedScope?.type === "chapter" ? (
+                            {challengeScope ? (
                               selectedChallengeQuestionIds.has(row.questionId) ? (
                                 <span className="inline-flex items-center gap-1 text-xs font-black text-[#15803d]"><CheckCircle2 size={13} />已加入</span>
                               ) : otherChallengeByQuestionId.has(row.questionId) ? (
@@ -1340,7 +1409,8 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                                 </button>
                               ) : (
                                 <form action={addQuestionToChapterChallenge}>
-                                  <input name="chapterId" type="hidden" value={selectedScope.id} />
+                                  <input name="scopeType" type="hidden" value={challengeScope.type} />
+                                  <input name="scopeId" type="hidden" value={challengeScope.id} />
                                   <input name="challengeVersionId" type="hidden" value={challengeVersion?.id || ""} />
                                   <input name="questionId" type="hidden" value={row.questionId} />
                                   <button className="inline-flex items-center gap-1 text-xs font-black text-[#3562ff] hover:underline" type="submit"><Plus size={13} />加入关卡</button>

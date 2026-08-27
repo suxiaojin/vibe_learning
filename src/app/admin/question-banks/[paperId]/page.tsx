@@ -199,6 +199,7 @@ export default async function QuestionBankDetailPage({
     where: ownerCourseWhere,
     include: {
       syllabusItems: {
+        where: { checkpointScope: null },
         select: {
           id: true,
           parentId: true,

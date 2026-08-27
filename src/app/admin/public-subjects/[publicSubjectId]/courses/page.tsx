@@ -23,7 +23,7 @@ export default async function PublicSubjectCoursesPage({
         where: { courseType: "public_subject" },
         include: {
           region: true,
-          _count: { select: { chapters: true, syllabusItems: true } }
+          _count: { select: { chapters: true, syllabusItems: { where: { checkpointScope: null } } } }
         },
         orderBy: [{ region: { sortOrder: "asc" } }, { sortOrder: "asc" }, { createdAt: "desc" }]
       }

@@ -282,6 +282,7 @@ export default async function QuestionBanksPage({
           name: true,
           sortOrder: true,
           syllabusItems: {
+            where: { checkpointScope: null },
             select: {
               id: true,
               parentId: true,

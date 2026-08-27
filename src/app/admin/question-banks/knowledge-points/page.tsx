@@ -145,6 +145,7 @@ export default async function QuestionBankKnowledgePointsPage({
     },
     include: {
       syllabusItems: {
+        where: { checkpointScope: null },
         select: {
           id: true,
           courseId: true,
