@@ -410,7 +410,9 @@ export function QuizRunner({
             </span>
           ) : null}
         </p>
-        <h3 className="mt-3 text-xl font-semibold leading-snug text-ink">{current.stem}</h3>
+        <div role="heading" aria-level={3} className="mt-3 text-xl font-semibold leading-snug text-ink">
+          <RichTextContent className="whitespace-pre-wrap" value={current.stem} />
+        </div>
 
         {isRichAnswerQuestion && checkState !== "idle" ? (
           <div ref={richAnswerFeedbackRef} className="mt-6 grid gap-5 lg:grid-cols-2 lg:items-start">

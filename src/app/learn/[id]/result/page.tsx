@@ -566,7 +566,9 @@ function AttemptCard({ attempt, tone }: { attempt: AttemptWithQuestion; tone: "c
   const ungraded = tone === "ungraded";
   return (
     <article className="rounded-panel border border-border-soft bg-surface p-4">
-      <h3 className="text-lg font-bold leading-relaxed">{attempt.question.stem}</h3>
+      <div role="heading" aria-level={3} className="text-lg font-bold leading-relaxed">
+        <RichTextContent className="whitespace-pre-wrap" value={attempt.question.stem} />
+      </div>
       <div className="mt-4 grid gap-2">
         {options.map((option) => (
           <div key={option.key} className="rounded-xl border border-border-soft bg-surface px-4 py-3 text-sm leading-6">
@@ -589,7 +591,7 @@ function AttemptCard({ attempt, tone }: { attempt: AttemptWithQuestion; tone: "c
           <RichTextContent className="mt-2 block text-sm leading-6 text-slate-700" value={attempt.question.analysis} />
         </div>
       ) : null}
-      {!ungraded ? <WrongQuestionAi questionId={attempt.questionId} sessionId={attempt.sessionId || undefined} /> : null}
+      <WrongQuestionAi questionId={attempt.questionId} sessionId={attempt.sessionId || undefined} />
     </article>
   );
 }

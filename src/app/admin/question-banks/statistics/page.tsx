@@ -414,6 +414,37 @@ function stripHtml(value: string) {
   return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function questionBankQuestionHref(paperId: string, paperQuestionId: string) {
+  return `/admin/question-banks/${paperId}?question=${paperQuestionId}#paper-question-${paperQuestionId}`;
+}
+
+function ChallengeQuestionTitle({ question }: {
+  question: {
+    stem: string;
+    source: string;
+    paperQuestions: Array<{ id: string; paperId: string; paper: { title: string } }>;
+  };
+}) {
+  const title = stripHtml(question.stem);
+  const paperQuestion = question.paperQuestions.find((item) => item.paper.title === question.source)
+    || question.paperQuestions[0];
+  const className = "line-clamp-2 text-xs font-bold leading-5 text-[#071b38]";
+
+  if (!paperQuestion) {
+    return <p className={className} title={title}>{title}</p>;
+  }
+
+  return (
+    <Link
+      className={cn(className, "rounded-sm hover:text-[#3562ff] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3562ff]")}
+      href={questionBankQuestionHref(paperQuestion.paperId, paperQuestion.id)}
+      title={title}
+    >
+      {title}
+    </Link>
+  );
+}
+
 function questionTypeLabel(type: string) {
   return questionBankTypeDefaultLabels[type as keyof typeof questionBankTypeDefaultLabels] || type;
 }
@@ -890,7 +921,11 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                   stem: true,
                   type: true,
                   difficulty: true,
-                  source: true
+                  source: true,
+                  paperQuestions: {
+                    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+                    select: { id: true, paperId: true, paper: { select: { title: true } } }
+                  }
                 }
               }
             }
@@ -1011,7 +1046,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
               <div className="grid grid-cols-[28px_minmax(0,1fr)] gap-2 border-t border-[#e2e8f0] px-3 py-2.5 first:border-t-0" key={item.id}>
                 <span className="grid size-7 place-items-center rounded-full bg-[#eff6ff] text-xs font-black text-[#1d4ed8]">{index + 1}</span>
                 <div className="min-w-0">
-                  <p className="line-clamp-2 text-xs font-bold leading-5 text-[#071b38]" title={stripHtml(item.question.stem)}>{stripHtml(item.question.stem)}</p>
+                  <ChallengeQuestionTitle question={item.question} />
                   <p className="mt-0.5 text-[11px] text-[#64748b]">
                     {questionTypeLabel(item.question.type)} · {difficultyLabels[item.question.difficulty] || item.question.difficulty} · {item.question.source}
                   </p>
@@ -1417,7 +1452,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                                 </form>
                               )
                             ) : null}
-                            <Link className="inline-flex items-center gap-1 text-xs font-bold text-[#3562ff] hover:underline" href={`/admin/question-banks/${row.paperId}?question=${row.paperQuestionId}#paper-question-${row.paperQuestionId}`}>
+                            <Link className="inline-flex items-center gap-1 text-xs font-bold text-[#3562ff] hover:underline" href={questionBankQuestionHref(row.paperId, row.paperQuestionId)}>
                               <FileText size={13} />
                               题库
                             </Link>
