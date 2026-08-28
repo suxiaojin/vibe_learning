@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Loader2, X, XCircle } from "lucide-react";
+import { CheckCircle2, Heart, Loader2, X, XCircle } from "lucide-react";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import { getQuestionBankTypeLabel, isQuestionBankRichAnswerQuestionType, type QuestionBankEditableQuestionType } from "@/lib/question-bank-types";
@@ -54,7 +54,7 @@ const text = {
   wrong: "\u8fd9\u9898\u7b54\u9519\u4e86",
   submitted: "\u7b54\u6848\u5df2\u63d0\u4ea4",
   ungradedHint: "\u4e3b\u89c2\u9898\u4e0d\u8ba1\u5206\uff0c\u8bf7\u5bf9\u7167\u53c2\u8003\u7b54\u6848\u590d\u76d8",
-  objectiveScore: "\u5ba2\u89c2\u9898",
+  objectiveScore: "\u5ba2\u89c2\u9898\u7b54\u5bf9",
   notScored: "\u4e3b\u89c2\u9898\u4e0d\u8ba1\u5206",
   rightAnswer: "\u6b63\u786e\u7b54\u6848\uff1a",
   yourAnswer: "\u4f60\u7684\u7b54\u6848",
@@ -217,8 +217,8 @@ export function QuizRunner({
   }, [checkState, current?.id, pendingRichAnswerScrollQuestionId]);
 
   const selected = current ? answers[current.id] || [] : [];
-  const progressPercent = totalQuestions
-    ? Math.max(0, Math.min(100, Math.round(((currentIndex + 1) / totalQuestions) * 100)))
+  const progressPercent = initialScoredTotal > 0
+    ? Math.max(0, Math.min(100, (correctCount / initialScoredTotal) * 100))
     : 0;
   const canCheck = Boolean(current && selected.length > 0 && checkState === "idle" && !checking && !questionLoading);
   const canGoPrevious = currentIndex > 0 && !checking && !loading && !questionLoading;
@@ -364,7 +364,7 @@ export function QuizRunner({
 
   return (
     <section className="flex h-dvh flex-col overflow-hidden bg-surface">
-      <div className="mx-auto flex w-full max-w-5xl items-center gap-5 px-5 py-6">
+      <div className="mx-auto flex w-full max-w-5xl items-center gap-3 px-5 py-6 sm:gap-5">
         <button
           className="grid size-11 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/20"
           type="button"
@@ -378,13 +378,21 @@ export function QuizRunner({
           <X size={22} />
         </button>
         <div className="min-w-0 flex-1">
-          <div className="h-4 overflow-hidden rounded-full bg-slate-200">
-            <div className="h-full rounded-full bg-success transition-all" style={{ width: `${progressPercent}%` }} />
+          <div
+            className="h-4 overflow-hidden rounded-full bg-slate-200"
+            role="progressbar"
+            aria-label={initialScoredTotal > 0 ? text.objectiveScore : text.notScored}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progressPercent}
+            aria-valuetext={initialScoredTotal > 0 ? `${text.objectiveScore} ${correctCount}/${initialScoredTotal}` : text.notScored}
+          >
+            <div className="h-full rounded-full bg-success transition-[width] duration-300 motion-reduce:transition-none" style={{ width: `${progressPercent}%` }} />
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2 text-sm font-semibold text-teal">
-          <CheckCircle2 size={22} />
-          {initialScoredTotal > 0 ? `${text.objectiveScore} ${correctCount}/${initialScoredTotal}` : text.notScored}
+        <div className={cn("flex shrink-0 items-center gap-2 text-sm font-semibold", initialScoredTotal > 0 ? "text-coral" : "text-slate-500")}>
+          {initialScoredTotal > 0 ? <Heart size={22} fill="currentColor" aria-hidden="true" /> : null}
+          {initialScoredTotal > 0 ? `${correctCount}/${initialScoredTotal}` : text.notScored}
         </div>
       </div>
 

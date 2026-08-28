@@ -19,10 +19,10 @@ const text = {
   profile: "\u4e2a\u4eba\u6863\u6848",
   more: "\u66f4\u591a",
   moreTitle: "\u66f4\u591a\u529f\u80fd",
-  moreHint: "\u901a\u77e5\u3001\u8bbe\u7f6e\u548c\u5e2e\u52a9",
+  moreHint: "\u901a\u77e5\u3001\u8bbe\u7f6e\u548c\u5e2e\u52a9\u4e2d\u5fc3",
   notifications: "\u901a\u77e5",
   settings: "\u8bbe\u7f6e",
-  help: "\u5e2e\u52a9",
+  help: "\u5e2e\u52a9\u4e2d\u5fc3",
   logout: "\u9000\u51fa\u767b\u5f55"
 };
 

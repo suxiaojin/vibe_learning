@@ -7,6 +7,8 @@ import {
 } from "@/app/admin/ai-study-projects/actions";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { OfficialStudyMaterialPanel } from "@/components/admin/official-study-material-panel";
+import { ProjectDiamondPriceSetting } from "@/components/admin/project-diamond-price-setting";
+import { ProjectPurchaseUsers } from "@/components/admin/project-purchase-users";
 import { requireAdmin } from "@/lib/auth";
 import {
   buildAdminAiStudyProjectsPath,
@@ -42,14 +44,6 @@ const visibilityLabels: Record<string, string> = {
   public_pending: "待审核",
   public: "公开",
   rejected: "审核未通过"
-};
-
-const taskStatusLabels: Record<string, string> = {
-  pending: "等待中",
-  running: "执行中",
-  succeeded: "成功",
-  failed: "失败",
-  canceled: "已取消"
 };
 
 const noticeText: Record<string, string> = {
@@ -120,7 +114,7 @@ export default async function AdminAiStudyProjectsPage({
       </nav>
 
       {activeTab === "official" ? (
-        <OfficialStudyMaterialPanel initialMaterials={officialMaterials} scopes={materialScopes} />
+        <OfficialStudyMaterialPanel initialMaterials={officialMaterials} scopes={materialScopes} purchaseCounts={Object.fromEntries(officialMaterials.map((material) => [material.id, material._count.purchases]))} />
       ) : <>
       <form className="mt-5 grid gap-3 rounded-2xl bg-slate-50 p-4 xl:grid-cols-[minmax(260px,1fr)_150px_150px_auto]" action="/admin/ai-study-projects">
         <div>
@@ -162,7 +156,7 @@ export default async function AdminAiStudyProjectsPage({
               <th className="border-b border-slate-200 py-3 pr-4 font-semibold">创建学生</th>
               <th className="border-b border-slate-200 py-3 pr-4 font-semibold">生成状态</th>
               <th className="border-b border-slate-200 py-3 pr-4 font-semibold">公开状态</th>
-              <th className="border-b border-slate-200 py-3 pr-4 font-semibold">最近任务</th>
+              <th className="border-b border-slate-200 py-3 pr-4 font-semibold">购买用户</th>
               <th className="border-b border-slate-200 py-3 pr-4 font-semibold">创建时间</th>
               <th className="border-b border-slate-200 py-3 font-semibold">操作</th>
             </tr>
@@ -174,7 +168,6 @@ export default async function AdminAiStudyProjectsPage({
               </tr>
             ) : projects.map((project) => {
               const ownerName = project.owner.studentProfile?.nickname || project.owner.username;
-              const latestTask = project.tasks[0];
               const canPublish = project.status === "ready" && !project.deletedAt && project.visibility !== "public";
               const canPrivatize = !project.deletedAt && project.visibility !== "private";
               const canDelete = !project.deletedAt;
@@ -204,21 +197,14 @@ export default async function AdminAiStudyProjectsPage({
                     <VisibilityBadge visibility={project.visibility} />
                   </td>
                   <td className="border-b border-slate-100 py-4 pr-4">
-                    {latestTask ? (
-                      <div className="max-w-[190px]">
-                        <div className="font-semibold">{taskStatusLabels[latestTask.status] || latestTask.status}</div>
-                        <div className="mt-1 truncate text-xs text-slate-400" title={latestTask.stage || ""}>{latestTask.type}{latestTask.stage ? ` / ${latestTask.stage}` : ""}</div>
-                        {latestTask.errorMessage ? <div className="mt-1 truncate text-xs text-red-600" title={latestTask.errorMessage}>{latestTask.errorMessage}</div> : null}
-                      </div>
-                    ) : (
-                      <span className="text-slate-400">暂无任务</span>
-                    )}
+                    <ProjectPurchaseUsers kind="ai" projectId={project.id} title={project.title} purchaseCount={project._count.purchases} />
                   </td>
                   <td className="border-b border-slate-100 py-4 pr-4">
                     {formatDate(project.createdAt)}
                   </td>
                   <td className="border-b border-slate-100 py-4">
                     <div className="flex min-w-[250px] flex-wrap gap-2">
+                      <ProjectDiamondPriceSetting kind="ai" projectId={project.id} title={project.title} diamondPrice={project.diamondPrice} disabled={Boolean(project.deletedAt)} />
                       <form id={publishFormId} action={publishAiStudyProject}>
                         <input type="hidden" name="projectId" value={project.id} />
                         <input type="hidden" name="returnTo" value={currentPath} />

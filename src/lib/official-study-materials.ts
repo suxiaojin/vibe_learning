@@ -1,7 +1,8 @@
 import crypto from "crypto";
-import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { adminPurchaseStudentWhere } from "@/lib/admin-study-project-purchases";
+import { publicOfficialMaterialWhere } from "@/lib/study-project-access";
 import { deleteAiStudyObject, uploadAiStudyObject } from "@/lib/ai-study-storage";
 
 const maxOfficialMaterialBytes = 80 * 1024 * 1024;
@@ -60,6 +61,7 @@ export async function listAdminOfficialStudyMaterials() {
     orderBy: [{ createdAt: "desc" }],
     take: 300,
     include: {
+      _count: { select: { purchases: { where: adminPurchaseStudentWhere } } },
       course: { select: { id: true, name: true } },
       major: { select: { id: true, name: true } },
       publicSubject: { select: { id: true, name: true } },
@@ -70,14 +72,8 @@ export async function listAdminOfficialStudyMaterials() {
 
 export async function listPublicOfficialStudyMaterials(input: { userId: string; take?: number }) {
   const take = typeof input.take === "number" ? Math.max(1, Math.min(input.take, 200)) : undefined;
-  const scopeConditions = await buildStudentOfficialMaterialScopeConditions(input.userId);
   return prisma.officialStudyMaterial.findMany({
-    where: {
-      visibility: "public",
-      fileStatus: "ready",
-      deletedAt: null,
-      OR: scopeConditions
-    },
+    where: await publicOfficialMaterialWhere(input.userId),
     orderBy: [{ sortOrder: "desc" }, { publishedAt: "desc" }, { createdAt: "desc" }],
     ...(take ? { take } : {}),
     include: {
@@ -244,14 +240,11 @@ export async function getAdminOfficialStudyMaterial(materialId: string) {
 }
 
 export async function getPublicOfficialStudyMaterial(materialId: string, userId: string) {
-  const scopeConditions = await buildStudentOfficialMaterialScopeConditions(userId);
   const material = await prisma.officialStudyMaterial.findFirst({
     where: {
       id: materialId,
-      visibility: "public",
-      fileStatus: "ready",
-      deletedAt: null,
-      OR: scopeConditions
+      ...await publicOfficialMaterialWhere(userId),
+      AND: [{ OR: [{ diamondPrice: 0 }, { purchases: { some: { userId } } }] }]
     },
     include: {
       course: { select: { id: true, name: true } },
@@ -279,20 +272,6 @@ async function assertActiveMaterial(materialId: string) {
     throw new OfficialStudyMaterialError("资料不存在或已删除。", 404, "OFFICIAL_MATERIAL_NOT_FOUND");
   }
   return material;
-}
-
-async function buildStudentOfficialMaterialScopeConditions(
-  userId: string
-): Promise<Prisma.OfficialStudyMaterialWhereInput[]> {
-  const profile = await prisma.studentProfile.findUnique({
-    where: { userId },
-    select: { majorId: true, publicSubjectId: true }
-  });
-  return [
-    { majorId: null, publicSubjectId: null },
-    ...(profile?.majorId ? [{ majorId: profile.majorId }] : []),
-    ...(profile?.publicSubjectId ? [{ publicSubjectId: profile.publicSubjectId }] : [])
-  ];
 }
 
 async function resolveOfficialMaterialScope(

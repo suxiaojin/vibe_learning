@@ -172,6 +172,7 @@ export default async function AdminSettingsPage({
       {error ? <div className="rounded border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</div> : null}
 
       <form action={updateSystemSettings} className="space-y-4">
+        <input name="returnTab" type="hidden" value={activeTab === "agreements" ? "agreements" : "login"} />
         <section className={cn(activeTab === "login" ? "grid gap-4 xl:grid-cols-[360px_1fr]" : "hidden")}>
           <aside className="border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-lg font-black text-ink">当前登录图片</h2>
@@ -282,7 +283,7 @@ export default async function AdminSettingsPage({
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
             <div>
               <h2 className="text-lg font-black text-ink">协议内容</h2>
-              <p className="mt-1 text-sm font-semibold text-slate-500">协议页和前端帮助页读取这里的内容，支持 Markdown 标题、列表、表格、加粗和链接。</p>
+              <p className="mt-1 text-sm font-semibold text-slate-500">协议页和前端帮助中心读取这里的内容，支持 Markdown 标题、列表、表格、加粗和链接。</p>
             </div>
             <button className="primary-button rounded-none" type="submit">
               <Save size={16} />
@@ -315,12 +316,20 @@ export default async function AdminSettingsPage({
                 required
               />
             </FieldBlock>
-            <FieldBlock description="学生端“更多—帮助”打开此内容；Markdown 正文需自带完整标题。" label="常见问题内容">
+            <FieldBlock description="学生端“更多—帮助中心—常见问题”显示此内容，保留 Markdown 正文中的完整标题。" label="常见问题内容">
               <textarea
                 className="input min-h-72 rounded-none"
                 name="faqContent"
                 defaultValue={settings.faqContent}
                 required
+              />
+            </FieldBlock>
+            <FieldBlock description="学生端“更多—帮助中心—更新日志”显示此内容；支持 Markdown，可留空，清空保存后前端正文也会留空。" label="更新日志">
+              <textarea
+                aria-label="更新日志"
+                className="input min-h-72 rounded-none"
+                name="changelogContent"
+                defaultValue={settings.changelogContent}
               />
             </FieldBlock>
           </div>

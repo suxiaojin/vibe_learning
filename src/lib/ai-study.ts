@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { z } from "zod";
 import type { AiStudyGenerationTask, AiStudyProgressStatus, AiStudyTaskStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { accessibleAiStudyProjectWhere } from "@/lib/study-project-access";
 import { diamondInsufficientMessage } from "@/lib/diamond-insufficient";
 import { uploadAiStudyObject } from "@/lib/ai-study-storage";
 import { enqueueAiStudyTask } from "@/lib/ai-study-task-queue";
@@ -693,6 +694,7 @@ export async function retryAiStudyProjectGeneration(ownerId: string, projectId: 
 }
 
 export async function listAiStudyProjectNodes(ownerId: string, projectId: string) {
+  await assertAccessibleProject(ownerId, projectId);
   return prisma.aiStudyNode.findMany({
     where: {
       projectId,
@@ -1485,29 +1487,12 @@ async function assertAccessibleProject(ownerId: string, projectId: string) {
 function accessibleProjectWhere(ownerId: string, projectId: string) {
   return {
     id: projectId,
-    deletedAt: null,
-    OR: [
-      { ownerId },
-      publicReadyProjectWhere()
-    ]
+    ...accessibleAiStudyProjectWhere(ownerId)
   };
 }
 
 function accessibleProjectRelationWhere(ownerId: string) {
-  return {
-    deletedAt: null,
-    OR: [
-      { ownerId },
-      publicReadyProjectWhere()
-    ]
-  };
-}
-
-function publicReadyProjectWhere() {
-  return {
-    visibility: "public" as const,
-    status: "ready" as const
-  };
+  return accessibleAiStudyProjectWhere(ownerId);
 }
 
 export function buildAiStudyTextChunks(text: string) {

@@ -62,6 +62,7 @@ const transactionLabels: Record<string, string> = {
   daily_active_bonus: "每日登录",
   daily_answer_bonus: "每日答题",
   purchase: "购买充值",
+  project_purchase: "项目购买",
   admin_adjust: "后台调整",
   ai_consumption: "模型调用"
 };

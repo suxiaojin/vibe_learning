@@ -45,10 +45,35 @@ const markdownComponents: Components = {
   )
 };
 
-export function MarkdownContent({ content }: { content: string }) {
+const helpMarkdownComponents: Components = {
+  ...markdownComponents,
+  h1: ({ children }) => <h2 className="mb-4 mt-6 text-base font-semibold leading-7 text-ink first:mt-0">{children}</h2>,
+  h2: ({ children }) => <h3 className="mb-2 mt-6 text-sm font-semibold leading-7 text-ink first:mt-0">{children}</h3>,
+  h3: ({ children }) => <h4 className="mb-2 mt-5 text-sm font-semibold leading-7 text-ink">{children}</h4>,
+  h4: ({ children }) => <h5 className="mb-2 mt-4 text-sm font-semibold leading-7 text-ink">{children}</h5>,
+  h5: ({ children }) => <h6 className="mb-2 mt-4 text-sm font-semibold leading-7 text-ink">{children}</h6>,
+  h6: ({ children }) => <h6 className="mb-2 mt-4 text-sm font-semibold leading-7 text-ink">{children}</h6>,
+  p: ({ children }) => <p className="mt-3 break-words text-sm leading-8 text-slate-600 first:mt-0">{children}</p>,
+  ul: ({ children }) => <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-8 text-slate-600">{children}</ul>,
+  ol: ({ children }) => <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm leading-8 text-slate-600">{children}</ol>,
+  strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>,
+  blockquote: ({ children }) => <blockquote className="my-4 border-l-2 border-slate-200 pl-4 text-sm text-slate-600">{children}</blockquote>,
+  a: ({ children, href }) => {
+    const external = Boolean(href && /^https?:\/\//i.test(href));
+    return (
+      <a className="text-slate-700 underline underline-offset-4 hover:text-ink" href={href} rel={external ? "noreferrer noopener" : undefined} target={external ? "_blank" : undefined}>
+        {children}
+      </a>
+    );
+  },
+  img: ({ alt, src }) => <img alt={alt || ""} className="my-4 h-auto max-w-full" loading="lazy" src={src} />,
+  hr: () => <hr className="my-6 border-slate-100" />
+};
+
+export function MarkdownContent({ content, variant = "agreement" }: { content: string; variant?: "agreement" | "help" }) {
   return (
     <div className="break-words">
-      <ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm]} skipHtml>
+      <ReactMarkdown components={variant === "help" ? helpMarkdownComponents : markdownComponents} remarkPlugins={[remarkGfm]} skipHtml>
         {content}
       </ReactMarkdown>
     </div>

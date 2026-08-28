@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { AiStudyProjectLearningView } from "@/components/ai-study/project-learning-view";
 import { requireUser } from "@/lib/auth";
+import { ProjectPurchasePage } from "@/components/ai-study/project-purchase-page";
+import { getStudyProjectOffer, StudyProjectAccessError } from "@/lib/study-project-access";
 import {
   formatAiStudyError,
   getAiStudyProject,
@@ -22,13 +24,15 @@ export default async function StudyBuddyProjectPage({
   let nodes: Awaited<ReturnType<typeof listAiStudyProjectNodes>>;
 
   try {
+    const offer = await getStudyProjectOffer(user.id, "ai", projectId);
+    if (offer.requiresPurchase) return <ProjectPurchasePage offer={offer} />;
     [project, nodes] = await Promise.all([
       getAiStudyProject(user.id, projectId),
       listAiStudyProjectNodes(user.id, projectId)
     ]);
   } catch (error) {
     const formatted = formatAiStudyError(error);
-    if (formatted?.status === 404) {
+    if (formatted?.status === 404 || error instanceof StudyProjectAccessError) {
       redirect("/study-buddy?error=project_not_found");
     }
     throw error;

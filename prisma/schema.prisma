@@ -34,6 +34,12 @@ enum DiamondTransactionType {
   purchase
   admin_adjust
   ai_consumption
+  project_purchase
+}
+
+enum StudyProjectKind {
+  ai
+  official
 }
 
 enum DiamondRuleDirection {
@@ -355,6 +361,7 @@ model User {
   syllabusProgress                   UserSyllabusProgress[]
   diamondAccount                     DiamondAccount?
   diamondTransactions                DiamondTransaction[]
+  studyProjectPurchases              StudyProjectPurchase[]
   diamondRuleConfigsUpdated          DiamondRuleConfig[]             @relation("DiamondRuleConfigUpdater")
   passwordChangeLogs                 PasswordChangeLog[]             @relation("PasswordChangeTarget")
   passwordChangesMade                PasswordChangeLog[]             @relation("PasswordChangeActor")
@@ -432,6 +439,7 @@ model SystemSetting {
   privacyPolicyContent      String   @default("test")
   platformAgreementContent  String   @default("test")
   faqContent                String   @default("常见问题内容正在完善中。")
+  changelogContent          String   @default("")
   customerServiceEmail      String   @default("714399532@qq.com")
   diamondRechargeQrCodeUrl  String   @default("")
   profileHomepageBackgroundImageUrl String @default("")
@@ -1055,6 +1063,7 @@ model DiamondTransaction {
   dedupeKey    String?                @unique
   note         String?
   metadata     Json?
+  studyProjectPurchase StudyProjectPurchase?
   createdAt    DateTime               @default(now())
 
   @@index([userId, createdAt])
@@ -1413,6 +1422,7 @@ model AiStudyProject {
   learningGoal   AiStudyLearningGoal
   courseId       String?
   visibility     AiStudyVisibility       @default(private)
+  diamondPrice   Int                     @default(0)
   status         AiStudyProjectStatus    @default(draft)
   knowledgeCount Int                     @default(0)
   masteredCount  Int                     @default(0)
@@ -1429,6 +1439,7 @@ model AiStudyProject {
   progress       AiStudyProgress[]
   tasks          AiStudyGenerationTask[]
   chatMessages   AiStudyChatMessage[]
+  purchases      StudyProjectPurchase[]
 
   @@index([ownerId, status, updatedAt])
   @@index([ownerId, deletedAt, createdAt])
@@ -1480,6 +1491,7 @@ model OfficialStudyMaterial {
   fileStatus       OfficialStudyMaterialFileStatus @default(uploading)
   processingError  String?
   visibility       OfficialStudyMaterialVisibility @default(draft)
+  diamondPrice     Int                             @default(0)
   allowDownload    Boolean                         @default(true)
   sortOrder        Int                             @default(0)
   publishedAt      DateTime?
@@ -1490,6 +1502,7 @@ model OfficialStudyMaterial {
   course           LearningCourse?                 @relation(fields: [courseId], references: [id], onDelete: SetNull)
   major            Major?                          @relation(fields: [majorId], references: [id], onDelete: SetNull)
   publicSubject    PublicSubject?                  @relation(fields: [publicSubjectId], references: [id], onDelete: SetNull)
+  purchases        StudyProjectPurchase[]
 
   @@index([visibility, fileStatus, sortOrder, publishedAt])
   @@index([createdById, deletedAt, createdAt])
@@ -1498,6 +1511,28 @@ model OfficialStudyMaterial {
   @@index([publicSubjectId])
   @@index([storageBucket, storageKey])
   @@map("official_study_materials")
+}
+
+model StudyProjectPurchase {
+  id                 String                 @id @default(cuid())
+  userId             String
+  kind               StudyProjectKind
+  resourceId         String
+  aiProjectId        String?
+  officialMaterialId String?
+  titleSnapshot      String
+  diamondPrice       Int
+  transactionId      String                 @unique
+  createdAt          DateTime               @default(now())
+  user               User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  aiProject          AiStudyProject?        @relation(fields: [aiProjectId], references: [id], onDelete: SetNull)
+  officialMaterial   OfficialStudyMaterial? @relation(fields: [officialMaterialId], references: [id], onDelete: SetNull)
+  transaction        DiamondTransaction     @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, resourceId])
+  @@index([aiProjectId, userId])
+  @@index([officialMaterialId, userId])
+  @@map("study_project_purchases")
 }
 
 model AiStudySourceChunk {

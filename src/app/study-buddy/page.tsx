@@ -8,6 +8,7 @@ import { requireUser } from "@/lib/auth";
 import { listAiStudyProjects, listPublicAiStudyProjects } from "@/lib/ai-study";
 import { listPublicOfficialStudyMaterials } from "@/lib/official-study-materials";
 import { getSystemSettings } from "@/lib/system-settings";
+import { prisma } from "@/lib/prisma";
 
 const errorMessages: Record<string, string> = {
   create_failed: "项目创建失败，请稍后重试。",
@@ -69,7 +70,7 @@ export default async function StudyBuddyPage({
           ) : null}
 
           <ProjectSection emptyText="还没有上传资料，点击上方按钮导入第一份学习资料。" projects={projects} title="我的项目" />
-          <PublicProjectSection aiProjects={publicProjects} materials={officialMaterials} />
+          <PublicProjectSection aiProjects={publicProjects} materials={officialMaterials} userId={user.id} />
         </div>
       </section>
     </main>
@@ -92,22 +93,38 @@ function ProjectSection({
   );
 }
 
-function PublicProjectSection({
+async function PublicProjectSection({
   aiProjects,
-  materials
+  materials,
+  userId
 }: {
   aiProjects: PublicProject[];
   materials: OfficialMaterial[];
+  userId: string;
 }) {
+  const purchases = await prisma.studyProjectPurchase.findMany({
+    where: {
+      userId,
+      OR: [
+        { kind: "ai", resourceId: { in: aiProjects.map((project) => project.id) } },
+        { kind: "official", resourceId: { in: materials.map((material) => material.id) } }
+      ]
+    },
+    select: { kind: true, resourceId: true }
+  });
+  const purchasedAiIds = new Set(purchases.filter((purchase) => purchase.kind === "ai").map((purchase) => purchase.resourceId));
+  const purchasedMaterialIds = new Set(purchases.filter((purchase) => purchase.kind === "official").map((purchase) => purchase.resourceId));
   const officialItems = materials.map((material) => ({
     kind: "official-material",
     id: material.id,
     title: material.title,
     description: material.description || "",
+    diamondPrice: material.diamondPrice,
+    purchased: purchasedMaterialIds.has(material.id),
     fileType: material.fileType,
     fileSizeBytes: material.fileSizeBytes
   } satisfies OfficialStudyMaterialCardItem));
-  const aiItems = buildProjectSectionItems(aiProjects, "public");
+  const aiItems = buildProjectSectionItems(aiProjects, "public", purchasedAiIds, userId);
   return (
     <AiStudyProjectSection
       emptyText="暂无公开项目。"
@@ -117,7 +134,7 @@ function PublicProjectSection({
   );
 }
 
-function buildProjectSectionItems(projects: StudyProject[], variant: "personal" | "public") {
+function buildProjectSectionItems(projects: StudyProject[], variant: "personal" | "public", purchasedIds: ReadonlySet<string> = new Set(), viewerUserId?: string) {
   return projects.map((project) => {
     const progressTotal = project.knowledgeCount || project._count.nodes || 0;
     const ownerName = "owner" in project ? project.owner.username : "由我创建";
@@ -130,6 +147,9 @@ function buildProjectSectionItems(projects: StudyProject[], variant: "personal" 
       kind: "ai-project",
       canManage: variant === "personal",
       contentOverview: getProjectContentOverview(project),
+      diamondPrice: variant === "public" ? project.diamondPrice : undefined,
+      purchased: purchasedIds.has(project.id),
+      owned: variant === "personal" || project.ownerId === viewerUserId,
       generationPercent: generation.percent,
       generationText: generation.text,
       id: project.id,

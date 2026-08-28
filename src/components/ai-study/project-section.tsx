@@ -14,6 +14,9 @@ export type AiStudyProjectSectionItem = {
   kind: "ai-project";
   canManage: boolean;
   contentOverview: string;
+  diamondPrice?: number;
+  purchased?: boolean;
+  owned?: boolean;
   generationPercent: number;
   generationText: string;
   id: string;
@@ -55,6 +58,9 @@ export function AiStudyProjectSection({ title, projects, emptyText }: AiStudyPro
               key={`project-${project.id}`}
               canManage={project.canManage}
               contentOverview={project.contentOverview}
+              diamondPrice={project.diamondPrice}
+              purchased={project.purchased}
+              owned={project.owned}
               generationPercent={project.generationPercent}
               generationText={project.generationText}
               id={project.id}

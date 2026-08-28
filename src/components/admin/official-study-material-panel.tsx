@@ -3,12 +3,15 @@
 import { type ChangeEvent, useRef, useState } from "react";
 import Link from "next/link";
 import { FileText, Globe2, Lock, Pencil, Trash2, Upload, X } from "lucide-react";
+import { ProjectDiamondPriceSetting } from "@/components/admin/project-diamond-price-setting";
+import { ProjectPurchaseUsers } from "@/components/admin/project-purchase-users";
 
 type ScopeOption = { id: string; name: string; type: "major" | "public_subject" };
 type ScopeReference = { id: string; name: string };
 
 export type AdminOfficialStudyMaterial = {
   id: string;
+  diamondPrice: number;
   title: string;
   description: string | null;
   fileType: "pdf" | "word";
@@ -44,10 +47,12 @@ const maxFileBytes = 80 * 1024 * 1024;
 
 export function OfficialStudyMaterialPanel({
   initialMaterials,
-  scopes
+  scopes,
+  purchaseCounts
 }: {
   initialMaterials: AdminOfficialStudyMaterial[];
   scopes: ScopeOption[];
+  purchaseCounts: Record<string, number>;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [materials, setMaterials] = useState(initialMaterials);
@@ -239,12 +244,13 @@ export function OfficialStudyMaterialPanel({
               <th className="px-4 py-3 font-semibold">文件状态</th>
               <th className="px-4 py-3 font-semibold">发布状态</th>
               <th className="px-4 py-3 font-semibold">上传时间</th>
+              <th className="px-4 py-3 font-semibold">购买用户</th>
               <th className="px-4 py-3 font-semibold">操作</th>
             </tr>
           </thead>
           <tbody>
             {materials.length === 0 ? (
-              <tr><td className="px-4 py-8 text-center text-slate-500" colSpan={6}>还没有官方资料。</td></tr>
+              <tr><td className="px-4 py-8 text-center text-slate-500" colSpan={7}>还没有官方资料。</td></tr>
             ) : materials.map((material) => (
               <tr key={material.id} className="border-t border-slate-100 align-top">
                 <td className="px-4 py-4">
@@ -262,8 +268,17 @@ export function OfficialStudyMaterialPanel({
                 <td className="px-4 py-4"><FileStatusBadge material={material} /></td>
                 <td className="px-4 py-4"><VisibilityBadge visibility={material.visibility} /></td>
                 <td className="px-4 py-4 text-slate-500">{formatDate(material.createdAt)}</td>
+                <td className="px-4 py-4"><ProjectPurchaseUsers kind="official" projectId={material.id} title={material.title} purchaseCount={purchaseCounts[material.id] ?? 0} /></td>
                 <td className="px-4 py-4">
                   <div className="flex min-w-[300px] flex-wrap gap-2">
+                    <ProjectDiamondPriceSetting
+                      kind="official"
+                      projectId={material.id}
+                      title={material.title}
+                      diamondPrice={material.diamondPrice}
+                      disabled={busyId === material.id}
+                      onSaved={(diamondPrice) => setMaterials((current) => current.map((item) => item.id === material.id ? { ...item, diamondPrice } : item))}
+                    />
                     <button className="secondary-button inline-flex items-center gap-1 px-3 py-2 text-xs" disabled={busyId === material.id} onClick={() => openEdit(material)} type="button"><Pencil size={14} />编辑</button>
                     {material.visibility === "public" ? (
                       <button className="secondary-button inline-flex items-center gap-1 px-3 py-2 text-xs" disabled={busyId === material.id} onClick={() => void changeVisibility(material, "unpublish")} type="button"><Lock size={14} />下架</button>

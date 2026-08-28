@@ -472,6 +472,7 @@ export async function updateSystemSettings(formData: FormData) {
     privacyPolicyContent: getRequiredSettingText(formData, "privacyPolicyContent"),
     platformAgreementContent: getRequiredSettingText(formData, "platformAgreementContent"),
     faqContent: getRequiredSettingText(formData, "faqContent"),
+    ...(formData.has("changelogContent") ? { changelogContent: String(formData.get("changelogContent") || "").trim() } : {}),
     customerServiceEmail: getRequiredSettingText(formData, "customerServiceEmail")
   };
 
@@ -486,6 +487,9 @@ export async function updateSystemSettings(formData: FormData) {
   revalidatePath("/help");
   revalidatePath("/forgot-password");
   revalidatePath("/study-buddy");
+  if (formData.get("returnTab") === "agreements") {
+    redirect("/admin/settings?tab=agreements&notice=saved");
+  }
   redirect("/admin/settings?notice=saved");
 }
 

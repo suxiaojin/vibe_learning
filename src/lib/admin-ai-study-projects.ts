@@ -1,5 +1,6 @@
 import type { AiStudyProjectStatus, AiStudyVisibility, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { adminPurchaseStudentWhere } from "@/lib/admin-study-project-purchases";
 
 export const adminAiStudyProjectStatuses = ["draft", "processing", "ready", "failed", "archived"] as const;
 export const adminAiStudyVisibilityStatuses = ["private", "public_pending", "public", "rejected"] as const;
@@ -87,6 +88,7 @@ export async function listAdminAiStudyProjects(input: AdminAiStudyProjectFilters
           select: {
             sources: true,
             sourceChunks: true,
+            purchases: { where: adminPurchaseStudentWhere },
             nodes: true,
             cards: true,
             tasks: true

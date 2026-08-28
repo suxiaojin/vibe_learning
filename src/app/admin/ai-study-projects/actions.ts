@@ -2,9 +2,37 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireAdmin } from "@/lib/auth";
+import { getCurrentAdmin, requireAdmin } from "@/lib/auth";
 import { clearAiStudyProgressCache } from "@/lib/ai-study-progress-cache";
 import { prisma } from "@/lib/prisma";
+import { setProjectDiamondPriceSchema } from "@/lib/project-diamond-price";
+
+export async function setStudyProjectDiamondPrice(input: unknown) {
+  if (!await getCurrentAdmin()) {
+    return { ok: false as const, error: "请先登录管理后台。" };
+  }
+  const parsed = setProjectDiamondPriceSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false as const, error: "请填写有效的非负整数钻石数量。" };
+  }
+  const { kind, id, diamondPrice } = parsed.data;
+  // Only save the advertised price. Access and diamond accounting are unchanged.
+  const result = kind === "ai"
+    ? await prisma.aiStudyProject.updateMany({
+      where: { id, deletedAt: null },
+      data: { diamondPrice }
+    })
+    : await prisma.officialStudyMaterial.updateMany({
+      where: { id, deletedAt: null },
+      data: { diamondPrice }
+    });
+  if (result.count === 0) {
+    return { ok: false as const, error: "项目不存在或已删除，价格未保存。" };
+  }
+  revalidatePath("/admin/ai-study-projects");
+  revalidatePath("/study-buddy");
+  return { ok: true as const, diamondPrice };
+}
 
 export async function publishAiStudyProject(formData: FormData) {
   await requireAdmin();

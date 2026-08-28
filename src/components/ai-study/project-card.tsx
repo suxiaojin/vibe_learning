@@ -4,6 +4,9 @@ import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MoreHorizontal, Pencil, RotateCcw, Trash2, X } from "lucide-react";
+import { ProjectDiamondPrice } from "@/components/ai-study/project-diamond-price";
+import { ProjectPurchaseFeedback } from "@/components/ai-study/project-purchase-feedback";
+import { useProjectPurchase } from "@/components/ai-study/use-project-purchase";
 
 type ProjectStatus = "draft" | "processing" | "ready" | "failed" | "archived";
 
@@ -25,6 +28,9 @@ type ProjectCardProps = {
   learnerText: string;
   canManage?: boolean;
   contentOverview?: string;
+  diamondPrice?: number;
+  purchased?: boolean;
+  owned?: boolean;
   generationPercent?: number;
   generationText?: string;
   latestFailedRetryCount?: number;
@@ -51,6 +57,9 @@ export function AiStudyProjectCard({
   title,
   status,
   contentOverview = "",
+  diamondPrice,
+  purchased = false,
+  owned = false,
   ownerName,
   ownerProfileHref = "",
   canManage = false,
@@ -59,6 +68,7 @@ export function AiStudyProjectCard({
   latestFailedRetryCount = 0
 }: ProjectCardProps) {
   const router = useRouter();
+  const purchase = useProjectPurchase({ kind: "ai", id, title, diamondPrice: diamondPrice ?? 0, purchased, owned });
   const inputRef = useRef<HTMLInputElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const [currentTitle, setCurrentTitle] = useState(title);
@@ -171,7 +181,11 @@ export function AiStudyProjectCard({
   const canSubmitRename = Boolean(draftTitle.trim()) && !isSaving;
 
   function openProject() {
-    if (!canOpenProject) {
+    if (!canOpenProject || purchase.pending) {
+      return;
+    }
+    if (diamondPrice !== undefined) {
+      void purchase.open();
       return;
     }
     router.push(`/study-buddy/${id}`);
@@ -294,6 +308,7 @@ export function AiStudyProjectCard({
   return (
     <>
       <article
+        aria-busy={purchase.pending}
         aria-label={canOpenProject ? `查看 ${currentTitle}` : currentTitle}
         className={`group relative h-[206px] w-full max-w-[284px] overflow-visible rounded-[24px] border p-5 shadow-[0_2px_30px_rgba(83,108,143,0.04)] outline-none transition hover:z-20 focus-within:z-20 focus-visible:ring-4 focus-visible:ring-[#16a329]/20 ${
           isGenerating
@@ -378,9 +393,10 @@ export function AiStudyProjectCard({
 
           {!isGenerating ? (
             <div className="absolute bottom-0 left-0 right-0 flex h-7 items-center justify-between gap-3 text-[13px] leading-none text-[#98a2b3]">
-              <div className="min-w-0 pr-2">
+              {diamondPrice !== undefined ? <ProjectDiamondPrice diamondPrice={purchase.diamondPrice} pending={purchase.pending} purchased={purchase.purchased} /> : null}
+              <div className={diamondPrice !== undefined ? "ml-auto min-w-0 text-right" : "min-w-0 pr-2"}>
                 {ownerProfileHref ? (
-                  <span className="block truncate">
+                  <span className="block truncate" title={`创建者：@${ownerName}`}>
                     创建者：
                     <Link
                       className="font-bold text-[#53627a] transition hover:text-[#12a425] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#12a425]"
@@ -437,6 +453,7 @@ export function AiStudyProjectCard({
           </div>
         ) : null}
       </article>
+      <ProjectPurchaseFeedback {...purchase.dialogProps} />
 
       {renameOpen ? (
         <div className="fixed inset-0 z-[70] flex items-start justify-center bg-black/50 px-4 pt-[165px]">

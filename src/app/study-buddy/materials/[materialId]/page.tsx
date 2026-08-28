@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { OfficialStudyMaterialViewer } from "@/components/ai-study/official-study-material-viewer";
 import { StudentSidebar } from "@/components/student-sidebar";
 import { requireUser } from "@/lib/auth";
+import { ProjectPurchasePage } from "@/components/ai-study/project-purchase-page";
+import { getStudyProjectOffer, StudyProjectAccessError } from "@/lib/study-project-access";
 import {
   formatOfficialStudyMaterialError,
   getPublicOfficialStudyMaterial
@@ -17,6 +19,8 @@ export default async function OfficialStudyMaterialPage({
   const user = await requireUser();
   const { materialId } = await params;
   try {
+    const offer = await getStudyProjectOffer(user.id, "official", materialId);
+    if (offer.requiresPurchase) return <ProjectPurchasePage offer={offer} />;
     const material = await getPublicOfficialStudyMaterial(materialId, user.id);
     return (
       <main className="min-h-dvh bg-[#f8fafc] text-[#111827] lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
@@ -32,7 +36,7 @@ export default async function OfficialStudyMaterialPage({
       </main>
     );
   } catch (error) {
-    if (formatOfficialStudyMaterialError(error)?.status === 404) {
+    if (formatOfficialStudyMaterialError(error)?.status === 404 || error instanceof StudyProjectAccessError) {
       notFound();
     }
     throw error;
