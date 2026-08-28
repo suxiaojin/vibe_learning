@@ -33,7 +33,7 @@ USER_PROMPT_PATH = Path(os.getenv("VIBE_AI_QUESTION_USER_PROMPT_PATH", str(PROMP
 TASKS: dict[str, dict[str, Any]] = {}
 TASK_LOCK = threading.Lock()
 
-QUESTION_TYPE_ORDER = ["single_choice", "multiple_choice", "true_false", "fill_blank", "comprehensive"]
+QUESTION_TYPE_ORDER = ["single_choice", "multiple_choice", "true_false", "fill_blank", "calculation", "proof", "comprehensive", "term_explanation", "calculation_analysis", "practical_writing", "short_answer", "essay", "comprehensive_analysis", "material_analysis", "operation_record", "practical_operation", "application", "question_answer", "handwriting", "reading_comprehension", "poetry_appreciation", "classical_chinese_translation", "writing", "legal_document", "chinese_character_writing", "language_expression", "teaching_design", "comprehensive_essay"]
 QUESTION_TYPES = set(QUESTION_TYPE_ORDER)
 DIFFICULTIES = {"easy", "medium", "hard"}
 QUESTION_TYPE_LABELS = {
@@ -41,8 +41,32 @@ QUESTION_TYPE_LABELS = {
     "multiple_choice": "多选",
     "true_false": "判断",
     "fill_blank": "填空",
+    "calculation": "计算",
+    "proof": "证明",
     "comprehensive": "综合",
+    "term_explanation": "名词解释",
+    "calculation_analysis": "计算分析",
+    "practical_writing": "应用文写作",
+    "short_answer": "简答",
+    "essay": "论述",
+    "comprehensive_analysis": "综合分析",
+    "material_analysis": "材料分析",
+    "operation_record": "操作记录",
+    "practical_operation": "实际操作",
+    "application": "应用",
+    "question_answer": "问答",
+    "handwriting": "书写",
+    "reading_comprehension": "阅读理解",
+    "poetry_appreciation": "古诗词鉴赏",
+    "classical_chinese_translation": "文言文翻译",
+    "writing": "写作",
+    "legal_document": "法律文书",
+    "chinese_character_writing": "汉字书写",
+    "language_expression": "语言表达",
+    "teaching_design": "教学设计",
+    "comprehensive_essay": "综合（论述）"
 }
+
 DIFFICULTY_LABELS = {
     "easy": "简单",
     "medium": "中等",
@@ -152,6 +176,7 @@ def write_task_artifact(task_id: str, filename: str, content: str) -> str:
 def compact_sample(sample: dict[str, Any]) -> dict[str, Any]:
     return {
         "type": sample.get("type"),
+        "referenceChapterIds": sample.get("referenceChapterIds") or [],
         "stem": truncate_text(sample.get("stem"), 360),
         "options": sample.get("options") if isinstance(sample.get("options"), list) else [],
         "answer": sample.get("answer") if isinstance(sample.get("answer"), list) else sample.get("answer"),
@@ -184,11 +209,12 @@ def build_user_prompt(meta: dict[str, Any], samples: list[dict[str, Any]]) -> st
         "ownerName": meta.get("ownerName"),
         "regionName": meta.get("regionName"),
         "questionBankTitle": meta.get("title"),
-        "referenceSections": meta.get("referenceSections") or [],
+        "referenceChapters": meta.get("referenceChapters") or [],
         "count": meta.get("count"),
         "questionTypes": requested_types,
         "questionTypeCounts": meta.get("questionTypeCounts") or {},
         "questionTypeLabels": type_text,
+        "generationPlan": build_generation_plan(meta, int(meta.get("count") or 10)),
         "difficulty": difficulty,
         "difficultyLabel": DIFFICULTY_LABELS.get(difficulty, difficulty),
         "sourceLabel": meta.get("sourceLabel") or "AI模拟真题",
@@ -330,32 +356,29 @@ def build_target_question_types(meta: dict[str, Any], expected_count: int) -> li
     return target_types
 
 
-def build_target_reference_sections(meta: dict[str, Any], expected_count: int) -> list[dict[str, str]]:
-    raw_sections = meta.get("referenceSections") if isinstance(meta.get("referenceSections"), list) else []
-    sections: list[dict[str, str]] = []
-    for item in raw_sections:
-        if not isinstance(item, dict):
-            continue
-        section_id = normalize_text(item.get("id"))
-        if section_id:
-            sections.append(
-                {
-                    "id": section_id,
-                    "title": normalize_text(item.get("title")),
-                    "path": normalize_text(item.get("path")),
-                }
-            )
+def build_target_reference_chapters(meta: dict[str, Any], expected_count: int) -> list[dict[str, Any]]:
+    raw_chapters = meta.get("referenceChapters") or []
+    chapters = [item for item in raw_chapters if isinstance(item, dict) and normalize_text(item.get("id"))]
+    if not chapters:
+        chapters = [{"id": normalize_text(item)} for item in meta.get("referenceChapterIds", []) if normalize_text(item)]
+    target_types = build_target_question_types(meta, expected_count)
+    result: list[dict[str, Any]] = []
+    for index, question_type in enumerate(target_types):
+        eligible = [chapter for chapter in chapters if not chapter.get("questionTypes") or question_type in chapter["questionTypes"]]
+        if eligible:
+            result.append(eligible[index % len(eligible)])
+        elif chapters:
+            raise ValueError(f"No reference chapter contains question type: {question_type}")
+    return result
 
-    if not sections:
-        raw_ids = meta.get("referenceSectionIds") if isinstance(meta.get("referenceSectionIds"), list) else []
-        sections = [{"id": normalize_text(item), "title": "", "path": ""} for item in raw_ids if normalize_text(item)]
 
-    target_sections: list[dict[str, str]] = []
-    index = 0
-    while sections and len(target_sections) < expected_count:
-        target_sections.append(sections[index % len(sections)])
-        index += 1
-    return target_sections
+def build_generation_plan(meta: dict[str, Any], expected_count: int) -> list[dict[str, Any]]:
+    types = build_target_question_types(meta, expected_count)
+    chapters = build_target_reference_chapters(meta, expected_count)
+    return [
+        {"number": index + 1, "type": question_type, "referenceChapterId": chapters[index]["id"] if index < len(chapters) else ""}
+        for index, question_type in enumerate(types)
+    ]
 
 
 def sanitize_generated_question(
@@ -373,6 +396,10 @@ def sanitize_generated_question(
 
     requested_types = [item for item in meta.get("questionTypes", []) if item in QUESTION_TYPES]
     question_type = expected_type if expected_type in QUESTION_TYPES else choose_question_type(item.get("type"), requested_types)
+    if expected_type and item.get("type") != expected_type:
+        return None, [f"第 {number} 道生成题题型不符合生成计划，已丢弃，请重新生成。"]
+    if expected_section and item.get("referenceChapterId") and item["referenceChapterId"] != expected_section["id"]:
+        return None, [f"第 {number} 道生成题章节不符合生成计划，已丢弃，请重新生成。"]
     stem = normalize_text(item.get("stem"))
     analysis = normalize_text(item.get("analysis"))
     answer = sanitize_answer(item.get("answer"))
@@ -384,7 +411,7 @@ def sanitize_generated_question(
     if question_type == "true_false":
         options = [{"key": "A", "text": "正确"}, {"key": "B", "text": "错误"}]
         answer = [item for item in answer if item in {"A", "B"}][:1]
-    elif question_type in {"fill_blank", "comprehensive"}:
+    elif question_type not in {"single_choice", "multiple_choice"}:
         options = []
         answer = [item for item in answer if item]
     else:
@@ -426,7 +453,7 @@ def sanitize_generated_question(
     if expected_section and expected_section.get("id"):
         question["syllabusItemId"] = expected_section["id"]
         question["syllabusItemIds"] = [expected_section["id"]]
-        question["referenceSectionTitle"] = expected_section.get("title") or expected_section["id"]
+        question["referenceChapterTitle"] = expected_section.get("title") or expected_section["id"]
 
     return (question, warnings)
 
@@ -494,7 +521,7 @@ def generate_questions(meta: dict[str, Any], task_id: str) -> dict[str, Any]:
     questions: list[dict[str, Any]] = []
     expected_count = int(meta.get("count") or 10)
     target_question_types = build_target_question_types(meta, expected_count)
-    target_reference_sections = build_target_reference_sections(meta, expected_count)
+    target_reference_sections = build_target_reference_chapters(meta, expected_count)
     for index, raw_question in enumerate(raw_questions[: expected_count + 5], start=1):
         expected_type = target_question_types[len(questions)] if len(questions) < len(target_question_types) else None
         expected_section = target_reference_sections[len(questions)] if len(questions) < len(target_reference_sections) else None
@@ -528,7 +555,7 @@ def generate_questions(meta: dict[str, Any], task_id: str) -> dict[str, Any]:
             "model": meta.get("aiModel"),
             "sampleCount": len(samples),
             "generatedCount": len(questions),
-            "referenceSections": meta.get("referenceSections") or [],
+            "referenceChapters": meta.get("referenceChapters") or [],
             "questionTypeCounts": meta.get("questionTypeCounts") or {},
             "promptPaths": {
                 "system": str(SYSTEM_PROMPT_PATH),
@@ -609,6 +636,10 @@ async def create_generation_task(request: Request, background_tasks: BackgroundT
     if sum(question_type_counts.values()) > count:
         raise HTTPException(status_code=400, detail="questionTypeCounts total must not exceed count")
     question_types = list(dict.fromkeys([*question_types, *question_type_counts.keys()]))
+    if not question_types:
+        question_types = list(dict.fromkeys(sample.get("type") for sample in samples if isinstance(sample, dict) and sample.get("type") in QUESTION_TYPES))
+    if not question_types:
+        raise HTTPException(status_code=400, detail="No supported question types in reference samples")
     difficulty = str(body.get("difficulty") or "medium")
     if difficulty not in DIFFICULTIES:
         difficulty = "medium"
@@ -629,8 +660,8 @@ async def create_generation_task(request: Request, background_tasks: BackgroundT
         "questionTypeCounts": question_type_counts,
         "difficulty": difficulty,
         "sourceLabel": normalize_text(body.get("sourceLabel")) or "AI模拟真题",
-        "referenceSectionIds": body.get("referenceSectionIds") if isinstance(body.get("referenceSectionIds"), list) else [],
-        "referenceSections": body.get("referenceSections") if isinstance(body.get("referenceSections"), list) else [],
+        "referenceChapterIds": body.get("referenceChapterIds") if isinstance(body.get("referenceChapterIds"), list) else body.get("referenceSectionIds", []),
+        "referenceChapters": body.get("referenceChapters") if isinstance(body.get("referenceChapters"), list) else body.get("referenceSections", []),
         "aiApiBaseUrl": ai_api_base_url,
         "aiApiKey": str(body.get("aiApiKey") or ""),
         "aiModel": ai_model,

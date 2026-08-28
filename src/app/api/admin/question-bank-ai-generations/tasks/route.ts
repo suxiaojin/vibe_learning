@@ -2,35 +2,14 @@
 import { getCurrentAdmin } from "@/lib/auth";
 import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 import type { ImportQuestionType } from "@/lib/question-paper-import";
+import { buildAiReferenceChapters } from "@/lib/question-bank-ai-reference";
+import { questionBankEditableQuestionTypes } from "@/lib/question-bank-types";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
-const allowedQuestionTypes: ImportQuestionType[] = ["single_choice", "multiple_choice", "true_false", "fill_blank", "comprehensive"];
+const allowedQuestionTypes: readonly ImportQuestionType[] = questionBankEditableQuestionTypes;
 const allowedDifficulties = ["easy", "medium", "hard"] as const;
-
-type SyllabusItemRow = {
-  id: string;
-  parentId: string | null;
-  code: string | null;
-  title: string;
-  sortOrder: number;
-};
-
-type CourseRow = {
-  id: string;
-  name: string;
-  sortOrder: number;
-  syllabusItems: SyllabusItemRow[];
-};
-
-type ReferenceSection = {
-  id: string;
-  title: string;
-  path: string;
-  count: number;
-  descendantIds: string[];
-};
 
 function generatorBaseUrl() {
   return (process.env.QUESTION_AI_GENERATOR_URL || "http://172.18.255.14:8001").replace(/\/+$/, "");
@@ -56,13 +35,6 @@ function ownerPaperWhere(ownerType: QuestionBankOwnerType, ownerId: string, regi
     : { ownerType, majorId: ownerId, regionId };
 }
 
-function sortSyllabusItems(items: SyllabusItemRow[]) {
-  return [...items].sort((left, right) => {
-    const codeCompare = (left.code || "").localeCompare(right.code || "", "zh-Hans-CN", { numeric: true });
-    return codeCompare || left.sortOrder - right.sortOrder || left.title.localeCompare(right.title, "zh-Hans-CN");
-  });
-}
-
 function uniqueValues(values: string[]) {
   return [...new Set(values.filter(Boolean))];
 }
@@ -80,45 +52,6 @@ function parseQuestionTypeCounts(value: unknown) {
     }
     return counts;
   }, {});
-}
-
-function buildReferenceSections(courses: CourseRow[]) {
-  const sectionsById = new Map<string, ReferenceSection>();
-
-  courses.forEach((course) => {
-    const items = sortSyllabusItems(course.syllabusItems);
-    const childrenByParent = new Map<string | null, SyllabusItemRow[]>();
-
-    items.forEach((item) => {
-      const children = childrenByParent.get(item.parentId) || [];
-      children.push(item);
-      childrenByParent.set(item.parentId, children);
-    });
-
-    function descendantIdsFor(item: SyllabusItemRow) {
-      const ids: string[] = [];
-      function collect(current: SyllabusItemRow) {
-        ids.push(current.id);
-        (childrenByParent.get(current.id) || []).forEach(collect);
-      }
-      collect(item);
-      return ids;
-    }
-
-    (childrenByParent.get(null) || []).forEach((chapter) => {
-      (childrenByParent.get(chapter.id) || []).forEach((section) => {
-        sectionsById.set(section.id, {
-          id: section.id,
-          title: section.title,
-          path: `${course.name} - ${chapter.title} - ${section.title}`,
-          count: 0,
-          descendantIds: descendantIdsFor(section)
-        });
-      });
-    });
-  });
-
-  return sectionsById;
 }
 
 async function requireAdminJson() {
@@ -141,7 +74,7 @@ export async function POST(request: NextRequest) {
     questionTypes?: unknown;
     questionTypeCounts?: unknown;
     difficulty?: unknown;
-    referenceSectionIds?: unknown;
+    referenceChapterIds?: unknown;
   } | null;
 
   if (!body || !isOwnerType(body.ownerType) || typeof body.ownerId !== "string" || typeof body.regionId !== "string") {
@@ -153,7 +86,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "请填写 AI 题库名称。" }, { status: 400 });
   }
 
-  const count = Math.max(1, Math.min(50, Number(body.count || 10) || 10));
+  const count = Number(body.count ?? 10);
+  if (!Number.isInteger(count) || count < 1 || count > 50) {
+    return NextResponse.json({ error: "生成数量请填写 1-50 之间的整数。" }, { status: 400 });
+  }
+  if (Array.isArray(body.questionTypes) && body.questionTypes.some((type) => !isQuestionType(type))) {
+    return NextResponse.json({ error: "包含不支持的题型。" }, { status: 400 });
+  }
+  if (body.questionTypeCounts && typeof body.questionTypeCounts === "object" &&
+      Object.keys(body.questionTypeCounts).some((type) => !isQuestionType(type))) {
+    return NextResponse.json({ error: "题型数量中包含不支持的题型。" }, { status: 400 });
+  }
   const year = Math.max(2000, Math.min(2100, Number(body.year || new Date().getFullYear()) || new Date().getFullYear()));
   const requestedQuestionTypes = Array.isArray(body.questionTypes) ? body.questionTypes.filter(isQuestionType) : [];
   const questionTypeCounts = parseQuestionTypeCounts(body.questionTypeCounts);
@@ -161,9 +104,9 @@ export async function POST(request: NextRequest) {
   if (questionTypeCountTotal > count) {
     return NextResponse.json({ error: "题型数量合计不能超过生成总数。" }, { status: 400 });
   }
-  const questionTypes = [...new Set([...requestedQuestionTypes, ...(Object.keys(questionTypeCounts) as ImportQuestionType[])])];
-  const referenceSectionIds = Array.isArray(body.referenceSectionIds)
-    ? body.referenceSectionIds
+  let questionTypes = [...new Set([...requestedQuestionTypes, ...(Object.keys(questionTypeCounts) as ImportQuestionType[])])];
+  const referenceChapterIds = Array.isArray(body.referenceChapterIds)
+    ? body.referenceChapterIds
         .map((item) => String(item || "").trim())
         .filter((item, index, array) => item && array.indexOf(item) === index)
     : [];
@@ -171,8 +114,8 @@ export async function POST(request: NextRequest) {
     ? (body.difficulty as (typeof allowedDifficulties)[number])
     : "medium";
 
-  if (referenceSectionIds.length === 0) {
-    return NextResponse.json({ error: "请至少选择一个参考知识点。" }, { status: 400 });
+  if (referenceChapterIds.length === 0) {
+    return NextResponse.json({ error: "请至少选择一个参考章节。" }, { status: 400 });
   }
 
   const courseWhere = ownerCourseWhere(body.ownerType, body.ownerId, body.regionId);
@@ -211,14 +154,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "当前专业或区域下还没有可用于 AI 生题的课程数据。" }, { status: 400 });
   }
 
-  const sectionsById = buildReferenceSections(courses);
-  const selectedSections = referenceSectionIds.map((id) => sectionsById.get(id)).filter((section): section is ReferenceSection => Boolean(section));
-  if (selectedSections.length !== referenceSectionIds.length) {
-    return NextResponse.json({ error: "参考知识点不存在，或不属于当前专业/区域。" }, { status: 400 });
+  const chaptersById = new Map(buildAiReferenceChapters(courses).map((chapter) => [chapter.id, chapter]));
+  const selectedChapters = referenceChapterIds.flatMap((id) => {
+    const chapter = chaptersById.get(id);
+    return chapter ? [chapter] : [];
+  });
+  if (selectedChapters.length !== referenceChapterIds.length) {
+    return NextResponse.json({ error: "参考章节不存在，或不属于当前专业/区域。" }, { status: 400 });
   }
 
-  const countedSections = await Promise.all(
-    selectedSections.map(async (section) => ({
+  const countedChapters = await Promise.all(
+    selectedChapters.map(async (section) => ({
       ...section,
       count: await prisma.examPaperQuestion.count({
         where: {
@@ -236,15 +182,35 @@ export async function POST(request: NextRequest) {
       })
     }))
   );
-  const emptySection = countedSections.find((section) => section.count === 0);
-  if (emptySection) {
-    return NextResponse.json({ error: `该知识点无参考题目：${emptySection.path}` }, { status: 400 });
+  const emptyChapter = countedChapters.find((section) => section.count === 0);
+  if (emptyChapter) {
+    return NextResponse.json({ error: `该章节无参考题目：${emptyChapter.path}` }, { status: 400 });
   }
 
-  const selectedSyllabusItemIds = uniqueValues(countedSections.flatMap((section) => section.descendantIds));
-  const samples = await prisma.question.findMany({
+  const selectedSyllabusItemIds = uniqueValues(countedChapters.flatMap((section) => section.descendantIds));
+  const chapterTypes = await Promise.all(countedChapters.map(async (chapter) => {
+    const rows = await prisma.question.findMany({
+      where: {
+        paperQuestions: { some: { paper: paperWhere } },
+        knowledgeTags: { some: { syllabusItemId: { in: chapter.descendantIds } } }
+      },
+      select: { type: true },
+      distinct: ["type"]
+    });
+    return { ...chapter, questionTypes: rows.map((row) => row.type).filter(isQuestionType) };
+  }));
+  const availableTypes = new Set(chapterTypes.flatMap((chapter) => chapter.questionTypes));
+  if (questionTypes.some((type) => !availableTypes.has(type))) {
+    return NextResponse.json({ error: "所选题型不在参考章节已有题型中，请重新选择。" }, { status: 400 });
+  }
+  if (questionTypes.length === 0) questionTypes = allowedQuestionTypes.filter((type) => availableTypes.has(type));
+  if (questionTypes.length === 0) {
+    return NextResponse.json({ error: "所选章节没有支持生成的题型。" }, { status: 400 });
+  }
+
+  const sampleGroups = await Promise.all(questionTypes.map((type) => prisma.question.findMany({
     where: {
-      ...(questionTypes.length > 0 ? { type: { in: questionTypes } } : {}),
+      type,
       paperQuestions: {
         some: {
           paper: {
@@ -280,11 +246,15 @@ export async function POST(request: NextRequest) {
       }
     },
     orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
-    take: 100
-  });
+    take: Math.ceil(100 / questionTypes.length)
+  })));
+  // Interleave types before the generator's sample limit so rare types keep examples.
+  const samples = Array.from({ length: Math.max(...sampleGroups.map((group) => group.length)) }, (_, index) =>
+    sampleGroups.flatMap((group) => group[index] ? [group[index]] : [])
+  ).flat().slice(0, 100);
 
   if (samples.length < 3) {
-    return NextResponse.json({ error: "当前所选知识点或题型下可参考题目少于 3 道，暂不适合 AI 生题。" }, { status: 400 });
+    return NextResponse.json({ error: "当前所选章节或题型下可参考题目少于 3 道，暂不适合 AI 生题。" }, { status: 400 });
   }
 
   const response = await fetch(`${generatorBaseUrl()}/generate-question-bank-tasks`, {
@@ -304,12 +274,17 @@ export async function POST(request: NextRequest) {
       questionTypeCounts,
       difficulty,
       sourceLabel: "AI模拟真题",
-      referenceSectionIds,
-      referenceSections: countedSections.map(({ descendantIds, ...section }) => section),
+      referenceChapterIds,
+      referenceChapters: chapterTypes.map(({ descendantIds, ...chapter }) => chapter),
       aiApiBaseUrl: process.env.QWEN_API_BASE_URL || "http://10.138.12.88:30001/v1",
       aiApiKey: process.env.QWEN_API_KEY || "",
       aiModel: process.env.QWEN_MODEL || "qwen3.5-35B-A3B",
-      samples
+      samples: samples.map((sample) => ({
+        ...sample,
+        referenceChapterIds: chapterTypes
+          .filter((chapter) => sample.knowledgeTags.some((tag) => chapter.descendantIds.includes(tag.syllabusItemId)))
+          .map((chapter) => chapter.id)
+      }))
     })
   });
 

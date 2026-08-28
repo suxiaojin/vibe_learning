@@ -2,18 +2,20 @@
 
 硬性要求：
 - 参考样题的知识点、题型、难度和表达方式，但不得复制原题或只替换数字。
-- 优先模仿 referenceSections 中指定知识点下样题的内容风格、知识点覆盖和题目表达。
+- 优先模仿 referenceChapters 中指定章节（包含全部下级知识点）下样题的内容风格、知识点覆盖和题目表达。
+- 样题的 referenceChapterIds 标明所属章；按 generationPlan 指定的章参考对应样题，不要混用其他章的内容。
 - 如果 questionTypeCounts 指定了题型数量，必须严格按该数量分布生成；未指定数量的剩余题目按 questionTypes 补足。
-- 每道题都必须对应 referenceSections 中的一个知识点，可在题目对象里输出 referenceSectionId；系统会用它作为知识点标签。
+- 每道题都必须对应 referenceChapters 中的一个章节，可在题目对象里输出 referenceChapterId；系统会用它作为知识点标签。
 - 选择题选项 key 使用 A/B/C/D，答案必须存在于选项 key 中。
 - 单选题 answer 只能有 1 个选项；多选题 answer 至少 2 个选项。
 - 判断题 options 固定为 A=正确、B=错误，answer 只能是 A 或 B。
-- 填空题和综合题 options 为空数组，answer 至少 1 项。
+- 除单选、多选、判断外，所有题型（含填空、名词解释、计算分析、简答、论述等）options 为空数组，answer 至少 1 项，保留完整参考答案和推导过程。
+- 必须逐条遵守 generationPlan 的顺序、type 和 referenceChapterId，不得替换题型，不得生成对应章节没有的题型。
 - 每道题必须有完整解析 analysis。
 - 不要输出 Markdown，不要输出代码块，不要输出额外说明。
 
 只输出严格 JSON 对象，格式如下：
-{"questions":[{"type":"single_choice","referenceSectionId":"知识点ID","stem":"题干","options":[{"key":"A","text":"选项"}],"answer":["A"],"analysis":"解析","difficulty":"medium"}]}
+{"questions":[{"type":"single_choice","referenceChapterId":"章节ID","stem":"题干","options":[{"key":"A","text":"选项"}],"answer":["A"],"analysis":"解析","difficulty":"medium"}]}
 
 生成任务：
 {{REQUEST_JSON}}

@@ -27,7 +27,7 @@ function uniqueValues(values: Array<string | null | undefined>) {
   return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
 }
 
-async function validReferenceSectionIds(ownerType: QuestionBankOwnerType, ownerId: string, regionId: string, ids: string[]) {
+async function validReferenceChapterIds(ownerType: QuestionBankOwnerType, ownerId: string, regionId: string, ids: string[]) {
   const courses = await prisma.learningCourse.findMany({
     where: ownerCourseWhere(ownerType, ownerId, regionId),
     select: {
@@ -50,7 +50,7 @@ async function validReferenceSectionIds(ownerType: QuestionBankOwnerType, ownerI
       childrenByParent.set(item.parentId, children);
     });
     (childrenByParent.get(null) || []).forEach((chapterId) => {
-      (childrenByParent.get(chapterId) || []).forEach((sectionId) => validIds.add(sectionId));
+      validIds.add(chapterId);
     });
   });
 
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
     ownerType?: unknown;
     ownerId?: unknown;
     regionId?: unknown;
-    referenceSectionIds?: unknown;
+    referenceChapterIds?: unknown;
   };
 
   const ownerType = isOwnerType(body.ownerType) ? body.ownerType : undefined;
@@ -82,16 +82,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "缺少专业、公共课或区域信息。" }, { status: 400 });
   }
 
-  const referenceSectionIds = Array.isArray(body.referenceSectionIds)
-    ? uniqueValues(body.referenceSectionIds.map((item) => String(item || "")))
+  const referenceChapterIds = Array.isArray(body.referenceChapterIds)
+    ? uniqueValues(body.referenceChapterIds.map((item) => String(item || "")))
     : [];
-  if (referenceSectionIds.length === 0) {
-    return NextResponse.json({ error: "AI 生题缺少知识点标签，请重新选择参考知识点后生成。" }, { status: 400 });
+  if (referenceChapterIds.length === 0) {
+    return NextResponse.json({ error: "AI 生题缺少知识点标签，请重新选择参考章节后生成。" }, { status: 400 });
   }
 
-  const allowedSectionIds = await validReferenceSectionIds(ownerType, ownerId, regionId, referenceSectionIds);
-  if (allowedSectionIds.length !== referenceSectionIds.length) {
-    return NextResponse.json({ error: "AI 生题知识点标签不存在，或不属于当前专业/区域。" }, { status: 400 });
+  const allowedChapterIds = await validReferenceChapterIds(ownerType, ownerId, regionId, referenceChapterIds);
+  if (allowedChapterIds.length !== referenceChapterIds.length) {
+    return NextResponse.json({ error: "AI 生题参考章节不存在，或不属于当前专业/区域。" }, { status: 400 });
   }
 
   assertImportQuestionPaperPayload(body.payload);
@@ -102,10 +102,11 @@ export async function POST(request: NextRequest) {
     chapterTitle: payload.chapterTitle || "AI生成题",
     knowledgePointTitle: payload.knowledgePointTitle || "AI模拟真题",
     questions: payload.questions.map((question, index) => {
-      const questionTagIds = uniqueValues([question.syllabusItemId, ...(question.syllabusItemIds || [])]).filter((id) => allowedSectionIds.includes(id));
+      const questionTagIds = uniqueValues([question.syllabusItemId, ...(question.syllabusItemIds || [])]).filter((id) => allowedChapterIds.includes(id));
       return {
         ...question,
-        syllabusItemIds: questionTagIds.length > 0 ? questionTagIds : [allowedSectionIds[index % allowedSectionIds.length]],
+        syllabusItemId: questionTagIds[0] || allowedChapterIds[index % allowedChapterIds.length],
+        syllabusItemIds: questionTagIds.length > 0 ? questionTagIds : [allowedChapterIds[index % allowedChapterIds.length]],
         source: question.source || payload.title || "AI模拟真题",
         sourceType: "ai_generated"
       };

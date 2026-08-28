@@ -2,7 +2,9 @@ import { Prisma, type LearningCourseType } from "@prisma/client";
 import { prisma } from "./prisma";
 import type { QuestionBankOwnerType } from "./question-bank-catalog";
 
-export type ImportQuestionType = "single_choice" | "multiple_choice" | "true_false" | "fill_blank" | "comprehensive";
+import type { QuestionBankEditableQuestionType } from "./question-bank-types";
+
+export type ImportQuestionType = QuestionBankEditableQuestionType;
 export type ImportQuestionSourceType = "manual" | "real_exam" | "outline" | "import" | "ai_generated";
 
 export type ImportQuestion = {
