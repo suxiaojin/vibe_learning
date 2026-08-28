@@ -2,6 +2,9 @@ import { LearningPath } from "@/components/learning-path";
 import { StudentPageShell } from "@/components/student-page-shell";
 import { requireUser } from "@/lib/auth";
 import { getStudentLearningPath, type SyllabusPathGroup } from "@/lib/syllabus-learning";
+import { getSystemSettings } from "@/lib/system-settings";
+
+export const dynamic = "force-dynamic";
 
 const text = {
   empty: "\u5f53\u524d\u6ca1\u6709\u5df2\u53d1\u5e03\u7684\u95ef\u5173\u5185\u5bb9\u3002"
@@ -37,7 +40,10 @@ export default async function LearnPage({
 }) {
   const user = await requireUser();
   const params = await searchParams;
-  const pathState = await getStudentLearningPath(user.id, params?.course);
+  const [pathState, settings] = await Promise.all([
+    getStudentLearningPath(user.id, params?.course),
+    getSystemSettings()
+  ]);
 
   const currentGroup = pathState.selectedGroup;
   const currentCourse = selectLearningCourse(currentGroup, params?.chapter);
@@ -68,7 +74,7 @@ export default async function LearnPage({
       <div className="grid w-full gap-5 xl:grid-cols-[minmax(0,42rem)_180px] xl:items-start xl:justify-center xl:gap-8">
         <div className="min-w-0">
           {learningPath && coursePath ? (
-            <LearningPath course={coursePath} initialPointId={requestedPointId} path={learningPath} />
+            <LearningPath course={coursePath} initialPointId={requestedPointId} path={learningPath} themeKey={settings.learningPathTheme} />
           ) : pathState.completed ? (
             <div className="mx-auto max-w-2xl pb-24">
               <div className="panel text-slate-600">{text.empty}</div>

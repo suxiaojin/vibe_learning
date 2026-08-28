@@ -15,6 +15,7 @@ import {
   updateSystemSettings
 } from "@/app/admin/actions";
 import { AdminDiamondRuleSettings } from "@/components/admin-diamond-rule-settings";
+import { AdminLearningPathThemeSettings } from "@/components/admin-learning-path-theme-settings";
 import { AdminProfileBackgroundUploadForm } from "@/components/admin-profile-background-upload-form";
 import { AdminRechargeQrUploadForm } from "@/components/admin-recharge-qr-upload-form";
 import { requireAdmin } from "@/lib/auth";
@@ -339,6 +340,7 @@ export default async function AdminSettingsPage({
 
       {activeTab === "admin" ? (
         <div className="grid gap-4">
+          <AdminLearningPathThemeSettings currentThemeKey={settings.learningPathTheme} />
           <AdminRechargeQrUploadForm currentQrCodeUrl={settings.diamondRechargeQrCodeUrl} />
           <AdminProfileBackgroundUploadForm currentBackgroundImageUrl={settings.profileHomepageBackgroundImageUrl} />
         </div>

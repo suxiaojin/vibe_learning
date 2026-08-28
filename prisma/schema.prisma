@@ -444,6 +444,7 @@ model SystemSetting {
   diamondRechargeQrCodeUrl  String   @default("")
   profileHomepageBackgroundImageUrl String @default("")
   profileHomepageBackgroundUpdatedAt DateTime?
+  learningPathTheme          String   @default("default")
   studyBuddyHeroImageUrl    String   @default("/ai-study/study-buddy-hero.webp")
   studyBuddyHeroTitle       String   @default("好好学习，早日上岸")
   studyBuddyHeroEffect      String   @default("typewriter")

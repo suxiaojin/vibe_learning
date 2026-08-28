@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, BookOpenText, Check, ChevronDown, Lock, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getLearningPathTheme, getLearningPathThemeStyle } from "@/lib/learning-path-theme";
 
 type PathPoint = {
   id: string;
@@ -30,6 +31,7 @@ type LearningPathProps = {
     courseType: "public_subject" | "major";
   };
   initialPointId?: string;
+  themeKey?: string;
   path: {
     passedCount: number;
     points: PathPoint[];
@@ -45,7 +47,8 @@ const text = {
   questions: "\u9898"
 } as const;
 
-export function LearningPath({ course, initialPointId, path }: LearningPathProps) {
+export function LearningPath({ course, initialPointId, path, themeKey }: LearningPathProps) {
+  const theme = getLearningPathTheme(themeKey);
   const firstActivePoint = useMemo(
     () =>
       path.points.find((point) => point.id === initialPointId && point.status !== "locked") ||
@@ -105,12 +108,12 @@ export function LearningPath({ course, initialPointId, path }: LearningPathProps
   }, [activePointId, path.points]);
 
   return (
-    <div className="mx-auto max-w-2xl" style={{ paddingBottom: "max(6rem, calc(100vh - 20rem))" }}>
+    <div className="mx-auto max-w-2xl" style={{ ...getLearningPathThemeStyle(theme.key), paddingBottom: "max(6rem, calc(100vh - 20rem))" }}>
       <section className="sticky top-0 z-30 -mx-5 bg-mist/95 px-5 pb-4 pt-6 backdrop-blur">
-        <div className="rounded-panel border-b-8 border-success-strong bg-success p-4 text-white shadow-card">
+        <div className="rounded-panel border-b-8 border-[var(--challenge-strong)] bg-[var(--challenge-primary)] p-4 text-white shadow-card">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <Link className="mb-1 inline-flex max-w-full items-center gap-2 text-sm font-semibold text-white/85 hover:text-white" href={`/learn/stages?course=${course.courseType}`}>
+              <Link className={cn("mb-1 inline-flex max-w-full items-center gap-2 text-sm font-semibold hover:text-white", theme.key === "default" ? "text-white/85" : "text-white")} href={`/learn/stages?course=${course.courseType}`}>
                 <ArrowLeft size={18} />
                 <span className="min-w-0 truncate">{course.title}</span>
               </Link>
@@ -118,7 +121,7 @@ export function LearningPath({ course, initialPointId, path }: LearningPathProps
             </div>
             {activePoint ? (
               <Link
-                className="inline-flex min-h-14 shrink-0 items-center gap-2 rounded-xl border border-white/25 border-b-4 border-b-black/10 bg-white/10 px-4 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                className={cn("inline-flex min-h-14 shrink-0 items-center gap-2 rounded-xl border border-white/25 border-b-4 border-b-black/10 px-4 text-sm font-semibold text-white transition hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40", theme.key === "default" ? "bg-white/10 hover:bg-white/15" : "bg-black/10 hover:bg-black/15")}
                 href={`/learn/${activePoint.id}/guide`}
               >
                 <BookOpenText size={22} />
@@ -162,10 +165,10 @@ export function LearningPath({ course, initialPointId, path }: LearningPathProps
                   <span
                     className={cn(
                       "grid size-20 place-items-center rounded-full border-b-8 text-white transition",
-                      point.status === "passed" && "border-success-strong bg-success",
-                      point.status === "unlocked" && "border-success-strong bg-success group-hover:-translate-y-1",
+                      point.status === "passed" && "border-[var(--challenge-strong)] bg-[var(--challenge-primary)]",
+                      point.status === "unlocked" && "border-[var(--challenge-strong)] bg-[var(--challenge-primary)] group-hover:-translate-y-1",
                       locked && "border-slate-300 bg-slate-200 text-slate-400",
-                      activePoint?.id === point.id && "ring-8 ring-success/20"
+                      activePoint?.id === point.id && (locked ? "ring-8 ring-slate-200" : "ring-8 ring-[var(--challenge-ring)]")
                     )}
                   >
                     {locked ? <Lock size={30} /> : point.status === "passed" ? <Check size={34} strokeWidth={4} /> : <Sparkles size={32} />}

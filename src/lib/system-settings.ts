@@ -18,6 +18,7 @@ export const systemSettingsDefaults = {
   diamondRechargeQrCodeUrl: "",
   profileHomepageBackgroundImageUrl: "",
   profileHomepageBackgroundUpdatedAt: null as Date | null,
+  learningPathTheme: "default",
   studyBuddyHeroImageUrl: "/ai-study/study-buddy-hero.webp",
   studyBuddyHeroTitle: "好好学习，早日上岸",
   studyBuddyHeroEffect: "typewriter",
