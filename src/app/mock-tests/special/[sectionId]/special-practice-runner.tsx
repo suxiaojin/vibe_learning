@@ -5,9 +5,15 @@ import Link from "next/link";
 import { Bot, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Loader2, Send, X } from "lucide-react";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
 import { DiamondInsufficientMessage } from "@/components/diamond-insufficient-message";
+import { RichTextContent } from "@/components/rich-text-content";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import { isDiamondInsufficientMessage } from "@/lib/diamond-insufficient";
-import { getQuestionBankTypeLabel, isQuestionBankRichAnswerQuestionType } from "@/lib/question-bank-types";
+import {
+  getQuestionBankTypeLabel,
+  isAdvancedMathPublicSubject,
+  isQuestionBankAutoGradedForOwner,
+  isQuestionBankRichAnswerQuestionType
+} from "@/lib/question-bank-types";
 
 type PracticeQuestion = {
   id: string;
@@ -63,12 +69,14 @@ type HydratedPracticeState = {
 export function SpecialPracticeRunner({
   courseKey,
   initialIndex,
+  ownerName,
   questions,
   sectionId,
   sectionTitle
 }: {
   courseKey: "public_subject" | "major";
   initialIndex: number;
+  ownerName: string;
   questions: PracticeQuestion[];
   sectionId: string;
   sectionTitle: string;
@@ -91,7 +99,8 @@ export function SpecialPracticeRunner({
   const aiLoading = aiLoadingQuestionId === question.id;
   const options = useMemo(() => normalizeOptions(question.options), [question.options]);
   const hasTextAnswer = question.type === "fill_blank" || isQuestionBankRichAnswerQuestionType(question.type);
-  const isRichAnswerQuestion = isQuestionBankRichAnswerQuestionType(question.type);
+  const isSubjectiveQuestion = !isQuestionBankAutoGradedForOwner(question.type, courseKey, ownerName);
+  const hideAiDoubt = isAdvancedMathPublicSubject(courseKey, ownerName);
   const correctAnswer = normalizeAnswer(question.answer);
   const previousEnabled = currentIndex > 0;
   const isLastQuestion = currentIndex === questions.length - 1;
@@ -121,7 +130,7 @@ export function SpecialPracticeRunner({
       if (stored) {
         const restoredAnswerStates = { ...stored.answerStates };
         for (const storedQuestion of questions) {
-          if (isQuestionBankRichAnswerQuestionType(storedQuestion.type) && restoredAnswerStates[storedQuestion.id]) {
+          if (!isQuestionBankAutoGradedForOwner(storedQuestion.type, courseKey, ownerName) && restoredAnswerStates[storedQuestion.id]) {
             if ((stored.answers[storedQuestion.id]?.length || 0) > 0) {
               restoredAnswerStates[storedQuestion.id] = "submitted";
             } else {
@@ -139,7 +148,7 @@ export function SpecialPracticeRunner({
     } finally {
       setHydrated(true);
     }
-  }, [initialIndex, questionIds, questionIdsSignature, storageKey]);
+  }, [courseKey, initialIndex, ownerName, questionIds, questionIdsSignature, storageKey]);
 
   useEffect(() => {
     if (!hydrated) {
@@ -200,7 +209,7 @@ export function SpecialPracticeRunner({
       return;
     }
 
-    if (isRichAnswerQuestion) {
+    if (isSubjectiveQuestion) {
       if (selected.length > 0) {
         setAnswerStates((current) => (current[question.id] ? current : { ...current, [question.id]: "submitted" }));
       }
@@ -216,7 +225,7 @@ export function SpecialPracticeRunner({
       return;
     }
     judgeCurrentQuestion({ markUnansweredWrong: false });
-    if (isRichAnswerQuestion && selected.length > 0) {
+    if (isSubjectiveQuestion && selected.length > 0) {
       setRevealedQuestionIds((current) => ({ ...current, [question.id]: true }));
     }
     setCurrentIndex((value) => value - 1);
@@ -225,7 +234,7 @@ export function SpecialPracticeRunner({
   function goToQuestion(index: number) {
     if (index !== currentIndex) {
       judgeCurrentQuestion({ markUnansweredWrong: false });
-      if (isRichAnswerQuestion && selected.length > 0) {
+      if (isSubjectiveQuestion && selected.length > 0) {
         setRevealedQuestionIds((current) => ({ ...current, [question.id]: true }));
       }
     }
@@ -235,13 +244,13 @@ export function SpecialPracticeRunner({
   function goToNextQuestion() {
     if (isLastQuestion) {
       judgeCurrentQuestion({ markUnansweredWrong: true });
-      if (isRichAnswerQuestion && selected.length > 0) {
+      if (isSubjectiveQuestion && selected.length > 0) {
         setRevealedQuestionIds((current) => ({ ...current, [question.id]: true }));
       }
       return;
     }
     judgeCurrentQuestion({ markUnansweredWrong: false });
-    if (isRichAnswerQuestion && selected.length > 0) {
+    if (isSubjectiveQuestion && selected.length > 0) {
       setRevealedQuestionIds((current) => ({ ...current, [question.id]: true }));
     }
     setCurrentIndex((value) => value + 1);
@@ -407,9 +416,9 @@ export function SpecialPracticeRunner({
             <span className="inline-flex rounded-lg bg-teal/10 px-2.5 py-1.5 text-sm font-semibold text-teal">
               {questionTypeLabel}
             </span>
-            <h2 className="mt-6 max-w-4xl text-lg font-semibold leading-8 text-ink">
-              {currentIndex + 1}、{question.stem}
-            </h2>
+            <div aria-level={2} className="mt-6 max-w-4xl text-lg font-semibold leading-8 text-ink" role="heading">
+              <RichTextContent value={`${currentIndex + 1}、${question.stem}`} />
+            </div>
 
             {hasTextAnswer ? (
               <div className="mt-6 max-w-3xl">
@@ -453,7 +462,7 @@ export function SpecialPracticeRunner({
                       onClick={() => selectOption(option.key)}
                     >
                       <span className={optionBadgeClassName({ correctOption, selectedOption, wrongOption })}>{option.key}</span>
-                      <span className="min-w-0 flex-1">{option.text}</span>
+                      <RichTextContent className="min-w-0 flex-1" value={option.text} />
                     </button>
                   );
                 })}
@@ -466,11 +475,13 @@ export function SpecialPracticeRunner({
 
             <div className="mt-8 flex max-w-3xl flex-wrap items-center justify-end gap-5">
               <div className="hidden h-px flex-1 border-t border-dashed border-slate-200 md:block" />
-              <button className="inline-flex min-h-10 items-center gap-2 rounded-lg px-1 text-sm font-medium text-violet-600 transition hover:text-violet-700" type="button" onClick={openAiDoubt}>
-                <Bot size={22} />
-                AI答疑
-              </button>
-              {!isRichAnswerQuestion ? (
+              {!hideAiDoubt ? (
+                <button className="inline-flex min-h-10 items-center gap-2 rounded-lg px-1 text-sm font-medium text-violet-600 transition hover:text-violet-700" type="button" onClick={openAiDoubt}>
+                  <Bot size={22} />
+                  AI答疑
+                </button>
+              ) : null}
+              {!isSubjectiveQuestion ? (
                 <ShareToBuddyButton
                   buttonClassName="!min-h-10 !rounded-lg !border-0 !bg-transparent !px-1 !py-0 !font-medium !text-slate-500 hover:!border-transparent hover:!bg-transparent hover:!text-teal disabled:!border-0"
                   buttonIconSize={24}
@@ -486,7 +497,7 @@ export function SpecialPracticeRunner({
 
             {revealed ? (
               <section className="mt-5 max-w-3xl rounded-2xl border border-slate-200 bg-slate-50 px-5 py-5 text-sm leading-7 text-ink">
-                {isRichAnswerQuestion && judgedState === "submitted" ? (
+                {isSubjectiveQuestion && judgedState === "submitted" ? (
                   <p className="mb-3 font-semibold text-teal">答案已提交，本题不计分。</p>
                 ) : null}
                 <div>
@@ -533,7 +544,7 @@ export function SpecialPracticeRunner({
           setCurrentIndex={goToQuestion}
         />
       </div>
-      {aiDialogOpen ? (
+      {!hideAiDoubt && aiDialogOpen ? (
         <AiDoubtDialog
           followUpText={followUpText}
           loading={aiLoading}
@@ -1102,20 +1113,6 @@ function normalizeAnswer(value: unknown) {
 
 function answerText(answer: string[]) {
   return answer.join("、");
-}
-
-const richTextHtmlPattern = /<\/?[a-z][\s\S]*>/i;
-
-function RichTextContent({ className, value }: { className?: string; value: string }) {
-  if (!richTextHtmlPattern.test(value)) {
-    return <p className={`whitespace-pre-wrap break-words ${className || ""}`}>{value}</p>;
-  }
-  return (
-    <div
-      className={`overflow-x-auto break-words [&_div]:my-1 [&_img]:my-2 [&_img]:h-auto [&_img]:max-w-full [&_li]:my-0.5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1 [&_table]:my-2 [&_table]:max-w-full [&_table]:border-collapse [&_td]:border [&_td]:border-current [&_td]:p-2 [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-5 ${className || ""}`}
-      dangerouslySetInnerHTML={{ __html: value }}
-    />
-  );
 }
 
 function isAnswerCorrect(selected: string[], correctAnswer: string[]) {

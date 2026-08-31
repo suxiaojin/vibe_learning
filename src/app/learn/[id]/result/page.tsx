@@ -8,7 +8,10 @@ import { StudentPageShell } from "@/components/student-page-shell";
 import { WrongQuestionAi } from "@/components/wrong-question-ai";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import { requireUser } from "@/lib/auth";
+import { getLearningPathThemeStyle } from "@/lib/learning-path-theme";
 import { prisma } from "@/lib/prisma";
+import { isAdvancedMathPublicSubject } from "@/lib/question-bank-types";
+import { getSystemSettings } from "@/lib/system-settings";
 import { getSyllabusSectionForStudent } from "@/lib/syllabus-learning";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +41,12 @@ type AttemptWithQuestion = SessionWithAttempts["attempts"][number];
 const HISTORY_PAGE_SIZE = 6;
 const MAX_HISTORY_LIMIT = 60;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const themedPrimaryButtonClass =
+  "success-button bg-[var(--challenge-primary)] hover:bg-[var(--challenge-strong)] focus-visible:ring-[var(--challenge-ring)]";
+const themedSecondaryButtonClass =
+  "secondary-button hover:border-[var(--challenge-accent)] hover:text-[var(--challenge-accent)] focus-visible:ring-[var(--challenge-ring)]";
+const themedAiButtonClass =
+  "secondary-button border-[var(--challenge-ring)] text-[var(--challenge-accent)] hover:border-[var(--challenge-accent)] hover:text-[var(--challenge-strong)] focus-visible:ring-[var(--challenge-ring)]";
 
 function coerceOptions(options: Prisma.JsonValue): Option[] {
   if (!Array.isArray(options)) {
@@ -199,7 +208,7 @@ export default async function QuizResultPage({
 }) {
   const [{ id }, query, user] = await Promise.all([params, searchParams, requireUser()]);
   const historyLimit = normalizeHistoryLimit(query?.historyLimit);
-  const [access, sessions, requestedSession, historyCount, chapterChallengeCount] = await Promise.all([
+  const [access, sessions, requestedSession, historyCount, chapterChallengeCount, settings] = await Promise.all([
     getSyllabusSectionForStudent(user.id, id),
     prisma.quizSession.findMany({
       where: {
@@ -251,7 +260,8 @@ export default async function QuizResultPage({
         status: "published",
         questions: { some: {} }
       }
-    })
+    }),
+    getSystemSettings()
   ]);
 
   if (!access) {
@@ -265,14 +275,16 @@ export default async function QuizResultPage({
   if (!currentSession) {
     return (
       <StudentPageShell active="learn" maxWidthClassName="max-w-5xl">
-        <section className="panel">
-          <h1 className="text-2xl font-semibold text-ink">暂无答题记录</h1>
-          <p className="mt-2 text-sm font-medium text-slate-500">完成一次答题后，这里会展示每次作答的对题和错题。</p>
-          <div className="mt-5 flex flex-wrap gap-3">
-            <Link className="success-button" href={`/learn/${id}?restart=1`}>开始答题</Link>
-            <Link className="secondary-button" href={`/learn?course=${access.group.key}&chapter=${access.chapter.id}`}>返回学习路线</Link>
-          </div>
-        </section>
+        <div style={getLearningPathThemeStyle(settings.learningPathTheme)}>
+          <section className="panel">
+            <h1 className="text-2xl font-semibold text-ink">暂无答题记录</h1>
+            <p className="mt-2 text-sm font-medium text-slate-500">完成一次答题后，这里会展示每次作答的对题和错题。</p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Link className={themedPrimaryButtonClass} href={`/learn/${id}?restart=1`}>开始答题</Link>
+              <Link className={themedSecondaryButtonClass} href={`/learn?course=${access.group.key}&chapter=${access.chapter.id}`}>返回学习路线</Link>
+            </div>
+          </section>
+        </div>
       </StudentPageShell>
     );
   }
@@ -310,6 +322,7 @@ export default async function QuizResultPage({
   const selectedCorrectAttempts = gradedAttempts.filter((attempt) => attempt.isCorrect);
   const selectedWrongAttempts = gradedAttempts.filter((attempt) => !attempt.isCorrect);
   const selectedUngradedAttempts = ungradedAttempts;
+  const hideAiExplanation = isAdvancedMathPublicSubject(access.group.key, access.group.name);
   const nextHistoryLimit = Math.min(MAX_HISTORY_LIMIT, historyLimit + HISTORY_PAGE_SIZE, historyCount);
   const moreHistoryHref = buildHistoryHref({
     sectionId: id,
@@ -327,6 +340,7 @@ export default async function QuizResultPage({
 
   return (
     <StudentPageShell active="learn" maxWidthClassName="max-w-5xl">
+      <div style={getLearningPathThemeStyle(settings.learningPathTheme)}>
       <section className={cn("overflow-hidden rounded-panel border bg-surface shadow-card", passed ? "border-success/50" : "border-coral/50")}>
         <div className={passed ? "bg-success p-6 text-white" : "bg-coral p-6 text-white"}>
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -377,10 +391,10 @@ export default async function QuizResultPage({
               : "还差一点，再练一次"}
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
-            <Link className="success-button" href={`/learn/${id}?restart=1&fromSessionId=${currentSession.id}`}>再练一次</Link>
+            <Link className={themedPrimaryButtonClass} href={`/learn/${id}?restart=1&fromSessionId=${currentSession.id}`}>再练一次</Link>
             {resultShareCard ? (
               <ShareToBuddyButton
-                buttonClassName={passed ? "min-h-12 border-success/30 text-success-strong" : "min-h-12 border-coral/30 text-coral"}
+                buttonClassName={`${themedSecondaryButtonClass} min-h-12`}
                 contentSuggestions={resultShareSuggestions}
                 copyContext={passed ? "quiz_passed" : "quiz_failed"}
                 defaultContent={resultShareContent}
@@ -388,7 +402,7 @@ export default async function QuizResultPage({
                 sourceLabel="闯关结果"
               />
             ) : null}
-            <Link className="secondary-button" href={`/learn?course=${access.group.key}&chapter=${access.chapter.id}`}>返回学习路线</Link>
+            <Link className={themedSecondaryButtonClass} href={`/learn?course=${access.group.key}&chapter=${access.chapter.id}`}>返回学习路线</Link>
           </div>
         </div>
       </section>
@@ -396,7 +410,7 @@ export default async function QuizResultPage({
       <section className="mt-6 scroll-mt-6" id="history-records">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-ink">
           <span className="inline-flex items-center gap-2">
-            <CheckCircle2 className="text-teal" size={20} />
+            <CheckCircle2 className="text-[var(--challenge-accent)]" size={20} />
             <h2 className="text-xl font-semibold">历史答题记录</h2>
           </span>
           <span className="text-sm font-semibold text-slate-400">共 {historyCount} 次</span>
@@ -430,7 +444,7 @@ export default async function QuizResultPage({
 
         {hasMoreHistory ? (
           <div className="mt-6 flex justify-center">
-            <Link className="secondary-button min-w-48" href={moreHistoryHref}>查看更多记录</Link>
+            <Link className={`${themedSecondaryButtonClass} min-w-48`} href={moreHistoryHref}>查看更多记录</Link>
           </div>
         ) : null}
       </section>
@@ -439,23 +453,24 @@ export default async function QuizResultPage({
         <section className="panel mt-6 scroll-mt-6" id="history-detail">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-soft pb-4">
             <div>
-              <p className="text-xs font-semibold text-teal">答题详情</p>
+              <p className="text-xs font-semibold text-[var(--challenge-accent)]">答题详情</p>
               <h2 className="mt-1 text-xl font-semibold text-ink">{formatDateTime(submittedAt)}</h2>
               <p className="mt-1 text-sm font-semibold text-slate-500">
                 正确 {selectedCorrectAttempts.length} 题，错误 {selectedWrongAttempts.length} 题
                 {selectedUngradedAttempts.length > 0 ? `，主观题 ${selectedUngradedAttempts.length} 题不计分` : ""}
               </p>
             </div>
-            <Link className="secondary-button min-h-10 px-4" href={closeHistoryDetailsHref}>收起详情</Link>
+            <Link className={`${themedSecondaryButtonClass} min-h-10 px-4`} href={closeHistoryDetailsHref}>收起详情</Link>
           </div>
 
-          <AttemptGroup attempts={selectedCorrectAttempts} title="做对的题" tone="correct" />
-          <AttemptGroup attempts={selectedWrongAttempts} title="做错的题" tone="wrong" />
+          <AttemptGroup attempts={selectedCorrectAttempts} hideAiExplanation={hideAiExplanation} title="做对的题" tone="correct" />
+          <AttemptGroup attempts={selectedWrongAttempts} hideAiExplanation={hideAiExplanation} title="做错的题" tone="wrong" />
           {selectedUngradedAttempts.length > 0 ? (
-            <AttemptGroup attempts={selectedUngradedAttempts} title="主观题（不计分）" tone="ungraded" />
+            <AttemptGroup attempts={selectedUngradedAttempts} hideAiExplanation={hideAiExplanation} title="主观题（不计分）" tone="ungraded" />
           ) : null}
         </section>
       ) : null}
+      </div>
     </StudentPageShell>
   );
 }
@@ -494,13 +509,13 @@ function HistorySessionCard({
     <article
       className={cn(
         "relative min-h-32 rounded-panel border bg-surface p-4 transition hover:-translate-y-0.5 hover:shadow-card",
-        isCurrent ? "border-teal/70 ring-1 ring-teal/10" : "border-border-soft"
+        isCurrent ? "border-[var(--challenge-primary)] ring-1 ring-[var(--challenge-ring)]" : "border-border-soft"
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <p className="text-sm font-semibold text-slate-600">{formatHistoryDateTime(completedAt)}</p>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <span className="badge bg-teal/10 text-teal">AI解释</span>
+          <span className="badge bg-[var(--challenge-icon-muted)] text-[var(--challenge-accent)]">AI解释</span>
           <span className="badge bg-sky-50 text-sky-500">{getChallengeLabel(session)}</span>
         </div>
       </div>
@@ -530,7 +545,7 @@ function HistorySessionCard({
 
         <Link
           aria-label={`查看 ${formatHistoryDateTime(completedAt)} 的答题详情`}
-          className="inline-flex min-h-10 items-center gap-1 text-sm font-semibold text-slate-700 transition hover:text-teal"
+          className="inline-flex min-h-10 items-center gap-1 text-sm font-semibold text-slate-700 transition hover:text-[var(--challenge-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--challenge-ring)]"
           href={detailsHref}
         >
           查看详情
@@ -541,10 +556,20 @@ function HistorySessionCard({
   );
 }
 
-function AttemptGroup({ attempts, title, tone }: { attempts: AttemptWithQuestion[]; title: string; tone: "correct" | "wrong" | "ungraded" }) {
+function AttemptGroup({
+  attempts,
+  hideAiExplanation,
+  title,
+  tone
+}: {
+  attempts: AttemptWithQuestion[];
+  hideAiExplanation: boolean;
+  title: string;
+  tone: "correct" | "wrong" | "ungraded";
+}) {
   return (
     <section className="mt-5">
-      <div className={cn("flex items-center gap-2", tone === "correct" ? "text-success-strong" : tone === "wrong" ? "text-coral" : "text-teal")}>
+      <div className={cn("flex items-center gap-2", tone === "correct" ? "text-success-strong" : tone === "wrong" ? "text-coral" : "text-[var(--challenge-accent)]")}>
         {tone === "correct" ? <CheckCircle2 size={18} /> : tone === "wrong" ? <XCircle size={18} /> : <BookOpenCheck size={18} />}
         <h4 className="font-semibold">{title}</h4>
       </div>
@@ -553,7 +578,7 @@ function AttemptGroup({ attempts, title, tone }: { attempts: AttemptWithQuestion
       ) : (
         <div className="mt-3 space-y-4">
           {attempts.map((attempt) => (
-            <AttemptCard key={attempt.id} attempt={attempt} tone={tone} />
+            <AttemptCard key={attempt.id} attempt={attempt} hideAiExplanation={hideAiExplanation} tone={tone} />
           ))}
         </div>
       )}
@@ -561,7 +586,15 @@ function AttemptGroup({ attempts, title, tone }: { attempts: AttemptWithQuestion
   );
 }
 
-function AttemptCard({ attempt, tone }: { attempt: AttemptWithQuestion; tone: "correct" | "wrong" | "ungraded" }) {
+function AttemptCard({
+  attempt,
+  hideAiExplanation,
+  tone
+}: {
+  attempt: AttemptWithQuestion;
+  hideAiExplanation: boolean;
+  tone: "correct" | "wrong" | "ungraded";
+}) {
   const options = coerceOptions(attempt.question.options);
   const ungraded = tone === "ungraded";
   return (
@@ -580,7 +613,7 @@ function AttemptCard({ attempt, tone }: { attempt: AttemptWithQuestion; tone: "c
         <p className={cn("whitespace-pre-wrap rounded-xl p-4", tone === "correct" ? "bg-success-muted text-success-strong" : tone === "wrong" ? "bg-coral/10 text-coral" : "bg-slate-50 text-ink")}>
           <span className="font-semibold">你的答案：</span>{answerText(attempt.selectedAnswer) || "未作答"}
         </p>
-        <div className="rounded-xl bg-teal/10 p-4 text-teal">
+        <div className="rounded-xl bg-[var(--challenge-muted)] p-4 text-[var(--challenge-accent)]">
           <span className="font-semibold">{ungraded ? "参考答案：" : "正确答案："}</span>
           <RichTextContent className="leading-6" value={answerText(attempt.question.answer)} />
         </div>
@@ -591,7 +624,14 @@ function AttemptCard({ attempt, tone }: { attempt: AttemptWithQuestion; tone: "c
           <RichTextContent className="mt-2 block text-sm leading-6 text-slate-700" value={attempt.question.analysis} />
         </div>
       ) : null}
-      <WrongQuestionAi questionId={attempt.questionId} sessionId={attempt.sessionId || undefined} />
+      {!ungraded && !hideAiExplanation ? (
+        <WrongQuestionAi
+          buttonClassName={themedAiButtonClass}
+          followUpButtonClassName={themedPrimaryButtonClass}
+          questionId={attempt.questionId}
+          sessionId={attempt.sessionId || undefined}
+        />
+      ) : null}
     </article>
   );
 }

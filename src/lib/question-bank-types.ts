@@ -246,6 +246,21 @@ export function isQuestionBankAutoGradedQuestionType(type?: string): type is Que
   return questionBankAutoGradedQuestionTypes.includes(type as QuestionBankAutoGradedQuestionType);
 }
 
+export function isAdvancedMathPublicSubject(ownerType?: string | null, ownerName?: string | null) {
+  return ownerType === "public_subject" && ownerName?.trim() === "高等数学";
+}
+
+export function isQuestionBankAutoGradedForOwner(
+  type: string | undefined,
+  ownerType?: string | null,
+  ownerName?: string | null
+) {
+  if (isAdvancedMathPublicSubject(ownerType, ownerName)) {
+    return isQuestionBankChoiceQuestionType(type);
+  }
+  return isQuestionBankAutoGradedQuestionType(type);
+}
+
 export function isQuestionBankEditableQuestionType(type?: string): type is QuestionBankEditableQuestionType {
   return questionBankEditableQuestionTypes.includes(type as QuestionBankEditableQuestionType);
 }

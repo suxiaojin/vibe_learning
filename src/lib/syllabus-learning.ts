@@ -1,7 +1,7 @@
 import { getStudentFoundationProfile } from "@/lib/foundation";
 import { prisma } from "@/lib/prisma";
 import { isRealQuestionBankTitle } from "@/lib/question-bank-source";
-import { isQuestionBankAutoGradedQuestionType } from "@/lib/question-bank-types";
+import { isQuestionBankAutoGradedForOwner } from "@/lib/question-bank-types";
 
 export type LearningOwnerType = "public_subject" | "major";
 export type SyllabusPathStatus = "locked" | "unlocked" | "passed";
@@ -712,6 +712,7 @@ export async function getSyllabusSectionQuestionsForStudent(
     });
 
   return {
+    group: access.group,
     course: access.course,
     chapter: access.chapter,
     section: access.section,
@@ -754,12 +755,14 @@ export async function checkSyllabusSectionQuestionAnswer(
     return null;
   }
 
+  const autoGraded = isQuestionBankAutoGradedForOwner(question.type, result.group.key, result.group.name);
+
   return {
     questionId: question.id,
-    correct: isQuestionBankAutoGradedQuestionType(question.type)
+    correct: autoGraded
       ? JSON.stringify(normalizeAnswerForCheck(selectedAnswer)) === JSON.stringify(normalizeAnswerForCheck(question.answer))
       : null,
-    gradingStatus: isQuestionBankAutoGradedQuestionType(question.type) ? "auto_graded" as const : "ungraded" as const,
+    gradingStatus: autoGraded ? "auto_graded" as const : "ungraded" as const,
     correctAnswer: question.answer
   };
 }

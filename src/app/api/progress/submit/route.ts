@@ -2,7 +2,7 @@ import { revalidatePath } from "next/cache";
 import { apiError, apiOk } from "@/lib/api-response";
 import { getCurrentUser } from "@/lib/auth";
 import { answersEqual, bumpStudyStat } from "@/lib/learning";
-import { isQuestionBankAutoGradedQuestionType } from "@/lib/question-bank-types";
+import { isQuestionBankAutoGradedForOwner } from "@/lib/question-bank-types";
 import { recordSyllabusSectionProgress, getSyllabusSectionForStudent, getSyllabusSectionQuestionsForStudent } from "@/lib/syllabus-learning";
 import { prisma } from "@/lib/prisma";
 
@@ -57,7 +57,9 @@ export async function POST(request: Request) {
     }
 
     const selected = body.answers[question.id] || [];
-    const gradingStatus = isQuestionBankAutoGradedQuestionType(question.type) ? "auto_graded" : "ungraded";
+    const gradingStatus = isQuestionBankAutoGradedForOwner(question.type, result.group.key, result.group.name)
+      ? "auto_graded"
+      : "ungraded";
     const isCorrect = gradingStatus === "auto_graded" && answersEqual(selected, question.answer);
     if (gradingStatus === "auto_graded") {
       scoredTotal += 1;

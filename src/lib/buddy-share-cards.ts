@@ -33,10 +33,13 @@ export type BuddyActiveLearningDay = {
 
 export type BuddyActiveLearningShareCard = {
   type: "active_learning_card";
-  activeDays: number;
+  activeDays?: number;
+  currentStreakDays?: number;
+  longestStreakDays?: number;
   monthAttemptCount: number;
   nextLabel?: string;
-  remaining: number;
+  peakDailyAttemptCount?: number;
+  remaining?: number;
   totalAttempts: number;
   weeks: BuddyActiveLearningDay[][];
 };
@@ -44,7 +47,7 @@ export type BuddyActiveLearningShareCard = {
 export type BuddyShareCard = BuddyQuestionShareCard | BuddyQuizResultShareCard | BuddyActiveLearningShareCard;
 
 const maxTextLength = 140;
-const maxWeeks = 30;
+const maxWeeks = 40;
 const maxDaysPerWeek = 7;
 
 export function normalizeBuddyShareInput(input: unknown): BuddyShareCard | null {
@@ -95,10 +98,13 @@ export function normalizeBuddyShareInput(input: unknown): BuddyShareCard | null 
     }
     return {
       type: "active_learning_card",
-      activeDays: nonNegativeInteger(input.activeDays),
+      activeDays: optionalNonNegativeInteger(input.activeDays),
+      currentStreakDays: optionalNonNegativeInteger(input.currentStreakDays),
+      longestStreakDays: optionalNonNegativeInteger(input.longestStreakDays),
       monthAttemptCount: nonNegativeInteger(input.monthAttemptCount),
       nextLabel: cleanText(input.nextLabel, 30) || undefined,
-      remaining: nonNegativeInteger(input.remaining),
+      peakDailyAttemptCount: optionalNonNegativeInteger(input.peakDailyAttemptCount),
+      remaining: optionalNonNegativeInteger(input.remaining),
       totalAttempts: nonNegativeInteger(input.totalAttempts),
       weeks
     };
@@ -119,7 +125,7 @@ function normalizeWeeks(value: unknown) {
     return [];
   }
 
-  return value.slice(0, maxWeeks).map((week) => {
+  return value.slice(-maxWeeks).map((week) => {
     if (!Array.isArray(week)) {
       return [];
     }
@@ -137,6 +143,12 @@ function normalizeWeeks(value: unknown) {
 
 function nonNegativeInteger(value: unknown) {
   return clampInteger(value, 0, Number.MAX_SAFE_INTEGER);
+}
+
+function optionalNonNegativeInteger(value: unknown) {
+  return value === undefined || value === null || value === ""
+    ? undefined
+    : nonNegativeInteger(value);
 }
 
 function clampInteger(value: unknown, min: number, max: number) {

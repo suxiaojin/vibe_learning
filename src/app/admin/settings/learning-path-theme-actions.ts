@@ -37,6 +37,8 @@ export async function updateLearningPathThemeSettings(
   revalidatePath("/learn");
   revalidatePath("/learn/stages");
   revalidatePath("/learn/[id]/guide", "page");
+  revalidatePath("/learn/[id]", "page");
+  revalidatePath("/learn/[id]/result", "page");
   return {
     status: "success",
     savedThemeKey: themeKey,

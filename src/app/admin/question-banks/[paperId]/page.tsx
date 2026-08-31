@@ -16,7 +16,7 @@ function toQuestionOptions(value: unknown) {
       const option = item as Record<string, unknown>;
       return {
         key: String(option.key || ""),
-        text: String(option.text || "")
+        text: String(option.text || option.content || "")
       };
     })
     .filter((item): item is { key: string; text: string } => Boolean(item?.key));

@@ -5,7 +5,12 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, Heart, Loader2, X, XCircle } from "lucide-react";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
-import { getQuestionBankTypeLabel, isQuestionBankRichAnswerQuestionType, type QuestionBankEditableQuestionType } from "@/lib/question-bank-types";
+import {
+  getQuestionBankTypeLabel,
+  isQuestionBankAutoGradedForOwner,
+  isQuestionBankRichAnswerQuestionType,
+  type QuestionBankEditableQuestionType
+} from "@/lib/question-bank-types";
 import { cn } from "@/lib/utils";
 
 type Question = {
@@ -64,7 +69,9 @@ const text = {
 };
 
 const quizActionButtonClass =
-  "inline-flex min-h-12 w-36 items-center justify-center gap-2 rounded-xl border-b-4 border-success-strong bg-success px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-400";
+  "inline-flex min-h-12 w-36 items-center justify-center gap-2 rounded-xl border-b-4 border-[var(--challenge-strong)] bg-[var(--challenge-primary)] px-5 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-[var(--challenge-strong)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--challenge-ring)] disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-400";
+const quizSecondaryButtonClass =
+  "secondary-button hover:border-[var(--challenge-accent)] hover:text-[var(--challenge-accent)] focus-visible:ring-[var(--challenge-ring)]";
 
 function coerceOptions(options: unknown): Option[] {
   if (Array.isArray(options)) {
@@ -115,6 +122,8 @@ export function QuizRunner({
   initialRecordedAttempts = {},
   initialScoredTotal,
   initialTotal,
+  ownerName,
+  ownerType,
   sectionId,
   sessionId
 }: {
@@ -123,6 +132,8 @@ export function QuizRunner({
   initialRecordedAttempts?: Record<string, string>;
   initialScoredTotal: number;
   initialTotal: number;
+  ownerName: string;
+  ownerType: "public_subject" | "major";
   sectionId: string;
   sessionId: string;
 }) {
@@ -203,6 +214,7 @@ export function QuizRunner({
   }, [currentIndex, initialTotal, sectionId, sessionId]);
 
   const isRichAnswerQuestion = Boolean(current && isQuestionBankRichAnswerQuestionType(current.type));
+  const isSubjectiveQuestion = Boolean(current && !isQuestionBankAutoGradedForOwner(current.type, ownerType, ownerName));
 
   useEffect(() => {
     if (!pendingRichAnswerScrollQuestionId || pendingRichAnswerScrollQuestionId !== current?.id || checkState === "idle") {
@@ -287,7 +299,7 @@ export function QuizRunner({
       const correct = gradingStatus === "auto_graded" && Boolean(payload.data.correct);
       setCorrectAnswer(payload.data.correctAnswer);
       setCheckState(gradingStatus === "ungraded" ? "ungraded" : correct ? "correct" : "wrong");
-      if (isQuestionBankRichAnswerQuestionType(current.type)) {
+      if (gradingStatus === "ungraded") {
         setPendingRichAnswerScrollQuestionId(current.id);
       }
       if (typeof payload.data.attemptId === "string") {
@@ -366,7 +378,7 @@ export function QuizRunner({
     <section className="flex h-dvh flex-col overflow-hidden bg-surface">
       <div className="mx-auto flex w-full max-w-5xl items-center gap-3 px-5 py-6 sm:gap-5">
         <button
-          className="grid size-11 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/20"
+          className="grid size-11 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-[var(--challenge-muted)] hover:text-[var(--challenge-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--challenge-ring)]"
           type="button"
           aria-label={text.exit}
           onClick={() => {
@@ -399,10 +411,10 @@ export function QuizRunner({
       <article
         className={cn(
           "mx-auto flex w-full flex-1 flex-col overflow-y-auto px-5 py-5",
-          isRichAnswerQuestion && checkState !== "idle" ? "max-w-5xl justify-start" : "max-w-3xl justify-center"
+          isSubjectiveQuestion && checkState !== "idle" ? "max-w-5xl justify-start" : "max-w-3xl justify-center"
         )}
       >
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-semibold text-teal">
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-semibold text-[var(--challenge-accent)]">
           <span>{text.question} {currentIndex + 1} / {totalQuestions} · {questionTypeLabel}</span>
           {sourceTitle ? (
             <span className="max-w-full truncate rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500" title={sourceTitle}>
@@ -414,7 +426,7 @@ export function QuizRunner({
           <RichTextContent className="whitespace-pre-wrap" value={current.stem} />
         </div>
 
-        {isRichAnswerQuestion && checkState !== "idle" ? (
+        {isSubjectiveQuestion && checkState !== "idle" ? (
           <div ref={richAnswerFeedbackRef} className="mt-6 grid gap-5 lg:grid-cols-2 lg:items-start">
             <section aria-labelledby={`student-answer-${current.id}`}>
               <h4 id={`student-answer-${current.id}`} className="text-base font-semibold text-ink">
@@ -424,7 +436,7 @@ export function QuizRunner({
                 className={cn(
                   "mt-3 min-h-36 rounded-xl border-2 px-5 py-4 text-base font-medium leading-8 text-ink",
                   checkState === "ungraded"
-                    ? "border-teal/30 bg-teal/5"
+                    ? "border-[var(--challenge-ring)] bg-[var(--challenge-muted)]"
                     : checkState === "correct"
                       ? "border-success bg-success-muted"
                       : "border-coral bg-coral/10"
@@ -434,10 +446,10 @@ export function QuizRunner({
               </div>
             </section>
             <section aria-labelledby={`reference-answer-${current.id}`}>
-              <h4 id={`reference-answer-${current.id}`} className="text-base font-semibold text-teal">
+              <h4 id={`reference-answer-${current.id}`} className="text-base font-semibold text-[var(--challenge-accent)]">
                 {text.referenceAnswer}
               </h4>
-              <div className="mt-3 min-h-36 rounded-xl border border-teal/20 bg-teal/5 px-5 py-4 text-ink">
+              <div className="mt-3 min-h-36 rounded-xl border border-[var(--challenge-ring)] bg-[var(--challenge-muted)] px-5 py-4 text-ink">
                 <RichTextContent className="text-base leading-8" value={answerText(correctAnswer) || "\u6682\u65e0\u53c2\u8003\u7b54\u6848"} />
               </div>
             </section>
@@ -454,7 +466,7 @@ export function QuizRunner({
                     ? "border-success bg-success-muted"
                     : checkState === "wrong"
                       ? "border-coral bg-coral/10"
-                      : "border-border-soft focus:border-info focus:ring-4 focus:ring-info/10"
+                      : "border-border-soft focus:border-[var(--challenge-primary)] focus:ring-4 focus:ring-[var(--challenge-ring)]"
                 )}
                 disabled={checkState !== "idle"}
                 placeholder="请输入答案"
@@ -471,7 +483,7 @@ export function QuizRunner({
                     ? "border-success bg-success-muted"
                     : checkState === "wrong"
                       ? "border-coral bg-coral/10"
-                      : "border-border-soft focus:border-info focus:ring-4 focus:ring-info/10"
+                      : "border-border-soft focus:border-[var(--challenge-primary)] focus:ring-4 focus:ring-[var(--challenge-ring)]"
                 )}
                 disabled={checkState !== "idle"}
                 placeholder="请输入你的作答"
@@ -496,8 +508,8 @@ export function QuizRunner({
                       : checkState === "wrong" && active
                         ? "border-coral bg-coral/10 text-coral"
                         : active
-                          ? "border-info bg-info-muted text-ink"
-                          : "border-border-soft bg-surface hover:border-slate-300"
+                          ? "border-[var(--challenge-primary)] bg-[var(--challenge-muted)] text-ink"
+                          : "border-border-soft bg-surface hover:border-[var(--challenge-primary)]"
                   )}
                   type="button"
                   disabled={checkState !== "idle"}
@@ -520,29 +532,29 @@ export function QuizRunner({
             : checkState === "wrong"
               ? "bg-coral/10"
               : checkState === "ungraded"
-                ? "bg-teal/5"
+                ? "bg-[var(--challenge-muted)]"
                 : "bg-surface"
         )}
       >
         <div className="mx-auto flex min-h-16 w-full max-w-5xl flex-wrap items-center justify-between gap-4">
           {checkState === "idle" ? (
             <div className="flex flex-wrap items-center gap-2">
-              <button className="secondary-button" type="button" disabled={!canGoPrevious} onClick={previousQuestion}>
+              <button className={quizSecondaryButtonClass} type="button" disabled={!canGoPrevious} onClick={previousQuestion}>
                 {text.previous}
               </button>
-              <button className="secondary-button" type="button" disabled={loading || checking || questionLoading} onClick={skipQuestion}>
+              <button className={quizSecondaryButtonClass} type="button" disabled={loading || checking || questionLoading} onClick={skipQuestion}>
                 {text.skip}
               </button>
             </div>
           ) : (
             <div className="flex min-w-0 flex-wrap items-center gap-3">
-              <button className="secondary-button" type="button" disabled={!canGoPrevious} onClick={previousQuestion}>
+              <button className={quizSecondaryButtonClass} type="button" disabled={!canGoPrevious} onClick={previousQuestion}>
                 {text.previous}
               </button>
               <div
                 className={cn(
                   "flex min-w-0 items-center gap-3",
-                  checkState === "correct" ? "text-success-strong" : checkState === "wrong" ? "text-coral" : "text-teal"
+                  checkState === "correct" ? "text-success-strong" : checkState === "wrong" ? "text-coral" : "text-[var(--challenge-accent)]"
                 )}
               >
                 <span className="grid size-11 shrink-0 place-items-center rounded-full bg-surface">
@@ -583,7 +595,7 @@ export function QuizRunner({
                 onClick={checkAnswer}
               >
                 {checking ? <Loader2 className="animate-spin" size={18} /> : null}
-                {isRichAnswerQuestion ? text.submitAnswer : text.check}
+                {isSubjectiveQuestion ? text.submitAnswer : text.check}
               </button>
             ) : (
               <button

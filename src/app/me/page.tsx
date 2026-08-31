@@ -9,6 +9,7 @@ import { AvatarUploadForm } from "@/components/avatar-upload-form";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { DiamondRechargeQrPreview } from "@/components/diamond-recharge-qr-preview";
 import { HomeProfileEditor } from "@/components/home-profile-editor";
+import { SaveLearningActivityImageButton } from "@/components/save-learning-activity-image-button";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
 import { SocialPostCard, type SocialPostNode } from "@/components/social-post-card";
 import { SocialMedalBadge } from "@/components/social-medal-badge";
@@ -41,7 +42,7 @@ const coverMaxBytes = 2 * 1024 * 1024;
 const diamondPageSize = 10;
 const allowedAvatarTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const dayMs = 24 * 60 * 60 * 1000;
-const heatmapWeekCount = 26;
+const heatmapWeekCount = 52;
 const chinaDateFormatter = new Intl.DateTimeFormat("en-US", {
   day: "2-digit",
   month: "2-digit",
@@ -121,6 +122,7 @@ const meTabs: Array<{ key: MeTab; label: string }> = [
 
 type SocialProfile = Awaited<ReturnType<typeof getSocialProfile>>;
 type ProfilePost = Awaited<ReturnType<typeof listProfileBuddyPosts>>["items"][number];
+type DailyAttemptStat = { count: number; dateKey: string };
 
 export default async function MePage({
   searchParams
@@ -142,7 +144,7 @@ export default async function MePage({
   const diamondPageCount = Math.max(1, Math.ceil(diamondTransactionCount / diamondPageSize));
   const diamondPage = Math.min(requestedDiamondPage, diamondPageCount);
   const heatmapStart = new Date(Date.now() - (heatmapWeekCount * 7 + 7) * dayMs);
-  const [fullUser, transactions, totalAttempts, recentAttempts, schools, homeProfile, homePosts, systemSettings] = await Promise.all([
+  const [fullUser, transactions, totalAttempts, recentAttempts, dailyAttemptStats, schools, homeProfile, homePosts, systemSettings] = await Promise.all([
     prisma.user.findUnique({
       where: { id: user.id },
       include: { studentProfile: { include: { region: true, schoolOption: true } } }
@@ -160,6 +162,17 @@ export default async function MePage({
       where: { userId: user.id, createdAt: { gte: heatmapStart } },
       select: { createdAt: true }
     }),
+    activeTab === "medals"
+      ? prisma.$queryRaw<DailyAttemptStat[]>`
+          SELECT
+            TO_CHAR(("createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Shanghai')::date, 'YYYY-MM-DD') AS "dateKey",
+            COUNT(*)::int AS "count"
+          FROM "question_attempts"
+          WHERE "userId" = ${user.id}
+          GROUP BY 1
+          ORDER BY 1
+        `
+      : Promise.resolve([] as DailyAttemptStat[]),
     prisma.school.findMany({
       where: { status: "published" },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
@@ -209,8 +222,13 @@ export default async function MePage({
 
         {activeTab === "medals" ? (
           <MedalTrack
+            avatarColor={avatarColor}
+            avatarImage={avatarImage}
+            dailyAttemptStats={dailyAttemptStats}
             dailyAttempts={dailyAttempts}
+            nickname={nickname}
             totalAttempts={totalAttempts}
+            username={fullUser.username}
           />
         ) : null}
 
@@ -697,11 +715,21 @@ function getPostRepostSource(post: {
 }
 
 function MedalTrack({
+  avatarColor,
+  avatarImage,
+  dailyAttemptStats,
   dailyAttempts,
-  totalAttempts
+  nickname,
+  totalAttempts,
+  username
 }: {
+  avatarColor: string;
+  avatarImage: string;
+  dailyAttemptStats: DailyAttemptStat[];
   dailyAttempts: Record<string, number>;
+  nickname: string;
   totalAttempts: number;
+  username: string;
 }) {
   const expertTarget = medalRules.find((rule) => rule.level === "expert")?.minAttempts || 400;
   const scholarTarget = medalRules.find((rule) => rule.level === "scholar")?.minAttempts || 600;
@@ -715,9 +743,26 @@ function MedalTrack({
         : (totalAttempts / expertTarget) * 50;
   const progressPercent = Math.max(0, Math.min(100, progress));
   const monthAttemptCount = getCurrentMonthAttemptCount(dailyAttempts);
-  const activeDays = Object.values(dailyAttempts).filter((count) => count > 0).length;
+  const { currentStreakDays, longestStreakDays, peakDailyAttemptCount } = summarizeAnswerActivity(dailyAttemptStats);
   const activeLearningShareContent = "晒一下最近的学习节奏，继续冲。";
   const activeLearningShareSuggestions = getActiveLearningShareSuggestions();
+  const activeLearningWeeks = buildHeatmapWeeks(dailyAttempts);
+  const activeLearningShareCard: BuddyShareCard = {
+    type: "active_learning_card",
+    currentStreakDays,
+    longestStreakDays,
+    monthAttemptCount,
+    peakDailyAttemptCount,
+    totalAttempts,
+    weeks: activeLearningWeeks
+  };
+  const profileDataCards = [
+    { label: "累计答题", value: `${totalAttempts} 道` },
+    { label: "本月答题", value: `${monthAttemptCount} 道` },
+    { label: "峰值答题数", value: `${peakDailyAttemptCount} 道` },
+    { label: "当前连续天数", value: `${currentStreakDays} 天` },
+    { label: "最长连续天数", value: `${longestStreakDays} 天` }
+  ];
   const nodes = [
     { label: "小白", threshold: 0, position: 0, icon: Medal, colorClass: "bg-[#B87333] text-white" },
     { label: "达人", threshold: expertTarget, position: 50, icon: Trophy, colorClass: "bg-[#94A3B8] text-white" },
@@ -725,11 +770,58 @@ function MedalTrack({
   ];
 
   return (
-    <SectionFrame icon={<Medal className="text-teal" size={22} />} title="我的勋章">
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,520px)_minmax(320px,1fr)] xl:items-start">
-        <div className="min-w-0">
-          <div className="rounded-2xl border border-slate-200/70 bg-transparent px-4 py-5">
-            <div className="relative w-full max-w-[520px] px-2 pb-14 pt-8 text-xs">
+    <SurfaceCard className="overflow-hidden p-0">
+      <div className="mx-auto max-w-5xl px-4 pb-6 pt-4 sm:px-6 md:pb-7">
+        <div className="relative">
+          <div className="flex min-h-11 items-center justify-end gap-1 md:absolute md:-top-6 md:right-0">
+            <ShareToBuddyButton
+              buttonClassName="min-h-11 !rounded-md !border-0 !bg-transparent !px-2 !py-1 text-sm !font-medium !text-slate-600 hover:!text-teal focus-visible:outline-none focus-visible:!ring-2 focus-visible:!ring-teal/30"
+              buttonIconSize={16}
+              buttonLabel="分享"
+              contentSuggestions={activeLearningShareSuggestions}
+              copyContext="active_learning"
+              defaultContent={activeLearningShareContent}
+              shareCard={activeLearningShareCard}
+              sourceLabel="学习活跃度"
+            />
+            <SaveLearningActivityImageButton
+              avatarColor={avatarColor}
+              avatarImage={avatarImage}
+              nickname={nickname}
+              stats={profileDataCards}
+              username={username}
+              weeks={activeLearningWeeks}
+            />
+          </div>
+
+          <div className="flex flex-col items-center pb-1 pt-1 text-center md:pt-5">
+            <Avatar name={nickname} color={avatarColor} image={avatarImage} size="header" />
+            <h1 className="mt-3 max-w-full break-words text-2xl font-bold leading-tight text-ink">{nickname}</h1>
+            <p className="mt-1 max-w-full break-all text-sm font-medium text-slate-500">@{username}</p>
+          </div>
+        </div>
+
+        <ul aria-label="学习数据概览" className="mx-auto mt-6 grid max-w-4xl grid-cols-2 gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 sm:grid-cols-5">
+          {profileDataCards.map((item) => (
+            <li key={item.label} className="min-w-0 bg-white px-2 py-3 text-center last:col-span-2 sm:px-3 sm:last:col-span-1">
+              <p className="truncate text-lg font-semibold tabular-nums text-ink" title={item.value}>{item.value}</p>
+              <p className="mt-0.5 text-sm font-medium text-slate-500">{item.label}</p>
+            </li>
+          ))}
+        </ul>
+
+        <div className="mx-auto mt-6 max-w-4xl">
+          <AnswerHeatmap dailyAttempts={dailyAttempts} />
+        </div>
+
+        <section className="mx-auto mt-8 max-w-4xl" aria-labelledby="my-medals-title">
+          <div className="flex items-center gap-2">
+            <Medal className="text-teal" size={20} />
+            <h2 id="my-medals-title" className="text-lg font-semibold text-ink">我的勋章</h2>
+          </div>
+
+          <div className="mx-auto mt-2 max-w-3xl px-2 py-3 sm:px-4">
+            <div className="relative w-full px-2 pb-14 pt-8 text-xs">
               <div className="absolute left-2 right-2 top-[62px] h-1.5 rounded-full bg-slate-200" />
               <div className="absolute left-2 top-[62px] h-1.5 rounded-full bg-honey" style={{ width: `calc((100% - 16px) * ${progressPercent / 100})` }} />
               <div className="absolute top-[57px] z-20 size-4 rounded-full border-2 border-white bg-teal shadow-soft" style={{ left: `calc(8px + (100% - 16px) * ${progressPercent / 100})`, transform: "translateX(-50%)" }} />
@@ -764,20 +856,9 @@ function MedalTrack({
               </span>
             </div>
           </div>
-        </div>
-
-        <AnswerHeatmap
-          activeDays={activeDays}
-          dailyAttempts={dailyAttempts}
-          monthAttemptCount={monthAttemptCount}
-          nextLabel={nextRule?.label}
-          remaining={remaining}
-          shareContent={activeLearningShareContent}
-          shareSuggestions={activeLearningShareSuggestions}
-          totalAttempts={totalAttempts}
-        />
+        </section>
       </div>
-    </SectionFrame>
+    </SurfaceCard>
   );
 }
 
@@ -800,55 +881,18 @@ function getActiveLearningShareSuggestions(): ShareCopySuggestion[] {
 }
 
 function AnswerHeatmap({
-  activeDays,
-  dailyAttempts,
-  monthAttemptCount,
-  nextLabel,
-  remaining,
-  shareContent,
-  shareSuggestions,
-  totalAttempts
+  dailyAttempts
 }: {
-  activeDays: number;
   dailyAttempts: Record<string, number>;
-  monthAttemptCount: number;
-  nextLabel?: string;
-  remaining: number;
-  shareContent: string;
-  shareSuggestions: ShareCopySuggestion[];
-  totalAttempts: number;
 }) {
   const weeks = buildHeatmapWeeks(dailyAttempts);
   const monthHeaders = weeks.map((week, weekIndex) => getWeekMonthLabel(week, weekIndex));
-  const activeLearningShareCard: BuddyShareCard = {
-    type: "active_learning_card",
-    activeDays,
-    monthAttemptCount,
-    nextLabel,
-    remaining,
-    totalAttempts,
-    weeks
-  };
 
   return (
-    <div className="min-w-0 rounded-2xl border border-slate-200/70 bg-transparent px-4 py-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-ink">学习活跃度</h3>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <span className="text-xs font-semibold text-slate-500">本月 {monthAttemptCount} 题</span>
-          <ShareToBuddyButton
-            buttonClassName="min-h-8 rounded-xl px-3 py-1 text-xs"
-            buttonLabel="分享"
-            contentSuggestions={shareSuggestions}
-            copyContext="active_learning"
-            defaultContent={shareContent}
-            shareCard={activeLearningShareCard}
-            sourceLabel="学习活跃度"
-          />
-        </div>
-      </div>
+    <div className="min-w-0">
+      <h3 className="text-sm font-semibold text-ink">学习活跃度</h3>
 
-      <div className="mt-4 overflow-x-auto pb-1">
+      <div className="mt-3 overflow-x-auto pb-1">
         <div className="grid min-w-max grid-cols-[2rem_auto] gap-x-2 gap-y-1">
           <div />
           <div className="flex gap-1 text-[10px] font-semibold leading-3 text-slate-400">
@@ -885,7 +929,7 @@ function AnswerHeatmap({
         </div>
       </div>
 
-      <div className="mt-3 flex items-center justify-end gap-1 text-[11px] font-semibold text-slate-400">
+      <div className="mt-2 flex items-center justify-end gap-1 text-[11px] font-semibold text-slate-400">
         <span>Less</span>
         {heatmapLevelClasses.map((levelClass) => (
           <span key={levelClass} className={cn("size-3 rounded-[3px] border", levelClass)} />
@@ -902,6 +946,46 @@ function summarizeDailyAttempts(attempts: Array<{ createdAt: Date }>) {
     result[key] = (result[key] || 0) + 1;
     return result;
   }, {});
+}
+
+function summarizeAnswerActivity(dailyAttemptStats: DailyAttemptStat[], now = new Date()) {
+  const countByDate = dailyAttemptStats.reduce<Map<string, number>>((result, item) => {
+    if (item.count > 0) {
+      result.set(item.dateKey, (result.get(item.dateKey) || 0) + item.count);
+    }
+    return result;
+  }, new Map());
+  const orderedDateKeys = [...countByDate.keys()].sort();
+  let longestStreakDays = 0;
+  let runningStreakDays = 0;
+  let previousDate: Date | null = null;
+
+  orderedDateKeys.forEach((dateKey) => {
+    const currentDate = parseDateKey(dateKey);
+    runningStreakDays = previousDate && currentDate.getTime() - previousDate.getTime() === dayMs
+      ? runningStreakDays + 1
+      : 1;
+    longestStreakDays = Math.max(longestStreakDays, runningStreakDays);
+    previousDate = currentDate;
+  });
+
+  const today = parseDateKey(getChinaDateKey(now));
+  let streakCursor = today;
+  if (!countByDate.has(formatDateKey(streakCursor))) {
+    streakCursor = new Date(streakCursor.getTime() - dayMs);
+  }
+
+  let currentStreakDays = 0;
+  while (countByDate.has(formatDateKey(streakCursor))) {
+    currentStreakDays += 1;
+    streakCursor = new Date(streakCursor.getTime() - dayMs);
+  }
+
+  return {
+    currentStreakDays,
+    longestStreakDays,
+    peakDailyAttemptCount: Math.max(0, ...countByDate.values())
+  };
 }
 
 function getCurrentMonthAttemptCount(dailyAttempts: Record<string, number>) {

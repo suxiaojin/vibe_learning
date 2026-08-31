@@ -43,6 +43,7 @@ export default async function SpecialPracticeQuestionPage({
     <SpecialPracticeRunner
       courseKey={courseKey}
       initialIndex={initialIndex}
+      ownerName={context.group.name}
       questions={questions}
       sectionId={section.id}
       sectionTitle={section.title}

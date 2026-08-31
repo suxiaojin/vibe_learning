@@ -77,53 +77,93 @@ function QuizResultShareCard({ card, compact }: { card: Extract<BuddyShareCard, 
 }
 
 function ActiveLearningShareCard({ card, compact }: { card: Extract<BuddyShareCard, { type: "active_learning_card" }>; compact: boolean }) {
+  const metrics = [
+    { label: "累计答题", value: `${card.totalAttempts} 道` },
+    { label: "本月答题", value: `${card.monthAttemptCount} 道` },
+    { label: "峰值答题数", value: formatOptionalMetric(card.peakDailyAttemptCount, "道") },
+    { label: "当前连续天数", value: formatOptionalMetric(card.currentStreakDays, "天") },
+    { label: "最长连续天数", value: formatOptionalMetric(card.longestStreakDays, "天") }
+  ];
+
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 p-4">
+      <div className="border-b border-slate-100 p-4">
         <div>
           <p className="text-xs font-black uppercase tracking-wide text-emerald-600">Active Learning</p>
           <h4 className={cn("mt-1 font-black text-ink", compact ? "text-lg" : "text-2xl")}>我的学习活跃度</h4>
         </div>
-        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">本月 {card.monthAttemptCount} 题</span>
       </div>
-      <div className="grid gap-3 p-4 sm:grid-cols-3">
-        <Metric label="累计刷题" value={`${card.totalAttempts} 道`} />
-        <Metric label="活跃天数" value={`${card.activeDays} 天`} />
-        <Metric label={card.nextLabel ? `距离${card.nextLabel}` : "勋章进度"} value={card.nextLabel ? `${card.remaining} 道` : "最高勋章"} />
+      <div className="grid grid-cols-2 gap-px border-b border-slate-200 bg-slate-200 sm:grid-cols-5">
+        {metrics.map((item) => (
+          <div key={item.label} className="min-w-0 bg-white px-2 py-3 text-center last:col-span-2 sm:px-3 sm:last:col-span-1">
+            <p className="truncate text-base font-black tabular-nums text-ink" title={item.value}>{item.value}</p>
+            <p className="mt-0.5 text-xs font-bold text-slate-500">{item.label}</p>
+          </div>
+        ))}
       </div>
-      <div className="overflow-x-auto px-4 pb-4">
-        <div className="grid min-w-max grid-cols-[2rem_auto] gap-x-2 gap-y-1">
-          <span aria-hidden="true" />
-          <div className="flex h-4 gap-1 text-[10px] font-bold text-slate-400">
-            {card.weeks.map((week, weekIndex) => (
-              <span key={weekIndex} className="relative block size-3">
-                {getMonthLabel(week, weekIndex) ? <span className="absolute left-0 top-0">{getMonthLabel(week, weekIndex)}</span> : null}
-              </span>
-            ))}
-          </div>
-          <div className="grid grid-rows-7 gap-1 text-right text-[10px] font-bold leading-3 text-slate-400">
-            {weekdayLabels.map((label, index) => <span key={index}>{label}</span>)}
-          </div>
-          <div className="flex gap-1">
-            {card.weeks.map((week, weekIndex) => (
-              <div key={weekIndex} className="grid grid-rows-7 gap-1">
-                {week.map((day, dayIndex) => (
-                  <span
-                    key={`${day.key}-${weekIndex}-${dayIndex}`}
-                    className={cn(
-                      "block size-3 rounded-[3px] border",
-                      day.future ? "border-transparent bg-transparent" : heatmapLevelClasses[day.level] || heatmapLevelClasses[0]
-                    )}
-                    title={day.key ? `${day.key}：${day.count} 道` : undefined}
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
+      <div className="overflow-hidden px-4 pb-2 pt-4">
+        <div className="sm:hidden">
+          <ActiveLearningHeatmapGrid weeks={card.weeks.slice(-18)} compact />
         </div>
+        <div className="hidden sm:block">
+          <ActiveLearningHeatmapGrid weeks={card.weeks.slice(-40)} />
+        </div>
+      </div>
+      <div className="flex items-center justify-end gap-1 px-4 pb-4 text-[11px] font-bold text-slate-400">
+        <span>Less</span>
+        {heatmapLevelClasses.map((levelClass) => (
+          <span key={levelClass} className={cn("size-3 rounded-[3px] border", levelClass)} />
+        ))}
+        <span>More</span>
       </div>
     </div>
   );
+}
+
+function ActiveLearningHeatmapGrid({
+  compact = false,
+  weeks
+}: {
+  compact?: boolean;
+  weeks: Extract<BuddyShareCard, { type: "active_learning_card" }>["weeks"];
+}) {
+  return (
+    <div className={cn("grid gap-y-1", compact ? "grid-cols-[1.5rem_auto] gap-x-1.5" : "grid-cols-[2rem_auto] gap-x-2")}>
+      <span aria-hidden="true" />
+      <div className={cn("flex font-bold text-slate-400", compact ? "h-3 gap-0.5 text-[9px]" : "h-3.5 gap-0.5 text-[9px]")}>
+        {weeks.map((week, weekIndex) => (
+          <span key={weekIndex} className={cn("relative block shrink-0", compact ? "size-2" : "size-2.5")}>
+            {getMonthLabel(week, weekIndex) ? <span className="absolute left-0 top-0">{getMonthLabel(week, weekIndex)}</span> : null}
+          </span>
+        ))}
+      </div>
+      <div className={cn("grid grid-rows-7 gap-0.5 text-right text-[9px] font-bold text-slate-400", compact ? "leading-2" : "leading-[10px]")}>
+        {weekdayLabels.map((label, index) => <span key={index}>{label}</span>)}
+      </div>
+      <div className="flex gap-0.5">
+        {weeks.map((week, weekIndex) => (
+          <div key={weekIndex} className="grid grid-rows-7 gap-0.5">
+            {week.map((day, dayIndex) => (
+              <span
+                key={`${day.key}-${weekIndex}-${dayIndex}`}
+                aria-label={day.key ? `${day.key} 答题 ${day.count} 道` : undefined}
+                className={cn(
+                  "block shrink-0 border",
+                  compact ? "size-2 rounded-[2px]" : "size-2.5 rounded-[2px]",
+                  day.future ? "border-transparent bg-transparent" : heatmapLevelClasses[day.level] || heatmapLevelClasses[0]
+                )}
+                title={day.key ? `${day.key}：${day.count} 道` : undefined}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function formatOptionalMetric(value: number | undefined, unit: string) {
+  return value === undefined ? "—" : `${value} ${unit}`;
 }
 
 function getMonthLabel(

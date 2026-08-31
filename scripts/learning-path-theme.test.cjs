@@ -121,7 +121,14 @@ for (const theme of themes.learningPathThemes) {
     assert.deepEqual(fixture.calls[0].update, { learningPathTheme: theme.key });
     assert.equal(fixture.row().customerServiceEmail, 'keep@example.com');
     assert.equal(fixture.row().profileHomepageBackgroundImageUrl, '/keep.png');
-    assert.deepEqual(fixture.invalidated, [['/admin/settings'], ['/learn'], ['/learn/stages'], ['/learn/[id]/guide', 'page']]);
+    assert.deepEqual(fixture.invalidated, [
+      ['/admin/settings'],
+      ['/learn'],
+      ['/learn/stages'],
+      ['/learn/[id]/guide', 'page'],
+      ['/learn/[id]', 'page'],
+      ['/learn/[id]/result', 'page'],
+    ]);
   });
 }
 
@@ -280,4 +287,43 @@ test('stages with no published content retain the empty state and back link', as
   assert.ok(html.includes('当前没有已发布的闯关内容。'));
   assert.ok(html.includes('href="/learn"'));
   assert.ok(!html.includes('id="chapter-'));
+});
+
+test('quiz and result routes load and scope the saved challenge theme', () => {
+  const quizPage = fs.readFileSync(path.join(root, 'src/app/learn/[id]/page.tsx'), 'utf8');
+  const resultPage = fs.readFileSync(path.join(root, 'src/app/learn/[id]/result/page.tsx'), 'utf8');
+  for (const source of [quizPage, resultPage]) {
+    assert.ok(source.includes('getSystemSettings'));
+    assert.ok(source.includes('getLearningPathThemeStyle(settings.learningPathTheme)'));
+  }
+  assert.ok(quizPage.includes('style={getLearningPathThemeStyle(settings.learningPathTheme)}'));
+  assert.ok(resultPage.includes('<div style={getLearningPathThemeStyle(settings.learningPathTheme)}>'));
+});
+
+test('quiz runner themes neutral controls while preserving answer-state colors', () => {
+  const source = fs.readFileSync(path.join(root, 'src/components/quiz-runner.tsx'), 'utf8');
+  for (const token of ['--challenge-primary', '--challenge-strong', '--challenge-ring', '--challenge-muted', '--challenge-accent']) {
+    assert.ok(source.includes(`var(${token})`));
+  }
+  assert.ok(source.includes('bg-success transition-[width]'));
+  assert.ok(source.includes('border-success bg-success-muted'));
+  assert.ok(source.includes('border-coral bg-coral/10'));
+  assert.ok(source.includes('text-coral'));
+  assert.ok(!source.includes('border-success-strong bg-success px-5'));
+});
+
+test('result actions theme objective AI controls and hide them for ungraded or advanced math attempts', () => {
+  const resultPage = fs.readFileSync(path.join(root, 'src/app/learn/[id]/result/page.tsx'), 'utf8');
+  const ai = fs.readFileSync(path.join(root, 'src/components/wrong-question-ai.tsx'), 'utf8');
+  assert.ok(resultPage.includes('themedPrimaryButtonClass'));
+  assert.ok(resultPage.includes('themedSecondaryButtonClass'));
+  assert.ok(resultPage.includes('themedAiButtonClass'));
+  assert.ok(resultPage.includes('const ungraded = tone === "ungraded";'));
+  assert.ok(resultPage.includes('const hideAiExplanation = isAdvancedMathPublicSubject(access.group.key, access.group.name);'));
+  assert.ok(resultPage.includes('{!ungraded && !hideAiExplanation ? (\n        <WrongQuestionAi'));
+  assert.ok(resultPage.includes('followUpButtonClassName={themedPrimaryButtonClass}'));
+  assert.ok(resultPage.includes('passed ? "bg-success p-6 text-white" : "bg-coral p-6 text-white"'));
+  assert.ok(resultPage.includes('passed ? "bg-success" : "bg-coral"'));
+  assert.ok(ai.includes('followUpButtonClassName = "primary-button"'));
+  assert.ok(ai.includes('className={`${followUpButtonClassName} sm:w-24'));
 });

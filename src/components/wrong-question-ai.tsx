@@ -30,12 +30,14 @@ export function WrongQuestionAi({
   questionId,
   sessionId,
   buttonClassName = "secondary-button",
+  followUpButtonClassName = "primary-button",
   buttonText = text.button,
   containerClassName = "mt-4"
 }: {
   questionId: string;
   sessionId?: string;
   buttonClassName?: string;
+  followUpButtonClassName?: string;
   buttonText?: string;
   containerClassName?: string;
 }) {
@@ -276,7 +278,7 @@ export function WrongQuestionAi({
                 placeholder={text.placeholder}
               />
               <button
-                className="primary-button sm:w-24 disabled:cursor-not-allowed disabled:bg-slate-400"
+                className={`${followUpButtonClassName} sm:w-24 disabled:cursor-not-allowed disabled:bg-slate-400`}
                 disabled={loading || !prompt.trim()}
                 type="button"
                 onClick={() => askAi(prompt)}

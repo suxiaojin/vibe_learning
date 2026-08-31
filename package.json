@@ -22,6 +22,7 @@
     "bcryptjs": "^2.4.3",
     "ioredis": "^5.11.1",
     "jose": "^5.9.6",
+    "katex": "^0.16.22",
     "lucide-react": "^0.468.0",
     "next": "^15.0.3",
     "pdf-parse": "^1.1.1",

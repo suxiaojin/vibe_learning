@@ -167,7 +167,7 @@ export function ShareToBuddyButton({
 
       {open ? (
         <div className="fixed inset-0 z-50 grid place-items-start justify-center overflow-y-auto bg-ink/35 px-4 py-10">
-          <div className="relative w-full max-w-xl rounded-2xl bg-white p-5 shadow-[0_18px_60px_rgba(15,23,42,0.24)]">
+          <div className="relative w-full max-w-4xl rounded-2xl bg-white p-5 shadow-[0_18px_60px_rgba(15,23,42,0.24)]">
             <div className="flex items-center justify-between gap-3">
               <button
                 aria-label="关闭分享"

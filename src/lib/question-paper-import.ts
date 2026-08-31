@@ -84,6 +84,18 @@ export function assertImportQuestionPaperPayload(value: unknown): asserts value 
     if (!Array.isArray(question.options)) {
       throw new Error(`第 ${index + 1} 道题选项格式不正确。`);
     }
+    question.options = question.options.map((option, optionIndex) => {
+      if (!option || typeof option !== "object") {
+        throw new Error(`第 ${index + 1} 道题第 ${optionIndex + 1} 个选项格式不正确。`);
+      }
+      const source = option as unknown as Record<string, unknown>;
+      const key = String(source.key || "").trim().toUpperCase();
+      const text = String(source.text || source.content || "").trim();
+      if (!key || !text) {
+        throw new Error(`第 ${index + 1} 道题第 ${optionIndex + 1} 个选项缺少字母或内容。`);
+      }
+      return { key, text };
+    });
   });
 }
 

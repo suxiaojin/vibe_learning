@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
 import { QuizRunner } from "@/components/quiz-runner";
 import { requireUser } from "@/lib/auth";
+import { getLearningPathThemeStyle } from "@/lib/learning-path-theme";
 import { prisma } from "@/lib/prisma";
-import { isQuestionBankAutoGradedQuestionType } from "@/lib/question-bank-types";
+import { isQuestionBankAutoGradedForOwner } from "@/lib/question-bank-types";
+import { getSystemSettings } from "@/lib/system-settings";
 import {
   getNextChapterChallengeVersion,
   getSyllabusSectionForStudent,
@@ -131,16 +133,29 @@ export default async function SectionQuizPage({
   const initialIndex = Math.max(0, firstUnansweredIndex);
   const initialRecordedAttempts = Object.fromEntries(attempts.map((attempt) => [attempt.questionId, attempt.id]));
   const initialCorrectCount = attempts.filter((attempt) => attempt.gradingStatus === "auto_graded" && attempt.isCorrect).length;
-  const initialScoredTotal = questions.filter((question) => isQuestionBankAutoGradedQuestionType(question.type)).length;
+  const contextualAutoGradedQuestionIds = new Set(
+    questions
+      .filter((question) => isQuestionBankAutoGradedForOwner(question.type, access.group.key, access.group.name))
+      .map((question) => question.id)
+  );
+  for (const attempt of attempts) {
+    if (attempt.gradingStatus === "auto_graded") {
+      contextualAutoGradedQuestionIds.add(attempt.questionId);
+    }
+  }
+  const initialScoredTotal = contextualAutoGradedQuestionIds.size;
+  const settings = await getSystemSettings();
 
   return (
-    <main className="h-dvh overflow-hidden bg-white">
+    <main className="h-dvh overflow-hidden bg-white" style={getLearningPathThemeStyle(settings.learningPathTheme)}>
       <QuizRunner
         initialCorrectCount={initialCorrectCount}
         initialIndex={initialIndex}
         initialRecordedAttempts={initialRecordedAttempts}
         initialScoredTotal={initialScoredTotal}
         initialTotal={questions.length}
+        ownerName={access.group.name}
+        ownerType={access.group.key}
         sectionId={access.section.id}
         sessionId={session.id}
       />

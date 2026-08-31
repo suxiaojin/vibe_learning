@@ -3,7 +3,7 @@ import { apiError, apiOk } from "@/lib/api-response";
 import { getCurrentUser } from "@/lib/auth";
 import { answersEqual, bumpStudyStat } from "@/lib/learning";
 import { prisma } from "@/lib/prisma";
-import { isQuestionBankAutoGradedQuestionType } from "@/lib/question-bank-types";
+import { isQuestionBankAutoGradedForOwner } from "@/lib/question-bank-types";
 import { getSyllabusSectionForStudent, getSyllabusSectionQuestionsForStudent, recordSyllabusSectionProgress } from "@/lib/syllabus-learning";
 
 export async function POST(
@@ -30,7 +30,9 @@ export async function POST(
     return apiError("Question is unavailable.", 404, "SYLLABUS_SECTION_QUESTION_NOT_FOUND");
   }
 
-  const gradingStatus = isQuestionBankAutoGradedQuestionType(question.type) ? "auto_graded" : "ungraded";
+  const gradingStatus = isQuestionBankAutoGradedForOwner(question.type, result.group.key, result.group.name)
+    ? "auto_graded"
+    : "ungraded";
   const correct = gradingStatus === "auto_graded" ? answersEqual(toStoredAnswer(body.answer), question.answer) : null;
   const existingAttempt = await prisma.questionAttempt.findFirst({
     where: {
