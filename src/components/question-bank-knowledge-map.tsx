@@ -43,6 +43,8 @@ type QuestionBankKnowledgeMapProps = {
   selectedOwner: KnowledgeMapOwner;
   selectedOwnerKey: string;
   root: KnowledgeMapNode;
+  province: string;
+  examType: string;
 };
 
 const branchColors = [
@@ -58,8 +60,9 @@ function ownerKey(owner: Pick<KnowledgeMapOwner, "type" | "id">) {
   return `${owner.type}:${owner.id}`;
 }
 
-function ownerMapHref(owner: KnowledgeMapOwner) {
-  return `/admin/question-banks/knowledge-points?type=${owner.type}&id=${encodeURIComponent(owner.id)}`;
+function ownerMapHref(owner: KnowledgeMapOwner, province: string, examType: string) {
+  const query = new URLSearchParams({ type: owner.type, id: owner.id, province, examType });
+  return `/admin/question-banks/knowledge-points?${query.toString()}`;
 }
 
 function nodeTitle(node: KnowledgeMapNode) {
@@ -246,7 +249,7 @@ function MindNode({
   );
 }
 
-export function QuestionBankKnowledgeMap({ owners, selectedOwner, selectedOwnerKey, root }: QuestionBankKnowledgeMapProps) {
+export function QuestionBankKnowledgeMap({ owners, selectedOwner, selectedOwnerKey, root, province, examType }: QuestionBankKnowledgeMapProps) {
   const router = useRouter();
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const panRef = useRef({ active: false, pointerId: 0, startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0 });
@@ -365,7 +368,7 @@ export function QuestionBankKnowledgeMap({ owners, selectedOwner, selectedOwnerK
   const deleteTargetName = deleteIsCourse ? "专业课" : "知识点";
 
   return (
-    <section className="grid h-[calc(100vh-51px)] grid-cols-[340px_minmax(0,1fr)] overflow-hidden bg-[#dfe3e9] text-[#102033]">
+    <section className="grid h-[calc(100vh-64px)] grid-cols-[340px_minmax(0,1fr)] overflow-hidden bg-[#dfe3e9] text-[#102033]">
       <aside className="overflow-y-auto border-r border-[#d3d9e3] bg-[#f6f8fc]">
         <div className="flex h-12 items-center gap-2 px-2 pt-2">
           <button
@@ -404,7 +407,7 @@ export function QuestionBankKnowledgeMap({ owners, selectedOwner, selectedOwnerK
                   )}
                 >
                   <span className={cn("grid size-4 place-items-center rounded-sm text-[10px] font-black", active ? "bg-white/20 text-white" : "bg-[#e4ebff] text-[#5d7df7]")}>知</span>
-                  <Link className="min-w-0 flex-1 truncate py-4" href={ownerMapHref(owner)}>
+                  <Link className="min-w-0 flex-1 truncate py-4" href={ownerMapHref(owner, province, examType)}>
                     {owner.name}
                   </Link>
                   <div className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover/owner:opacity-100">

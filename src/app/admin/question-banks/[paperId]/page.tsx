@@ -36,11 +36,16 @@ function ownerHref(paper: {
   ownerType: "public_subject" | "major";
   publicSubjectId: string | null;
   majorId: string | null;
+  region: { province: string; studySystem: string };
 }) {
-  if (paper.ownerType === "public_subject") {
-    return `/admin/question-banks?type=public_subject&id=${encodeURIComponent(paper.publicSubjectId || "")}`;
-  }
-  return `/admin/question-banks?type=major&id=${encodeURIComponent(paper.majorId || "")}`;
+  const query = new URLSearchParams({
+    type: paper.ownerType,
+    id: paper.ownerType === "public_subject" ? paper.publicSubjectId || "" : paper.majorId || "",
+    province: paper.region.province,
+    examType: paper.region.studySystem,
+    page: "1"
+  });
+  return `/admin/question-banks?${query.toString()}`;
 }
 
 function paperQuestionTypeText(
@@ -169,6 +174,12 @@ export default async function QuestionBankDetailPage({
     include: {
       major: true,
       publicSubject: true,
+      region: {
+        select: {
+          province: true,
+          studySystem: true
+        }
+      },
       questions: {
         include: {
           question: {

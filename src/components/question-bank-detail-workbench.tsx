@@ -45,7 +45,6 @@ import {
   type QuestionBankQuestionTypeConfig,
   type QuestionBankRichAnswerQuestionType
 } from "@/lib/question-bank-types";
-import { hasLatexMath, renderLatexInHtml } from "@/lib/math-rich-text";
 import { cn } from "@/lib/utils";
 
 type QuestionOption = {
@@ -328,14 +327,6 @@ function toRichTextHtml(value: string) {
   return escapeHtml(value).replace(/\n/g, "<br>");
 }
 
-function MathRichText({ value, className, inline = false }: { value: string; className?: string; inline?: boolean }) {
-  const html = renderLatexInHtml(toRichTextHtml(value));
-  if (inline) {
-    return <span className={className} dangerouslySetInnerHTML={{ __html: html }} />;
-  }
-  return <div className={className} dangerouslySetInnerHTML={{ __html: html }} />;
-}
-
 function stripHtml(value: string) {
   return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -445,7 +436,6 @@ function EditorShell({
             <ToolbarButton icon={CopyPlus} label="截图" />
             <ToolbarButton icon={Eye} label="识别" />
             <ToolbarButton icon={Image} label="插入图表" onClick={onInsertImage} />
-            <ToolbarButton icon={Sigma} label="插入公式" />
           </div>
           {questionTypeControl ? (
             <QuestionTypeSelect {...questionTypeControl} />
@@ -676,22 +666,19 @@ function RichTextEditor({
   name,
   defaultValue = "",
   imageInputRef,
-  minHeightClassName = "min-h-[240px]",
-  renderMath = false
+  minHeightClassName = "min-h-[240px]"
 }: {
   name: string;
   defaultValue?: string;
   imageInputRef?: RefObject<HTMLInputElement | null>;
   minHeightClassName?: string;
-  renderMath?: boolean;
 }) {
   const initialHtml = toRichTextHtml(defaultValue);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const savedRangeRef = useRef<Range | null>(null);
   const selectedResizableElementRef = useRef<HTMLElement | null>(null);
-  const [previewHtml, setPreviewHtml] = useState(initialHtml);
+  const [formHtml, setFormHtml] = useState(initialHtml);
   const [imageError, setImageError] = useState("");
   const [tableConfigOpen, setTableConfigOpen] = useState(false);
   const [tableRows, setTableRows] = useState("2");
@@ -703,6 +690,14 @@ function RichTextEditor({
     height: number;
     kind: "image" | "table";
   } | null>(null);
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) {
+      return;
+    }
+    editor.innerHTML = initialHtml;
+    setFormHtml(initialHtml);
+  }, [initialHtml]);
   const rememberSelection = () => {
     const selection = window.getSelection();
     const editor = editorRef.current;
@@ -722,12 +717,7 @@ function RichTextEditor({
   };
   const syncValue = () => {
     const html = editorRef.current?.innerHTML || "";
-    if (inputRef.current) {
-      inputRef.current.value = html;
-    }
-    if (renderMath) {
-      setPreviewHtml(html);
-    }
+    setFormHtml(html);
     rememberSelection();
   };
   const applyCommand = (command: string) => {
@@ -916,7 +906,7 @@ function RichTextEditor({
 
   return (
     <div ref={containerRef} className="relative bg-[#d9e5fb]">
-      <input ref={inputRef} type="hidden" name={name} defaultValue={initialHtml} />
+      <input type="hidden" name={name} value={formHtml} readOnly />
       {imageInputRef ? (
         <input
           ref={imageInputRef}
@@ -1012,16 +1002,11 @@ function RichTextEditor({
         ref={editorRef}
         className={`${minHeightClassName} w-full bg-[#d9e5fb] px-4 py-4 text-base leading-8 text-[#071b38] outline-none focus:ring-2 focus:ring-inset focus:ring-[#3b82f6]/40 [&_img]:my-3 [&_img]:h-auto [&_img]:max-w-full [&_td]:min-w-0 [&_td]:border [&_td]:border-[#8ea3c2] [&_td]:bg-white/35 [&_td]:px-2 [&_td]:py-1 [&_table]:my-2 [&_table]:max-w-full [&_table]:border-collapse`}
         contentEditable
-        dangerouslySetInnerHTML={{ __html: initialHtml }}
         role="textbox"
         tabIndex={0}
         onInput={(event) => {
-          if (inputRef.current) {
-            inputRef.current.value = event.currentTarget.innerHTML;
-          }
-          if (renderMath) {
-            setPreviewHtml(event.currentTarget.innerHTML);
-          }
+          const html = event.currentTarget.innerHTML;
+          setFormHtml(html);
           if (selectedResizableElementRef.current) {
             window.requestAnimationFrame(updateResizeBox);
           }
@@ -1032,15 +1017,6 @@ function RichTextEditor({
         onPointerDown={(event) => selectResizableElement(event.target)}
         suppressContentEditableWarning
       />
-      {renderMath && hasLatexMath(previewHtml) ? (
-        <div className="border-t border-[#b9c9df] bg-[#f8fbff]">
-          <div className="border-b border-[#d7e1ee] px-4 py-1 text-[11px] font-bold text-[#60718a]">公式预览</div>
-          <MathRichText
-            className="min-h-12 overflow-x-auto px-4 py-3 text-base leading-8 text-[#071b38] [&_.katex-display]:my-2"
-            value={previewHtml}
-          />
-        </div>
-      ) : null}
       {resizeBox ? (
         <div
           className="pointer-events-none absolute z-20 border-2 border-[#3b82f6]"
@@ -1068,19 +1044,17 @@ function RichTextEditor({
   );
 }
 
-function RichTextDisplay({ value, renderMath = false }: { value: string; renderMath?: boolean }) {
+function RichTextDisplay({ value }: { value: string }) {
   const html = toRichTextHtml(value);
-  return <div className="min-h-[150px] bg-[#d9e5fb] px-4 py-4 text-base leading-8 text-[#071b38] [&_.katex-display]:my-2 [&_img]:my-3 [&_img]:h-auto [&_img]:max-w-full [&_td]:min-w-0 [&_td]:border [&_td]:border-[#8ea3c2] [&_td]:bg-white/35 [&_td]:px-2 [&_td]:py-1 [&_table]:my-2 [&_table]:max-w-full [&_table]:border-collapse" dangerouslySetInnerHTML={{ __html: renderMath ? renderLatexInHtml(html) : html }} />;
+  return <div className="min-h-[150px] bg-[#d9e5fb] px-4 py-4 text-base leading-8 text-[#071b38] [&_img]:my-3 [&_img]:h-auto [&_img]:max-w-full [&_td]:min-w-0 [&_td]:border [&_td]:border-[#8ea3c2] [&_td]:bg-white/35 [&_td]:px-2 [&_td]:py-1 [&_table]:my-2 [&_table]:max-w-full [&_table]:border-collapse" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 function QuestionStemEditor({
   defaultValue = "",
-  questionTypeControl,
-  renderMath = false
+  questionTypeControl
 }: {
   defaultValue?: string;
   questionTypeControl?: QuestionTypeControl;
-  renderMath?: boolean;
 }) {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -1095,7 +1069,6 @@ function QuestionStemEditor({
         defaultValue={defaultValue}
         imageInputRef={imageInputRef}
         minHeightClassName="min-h-[150px]"
-        renderMath={renderMath}
       />
     </EditorShell>
   );
@@ -1180,14 +1153,12 @@ function ChoiceQuestionForm({
   question,
   type,
   questionTypeControl,
-  renderMath = false,
   onUpdate
 }: {
   paperId: string;
   question?: QuestionRow;
   type: ChoiceQuestionType;
   questionTypeControl?: QuestionTypeControl;
-  renderMath?: boolean;
   onUpdate?: QuestionUpdateHandler;
 }) {
   const editing = Boolean(question);
@@ -1223,7 +1194,7 @@ function ChoiceQuestionForm({
       <input type="hidden" name="paperId" value={paperId} />
       <input type="hidden" name="questionType" value={type} />
       {question ? <input type="hidden" name="paperQuestionId" value={question.id} /> : null}
-      <QuestionStemEditor defaultValue={question?.title || ""} questionTypeControl={questionTypeControl} renderMath={renderMath} />
+      <QuestionStemEditor defaultValue={question?.title || ""} questionTypeControl={questionTypeControl} />
       <section>
         <div className="flex h-10 items-center justify-between border-b border-[#d4dae4] bg-[#eef3f9] px-3">
           <h2 className="text-sm font-black text-[#111827]">选择题选项</h2>
@@ -1246,21 +1217,13 @@ function ChoiceQuestionForm({
                   aria-label="选项字母"
                   onChange={(event) => updateOptionKey(index, event.target.value)}
                 />
-                <div className="min-w-0">
-                  <input
-                    className={cn("h-12 w-full border border-[#c6d3e6] bg-[#d9e5fb] px-3 text-sm outline-none", focusColor)}
-                    name="optionText"
-                    value={option.text}
-                    required
-                    onChange={(event) => updateOptionText(index, event.target.value)}
-                  />
-                  {renderMath && hasLatexMath(option.text) ? (
-                    <MathRichText
-                      className="mt-1 min-h-10 overflow-x-auto border border-[#c6d3e6] bg-[#f8fbff] px-3 py-2 text-sm text-[#071b38]"
-                      value={option.text}
-                    />
-                  ) : null}
-                </div>
+                <input
+                  className={cn("h-12 min-w-0 w-full border border-[#c6d3e6] bg-[#d9e5fb] px-3 text-sm outline-none", focusColor)}
+                  name="optionText"
+                  value={option.text}
+                  required
+                  onChange={(event) => updateOptionText(index, event.target.value)}
+                />
                 <span className="grid place-items-center">
                   <input
                     className={cn("size-4", accentColor)}
@@ -1278,7 +1241,7 @@ function ChoiceQuestionForm({
         </div>
       </section>
       <EditorShell title="解答详情">
-        <RichTextEditor name="analysis" defaultValue={question?.analysis || ""} renderMath={renderMath} />
+        <RichTextEditor name="analysis" defaultValue={question?.analysis || ""} />
       </EditorShell>
       {question ? <AiDoubtReviewPanel paperId={paperId} question={question} /> : null}
     </form>
@@ -1289,13 +1252,11 @@ function TrueFalseQuestionForm({
   paperId,
   question,
   questionTypeControl,
-  renderMath = false,
   onUpdate
 }: {
   paperId: string;
   question?: QuestionRow;
   questionTypeControl?: QuestionTypeControl;
-  renderMath?: boolean;
   onUpdate?: QuestionUpdateHandler;
 }) {
   const editing = Boolean(question);
@@ -1315,7 +1276,7 @@ function TrueFalseQuestionForm({
       <input type="hidden" name="paperId" value={paperId} />
       <input type="hidden" name="questionType" value="true_false" />
       {question ? <input type="hidden" name="paperQuestionId" value={question.id} /> : null}
-      <QuestionStemEditor defaultValue={question?.title || ""} questionTypeControl={questionTypeControl} renderMath={renderMath} />
+      <QuestionStemEditor defaultValue={question?.title || ""} questionTypeControl={questionTypeControl} />
       <section>
         <div className="flex h-10 items-center justify-between border-b border-[#d4dae4] bg-[#eef3f9] px-3">
           <h2 className="text-sm font-black text-[#111827]">判断选项</h2>
@@ -1347,7 +1308,7 @@ function TrueFalseQuestionForm({
         </div>
       </section>
       <EditorShell title="解答详情">
-        <RichTextEditor name="analysis" defaultValue={question?.analysis || ""} renderMath={renderMath} />
+        <RichTextEditor name="analysis" defaultValue={question?.analysis || ""} />
       </EditorShell>
       {question ? <AiDoubtReviewPanel paperId={paperId} question={question} /> : null}
     </form>
@@ -1358,13 +1319,11 @@ function FillBlankQuestionForm({
   paperId,
   question,
   questionTypeControl,
-  renderMath = false,
   onUpdate
 }: {
   paperId: string;
   question?: QuestionRow;
   questionTypeControl?: QuestionTypeControl;
-  renderMath?: boolean;
   onUpdate?: QuestionUpdateHandler;
 }) {
   const editing = Boolean(question);
@@ -1383,33 +1342,23 @@ function FillBlankQuestionForm({
       <input type="hidden" name="paperId" value={paperId} />
       <input type="hidden" name="questionType" value="fill_blank" />
       {question ? <input type="hidden" name="paperQuestionId" value={question.id} /> : null}
-      <QuestionStemEditor defaultValue={question?.title || ""} questionTypeControl={questionTypeControl} renderMath={renderMath} />
+      <QuestionStemEditor defaultValue={question?.title || ""} questionTypeControl={questionTypeControl} />
       <section>
         <div className="flex h-10 items-center border-b border-[#d4dae4] bg-[#eef3f9] px-3">
           <h2 className="text-sm font-black text-[#111827]">答案</h2>
         </div>
         <div className="bg-[#eef3f8] p-4">
-          {renderMath ? (
-            <div className="border border-[#c6d3e6]">
-              <RichTextEditor
-                name="answer"
-                defaultValue={question?.answer.join("\n") || ""}
-                minHeightClassName="min-h-[96px]"
-                renderMath
-              />
-            </div>
-          ) : (
-            <textarea
-              className="min-h-[96px] w-full resize-y border border-[#c6d3e6] bg-[#d9e5fb] px-3 py-3 text-sm leading-7 text-[#071b38] outline-none focus:border-[#06b6d4]"
+          <div className="border border-[#c6d3e6]">
+            <RichTextEditor
               name="answer"
               defaultValue={question?.answer.join("\n") || ""}
-              required
+              minHeightClassName="min-h-[96px]"
             />
-          )}
+          </div>
         </div>
       </section>
       <EditorShell title="解答详情">
-        <RichTextEditor name="analysis" defaultValue={question?.analysis || ""} renderMath={renderMath} />
+        <RichTextEditor name="analysis" defaultValue={question?.analysis || ""} />
       </EditorShell>
       {question ? <AiDoubtReviewPanel paperId={paperId} question={question} /> : null}
     </form>
@@ -1421,14 +1370,12 @@ function RichAnswerQuestionForm({
   question,
   type,
   questionTypeControl,
-  renderMath = false,
   onUpdate
 }: {
   paperId: string;
   question?: QuestionRow;
   type: RichAnswerQuestionType;
   questionTypeControl?: QuestionTypeControl;
-  renderMath?: boolean;
   onUpdate?: QuestionUpdateHandler;
 }) {
   const editing = Boolean(question);
@@ -1447,23 +1394,23 @@ function RichAnswerQuestionForm({
       <input type="hidden" name="paperId" value={paperId} />
       <input type="hidden" name="questionType" value={type} />
       {question ? <input type="hidden" name="paperQuestionId" value={question.id} /> : null}
-      <QuestionStemEditor defaultValue={question?.title || ""} questionTypeControl={questionTypeControl} renderMath={renderMath} />
+      <QuestionStemEditor defaultValue={question?.title || ""} questionTypeControl={questionTypeControl} />
       <EditorShell title="答案">
-        <RichTextEditor name="answer" defaultValue={question?.answer[0] || ""} renderMath={renderMath} />
+        <RichTextEditor name="answer" defaultValue={question?.answer[0] || ""} />
       </EditorShell>
       <EditorShell title="解答详情">
-        <RichTextEditor name="analysis" defaultValue={question?.analysis || ""} renderMath={renderMath} />
+        <RichTextEditor name="analysis" defaultValue={question?.analysis || ""} />
       </EditorShell>
       {question ? <AiDoubtReviewPanel paperId={paperId} question={question} /> : null}
     </form>
   );
 }
 
-function ReadonlyQuestionPreview({ paperId, question, renderMath = false }: { paperId: string; question: QuestionRow; renderMath?: boolean }) {
+function ReadonlyQuestionPreview({ paperId, question }: { paperId: string; question: QuestionRow }) {
   return (
     <>
       <EditorShell title="题干">
-        <RichTextDisplay value={question.title} renderMath={renderMath} />
+        <RichTextDisplay value={question.title} />
       </EditorShell>
       {question.options.length > 0 ? (
         <section>
@@ -1476,7 +1423,7 @@ function ReadonlyQuestionPreview({ paperId, question, renderMath = false }: { pa
               return (
                 <div key={option.key} className="grid min-h-[64px] grid-cols-[40px_1fr_52px] items-center gap-2">
                   <span className="text-center text-sm font-black">({option.key})</span>
-                  <div className={cn("flex min-h-12 items-center overflow-x-auto bg-[#d9e5fb] px-3 py-2 text-sm", checked && "font-bold text-[#166534]")}>{renderMath ? <MathRichText value={option.text} /> : option.text}</div>
+                  <div className={cn("flex min-h-12 items-center overflow-x-auto bg-[#d9e5fb] px-3 py-2 text-sm", checked && "font-bold text-[#166534]")}>{option.text}</div>
                   <span className="grid place-items-center">
                     <span className={cn("grid size-5 place-items-center rounded-full border text-xs", checked ? "border-[#22c55e] bg-[#22c55e] text-white" : "border-[#c8d2df] bg-white text-transparent")}>
                       ✓
@@ -1489,7 +1436,7 @@ function ReadonlyQuestionPreview({ paperId, question, renderMath = false }: { pa
         </section>
       ) : null}
       <EditorShell title="解答详情">
-        <RichTextDisplay value={question.analysis} renderMath={renderMath} />
+        <RichTextDisplay value={question.analysis} />
       </EditorShell>
       <AiDoubtReviewPanel paperId={paperId} question={question} />
     </>
@@ -1826,7 +1773,6 @@ function QuestionTypeConfigDialog({
 export function QuestionBankDetailWorkbench({ ownerName, paperId, paperTitle, ownerHref, questionTypes, knowledgeTree, questions }: QuestionBankDetailWorkbenchProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const renderMath = ownerName.trim() === "高等数学";
   const focusedQuestionId = searchParams.get("question");
   const [activeEditorType, setActiveEditorType] = useState<ActiveEditorType>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
@@ -2266,13 +2212,13 @@ export function QuestionBankDetailWorkbench({ ownerName, paperId, paperTitle, ow
 
         <section className="h-full overflow-y-auto border-r border-[#d7dee8] bg-[#eef3f8] px-3 pb-16 pt-0 overscroll-contain">
           {activeEditorType && isChoiceQuestionType(activeEditorType) ? (
-            <ChoiceQuestionForm key={`create-${activeEditorType}`} paperId={paperId} type={activeEditorType} questionTypeControl={editorQuestionTypeControl} renderMath={renderMath} />
+            <ChoiceQuestionForm key={`create-${activeEditorType}`} paperId={paperId} type={activeEditorType} questionTypeControl={editorQuestionTypeControl} />
           ) : activeEditorType === "true_false" ? (
-            <TrueFalseQuestionForm key="create-true_false" paperId={paperId} questionTypeControl={editorQuestionTypeControl} renderMath={renderMath} />
+            <TrueFalseQuestionForm key="create-true_false" paperId={paperId} questionTypeControl={editorQuestionTypeControl} />
           ) : activeEditorType === "fill_blank" ? (
-            <FillBlankQuestionForm key="create-fill_blank" paperId={paperId} questionTypeControl={editorQuestionTypeControl} renderMath={renderMath} />
+            <FillBlankQuestionForm key="create-fill_blank" paperId={paperId} questionTypeControl={editorQuestionTypeControl} />
           ) : activeEditorType && isRichAnswerQuestionType(activeEditorType) ? (
-            <RichAnswerQuestionForm key={`create-${activeEditorType}`} paperId={paperId} type={activeEditorType} questionTypeControl={editorQuestionTypeControl} renderMath={renderMath} />
+            <RichAnswerQuestionForm key={`create-${activeEditorType}`} paperId={paperId} type={activeEditorType} questionTypeControl={editorQuestionTypeControl} />
           ) : selectedQuestion && selectedChoiceType ? (
             <ChoiceQuestionForm
               key={`edit-${selectedQuestion.id}-${selectedChoiceType}`}
@@ -2280,7 +2226,6 @@ export function QuestionBankDetailWorkbench({ ownerName, paperId, paperTitle, ow
               question={selectedQuestion}
               type={selectedChoiceType}
               questionTypeControl={editorQuestionTypeControl}
-              renderMath={renderMath}
               onUpdate={saveSelectedQuestion}
             />
           ) : selectedQuestion && selectedEditableType === "true_false" ? (
@@ -2289,7 +2234,6 @@ export function QuestionBankDetailWorkbench({ ownerName, paperId, paperTitle, ow
               paperId={paperId}
               question={selectedQuestion}
               questionTypeControl={editorQuestionTypeControl}
-              renderMath={renderMath}
               onUpdate={saveSelectedQuestion}
             />
           ) : selectedQuestion && selectedEditableType === "fill_blank" ? (
@@ -2298,7 +2242,6 @@ export function QuestionBankDetailWorkbench({ ownerName, paperId, paperTitle, ow
               paperId={paperId}
               question={selectedQuestion}
               questionTypeControl={editorQuestionTypeControl}
-              renderMath={renderMath}
               onUpdate={saveSelectedQuestion}
             />
           ) : selectedQuestion && selectedEditableType && isRichAnswerQuestionType(selectedEditableType) ? (
@@ -2308,11 +2251,10 @@ export function QuestionBankDetailWorkbench({ ownerName, paperId, paperTitle, ow
               question={selectedQuestion}
               type={selectedEditableType}
               questionTypeControl={editorQuestionTypeControl}
-              renderMath={renderMath}
               onUpdate={saveSelectedQuestion}
             />
           ) : selectedQuestion ? (
-            <ReadonlyQuestionPreview paperId={paperId} question={selectedQuestion} renderMath={renderMath} />
+            <ReadonlyQuestionPreview paperId={paperId} question={selectedQuestion} />
           ) : (
             <EmptyQuestionCanvas />
           )}
@@ -2415,15 +2357,7 @@ export function QuestionBankDetailWorkbench({ ownerName, paperId, paperTitle, ow
                         setSelectedQuestionId(question.id);
                       }}
                     >
-                      {renderMath && hasLatexMath(question.title) ? (
-                        <MathRichText
-                          className={cn("min-w-0 overflow-hidden whitespace-nowrap [&_.katex-display]:m-0", selected && "font-black")}
-                          inline
-                          value={stripHtml(question.title)}
-                        />
-                      ) : (
-                        <span className={cn("min-w-0 truncate", selected && "font-black")}>{stripHtml(question.title) || questionTypeText(question.type, questionTypes)}</span>
-                      )}
+                      <span className={cn("min-w-0 truncate", selected && "font-black")}>{stripHtml(question.title) || questionTypeText(question.type, questionTypes)}</span>
                     </button>
                   </div>
                 );

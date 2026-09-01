@@ -29,14 +29,22 @@ type QuestionBankSidebarProps = {
   selectedOwnerKey: string;
   selectedPapers: QuestionBankSidebarPaper[];
   regions: RegionOption[];
+  province: string;
+  examType: string;
 };
 
 function ownerKey(owner: Pick<QuestionBankSidebarOwner, "type" | "id">) {
   return `${owner.type}:${owner.id}`;
 }
 
-function ownerHref(owner: QuestionBankSidebarOwner) {
-  return `/admin/question-banks?type=${owner.type}&id=${encodeURIComponent(owner.id)}&page=1`;
+function ownerHref(owner: QuestionBankSidebarOwner, province: string, examType: string) {
+  const query = new URLSearchParams({ type: owner.type, id: owner.id, page: "1", province, examType });
+  return `/admin/question-banks?${query.toString()}`;
+}
+
+function paperHref(paperId: string, province: string, examType: string) {
+  const query = new URLSearchParams({ province, examType });
+  return `/admin/question-banks/${paperId}?${query.toString()}`;
 }
 
 function ownerInputs(owner: QuestionBankSidebarOwner) {
@@ -52,7 +60,7 @@ function firstRegionId(owner: QuestionBankSidebarOwner, fallbackRegions: RegionO
   return owner.regions[0]?.id || fallbackRegions[0]?.id || "";
 }
 
-export function QuestionBankSidebar({ owners, selectedOwnerKey, selectedPapers, regions }: QuestionBankSidebarProps) {
+export function QuestionBankSidebar({ owners, selectedOwnerKey, selectedPapers, regions, province, examType }: QuestionBankSidebarProps) {
   const [orderedOwners, setOrderedOwners] = useState(owners);
   const [expandedOwnerKeys, setExpandedOwnerKeys] = useState(() => new Set([selectedOwnerKey]));
   const draggedKeyRef = useRef<string>("");
@@ -170,7 +178,7 @@ export function QuestionBankSidebar({ owners, selectedOwnerKey, selectedPapers, 
                 <Folder size={16} className="shrink-0" />
                 <Link
                   className="min-w-0 flex-1 truncate py-2 font-medium"
-                  href={ownerHref(owner)}
+                  href={ownerHref(owner, province, examType)}
                   onClick={(event) => {
                     if (active) {
                       event.preventDefault();
@@ -238,7 +246,7 @@ export function QuestionBankSidebar({ owners, selectedOwnerKey, selectedPapers, 
                     <div key={paper.id} className="group/paper flex items-start gap-1 rounded hover:bg-white">
                       <Link
                         className="flex min-h-9 min-w-0 flex-1 items-start gap-2 px-1.5 py-1.5 text-xs font-medium leading-5 text-[#071b38]"
-                        href={`/admin/question-banks/${paper.id}`}
+                        href={paperHref(paper.id, province, examType)}
                         title={paper.title}
                       >
                         <FileText size={14} className="mt-0.5 shrink-0" />

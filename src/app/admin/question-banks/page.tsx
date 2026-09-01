@@ -1,14 +1,17 @@
 import Link from "next/link";
 import {
   ArrowUpDown,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   FilePlus2,
+  Filter,
   ListFilter,
   Trash2
 } from "lucide-react";
 import { createQuestionBankPaper, deleteQuestionBankPaper, toggleQuestionBankPaperStatus, updateQuestionBankPaper } from "@/app/admin/actions";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
+import { CopyQuestionBankDialog } from "@/components/copy-question-bank-dialog";
 import { QuestionBankAiGenerationDialog } from "@/components/question-bank-ai-generation-dialog";
 import { QuestionBankImportDialog } from "@/components/question-bank-import-dialog";
 import { QuestionBankSidebar } from "@/components/question-bank-sidebar";
@@ -22,11 +25,19 @@ type SearchParams = {
   type?: string;
   id?: string;
   page?: string;
+  province?: string;
+  examType?: string;
+  copiedPaperId?: string;
+  copyNotice?: string;
+  mapped?: string;
+  unmapped?: string;
 };
 
 type RegionOption = {
   id: string;
   name: string;
+  province: string;
+  studySystem: string;
 };
 
 type OwnerOption = {
@@ -43,16 +54,34 @@ function isOwnerType(value?: string): value is QuestionBankOwnerType {
   return value === "public_subject" || value === "major";
 }
 
-function ownerHref(owner: OwnerOption, page = 1) {
-  return `/admin/question-banks?type=${owner.type}&id=${encodeURIComponent(owner.id)}&page=${page}`;
+function ownerHref(owner: OwnerOption, page = 1, province = "", examType = "") {
+  const query = new URLSearchParams({ type: owner.type, id: owner.id, page: String(page) });
+  if (province) query.set("province", province);
+  if (examType) query.set("examType", examType);
+  return `/admin/question-banks?${query.toString()}`;
 }
 
-function ownerKnowledgeMapHref(owner: OwnerOption) {
-  return `/admin/question-banks/knowledge-points?type=${owner.type}&id=${encodeURIComponent(owner.id)}`;
+function ownerKnowledgeMapHref(owner: OwnerOption, province = "", examType = "") {
+  const query = new URLSearchParams({ type: owner.type, id: owner.id });
+  if (province) query.set("province", province);
+  if (examType) query.set("examType", examType);
+  return `/admin/question-banks/knowledge-points?${query.toString()}`;
 }
 
-function ownerStatisticsHref(owner: OwnerOption) {
-  return `/admin/question-banks/statistics?type=${owner.type}&id=${encodeURIComponent(owner.id)}`;
+function ownerStatisticsHref(owner: OwnerOption, province = "", examType = "") {
+  const query = new URLSearchParams({ type: owner.type, id: owner.id });
+  if (province) query.set("province", province);
+  if (examType) query.set("examType", examType);
+  return `/admin/question-banks/statistics?${query.toString()}`;
+}
+
+function paperHref(paperId: string, province: string, examType: string) {
+  const query = new URLSearchParams({ province, examType });
+  return `/admin/question-banks/${paperId}?${query.toString()}`;
+}
+
+function uniqueValues(values: string[]) {
+  return Array.from(new Set(values.filter(Boolean)));
 }
 
 function formatDate(date: Date) {
@@ -108,12 +137,12 @@ export default async function QuestionBanksPage({
   const [regions, publicSubjects, majors] = await Promise.all([
     prisma.region.findMany({
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-      select: { id: true, name: true }
+      select: { id: true, name: true, province: true, studySystem: true }
     }),
     prisma.publicSubject.findMany({
       include: {
         regions: {
-          include: { region: { select: { id: true, name: true } } },
+          include: { region: { select: { id: true, name: true, province: true, studySystem: true } } },
           orderBy: { createdAt: "asc" }
         }
       },
@@ -122,13 +151,26 @@ export default async function QuestionBanksPage({
     prisma.major.findMany({
       include: {
         regions: {
-          include: { region: { select: { id: true, name: true } } },
+          include: { region: { select: { id: true, name: true, province: true, studySystem: true } } },
           orderBy: { createdAt: "asc" }
         }
       },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
     })
   ]);
+
+  const provinceOptions = uniqueValues(regions.map((region) => region.province));
+  const selectedProvince = provinceOptions.includes(params?.province || "")
+    ? params?.province || ""
+    : provinceOptions.includes("江苏")
+      ? "江苏"
+      : provinceOptions[0] || "";
+  const examTypeOptions = uniqueValues(regions.filter((region) => region.province === selectedProvince).map((region) => region.studySystem));
+  const selectedExamType = examTypeOptions.includes(params?.examType || "") ? params?.examType || "" : examTypeOptions[0] || "";
+  const matchingRegions = regions.filter(
+    (region) => region.province === selectedProvince && region.studySystem === selectedExamType
+  );
+  const matchingRegionIds = new Set(matchingRegions.map((region) => region.id));
 
   const owners: OwnerOption[] = [
     ...publicSubjects.map((subject) => ({
@@ -145,19 +187,24 @@ export default async function QuestionBanksPage({
       sortOrder: major.sortOrder,
       regions: major.regions.map((item) => item.region)
     }))
-  ].sort((a, b) => {
-    if (a.sortOrder !== b.sortOrder) {
-      return a.sortOrder - b.sortOrder;
-    }
-    if (a.type !== b.type) {
-      return a.type === "public_subject" ? -1 : 1;
-    }
-    return a.name.localeCompare(b.name, "zh-Hans-CN");
-  });
+  ]
+    .filter((owner) => owner.regions.some((region) => matchingRegionIds.has(region.id)))
+    .sort((a, b) => {
+      if (a.sortOrder !== b.sortOrder) {
+        return a.sortOrder - b.sortOrder;
+      }
+      if (a.type !== b.type) {
+        return a.type === "public_subject" ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name, "zh-Hans-CN");
+    });
 
   const requestedType = isOwnerType(params?.type) ? params.type : undefined;
-  const selectedOwner = owners.find((owner) => owner.type === requestedType && owner.id === params?.id) || owners[0];
-  const regionOptions = selectedOwner?.regions.length ? selectedOwner.regions : regions;
+  const selectedOwner =
+    owners.find((owner) => owner.type === requestedType && owner.id === params?.id) ||
+    owners.find((owner) => owner.type === "major" && owner.name.includes("计算机")) ||
+    owners[0];
+  const regionOptions = selectedOwner?.regions.filter((region) => matchingRegionIds.has(region.id)) || matchingRegions;
 
   if (!selectedOwner) {
     return (
@@ -239,6 +286,7 @@ export default async function QuestionBanksPage({
 
   const paperWhere = {
     ownerType: selectedOwner.type,
+    regionId: { in: matchingRegions.map((region) => region.id) },
     ...(selectedOwner.type === "public_subject" ? { publicSubjectId: selectedOwner.id } : { majorId: selectedOwner.id })
   };
   const totalPapers = await prisma.examPaper.count({ where: paperWhere });
@@ -271,21 +319,27 @@ export default async function QuestionBanksPage({
     })
   ]);
   const pageNumbers = visiblePages(totalPages, currentPage);
+  const copiedPaper = papers.find((paper) => paper.id === params?.copiedPaperId);
+  const copiedMappedCount = Math.max(0, Number(params?.mapped || 0) || 0);
+  const copiedUnmappedCount = Math.max(0, Number(params?.unmapped || 0) || 0);
+  const courseManagementHref = selectedOwner.type === "major"
+    ? `/admin/majors/${selectedOwner.id}/courses`
+    : `/admin/public-subjects/${selectedOwner.id}/courses`;
 
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-[#081a33]">
-      <header className="grid h-[51px] grid-cols-[1fr_auto] border-b border-[#d6dbe4] bg-[#f7f8fb]">
-        <nav className="flex" aria-label="内容管理">
+      <header className="flex h-[64px] min-w-0 border-b border-[#d6dbe4] bg-[#f7f8fb]">
+        <nav className="flex shrink-0" aria-label="内容管理">
           {[
-            { label: "题库", href: "/admin/question-banks", active: true },
-            { label: "知识点题目统计", href: ownerStatisticsHref(selectedOwner), active: false },
-            { label: "知识点", href: ownerKnowledgeMapHref(selectedOwner), active: false }
+            { label: "题库", href: ownerHref(selectedOwner, 1, selectedProvince, selectedExamType), active: true },
+            { label: "知识点题目统计", href: ownerStatisticsHref(selectedOwner, selectedProvince, selectedExamType), active: false },
+            { label: "知识点", href: ownerKnowledgeMapHref(selectedOwner, selectedProvince, selectedExamType), active: false }
           ].map((tab) => (
             <Link
               key={tab.label}
               href={tab.href}
               className={cn(
-                "grid h-[50px] min-w-[100px] place-items-center border-r border-[#e1e5ec] px-8 text-sm font-medium",
+                "grid h-[63px] min-w-[100px] place-items-center border-r border-[#e1e5ec] px-6 text-sm font-medium",
                 tab.active ? "bg-[#e9edf3] text-[#071b38]" : "text-[#344054] hover:bg-white"
               )}
             >
@@ -293,21 +347,60 @@ export default async function QuestionBanksPage({
             </Link>
           ))}
         </nav>
-        <Link className="grid h-[50px] w-24 place-items-center text-sm font-semibold text-[#071b38] hover:bg-white" href="/admin" aria-label="返回首页">
+        <form className="flex min-w-0 flex-1 items-center gap-2 px-3" action="/admin/question-banks">
+          <input name="type" type="hidden" value={selectedOwner.type} />
+          <input name="id" type="hidden" value={selectedOwner.id} />
+          <input name="page" type="hidden" value="1" />
+          <label className="grid min-w-[130px] flex-1 gap-0.5 text-[10px] font-bold text-[#64748b]">
+            省份
+            <select className="h-8 min-w-0 rounded border border-[#cfd8e6] bg-white px-2 text-xs font-medium text-[#071b38]" name="province" defaultValue={selectedProvince}>
+              {provinceOptions.map((province) => (
+                <option key={province} value={province}>{province}</option>
+              ))}
+            </select>
+          </label>
+          <label className="grid min-w-[130px] flex-1 gap-0.5 text-[10px] font-bold text-[#64748b]">
+            考试类型
+            <select className="h-8 min-w-0 rounded border border-[#cfd8e6] bg-white px-2 text-xs font-medium text-[#071b38]" name="examType" defaultValue={selectedExamType}>
+              {examTypeOptions.map((examType) => (
+                <option key={examType} value={examType}>{examType}</option>
+              ))}
+            </select>
+          </label>
+          <button className="mt-3 inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded bg-[#3562ff] px-4 text-xs font-bold text-white hover:bg-[#1d4ed8]" type="submit">
+            <Filter size={14} />
+            筛选
+          </button>
+        </form>
+        <Link className="grid h-[63px] w-20 shrink-0 place-items-center text-sm font-semibold text-[#071b38] hover:bg-white" href="/admin" aria-label="返回首页">
           首页
         </Link>
       </header>
 
-      <section className="grid h-[calc(100vh-51px)] grid-cols-[346px_minmax(0,1fr)]">
+      <section className="grid h-[calc(100vh-64px)] grid-cols-[346px_minmax(0,1fr)]">
         <QuestionBankSidebar
           owners={owners}
           selectedOwnerKey={`${selectedOwner.type}:${selectedOwner.id}`}
           selectedPapers={selectedPaperNames}
-          regions={regions}
+          regions={matchingRegions}
+          province={selectedProvince}
+          examType={selectedExamType}
         />
 
         <section className="min-w-0 overflow-auto bg-[#f3f5f9] px-5 pb-10 pt-12">
           <div className="mx-auto max-w-[1535px]">
+            {params?.copyNotice === "paper-copied" ? (
+              <div className="mb-5 flex items-start gap-3 border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950" role="status">
+                <CheckCircle2 aria-hidden="true" className="mt-0.5 shrink-0 text-emerald-600" size={18} />
+                <div>
+                  <p className="font-bold">题库已复制到 {copiedPaper?.region.name || selectedProvince + selectedExamType}，新旧题库可以独立修改。</p>
+                  <p className="mt-0.5 text-emerald-800">
+                    已匹配 {copiedMappedCount} 项知识点关联
+                    {copiedUnmappedCount ? `，${copiedUnmappedCount} 项无法匹配并已标记为未归类` : "，没有未匹配关联"}。
+                  </p>
+                </div>
+              </div>
+            ) : null}
             <div className="mb-9 flex min-h-[54px] items-start gap-12 pl-7">
               <details className="group relative">
                 <summary className="grid cursor-pointer list-none justify-items-center gap-1 text-xs font-medium text-[#071b38] [&::-webkit-details-marker]:hidden">
@@ -356,7 +449,7 @@ export default async function QuestionBanksPage({
             </div>
 
             <section className="overflow-visible rounded-t-lg bg-white">
-              <table className="w-full min-w-[980px] border-collapse text-left text-sm">
+              <table className="w-full min-w-[1080px] border-collapse text-left text-sm">
                 <thead className="bg-[#f0f1f4] text-[#030712]">
                   <tr className="h-11">
                     <th className="border-r border-[#e0e3e8] px-3 font-bold">{headerLabel("题库名称")}</th>
@@ -364,7 +457,7 @@ export default async function QuestionBanksPage({
                     <th className="w-[205px] border-r border-[#e0e3e8] px-3 font-bold">{headerLabel("区域信息")}</th>
                     <th className="w-[110px] border-r border-[#e0e3e8] px-3 font-bold">{headerLabel("年份")}</th>
                     <th className="w-[185px] border-r border-[#e0e3e8] px-3 font-bold">{headerLabel("更新时间")}</th>
-                    <th className="w-[190px] px-3 font-bold"></th>
+                    <th className="w-[250px] px-3 font-bold"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -377,9 +470,16 @@ export default async function QuestionBanksPage({
                   ) : papers.map((paper, index) => {
                     const isPublished = paper.status === "published";
                     return (
-                      <tr key={paper.id} className={cn("h-[61px] border-b border-[#e5e7eb]", index === 0 ? "bg-[#e0e3e8]" : "bg-[#fbfbfc]")}>
+                      <tr
+                        className={cn(
+                          "h-[61px] scroll-mt-4 border-b border-[#e5e7eb]",
+                          paper.id === params?.copiedPaperId ? "bg-emerald-50" : index === 0 ? "bg-[#e0e3e8]" : "bg-[#fbfbfc]"
+                        )}
+                        id={`paper-${paper.id}`}
+                        key={paper.id}
+                      >
                         <td className="px-3 font-medium text-[#071b38]">
-                          <Link className="text-[#071b38] hover:text-[#006aff] hover:underline" href={`/admin/question-banks/${paper.id}`}>
+                          <Link className="text-[#071b38] hover:text-[#006aff] hover:underline" href={paperHref(paper.id, selectedProvince, selectedExamType)}>
                             {paper.title}
                           </Link>
                         </td>
@@ -415,6 +515,21 @@ export default async function QuestionBanksPage({
                                 <button className="primary-button rounded-none" type="submit">保存修改</button>
                               </form>
                             </details>
+                            <CopyQuestionBankDialog
+                              courseManagementHref={courseManagementHref}
+                              ownerId={selectedOwner.id}
+                              ownerType={selectedOwner.type}
+                              paperId={paper.id}
+                              paperTitle={paper.title}
+                              paperYear={paper.year}
+                              questionCount={paper._count.questions}
+                              sourceRegionName={paper.region.name}
+                              sourceRegionProvince={paper.region.province}
+                              sourceStatus={paper.status}
+                              targetRegions={selectedOwner.regions
+                                .filter((region) => region.id !== paper.regionId)
+                                .map((region) => ({ id: region.id, name: region.name, province: region.province }))}
+                            />
                             <form action={toggleQuestionBankPaperStatus}>
                               {ownerInputs(selectedOwner)}
                               <input type="hidden" name="id" value={paper.id} />
@@ -453,7 +568,7 @@ export default async function QuestionBanksPage({
             <div className="flex items-center justify-end gap-4 px-2 py-5 text-sm text-[#071b38]">
               <Link
                 className={cn("grid size-8 place-items-center text-slate-400", currentPage > 1 ? "hover:text-[#006aff]" : "pointer-events-none opacity-40")}
-                href={ownerHref(selectedOwner, Math.max(1, currentPage - 1))}
+                href={ownerHref(selectedOwner, Math.max(1, currentPage - 1), selectedProvince, selectedExamType)}
               >
                 <ChevronLeft size={18} />
               </Link>
@@ -464,14 +579,14 @@ export default async function QuestionBanksPage({
                     "grid size-8 place-items-center rounded-lg",
                     pageNumber === currentPage ? "border border-[#5d80ff] bg-white text-[#3562ff]" : "hover:bg-white hover:text-[#006aff]"
                   )}
-                  href={ownerHref(selectedOwner, pageNumber)}
+                  href={ownerHref(selectedOwner, pageNumber, selectedProvince, selectedExamType)}
                 >
                   {pageNumber}
                 </Link>
               ))}
               <Link
                 className={cn("grid size-8 place-items-center text-slate-600", currentPage < totalPages ? "hover:text-[#006aff]" : "pointer-events-none opacity-40")}
-                href={ownerHref(selectedOwner, Math.min(totalPages, currentPage + 1))}
+                href={ownerHref(selectedOwner, Math.min(totalPages, currentPage + 1), selectedProvince, selectedExamType)}
               >
                 <ChevronRight size={18} />
               </Link>

@@ -233,12 +233,18 @@ function statisticsHref(params: {
   return `/admin/question-banks/statistics?${query.toString()}`;
 }
 
-function ownerQuestionBankHref(owner: OwnerOption) {
-  return `/admin/question-banks?type=${owner.type}&id=${encodeURIComponent(owner.id)}&page=1`;
+function ownerQuestionBankHref(owner: OwnerOption, province = "", examType = "") {
+  const query = new URLSearchParams({ type: owner.type, id: owner.id, page: "1" });
+  if (province) query.set("province", province);
+  if (examType) query.set("examType", examType);
+  return `/admin/question-banks?${query.toString()}`;
 }
 
-function ownerKnowledgeMapHref(owner: OwnerOption) {
-  return `/admin/question-banks/knowledge-points?type=${owner.type}&id=${encodeURIComponent(owner.id)}`;
+function ownerKnowledgeMapHref(owner: OwnerOption, province = "", examType = "") {
+  const query = new URLSearchParams({ type: owner.type, id: owner.id });
+  if (province) query.set("province", province);
+  if (examType) query.set("examType", examType);
+  return `/admin/question-banks/knowledge-points?${query.toString()}`;
 }
 
 function sortSyllabusItems(items: SyllabusItemRow[]) {
@@ -1138,7 +1144,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
       <header className="flex h-[64px] min-w-0 border-b border-[#d6dbe4] bg-[#f7f8fb]">
         <nav className="flex shrink-0" aria-label="内容管理">
           {[
-            { label: "题库", href: ownerQuestionBankHref(selectedOwner), active: false },
+            { label: "题库", href: ownerQuestionBankHref(selectedOwner, selectedProvince, selectedExamType), active: false },
             {
               label: "知识点题目统计",
                 href: statisticsHref({
@@ -1153,7 +1159,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                 }),
                 active: true
               },
-            { label: "知识点", href: ownerKnowledgeMapHref(selectedOwner), active: false }
+            { label: "知识点", href: ownerKnowledgeMapHref(selectedOwner, selectedProvince, selectedExamType), active: false }
           ].map((tab) => (
             <Link
               key={tab.label}

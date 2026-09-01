@@ -32,6 +32,10 @@ assert.equal(isAdvancedMathPublicSubject("major", "高等数学"), false);
 
 const readSource = (relativePath: string) => readFileSync(join(process.cwd(), relativePath), "utf8");
 const editorSource = readSource("src/components/question-bank-detail-workbench.tsx");
+const fillBlankFormSource = editorSource.slice(
+  editorSource.indexOf("function FillBlankQuestionForm"),
+  editorSource.indexOf("function RichAnswerQuestionForm")
+);
 const progressSource = readSource("src/app/api/progress/submit/route.ts");
 const checkSource = readSource("src/app/api/learning/sections/[sectionId]/questions/check/route.ts");
 const learnPageSource = readSource("src/app/learn/[id]/page.tsx");
@@ -41,7 +45,15 @@ const specialPageSource = readSource("src/app/mock-tests/special/[sectionId]/pag
 const specialRunnerSource = readSource("src/app/mock-tests/special/[sectionId]/special-practice-runner.tsx");
 
 assert.match(editorSource, /onPaste=\{pasteImage\}/);
-assert.match(editorSource, /renderMath \? \([\s\S]*?<RichTextEditor[\s\S]*?name="answer"/);
+assert.match(fillBlankFormSource, /<RichTextEditor[\s\S]*?name="answer"/);
+assert.doesNotMatch(fillBlankFormSource, /<textarea/);
+assert.doesNotMatch(editorSource, /renderMath|MathRichText|hasLatexMath|renderLatexInHtml|公式预览/);
+assert.doesNotMatch(editorSource, /label="插入公式"/);
+assert.match(editorSource, /const \[formHtml, setFormHtml\] = useState\(initialHtml\);/);
+assert.match(editorSource, /editor\.innerHTML = initialHtml;[\s\S]*?setFormHtml\(initialHtml\);/);
+assert.match(editorSource, /<input type="hidden" name=\{name\} value=\{formHtml\} readOnly \/>/);
+assert.doesNotMatch(editorSource, /inputRef/);
+assert.doesNotMatch(editorSource, /contentEditable\s+dangerouslySetInnerHTML/);
 assert.match(progressSource, /isQuestionBankAutoGradedForOwner\(question\.type, result\.group\.key, result\.group\.name\)/);
 assert.match(checkSource, /isQuestionBankAutoGradedForOwner\(question\.type, result\.group\.key, result\.group\.name\)/);
 assert.match(learnPageSource, /isQuestionBankAutoGradedForOwner\(question\.type, access\.group\.key, access\.group\.name\)/);
@@ -53,4 +65,4 @@ assert.match(specialPageSource, /ownerName=\{context\.group\.name\}/);
 assert.match(specialRunnerSource, /!hideAiDoubt \? \(/);
 assert.match(specialRunnerSource, /!isQuestionBankAutoGradedForOwner\(question\.type, courseKey, ownerName\)/);
 
-console.log(`advanced math subjective rules: ${gradingCases.length + 14} checks passed`);
+console.log(`advanced math subjective rules: ${gradingCases.length + 22} checks passed`);

@@ -7,9 +7,11 @@ import { extname } from "node:path";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ContentStatus, Difficulty, QuestionType, RegionStatus, ShareCopyContext, SyllabusRequirement } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { requireAdmin } from "@/lib/auth";
 import { getDiamondRuleDefinition, maxDiamondRuleAmount } from "@/lib/diamond-rules";
 import { prisma } from "@/lib/prisma";
+import { buildQuestionBankKnowledgeCopyMapping } from "@/lib/question-bank-copy";
 import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 import { getBeijingDate } from "@/lib/rewards";
 import {
@@ -1075,6 +1077,156 @@ export async function createMajorCourse(formData: FormData) {
   redirect(`/admin/majors/${majorId}/courses`);
 }
 
+export async function copyMajorCourse(formData: FormData) {
+  await requireAdmin();
+  const sourceCourseId = String(formData.get("sourceCourseId") || "");
+  const majorId = String(formData.get("majorId") || "");
+  const targetRegionId = String(formData.get("targetRegionId") || "");
+  const coursesPath = `/admin/majors/${majorId}/courses`;
+
+  const sourceCourse = await prisma.learningCourse.findFirst({
+    where: {
+      id: sourceCourseId,
+      majorId,
+      courseType: "major"
+    },
+    include: {
+      chapters: {
+        include: {
+          points: {
+            orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+          }
+        },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+      },
+      syllabusItems: {
+        include: {
+          knowledgePoints: {
+            select: { id: true }
+          }
+        },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+      }
+    }
+  });
+  if (!sourceCourse) {
+    redirect(`${coursesPath}?copyError=source-course-not-found`);
+  }
+
+  if (!targetRegionId || targetRegionId === sourceCourse.regionId) {
+    redirect(`${coursesPath}?copyError=invalid-target-region`);
+  }
+
+  const targetBinding = await prisma.regionMajor.findUnique({
+    where: {
+      regionId_majorId: {
+        regionId: targetRegionId,
+        majorId
+      }
+    },
+    select: { id: true }
+  });
+  if (!targetBinding) {
+    redirect(`${coursesPath}?copyError=target-region-unavailable`);
+  }
+
+  const existingCourse = await prisma.learningCourse.findFirst({
+    where: {
+      regionId: targetRegionId,
+      majorId,
+      courseType: "major",
+      name: sourceCourse.name
+    },
+    select: { id: true }
+  });
+  if (existingCourse) {
+    redirect(`${coursesPath}?copyError=target-course-exists`);
+  }
+
+  const chapterIdMap = new Map(sourceCourse.chapters.map((chapter) => [chapter.id, randomUUID()]));
+  const syllabusItemIdMap = new Map(sourceCourse.syllabusItems.map((item) => [item.id, randomUUID()]));
+  const knowledgePoints = sourceCourse.chapters.flatMap((chapter) =>
+    chapter.points.map((point) => ({ point, sourceChapterId: chapter.id }))
+  );
+  const knowledgePointIds = new Set(knowledgePoints.map(({ point }) => point.id));
+  const hasInvalidContentRelation =
+    sourceCourse.syllabusItems.some((item) => item.parentId && !syllabusItemIdMap.has(item.parentId)) ||
+    sourceCourse.syllabusItems.some((item) => item.knowledgePoints.some((point) => !knowledgePointIds.has(point.id))) ||
+    knowledgePoints.some(({ point }) => point.syllabusItemId && !syllabusItemIdMap.has(point.syllabusItemId));
+  if (hasInvalidContentRelation) {
+    redirect(`${coursesPath}?copyError=source-content-invalid`);
+  }
+
+  const targetSortOrder = await nextMajorCourseSortOrder(targetRegionId, majorId);
+  const copiedCourse = await prisma.$transaction(async (tx) => {
+    const course = await tx.learningCourse.create({
+      data: {
+        regionId: targetRegionId,
+        majorId,
+        publicSubjectId: null,
+        courseType: "major",
+        name: sourceCourse.name,
+        description: sourceCourse.description,
+        challengeMode: sourceCourse.challengeMode,
+        status: "draft",
+        sortOrder: targetSortOrder
+      },
+      select: { id: true }
+    });
+
+    if (sourceCourse.chapters.length) {
+      await tx.chapter.createMany({
+        data: sourceCourse.chapters.map((chapter) => ({
+          id: chapterIdMap.get(chapter.id)!,
+          subjectId: chapter.subjectId,
+          courseId: course.id,
+          title: chapter.title,
+          sortOrder: chapter.sortOrder,
+          status: chapter.status
+        }))
+      });
+    }
+
+    if (sourceCourse.syllabusItems.length) {
+      await tx.syllabusItem.createMany({
+        data: sourceCourse.syllabusItems.map((item) => ({
+          id: syllabusItemIdMap.get(item.id)!,
+          courseId: course.id,
+          parentId: item.parentId ? syllabusItemIdMap.get(item.parentId) || null : null,
+          checkpointScope: item.checkpointScope,
+          code: item.code,
+          title: item.title,
+          description: item.description,
+          requirement: item.requirement,
+          sortOrder: item.sortOrder,
+          status: item.status
+        }))
+      });
+    }
+
+    if (knowledgePoints.length) {
+      await tx.knowledgePoint.createMany({
+        data: knowledgePoints.map(({ point, sourceChapterId }) => ({
+          id: randomUUID(),
+          chapterId: chapterIdMap.get(sourceChapterId)!,
+          syllabusItemId: point.syllabusItemId ? syllabusItemIdMap.get(point.syllabusItemId)! : null,
+          title: point.title,
+          summary: point.summary,
+          content: point.content,
+          sortOrder: point.sortOrder,
+          estimatedMinutes: point.estimatedMinutes,
+          status: point.status
+        }))
+      });
+    }
+
+    return course;
+  });
+
+  revalidatePath(coursesPath);
+  redirect(`${coursesPath}?copiedCourseId=${encodeURIComponent(copiedCourse.id)}`);
+}
+
 export async function updateMajorCourse(formData: FormData) {
   await requireAdmin();
   const id = String(formData.get("id") || "");
@@ -1206,6 +1358,145 @@ function ownerPaperWhere(ownerType: QuestionBankOwnerType, ownerId: string, regi
   };
 }
 
+class QuestionBankCopyError extends Error {}
+
+async function assertQuestionBankOwnerRegion(ownerType: QuestionBankOwnerType, ownerId: string, regionId: string) {
+  const binding = ownerType === "public_subject"
+    ? await prisma.regionPublicSubject.findUnique({
+        where: { regionId_publicSubjectId: { regionId, publicSubjectId: ownerId } },
+        select: { id: true }
+      })
+    : await prisma.regionMajor.findUnique({
+        where: { regionId_majorId: { regionId, majorId: ownerId } },
+        select: { id: true }
+      });
+  if (!binding) {
+    throw new QuestionBankCopyError("目标区域尚未绑定当前专业或公共课。");
+  }
+}
+
+async function getQuestionBankCopyCatalog(ownerType: QuestionBankOwnerType, ownerId: string, regionId: string) {
+  return prisma.learningCourse.findMany({
+    where: ownerCourseWhere(ownerType, ownerId, regionId),
+    select: {
+      name: true,
+      syllabusItems: {
+        select: {
+          id: true,
+          parentId: true,
+          checkpointScope: true,
+          code: true,
+          title: true
+        }
+      },
+      chapters: {
+        select: {
+          title: true,
+          sortOrder: true,
+          points: {
+            select: {
+              id: true,
+              syllabusItemId: true,
+              title: true,
+              sortOrder: true
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+async function getQuestionBankCopyPlan(
+  ownerType: QuestionBankOwnerType,
+  ownerId: string,
+  sourcePaperId: string,
+  targetRegionId: string
+) {
+  const sourcePaper = await prisma.examPaper.findFirst({
+    where: {
+      id: sourcePaperId,
+      ...ownerPaperWhere(ownerType, ownerId)
+    },
+    select: {
+      id: true,
+      regionId: true,
+      title: true,
+      year: true,
+      paperType: true,
+      description: true,
+      questionTypeConfig: true,
+      status: true,
+      sortOrder: true,
+      questions: {
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        select: {
+          sortOrder: true,
+          score: true,
+          question: {
+            select: {
+              id: true,
+              knowledgePointId: true,
+              syllabusItemId: true,
+              type: true,
+              stem: true,
+              options: true,
+              answer: true,
+              analysis: true,
+              aiDoubtAnswer: true,
+              source: true,
+              sourceType: true,
+              sourceYear: true,
+              difficulty: true,
+              status: true,
+              knowledgeTags: {
+                orderBy: { createdAt: "asc" },
+                select: {
+                  syllabusItemId: true,
+                  source: true,
+                  confidence: true,
+                  reason: true
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+  if (!sourcePaper) {
+    throw new QuestionBankCopyError("来源题库不存在或已被删除。");
+  }
+  if (!targetRegionId || targetRegionId === sourcePaper.regionId) {
+    throw new QuestionBankCopyError("请选择与来源不同的目标区域。");
+  }
+
+  await assertQuestionBankOwnerRegion(ownerType, ownerId, targetRegionId);
+  const targetRegion = await prisma.region.findUnique({
+    where: { id: targetRegionId },
+    select: { id: true, name: true, province: true, studySystem: true }
+  });
+  if (!targetRegion) {
+    throw new QuestionBankCopyError("目标区域不存在或已被删除。");
+  }
+
+  const [sourceCourses, targetCourses] = await Promise.all([
+    getQuestionBankCopyCatalog(ownerType, ownerId, sourcePaper.regionId),
+    getQuestionBankCopyCatalog(ownerType, ownerId, targetRegionId)
+  ]);
+  const knowledgeMapping = buildQuestionBankKnowledgeCopyMapping(
+    sourceCourses,
+    targetCourses,
+    sourcePaper.questions.map(({ question }) => ({
+      knowledgePointId: question.knowledgePointId,
+      syllabusItemId: question.syllabusItemId,
+      knowledgeTagSyllabusItemIds: question.knowledgeTags.map((tag) => tag.syllabusItemId)
+    }))
+  );
+
+  return { sourcePaper, targetRegion, knowledgeMapping };
+}
+
 async function ensureQuestionBankOwnerRegion(ownerType: QuestionBankOwnerType, ownerId: string, regionId: string) {
   await prisma.region.findUniqueOrThrow({ where: { id: regionId }, select: { id: true } });
 
@@ -1332,6 +1623,189 @@ export async function createQuestionBankPaper(formData: FormData) {
 
   revalidatePath("/admin/question-banks");
   redirect(questionBankPath(ownerType, ownerId));
+}
+
+export async function previewQuestionBankCopy(
+  ownerType: QuestionBankOwnerType,
+  ownerId: string,
+  sourcePaperId: string,
+  targetRegionId: string
+) {
+  await requireAdmin();
+  try {
+    const plan = await getQuestionBankCopyPlan(ownerType, ownerId, sourcePaperId, targetRegionId);
+    return {
+      ok: true as const,
+      targetRegionName: plan.targetRegion.name,
+      summary: plan.knowledgeMapping.summary
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      message: error instanceof QuestionBankCopyError ? error.message : "暂时无法检查知识点映射，请稍后重试。"
+    };
+  }
+}
+
+type CopyQuestionBankPaperActionState = {
+  error: string | null;
+};
+
+export async function copyQuestionBankPaper(
+  _previousState: CopyQuestionBankPaperActionState,
+  formData: FormData
+): Promise<CopyQuestionBankPaperActionState> {
+  await requireAdmin();
+  const { ownerType, ownerId } = getQuestionBankOwner(formData);
+  const sourcePaperId = String(formData.get("sourcePaperId") || "");
+  const targetRegionId = String(formData.get("targetRegionId") || "");
+  const title = String(formData.get("title") || "").trim();
+  const rawYear = String(formData.get("year") || "").trim();
+  const year = rawYear ? Number(rawYear) : null;
+  const rawStatus = String(formData.get("status") || "");
+  const status = rawStatus as ContentStatus;
+
+  if (!title) {
+    return { error: "请输入复制后的题库名称。" };
+  }
+  if (rawYear && (!Number.isInteger(year) || Number(year) < 2000 || Number(year) > 2100)) {
+    return { error: "年份应为 2000 至 2100 之间的整数。" };
+  }
+  if (!Object.values(ContentStatus).includes(status)) {
+    return { error: "复制后的题库状态无效。" };
+  }
+
+  let plan: Awaited<ReturnType<typeof getQuestionBankCopyPlan>>;
+  try {
+    plan = await getQuestionBankCopyPlan(ownerType, ownerId, sourcePaperId, targetRegionId);
+  } catch (error) {
+    return { error: error instanceof QuestionBankCopyError ? error.message : "复制前检查失败，请稍后重试。" };
+  }
+
+  if (plan.knowledgeMapping.summary.unmappedAssociationCount > 0 && formData.get("allowUnmapped") !== "yes") {
+    return { error: "仍有知识点关联无法匹配，请确认按未归类处理后再复制。" };
+  }
+
+  const duplicatePaper = await prisma.examPaper.findFirst({
+    where: {
+      ...ownerPaperWhere(ownerType, ownerId, targetRegionId),
+      title,
+      year
+    },
+    select: { id: true }
+  });
+  if (duplicatePaper) {
+    return { error: "目标区域已存在同名、同年份题库，请修改题库名称或年份。" };
+  }
+
+  const questionIdMap = new Map(plan.sourcePaper.questions.map(({ question }) => [question.id, randomUUID()]));
+  let copiedPaperId = "";
+  try {
+    const copiedPaper = await prisma.$transaction(async (tx) => {
+      const paper = await tx.examPaper.create({
+        data: {
+          regionId: targetRegionId,
+          ownerType,
+          publicSubjectId: ownerType === "public_subject" ? ownerId : null,
+          majorId: ownerType === "major" ? ownerId : null,
+          title,
+          year,
+          paperType: plan.sourcePaper.paperType,
+          description: plan.sourcePaper.description,
+          ...(plan.sourcePaper.questionTypeConfig === null
+            ? {}
+            : { questionTypeConfig: plan.sourcePaper.questionTypeConfig as Prisma.InputJsonValue }),
+          status,
+          sortOrder: plan.sourcePaper.sortOrder
+        },
+        select: { id: true }
+      });
+
+      if (plan.sourcePaper.questions.length) {
+        await tx.question.createMany({
+          data: plan.sourcePaper.questions.map(({ question }) => ({
+            id: questionIdMap.get(question.id)!,
+            knowledgePointId: question.knowledgePointId
+              ? plan.knowledgeMapping.knowledgePointIds.get(question.knowledgePointId) || null
+              : null,
+            syllabusItemId: question.syllabusItemId
+              ? plan.knowledgeMapping.syllabusItemIds.get(question.syllabusItemId) || null
+              : null,
+            type: question.type,
+            stem: question.stem,
+            options: question.options as Prisma.InputJsonValue,
+            answer: question.answer as Prisma.InputJsonValue,
+            analysis: question.analysis,
+            aiDoubtAnswer: question.aiDoubtAnswer,
+            source: question.source,
+            sourceType: question.sourceType,
+            sourceYear: question.sourceYear,
+            difficulty: question.difficulty,
+            status: question.status
+          }))
+        });
+
+        const knowledgeTagData = plan.sourcePaper.questions.flatMap(({ question }) => {
+          const usedTargetSyllabusItemIds = new Set<string>();
+          return question.knowledgeTags.flatMap((tag) => {
+            const mappedSyllabusItemId = plan.knowledgeMapping.syllabusItemIds.get(tag.syllabusItemId);
+            if (!mappedSyllabusItemId || usedTargetSyllabusItemIds.has(mappedSyllabusItemId)) {
+              return [];
+            }
+            usedTargetSyllabusItemIds.add(mappedSyllabusItemId);
+            return [{
+              id: randomUUID(),
+              questionId: questionIdMap.get(question.id)!,
+              syllabusItemId: mappedSyllabusItemId,
+              source: tag.source,
+              confidence: tag.confidence,
+              reason: tag.reason
+            }];
+          });
+        });
+        if (knowledgeTagData.length) {
+          await tx.questionKnowledgeTag.createMany({ data: knowledgeTagData });
+        }
+
+        await tx.examPaperQuestion.createMany({
+          data: plan.sourcePaper.questions.map(({ question, sortOrder, score }) => ({
+            id: randomUUID(),
+            paperId: paper.id,
+            questionId: questionIdMap.get(question.id)!,
+            sortOrder,
+            score
+          }))
+        });
+      }
+
+      return paper;
+    });
+    copiedPaperId = copiedPaper.id;
+  } catch {
+    return { error: "复制题库失败，未产生任何副本，请稍后重试。" };
+  }
+
+  const orderedPapers = await prisma.examPaper.findMany({
+    where: ownerPaperWhere(ownerType, ownerId, targetRegionId),
+    select: { id: true },
+    orderBy: [{ year: "desc" }, { updatedAt: "desc" }]
+  });
+  const copiedPaperIndex = Math.max(0, orderedPapers.findIndex((paper) => paper.id === copiedPaperId));
+  const query = new URLSearchParams({
+    type: ownerType,
+    id: ownerId,
+    province: plan.targetRegion.province,
+    examType: plan.targetRegion.studySystem,
+    page: String(Math.floor(copiedPaperIndex / 10) + 1),
+    copiedPaperId,
+    copyNotice: "paper-copied",
+    mapped: String(plan.knowledgeMapping.summary.mappedAssociationCount),
+    unmapped: String(plan.knowledgeMapping.summary.unmappedAssociationCount)
+  });
+  revalidatePath("/admin/question-banks");
+  revalidatePath("/admin/question-banks/knowledge-points");
+  revalidatePath("/admin/question-banks/statistics");
+  redirect(`/admin/question-banks?${query.toString()}#paper-${copiedPaperId}`);
 }
 
 export async function createQuestionBankOwner(formData: FormData) {
