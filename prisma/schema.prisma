@@ -916,6 +916,7 @@ model ChapterChallengeVersion {
   chapterId           String
   version             Int
   targetQuestionCount Int                        @default(10)
+  difficultyRating    Decimal?                   @db.Decimal(2, 1)
   status              ContentStatus              @default(draft)
   publishedAt         DateTime?
   chapter             SyllabusItem               @relation("ChapterChallengeVersions", fields: [chapterId], references: [id], onDelete: Cascade)

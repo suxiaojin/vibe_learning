@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { CheckCircle2, Flame, Gem, Trophy, XCircle } from "lucide-react";
+import { CheckCircle2, Flame, Gem, Star, Trophy, XCircle } from "lucide-react";
+import { ChallengeDifficultyStars } from "@/components/challenge-difficulty-stars";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import { cn } from "@/lib/utils";
 
@@ -52,6 +53,8 @@ function QuestionShareCard({ card, compact }: { card: Extract<BuddyShareCard, { 
 }
 
 function QuizResultShareCard({ card, compact }: { card: Extract<BuddyShareCard, { type: "quiz_result_card" }>; compact: boolean }) {
+  const hasDifficultyRating = Object.prototype.hasOwnProperty.call(card, "difficultyRating");
+
   return (
     <div className={cn("overflow-hidden rounded-2xl border bg-white shadow-sm", card.passed ? "border-[#58cc02]" : "border-coral")}>
       <div className={cn("p-5 text-white", card.passed ? "bg-[#58cc02]" : "bg-coral")}>
@@ -68,7 +71,15 @@ function QuizResultShareCard({ card, compact }: { card: Extract<BuddyShareCard, 
       </div>
       <div className="grid gap-3 p-4 sm:grid-cols-3">
         <Metric icon={<CheckCircle2 size={20} />} label="正确题数" value={`${card.correct}/${card.total}`} />
-        <Metric icon={<Gem size={20} />} label="获得钻石" value={`+${card.diamondRewardAmount}`} />
+        {hasDifficultyRating ? (
+          <Metric
+            icon={<Star size={20} />}
+            label="本关难度"
+            value={<ChallengeDifficultyStars compact value={card.difficultyRating ?? null} />}
+          />
+        ) : (
+          <Metric icon={<Gem size={20} />} label="获得钻石" value={`+${card.diamondRewardAmount}`} />
+        )}
         <Metric icon={<Flame size={20} />} label="本关得分" value={`${card.score} 分`} />
       </div>
       {card.submittedAtLabel ? <p className="border-t border-slate-100 px-4 py-3 text-xs font-semibold text-slate-400">完成时间：{card.submittedAtLabel}</p> : null}
@@ -195,7 +206,7 @@ function AnswerBox({ label, tone, value }: { label: string; tone: "danger" | "su
   );
 }
 
-function Metric({ icon, label, value }: { icon?: ReactNode; label: string; value: string }) {
+function Metric({ icon, label, value }: { icon?: ReactNode; label: string; value: ReactNode }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-3">
       <div className="flex items-center gap-2 text-slate-400">

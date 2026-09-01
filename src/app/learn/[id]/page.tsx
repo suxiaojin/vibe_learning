@@ -17,7 +17,7 @@ export default async function SectionQuizPage({
   searchParams
 }: {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ fromSessionId?: string; restart?: string }>;
+  searchParams?: Promise<{ fromSessionId?: string; redoSessionId?: string; restart?: string }>;
 }) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const user = await requireUser();
@@ -29,10 +29,11 @@ export default async function SectionQuizPage({
 
   const shouldRestart = query?.restart === "1";
   if (shouldRestart) {
-    const sourceSession = query?.fromSessionId
+    const sourceSessionId = query?.redoSessionId || query?.fromSessionId;
+    const sourceSession = sourceSessionId
       ? await prisma.quizSession.findFirst({
           where: {
-            id: query.fromSessionId,
+            id: sourceSessionId,
             userId: user.id,
             syllabusItemId: id,
             status: "completed",
@@ -41,15 +42,17 @@ export default async function SectionQuizPage({
           select: { chapterChallengeVersionId: true }
         })
       : null;
-    const nextChallenge = sourceSession?.chapterChallengeVersionId
-      ? await getNextChapterChallengeVersion(id, sourceSession.chapterChallengeVersionId)
-      : null;
+    const restartChallengeVersionId = query?.redoSessionId
+      ? sourceSession?.chapterChallengeVersionId
+      : sourceSession?.chapterChallengeVersionId
+        ? (await getNextChapterChallengeVersion(id, sourceSession.chapterChallengeVersionId))?.id
+        : null;
 
     await prisma.quizSession.create({
       data: {
         userId: user.id,
         syllabusItemId: id,
-        chapterChallengeVersionId: nextChallenge?.id || access.section.challengeVersionId
+        chapterChallengeVersionId: restartChallengeVersionId || access.section.challengeVersionId
       }
     });
     redirect(`/learn/${id}`);

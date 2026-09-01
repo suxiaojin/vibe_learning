@@ -1,12 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
+import { matchChallengeQuestions } from "@/lib/challenge-copy";
 import { prisma } from "@/lib/prisma";
 import { isQuestionBankAutoGradedQuestionType } from "@/lib/question-bank-types";
 
 const statisticsPath = "/admin/question-banks/statistics";
 type ChallengeScopeType = "chapter" | "course";
+
+class ChallengeCopyError extends Error {}
 
 function getChallengeScopeInput(formData: FormData) {
   const scopeType = String(formData.get("scopeType") || "chapter") as ChallengeScopeType;
@@ -112,6 +116,235 @@ async function getChallengeScope(scopeType: ChallengeScopeType, scopeId: string,
   };
 }
 
+function descendantSyllabusItemIds(items: Array<{ id: string; parentId: string | null }>, rootId: string) {
+  const childrenByParentId = new Map<string, string[]>();
+  for (const item of items) {
+    if (!item.parentId) continue;
+    childrenByParentId.set(item.parentId, [...(childrenByParentId.get(item.parentId) || []), item.id]);
+  }
+  const ids: string[] = [];
+  const stack = [rootId];
+  while (stack.length) {
+    const current = stack.pop();
+    if (!current) continue;
+    ids.push(current);
+    stack.push(...(childrenByParentId.get(current) || []));
+  }
+  return ids;
+}
+
+async function getCrossRegionChallengeCopyPlan(
+  scopeType: ChallengeScopeType,
+  sourceScopeId: string,
+  sourceChallengeVersionId: string,
+  targetCourseId: string
+) {
+  const sourceChallenge = await prisma.chapterChallengeVersion.findFirst({
+    where: {
+      id: sourceChallengeVersionId,
+      status: { in: ["draft", "published"] }
+    },
+    select: {
+      id: true,
+      targetQuestionCount: true,
+      chapter: {
+        select: {
+          id: true,
+          parentId: true,
+          checkpointScope: true,
+          code: true,
+          title: true,
+          sortOrder: true,
+          course: {
+            select: {
+              id: true,
+              name: true,
+              courseType: true,
+              challengeMode: true,
+              regionId: true,
+              majorId: true,
+              publicSubjectId: true
+            }
+          }
+        }
+      },
+      questions: {
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        select: {
+          questionId: true,
+          sortOrder: true,
+          question: {
+            select: {
+              id: true,
+              type: true,
+              stem: true,
+              options: true,
+              answer: true,
+              analysis: true,
+              source: true,
+              sourceType: true,
+              sourceYear: true,
+              difficulty: true
+            }
+          }
+        }
+      }
+    }
+  });
+  if (!sourceChallenge) {
+    throw new ChallengeCopyError("来源关卡不存在或已被删除。");
+  }
+
+  const sourceCourse = sourceChallenge.chapter.course;
+  const validSourceScope = scopeType === "course"
+    ? sourceScopeId === sourceCourse.id && sourceChallenge.chapter.checkpointScope === "course"
+    : sourceScopeId === sourceChallenge.chapter.id
+      && sourceChallenge.chapter.parentId === null
+      && sourceChallenge.chapter.checkpointScope === null;
+  if (!validSourceScope) {
+    throw new ChallengeCopyError("来源关卡与当前课程或章节不匹配。");
+  }
+
+  const targetCourse = await prisma.learningCourse.findFirst({
+    where: {
+      id: targetCourseId,
+      name: sourceCourse.name,
+      courseType: sourceCourse.courseType,
+      regionId: { not: sourceCourse.regionId },
+      ...(sourceCourse.courseType === "major"
+        ? { majorId: sourceCourse.majorId }
+        : { publicSubjectId: sourceCourse.publicSubjectId })
+    },
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      challengeMode: true,
+      regionId: true,
+      majorId: true,
+      publicSubjectId: true,
+      courseType: true,
+      region: {
+        select: { name: true, province: true, studySystem: true }
+      }
+    }
+  });
+  if (!targetCourse) {
+    throw new ChallengeCopyError("目标区域没有当前专业或公共课下的同名课程。");
+  }
+  if (targetCourse.challengeMode !== scopeType) {
+    throw new ChallengeCopyError("目标课程的闯关组织方式与来源课程不一致。");
+  }
+
+  let targetCheckpointId: string | null = null;
+  let targetScopeId = targetCourse.id;
+  if (scopeType === "course") {
+    targetCheckpointId = (await prisma.syllabusItem.findFirst({
+      where: { courseId: targetCourse.id, checkpointScope: "course" },
+      select: { id: true }
+    }))?.id || null;
+  } else {
+    const targetChapters = await prisma.syllabusItem.findMany({
+      where: {
+        courseId: targetCourse.id,
+        parentId: null,
+        checkpointScope: null,
+        code: sourceChallenge.chapter.code,
+        title: sourceChallenge.chapter.title,
+        sortOrder: sourceChallenge.chapter.sortOrder
+      },
+      select: { id: true }
+    });
+    if (targetChapters.length !== 1) {
+      throw new ChallengeCopyError("目标课程中没有唯一匹配的同名章节，无法确定关卡位置。");
+    }
+    targetCheckpointId = targetChapters[0].id;
+    targetScopeId = targetChapters[0].id;
+  }
+
+  const targetSyllabusItems = await prisma.syllabusItem.findMany({
+    where: { courseId: targetCourse.id, checkpointScope: null },
+    select: { id: true, parentId: true }
+  });
+  const targetScopeSyllabusItemIds = scopeType === "course"
+    ? targetSyllabusItems.map((item) => item.id)
+    : descendantSyllabusItemIds(targetSyllabusItems, targetScopeId);
+
+  const existingDraft = targetCheckpointId
+    ? await prisma.chapterChallengeVersion.findFirst({
+        where: { chapterId: targetCheckpointId, status: "draft" },
+        select: { id: true, _count: { select: { questions: true } } },
+        orderBy: { version: "desc" }
+      })
+    : null;
+  if (existingDraft && existingDraft._count.questions > 0) {
+    throw new ChallengeCopyError("目标关卡已有未完成草稿，请先保存或删除该草稿。");
+  }
+
+  const usedTargetQuestionIds = targetCheckpointId
+    ? new Set(
+        (await prisma.chapterChallengeQuestion.findMany({
+          where: {
+            challengeVersion: {
+              chapterId: targetCheckpointId,
+              status: { in: ["draft", "published"] },
+              ...(existingDraft ? { id: { not: existingDraft.id } } : {})
+            }
+          },
+          select: { questionId: true }
+        })).map((item) => item.questionId)
+      )
+    : new Set<string>();
+
+  const targetQuestions = targetScopeSyllabusItemIds.length
+    ? await prisma.question.findMany({
+        where: {
+          status: "published",
+          id: { notIn: [...usedTargetQuestionIds] },
+          knowledgeTags: { some: { syllabusItemId: { in: targetScopeSyllabusItemIds } } },
+          paperQuestions: {
+            some: {
+              paper: {
+                regionId: targetCourse.regionId,
+                ownerType: targetCourse.courseType,
+                status: "published",
+                ...(targetCourse.courseType === "major"
+                  ? { majorId: targetCourse.majorId }
+                  : { publicSubjectId: targetCourse.publicSubjectId })
+              }
+            }
+          }
+        },
+        select: {
+          id: true,
+          type: true,
+          stem: true,
+          options: true,
+          answer: true,
+          analysis: true,
+          source: true,
+          sourceType: true,
+          sourceYear: true,
+          difficulty: true
+        }
+      })
+    : [];
+  const questionMatches = matchChallengeQuestions(
+    sourceChallenge.questions.map((item) => item.question),
+    targetQuestions
+  );
+
+  return {
+    sourceChallenge,
+    sourceCourse,
+    targetCourse,
+    targetCheckpointId,
+    targetScopeId,
+    existingDraftId: existingDraft?.id || null,
+    questionMatches
+  };
+}
+
 async function ensureDraft(chapterId: string) {
   const existing = await prisma.chapterChallengeVersion.findFirst({
     where: { chapterId, status: "draft" },
@@ -199,6 +432,188 @@ function refreshChallengePages(checkpointId: string) {
   revalidatePath("/learn");
   revalidatePath("/course-center");
   revalidatePath(`/learn/${checkpointId}`);
+}
+
+export async function previewCrossRegionChallengeCopy(
+  scopeType: ChallengeScopeType,
+  sourceScopeId: string,
+  sourceChallengeVersionId: string,
+  targetCourseId: string
+) {
+  await requireAdmin();
+  try {
+    const plan = await getCrossRegionChallengeCopyPlan(
+      scopeType,
+      sourceScopeId,
+      sourceChallengeVersionId,
+      targetCourseId
+    );
+    return {
+      ok: true as const,
+      targetCourseStatus: plan.targetCourse.status,
+      targetRegionName: plan.targetCourse.region.name,
+      sourceQuestionCount: plan.questionMatches.sourceQuestionCount,
+      mappedQuestionCount: plan.questionMatches.mappedQuestionCount,
+      unmappedQuestionCount: plan.questionMatches.unmappedQuestionCount
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      message: error instanceof ChallengeCopyError ? error.message : "暂时无法检查目标关卡，请稍后重试。"
+    };
+  }
+}
+
+type CrossRegionChallengeCopyActionState = {
+  error: string | null;
+};
+
+export async function copyChallengeAcrossRegion(
+  _previousState: CrossRegionChallengeCopyActionState,
+  formData: FormData
+): Promise<CrossRegionChallengeCopyActionState> {
+  await requireAdmin();
+  const scopeType = String(formData.get("scopeType") || "") as ChallengeScopeType;
+  const sourceScopeId = String(formData.get("sourceScopeId") || "");
+  const sourceChallengeVersionId = String(formData.get("sourceChallengeVersionId") || "");
+  const targetCourseId = String(formData.get("targetCourseId") || "");
+  if ((scopeType !== "course" && scopeType !== "chapter") || !sourceScopeId || !sourceChallengeVersionId || !targetCourseId) {
+    return { error: "复制关卡参数不完整，请刷新页面后重试。" };
+  }
+
+  let plan: Awaited<ReturnType<typeof getCrossRegionChallengeCopyPlan>>;
+  try {
+    plan = await getCrossRegionChallengeCopyPlan(scopeType, sourceScopeId, sourceChallengeVersionId, targetCourseId);
+  } catch (error) {
+    return { error: error instanceof ChallengeCopyError ? error.message : "复制前检查失败，请稍后重试。" };
+  }
+  if (plan.questionMatches.sourceQuestionCount < 1) {
+    return { error: "来源关卡没有题目，无需复制。" };
+  }
+  if (plan.questionMatches.unmappedQuestionCount > 0 && formData.get("allowUnmapped") !== "yes") {
+    return { error: "仍有题目无法映射，请确认按缺题草稿处理后再复制。" };
+  }
+
+  const targetQuestionIdBySourceId = new Map(
+    plan.questionMatches.matches.map((match) => [match.sourceQuestionId, match.targetQuestionId])
+  );
+  const copiedQuestions = plan.sourceChallenge.questions.flatMap((item) => {
+    const targetQuestionId = targetQuestionIdBySourceId.get(item.questionId);
+    return targetQuestionId ? [{ targetQuestionId, sourceSortOrder: item.sortOrder }] : [];
+  });
+
+  let copiedChallengeId = "";
+  let targetCheckpointId = plan.targetCheckpointId;
+  try {
+    const copiedChallenge = await prisma.$transaction(async (tx) => {
+      let checkpointId = targetCheckpointId;
+      if (!checkpointId) {
+        const latestItem = await tx.syllabusItem.findFirst({
+          where: { courseId: plan.targetCourse.id, checkpointScope: null },
+          orderBy: { sortOrder: "desc" },
+          select: { sortOrder: true }
+        });
+        const checkpoint = await tx.syllabusItem.create({
+          data: {
+            courseId: plan.targetCourse.id,
+            parentId: null,
+            checkpointScope: "course",
+            title: "综合闯关",
+            description: "整门课程合并为一个关卡",
+            sortOrder: (latestItem?.sortOrder || 0) + 1,
+            status: "published"
+          },
+          select: { id: true }
+        });
+        checkpointId = checkpoint.id;
+        targetCheckpointId = checkpoint.id;
+      }
+
+      const currentDraft = await tx.chapterChallengeVersion.findFirst({
+        where: { chapterId: checkpointId, status: "draft" },
+        include: { questions: { select: { id: true } } },
+        orderBy: { version: "desc" }
+      });
+      if (currentDraft?.questions.length) {
+        throw new ChallengeCopyError("目标关卡已有未完成草稿，请先保存或删除该草稿。");
+      }
+
+      const challenge = currentDraft
+        ? await tx.chapterChallengeVersion.update({
+            where: { id: currentDraft.id },
+            data: {
+              targetQuestionCount: plan.sourceChallenge.targetQuestionCount,
+              publishedAt: null
+            },
+            select: { id: true }
+          })
+        : await tx.chapterChallengeVersion.create({
+            data: {
+              chapterId: checkpointId,
+              version: ((await tx.chapterChallengeVersion.findFirst({
+                where: { chapterId: checkpointId, status: { in: ["draft", "published"] } },
+                orderBy: { version: "desc" },
+                select: { version: true }
+              }))?.version || 0) + 1,
+              targetQuestionCount: plan.sourceChallenge.targetQuestionCount,
+              status: "draft"
+            },
+            select: { id: true }
+          });
+
+      if (copiedQuestions.length) {
+        const conflict = await tx.chapterChallengeQuestion.findFirst({
+          where: {
+            questionId: { in: copiedQuestions.map((item) => item.targetQuestionId) },
+            challengeVersionId: { not: challenge.id },
+            challengeVersion: {
+              chapterId: checkpointId,
+              status: { in: ["draft", "published"] }
+            }
+          },
+          select: { id: true }
+        });
+        if (conflict) {
+          throw new ChallengeCopyError("目标区域的部分题目已被其他关卡使用，请刷新后重试。");
+        }
+        await tx.chapterChallengeQuestion.createMany({
+          data: copiedQuestions
+            .sort((left, right) => left.sourceSortOrder - right.sourceSortOrder)
+            .map((item, index) => ({
+              challengeVersionId: challenge.id,
+              questionId: item.targetQuestionId,
+              sortOrder: index + 1
+            }))
+        });
+      }
+      return challenge;
+    });
+    copiedChallengeId = copiedChallenge.id;
+  } catch (error) {
+    return {
+      error: error instanceof ChallengeCopyError ? error.message : "复制关卡失败，未产生任何副本，请稍后重试。"
+    };
+  }
+
+  if (!targetCheckpointId) {
+    return { error: "目标关卡位置创建失败，未执行复制。" };
+  }
+  refreshChallengePages(targetCheckpointId);
+  const owner = plan.targetCourse.courseType === "major"
+    ? `major:${plan.targetCourse.majorId || ""}`
+    : `public_subject:${plan.targetCourse.publicSubjectId || ""}`;
+  const query = new URLSearchParams({
+    province: plan.targetCourse.region.province,
+    examType: plan.targetCourse.region.studySystem,
+    owner,
+    scope: scopeType,
+    scopeId: plan.targetScopeId,
+    challengeId: copiedChallengeId,
+    copyNotice: "challenge-copied",
+    mapped: String(plan.questionMatches.mappedQuestionCount),
+    unmapped: String(plan.questionMatches.unmappedQuestionCount)
+  });
+  redirect(`${statisticsPath}?${query.toString()}`);
 }
 
 export async function addQuestionToChapterChallenge(formData: FormData) {
@@ -298,6 +713,30 @@ export async function updateChapterChallengeTarget(formData: FormData) {
   await prisma.chapterChallengeVersion.update({
     where: { id: challenge.id },
     data: { targetQuestionCount }
+  });
+  refreshChallengePages(scope.checkpointId);
+}
+
+export async function updateChapterChallengeDifficulty(formData: FormData) {
+  await requireAdmin();
+  const { scopeType, scopeId } = getChallengeScopeInput(formData);
+  const challengeVersionId = String(formData.get("challengeVersionId") || "");
+  const rawDifficultyRating = String(formData.get("difficultyRating") ?? "").trim();
+  const difficultyRating = rawDifficultyRating === "" ? null : Number(rawDifficultyRating);
+  if (
+    difficultyRating !== null
+    && (!Number.isFinite(difficultyRating)
+      || difficultyRating < 0.5
+      || difficultyRating > 5
+      || !Number.isInteger(difficultyRating * 2))
+  ) {
+    throw new Error("Challenge difficulty must be empty or between 0.5 and 5 in half-star steps");
+  }
+  const scope = await getChallengeScope(scopeType, scopeId, scopeType === "course");
+  const challenge = await getActiveChallenge(scope.checkpointId, challengeVersionId);
+  await prisma.chapterChallengeVersion.update({
+    where: { id: challenge.id },
+    data: { difficultyRating }
   });
   refreshChallengePages(scope.checkpointId);
 }

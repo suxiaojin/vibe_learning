@@ -948,6 +948,158 @@ export async function createPublicSubjectCourse(formData: FormData) {
   redirect(`/admin/public-subjects/${publicSubjectId}/courses`);
 }
 
+export async function copyPublicSubjectCourse(formData: FormData) {
+  await requireAdmin();
+  const sourceCourseId = String(formData.get("sourceCourseId") || "");
+  const publicSubjectId = String(formData.get("publicSubjectId") || "");
+  const targetRegionId = String(formData.get("targetRegionId") || "");
+  const coursesPath = `/admin/public-subjects/${publicSubjectId}/courses`;
+
+  const sourceCourse = await prisma.learningCourse.findFirst({
+    where: {
+      id: sourceCourseId,
+      publicSubjectId,
+      courseType: "public_subject"
+    },
+    include: {
+      chapters: {
+        include: {
+          points: {
+            orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+          }
+        },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+      },
+      syllabusItems: {
+        include: {
+          knowledgePoints: {
+            select: { id: true }
+          }
+        },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+      }
+    }
+  });
+  if (!sourceCourse) {
+    redirect(`${coursesPath}?copyError=source-course-not-found`);
+  }
+
+  if (!targetRegionId || targetRegionId === sourceCourse.regionId) {
+    redirect(`${coursesPath}?copyError=invalid-target-region`);
+  }
+
+  const targetBinding = await prisma.regionPublicSubject.findUnique({
+    where: {
+      regionId_publicSubjectId: {
+        regionId: targetRegionId,
+        publicSubjectId
+      }
+    },
+    select: { id: true }
+  });
+  if (!targetBinding) {
+    redirect(`${coursesPath}?copyError=target-region-unavailable`);
+  }
+
+  const existingCourse = await prisma.learningCourse.findFirst({
+    where: {
+      regionId: targetRegionId,
+      publicSubjectId,
+      courseType: "public_subject",
+      name: sourceCourse.name
+    },
+    select: { id: true }
+  });
+  if (existingCourse) {
+    redirect(`${coursesPath}?copyError=target-course-exists`);
+  }
+
+  const chapterIdMap = new Map(sourceCourse.chapters.map((chapter) => [chapter.id, randomUUID()]));
+  const syllabusItemIdMap = new Map(sourceCourse.syllabusItems.map((item) => [item.id, randomUUID()]));
+  const knowledgePoints = sourceCourse.chapters.flatMap((chapter) =>
+    chapter.points.map((point) => ({ point, sourceChapterId: chapter.id }))
+  );
+  const knowledgePointIds = new Set(knowledgePoints.map(({ point }) => point.id));
+  const hasInvalidContentRelation =
+    sourceCourse.syllabusItems.some((item) => item.parentId && !syllabusItemIdMap.has(item.parentId)) ||
+    sourceCourse.syllabusItems.some((item) => item.knowledgePoints.some((point) => !knowledgePointIds.has(point.id))) ||
+    knowledgePoints.some(({ point }) => point.syllabusItemId && !syllabusItemIdMap.has(point.syllabusItemId));
+  if (hasInvalidContentRelation) {
+    redirect(`${coursesPath}?copyError=source-content-invalid`);
+  }
+
+  const targetSortOrder = await nextPublicSubjectCourseSortOrder(targetRegionId, publicSubjectId);
+  const copiedCourse = await prisma.$transaction(async (tx) => {
+    const course = await tx.learningCourse.create({
+      data: {
+        regionId: targetRegionId,
+        publicSubjectId,
+        majorId: null,
+        courseType: "public_subject",
+        name: sourceCourse.name,
+        description: sourceCourse.description,
+        challengeMode: sourceCourse.challengeMode,
+        status: "draft",
+        sortOrder: targetSortOrder
+      },
+      select: { id: true }
+    });
+
+    if (sourceCourse.chapters.length) {
+      await tx.chapter.createMany({
+        data: sourceCourse.chapters.map((chapter) => ({
+          id: chapterIdMap.get(chapter.id)!,
+          subjectId: chapter.subjectId,
+          courseId: course.id,
+          title: chapter.title,
+          sortOrder: chapter.sortOrder,
+          status: chapter.status
+        }))
+      });
+    }
+
+    if (sourceCourse.syllabusItems.length) {
+      await tx.syllabusItem.createMany({
+        data: sourceCourse.syllabusItems.map((item) => ({
+          id: syllabusItemIdMap.get(item.id)!,
+          courseId: course.id,
+          parentId: item.parentId ? syllabusItemIdMap.get(item.parentId) || null : null,
+          checkpointScope: item.checkpointScope,
+          code: item.code,
+          title: item.title,
+          description: item.description,
+          requirement: item.requirement,
+          sortOrder: item.sortOrder,
+          status: item.status
+        }))
+      });
+    }
+
+    if (knowledgePoints.length) {
+      await tx.knowledgePoint.createMany({
+        data: knowledgePoints.map(({ point, sourceChapterId }) => ({
+          id: randomUUID(),
+          chapterId: chapterIdMap.get(sourceChapterId)!,
+          syllabusItemId: point.syllabusItemId ? syllabusItemIdMap.get(point.syllabusItemId)! : null,
+          title: point.title,
+          summary: point.summary,
+          content: point.content,
+          sortOrder: point.sortOrder,
+          estimatedMinutes: point.estimatedMinutes,
+          status: point.status
+        }))
+      });
+    }
+
+    return course;
+  });
+
+  revalidatePath(coursesPath);
+  revalidatePath("/admin/question-banks");
+  revalidatePath("/admin/question-banks/knowledge-points");
+  redirect(`${coursesPath}?copiedCourseId=${encodeURIComponent(copiedCourse.id)}`);
+}
+
 export async function updatePublicSubjectCourse(formData: FormData) {
   await requireAdmin();
   const id = String(formData.get("id") || "");

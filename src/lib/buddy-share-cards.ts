@@ -17,6 +17,7 @@ export type BuddyQuizResultShareCard = {
   correct: number;
   courseTitle: string;
   diamondRewardAmount: number;
+  difficultyRating?: number | null;
   passed: boolean;
   score: number;
   sectionTitle: string;
@@ -74,6 +75,7 @@ export function normalizeBuddyShareInput(input: unknown): BuddyShareCard | null 
 
   if (input.type === "quiz_result_card") {
     const sectionTitle = cleanText(input.sectionTitle, 80);
+    const hasDifficultyRating = Object.prototype.hasOwnProperty.call(input, "difficultyRating");
     if (!sectionTitle) {
       return null;
     }
@@ -83,6 +85,7 @@ export function normalizeBuddyShareInput(input: unknown): BuddyShareCard | null 
       correct: nonNegativeInteger(input.correct),
       courseTitle: cleanText(input.courseTitle, 50) || "课程",
       diamondRewardAmount: nonNegativeInteger(input.diamondRewardAmount),
+      ...(hasDifficultyRating ? { difficultyRating: normalizeDifficultyRating(input.difficultyRating) } : {}),
       passed: Boolean(input.passed),
       score: clampInteger(input.score, 0, 100),
       sectionTitle,
@@ -149,6 +152,16 @@ function optionalNonNegativeInteger(value: unknown) {
   return value === undefined || value === null || value === ""
     ? undefined
     : nonNegativeInteger(value);
+}
+
+function normalizeDifficultyRating(value: unknown) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) && parsed >= 0.5 && parsed <= 5 && Number.isInteger(parsed * 2)
+    ? parsed
+    : null;
 }
 
 function clampInteger(value: unknown, min: number, max: number) {

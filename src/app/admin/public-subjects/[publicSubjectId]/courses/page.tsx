@@ -2,16 +2,28 @@ import Link from "next/link";
 import { ContentStatus } from "@prisma/client";
 import { ArrowLeft, Plus } from "lucide-react";
 import { createPublicSubjectCourse, updatePublicSubjectCourse, updatePublicSubjectCourseStatus } from "@/app/admin/actions";
+import { CopyPublicSubjectCourseDialog } from "@/components/copy-public-subject-course-dialog";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+const copyErrorMessages: Record<string, string> = {
+  "source-course-not-found": "来源课程不存在或已被删除，未执行复制。",
+  "invalid-target-region": "请选择来源区域以外的目标区域。",
+  "target-region-unavailable": "目标区域尚未绑定当前公共课，未执行复制。",
+  "target-course-exists": "目标区域已经存在同名课程，未执行复制。",
+  "source-content-invalid": "来源课程的内容关联不完整，未执行复制。"
+};
+
 export default async function PublicSubjectCoursesPage({
-  params
+  params,
+  searchParams
 }: {
   params: Promise<{ publicSubjectId: string }>;
+  searchParams?: Promise<{ copiedCourseId?: string; copyError?: string }>;
 }) {
   await requireAdmin();
   const { publicSubjectId } = await params;
+  const query = await searchParams;
   const subject = await prisma.publicSubject.findUniqueOrThrow({
     where: { id: publicSubjectId },
     include: {
@@ -29,6 +41,10 @@ export default async function PublicSubjectCoursesPage({
       }
     }
   });
+  const copiedCourse = query?.copiedCourseId
+    ? subject.learningCourses.find((course) => course.id === query.copiedCourseId)
+    : null;
+  const copyErrorMessage = query?.copyError ? copyErrorMessages[query.copyError] : null;
 
   return (
     <main>
@@ -42,6 +58,21 @@ export default async function PublicSubjectCoursesPage({
           <p className="mt-2 text-sm text-slate-500">在公共课下维护课程，后续可进入课程维护考察目标、考察内容和试卷。</p>
         </div>
       </div>
+
+      {copiedCourse ? (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" role="status">
+          <span>
+            已复制到{copiedCourse.region.name}，共复制章节 {copiedCourse._count.chapters}、考察内容 {copiedCourse._count.syllabusItems}。新课程为草稿，复制后与原课程互不影响。
+          </span>
+          <Link className="font-bold text-emerald-900 underline" href={`/admin/public-subjects/${subject.id}/courses/${copiedCourse.id}`}>前往编辑</Link>
+        </div>
+      ) : null}
+
+      {copyErrorMessage ? (
+        <div className="mb-6 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+          {copyErrorMessage}
+        </div>
+      ) : null}
 
       <details className="group mb-6">
         <summary className="inline-flex h-10 cursor-pointer list-none items-center gap-2 bg-[#0872b9] px-6 text-sm font-bold text-white transition hover:bg-[#0767a8] [&::-webkit-details-marker]:hidden">
@@ -91,8 +122,19 @@ export default async function PublicSubjectCoursesPage({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {subject.learningCourses.map((course) => (
-                <tr key={course.id} className="align-top hover:bg-slate-50">
+              {subject.learningCourses.map((course) => {
+                const targetRegions = subject.regions
+                  .filter((item) => item.regionId !== course.regionId)
+                  .map((item) => ({
+                    id: item.regionId,
+                    name: item.region.name,
+                    disabled: subject.learningCourses.some(
+                      (existingCourse) => existingCourse.regionId === item.regionId && existingCourse.name === course.name
+                    )
+                  }));
+
+                return (
+                  <tr key={course.id} className="align-top hover:bg-slate-50">
                   <td className="px-4 py-4">
                     <Link className="font-semibold text-[#0869a9] hover:underline" href={`/admin/public-subjects/${subject.id}/courses/${course.id}`}>{course.name}</Link>
                     {course.description ? <p className="mt-1 text-xs text-slate-500">{course.description}</p> : null}
@@ -114,7 +156,17 @@ export default async function PublicSubjectCoursesPage({
                     </form>
                   </td>
                   <td className="px-4 py-4 text-right">
-                    <details className="inline-block text-left">
+                    <div className="flex items-center justify-end gap-3">
+                      <CopyPublicSubjectCourseDialog
+                        chapterCount={course._count.chapters}
+                        courseId={course.id}
+                        courseName={course.name}
+                        publicSubjectId={subject.id}
+                        sourceRegionName={course.region.name}
+                        syllabusItemCount={course._count.syllabusItems}
+                        targetRegions={targetRegions}
+                      />
+                      <details className="inline-block text-left">
                       <summary className="cursor-pointer list-none text-sm font-semibold text-[#0869a9] [&::-webkit-details-marker]:hidden">编辑</summary>
                       <form action={updatePublicSubjectCourse} className="absolute right-10 z-10 mt-2 grid w-[620px] gap-3 border border-slate-300 bg-white p-4 text-left shadow-xl">
                         <input type="hidden" name="id" value={course.id} />
@@ -137,10 +189,12 @@ export default async function PublicSubjectCoursesPage({
                           <button className="primary-button rounded-none" type="submit">保存</button>
                         </div>
                       </form>
-                    </details>
+                      </details>
+                    </div>
                   </td>
-                </tr>
-              ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

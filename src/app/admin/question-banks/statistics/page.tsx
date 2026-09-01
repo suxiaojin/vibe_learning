@@ -10,6 +10,8 @@ import {
   updateCourseChallengeMode
 } from "@/app/admin/question-banks/challenge-actions";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
+import { CopyChallengeDialog } from "@/components/copy-challenge-dialog";
+import { ChallengeDifficultyRating } from "@/components/challenge-difficulty-rating";
 import {
   QuestionBankStatisticsTree,
   QuestionBankStatisticsUiProvider,
@@ -36,6 +38,9 @@ type SearchParams = {
   bankSource?: string;
   questionType?: string;
   challengeId?: string;
+  copyNotice?: string;
+  mapped?: string;
+  unmapped?: string;
 };
 
 type RegionOption = {
@@ -64,6 +69,8 @@ type SyllabusItemRow = {
 type CourseRow = {
   id: string;
   name: string;
+  regionId: string;
+  region: { name: string };
   sortOrder: number;
   challengeMode: "chapter" | "course";
   syllabusItems: SyllabusItemRow[];
@@ -761,6 +768,8 @@ export default async function QuestionBankKnowledgeStatisticsPage({
     select: {
       id: true,
       name: true,
+      regionId: true,
+      region: { select: { name: true } },
       sortOrder: true,
       challengeMode: true,
       syllabusItems: {
@@ -914,6 +923,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
           id: true,
           version: true,
           targetQuestionCount: true,
+          difficultyRating: true,
           status: true,
           publishedAt: true,
           questions: {
@@ -945,6 +955,31 @@ export default async function QuestionBankKnowledgeStatisticsPage({
     || challengeVersions.find((version) => version.status === "published")
     || challengeVersions[0]
     || null;
+  const challengeCopyTargetCourses = challengeScope && challengeVersion && selectedCourse
+    ? (await prisma.learningCourse.findMany({
+        where: {
+          name: selectedCourse.name,
+          courseType: selectedOwner.type,
+          regionId: { not: selectedCourse.regionId },
+          ...(selectedOwner.type === "public_subject"
+            ? { publicSubjectId: selectedOwner.id }
+            : { majorId: selectedOwner.id })
+        },
+        select: {
+          id: true,
+          challengeMode: true,
+          region: { select: { name: true } }
+        },
+        orderBy: [{ region: { sortOrder: "asc" } }, { createdAt: "asc" }]
+      })).map((course) => ({
+        id: course.id,
+        regionName: course.region.name,
+        disabled: course.challengeMode !== challengeScope.type,
+        disabledReason: course.challengeMode !== challengeScope.type ? "闯关方式不一致" : null
+      }))
+    : [];
+  const copiedMappedCount = Math.max(0, Number.parseInt(params?.mapped || "0", 10) || 0);
+  const copiedUnmappedCount = Math.max(0, Number.parseInt(params?.unmapped || "0", 10) || 0);
   const selectedChallengeQuestionIds = new Set(challengeVersion?.questions.map((item) => item.questionId) || []);
   const challengeQuestionLimitReached = Boolean(
     challengeVersion && challengeVersion.questions.length >= challengeVersion.targetQuestionCount
@@ -1014,6 +1049,12 @@ export default async function QuestionBankKnowledgeStatisticsPage({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        {params?.copyNotice === "challenge-copied" && challengeVersion?.id === params?.challengeId ? (
+          <div className="mb-4 border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs leading-5 text-emerald-900" role="status">
+            关卡已复制为当前区域的草稿，共匹配 {copiedMappedCount} 道题
+            {copiedUnmappedCount ? `，另有 ${copiedUnmappedCount} 道题需手动补齐` : ""}。
+          </div>
+        ) : null}
         <form action={updateChapterChallengeTarget} className="flex items-end gap-2">
           <input name="scopeType" type="hidden" value={challengeScope.type} />
           <input name="scopeId" type="hidden" value={challengeScope.id} />
@@ -1101,7 +1142,18 @@ export default async function QuestionBankKnowledgeStatisticsPage({
             : "已保存关卡可继续增删题目、调整顺序或修改本关题数，修改立即生效。"}
         </p>
         {challengeVersion ? (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <CopyChallengeDialog
+              challengeVersion={challengeVersion.version}
+              questionCount={challengeVersion.questions.length}
+              scopeType={challengeScope.type}
+              sourceChallengeVersionId={challengeVersion.id}
+              sourceCourseName={selectedCourse?.name || ""}
+              sourceRegionName={selectedCourse?.region.name || ""}
+              sourceScopeId={challengeScope.id}
+              targetCourses={challengeCopyTargetCourses}
+              targetQuestionCount={challengeVersion.targetQuestionCount}
+            />
             <form action={deleteChapterChallenge} id={`delete-challenge-${challengeVersion.id}`}>
               <input name="scopeType" type="hidden" value={challengeScope.type} />
               <input name="scopeId" type="hidden" value={challengeScope.id} />
@@ -1115,8 +1167,14 @@ export default async function QuestionBankKnowledgeStatisticsPage({
               <Trash2 size={14} />
               删除关卡
             </ConfirmSubmitButton>
+            <ChallengeDifficultyRating
+              challengeVersionId={challengeVersion.id}
+              difficultyRating={challengeVersion.difficultyRating === null ? null : Number(challengeVersion.difficultyRating)}
+              scopeId={challengeScope.id}
+              scopeType={challengeScope.type}
+            />
             {challengeVersion.status === "draft" ? (
-              <form action={saveChapterChallenge} className="min-w-0 flex-1">
+              <form action={saveChapterChallenge} className="min-w-[120px] flex-1">
                 <input name="scopeType" type="hidden" value={challengeScope.type} />
                 <input name="scopeId" type="hidden" value={challengeScope.id} />
                 <input name="challengeVersionId" type="hidden" value={challengeVersion.id} />

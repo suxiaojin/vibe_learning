@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
-import { BookOpenCheck, CheckCircle2, ChevronRight, Circle, Flame, Gem, RotateCcw, Trophy, XCircle } from "lucide-react";
+import { BookOpenCheck, CheckCircle2, ChevronRight, Circle, Flame, RotateCcw, Star, Trophy, XCircle } from "lucide-react";
 import { redirect } from "next/navigation";
+import { ChallengeDifficultyStars } from "@/components/challenge-difficulty-stars";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
 import { StudentPageShell } from "@/components/student-page-shell";
 import { WrongQuestionAi } from "@/components/wrong-question-ai";
@@ -24,6 +25,7 @@ type SessionWithAttempts = Prisma.QuizSessionGetPayload<{
   include: {
     chapterChallengeVersion: {
       select: {
+        difficultyRating: true;
         status: true;
         version: true;
       };
@@ -174,11 +176,6 @@ function getChallengeNumber(session: SessionWithAttempts) {
   return challenge?.status === "published" && challenge.version > 0 ? challenge.version : null;
 }
 
-function getChallengeLabel(session: SessionWithAttempts) {
-  const challengeNumber = getChallengeNumber(session);
-  return challengeNumber ? `关卡${challengeNumber}` : "历史关卡";
-}
-
 function buildHistoryHref({
   sectionId,
   sessionId,
@@ -218,7 +215,7 @@ export default async function QuizResultPage({
       },
       include: {
         chapterChallengeVersion: {
-          select: { status: true, version: true }
+          select: { difficultyRating: true, status: true, version: true }
         },
         attempts: {
           include: { question: true },
@@ -238,7 +235,7 @@ export default async function QuizResultPage({
           },
           include: {
             chapterChallengeVersion: {
-              select: { status: true, version: true }
+              select: { difficultyRating: true, status: true, version: true }
             },
             attempts: {
               include: { question: true },
@@ -299,6 +296,8 @@ export default async function QuizResultPage({
   const scorePercent = score ?? 0;
   const passed = !hasScoredQuestions || scorePercent >= 80;
   const currentChallengeNumber = getChallengeNumber(currentSession);
+  const currentChallengeDifficulty = currentSession.chapterChallengeVersion?.difficultyRating;
+  const difficultyRating = currentChallengeDifficulty == null ? null : Number(currentChallengeDifficulty);
   const submittedAt = currentSession.completedAt || currentSession.updatedAt;
   const currentChapterIndex = access.course.chapters.findIndex((chapter) => chapter.id === access.chapter.id);
   const hasNextChapterInCourse = currentChapterIndex >= 0 && currentChapterIndex < access.course.chapters.length - 1;
@@ -308,6 +307,7 @@ export default async function QuizResultPage({
         correct,
         courseTitle: access.course.title,
         diamondRewardAmount: currentSession.diamondRewardAmount,
+        difficultyRating,
         passed,
         score: scorePercent,
         sectionTitle: access.section.title,
@@ -331,13 +331,6 @@ export default async function QuizResultPage({
     showDetails: showHistoryDetails,
     anchor: "history-records"
   });
-  const closeHistoryDetailsHref = buildHistoryHref({
-    sectionId: id,
-    sessionId: currentSession.id,
-    historyLimit,
-    anchor: "history-records"
-  });
-
   return (
     <StudentPageShell active="learn" maxWidthClassName="max-w-5xl">
       <div style={getLearningPathThemeStyle(settings.learningPathTheme)}>
@@ -366,7 +359,12 @@ export default async function QuizResultPage({
             value={hasScoredQuestions ? `${correct}/${total}` : `${submittedUngradedCount}/${ungradedAttempts.length} 题已提交`}
             tone={passed ? "success" : "danger"}
           />
-          <ResultMetric icon={<Gem size={22} />} label="获得钻石" value={`+${currentSession.diamondRewardAmount} 钻石`} tone="sky" />
+          <ResultMetric
+            icon={<Star size={22} />}
+            label="本关难度"
+            value={<ChallengeDifficultyStars value={difficultyRating} />}
+            tone="sky"
+          />
           <ResultMetric
             icon={<Flame size={22} />}
             label="本章关卡"
@@ -435,6 +433,7 @@ export default async function QuizResultPage({
                     key={session.id}
                     sectionId={id}
                     session={session}
+                    showHistoryDetails={showHistoryDetails}
                   />
                 ))}
               </div>
@@ -460,7 +459,6 @@ export default async function QuizResultPage({
                 {selectedUngradedAttempts.length > 0 ? `，主观题 ${selectedUngradedAttempts.length} 题不计分` : ""}
               </p>
             </div>
-            <Link className={`${themedSecondaryButtonClass} min-h-10 px-4`} href={closeHistoryDetailsHref}>收起详情</Link>
           </div>
 
           <AttemptGroup attempts={selectedCorrectAttempts} hideAiExplanation={hideAiExplanation} title="做对的题" tone="correct" />
@@ -479,12 +477,14 @@ function HistorySessionCard({
   session,
   currentSessionId,
   sectionId,
-  historyLimit
+  historyLimit,
+  showHistoryDetails
 }: {
   session: SessionWithAttempts;
   currentSessionId: string;
   sectionId: string;
   historyLimit: number;
+  showHistoryDetails: boolean;
 }) {
   const gradedAttempts = session.attempts.filter((attempt) => attempt.gradingStatus === "auto_graded");
   const ungradedCount = session.attempts.filter((attempt) => attempt.gradingStatus === "ungraded").length;
@@ -496,13 +496,15 @@ function HistorySessionCard({
   const scorePercent = Math.max(0, Math.min(100, score ?? 0));
   const passed = !hasScoredQuestions || scorePercent >= 80;
   const isCurrent = session.id === currentSessionId;
+  const detailsExpanded = isCurrent && showHistoryDetails;
+  const challengeNumber = getChallengeNumber(session);
   const completedAt = session.completedAt || session.updatedAt;
   const detailsHref = buildHistoryHref({
     sectionId,
     sessionId: session.id,
     historyLimit,
-    showDetails: true,
-    anchor: "history-detail"
+    showDetails: !detailsExpanded,
+    anchor: detailsExpanded ? "history-records" : "history-detail"
   });
 
   return (
@@ -516,7 +518,17 @@ function HistorySessionCard({
         <p className="text-sm font-semibold text-slate-600">{formatHistoryDateTime(completedAt)}</p>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <span className="badge bg-[var(--challenge-icon-muted)] text-[var(--challenge-accent)]">AI解释</span>
-          <span className="badge bg-sky-50 text-sky-500">{getChallengeLabel(session)}</span>
+          {challengeNumber ? (
+            <Link
+              aria-label={`重做关卡${challengeNumber}`}
+              className="badge bg-sky-50 text-sky-500 transition hover:bg-sky-100 hover:text-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--challenge-ring)]"
+              href={`/learn/${sectionId}?restart=1&redoSessionId=${session.id}`}
+            >
+              重做关卡{challengeNumber}
+            </Link>
+          ) : (
+            <span className="badge bg-sky-50 text-sky-500">历史关卡</span>
+          )}
         </div>
       </div>
 
@@ -544,12 +556,14 @@ function HistorySessionCard({
         </div>
 
         <Link
-          aria-label={`查看 ${formatHistoryDateTime(completedAt)} 的答题详情`}
+          aria-controls="history-detail"
+          aria-expanded={detailsExpanded}
+          aria-label={`${detailsExpanded ? "收起" : "查看"} ${formatHistoryDateTime(completedAt)} 的答题详情`}
           className="inline-flex min-h-10 items-center gap-1 text-sm font-semibold text-slate-700 transition hover:text-[var(--challenge-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--challenge-ring)]"
           href={detailsHref}
         >
-          查看详情
-          <ChevronRight size={16} />
+          {detailsExpanded ? "收起详情" : "查看详情"}
+          <ChevronRight className={cn("transition-transform", detailsExpanded && "-rotate-90")} size={16} />
         </Link>
       </div>
     </article>
@@ -641,6 +655,7 @@ function buildResultShareCard({
   correct,
   courseTitle,
   diamondRewardAmount,
+  difficultyRating,
   passed,
   score,
   sectionTitle,
@@ -651,6 +666,7 @@ function buildResultShareCard({
   correct: number;
   courseTitle: string;
   diamondRewardAmount: number;
+  difficultyRating: number | null;
   passed: boolean;
   score: number;
   sectionTitle: string;
@@ -663,6 +679,7 @@ function buildResultShareCard({
     correct,
     courseTitle: clipShareText(courseTitle, 32),
     diamondRewardAmount,
+    difficultyRating,
     passed,
     score,
     sectionTitle: clipShareText(sectionTitle, 42),
@@ -699,7 +716,7 @@ function ResultMetric({
 }: {
   icon: ReactNode;
   label: string;
-  value: string;
+  value: ReactNode;
   tone: "success" | "danger" | "sky";
 }) {
   const toneClass = {
