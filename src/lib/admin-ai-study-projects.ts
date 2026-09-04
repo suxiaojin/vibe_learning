@@ -214,7 +214,7 @@ export function getAiStudyProjectSourceDirectories(
 }
 
 function buildProjectWhere(filters: ReturnType<typeof resolveAdminAiStudyProjectFilters>): Prisma.AiStudyProjectWhereInput {
-  const and: Prisma.AiStudyProjectWhereInput[] = [{ deletedAt: null }];
+  const and: Prisma.AiStudyProjectWhereInput[] = [];
 
   if (filters.keyword) {
     and.push({

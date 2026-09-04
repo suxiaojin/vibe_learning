@@ -56,3 +56,13 @@ export function renderLatexInHtml(value: string) {
     .map((part) => (part.startsWith("<") ? part : renderMathTextSegment(part)))
     .join("");
 }
+
+export function renderMathPlainText(value: string) {
+  const escaped = (value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+  return renderLatexInHtml(escaped).replace(/\r?\n/g, "<br />");
+}

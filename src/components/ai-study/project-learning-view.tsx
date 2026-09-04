@@ -14,6 +14,7 @@ import {
   getAiStudyNodeDetail,
   listAiStudyProjectNodes
 } from "@/lib/ai-study";
+import { renderMathPlainText } from "@/lib/math-rich-text";
 import { cn } from "@/lib/utils";
 
 const taskStatusLabels = {
@@ -180,7 +181,10 @@ export async function AiStudyProjectLearningView({
               {card ? (
                 <div className="mt-6 space-y-7">
                   <CardSection title="内容概述">
-                    <p className="text-[16px] leading-8 text-[#1f2937]">{card.overview}</p>
+                    <p
+                      className="text-[16px] leading-8 text-[#1f2937] [&_.katex-display]:my-4 [&_.katex-display]:overflow-x-auto [&_.katex-display]:overflow-y-hidden"
+                      dangerouslySetInnerHTML={{ __html: renderMathPlainText(card.overview) }}
+                    />
                   </CardSection>
 
                   {nodeDetail.depth === 0 ? (
@@ -210,7 +214,7 @@ export async function AiStudyProjectLearningView({
                 description="资料提交后，AI 会先解析学习资料，再生成四层知识图谱和分层知识卡片。"
                 icon={<Sparkles size={28} />}
                 project={project}
-                title={project.status === "failed" ? "生成失败" : "搭子加急制作中"}
+                title={project.status === "failed" ? "项目解析失败" : "搭子加急制作中"}
               />
             </div>
           )}
@@ -294,7 +298,10 @@ function CardList({ items, title }: { items: string[]; title: string }) {
         {items.map((item, index) => (
           <li key={`${item}-${index}`} className="flex gap-3 text-[16px] leading-7 text-[#1f2937]">
             <span className="mt-[11px] h-0 w-0 shrink-0 border-y-[4px] border-l-[6px] border-y-transparent border-l-[#98a2b3]" />
-            <span>{item}</span>
+            <span
+              className="min-w-0 [&_.katex-display]:my-3 [&_.katex-display]:overflow-x-auto [&_.katex-display]:overflow-y-hidden"
+              dangerouslySetInnerHTML={{ __html: renderMathPlainText(item) }}
+            />
           </li>
         ))}
       </ul>
@@ -308,7 +315,10 @@ function KnowledgePointDetail({ explanation }: { explanation: string }) {
       <h4 className="relative pb-2 text-[19px] font-black text-[#101828] after:absolute after:bottom-0 after:left-0 after:h-[3px] after:w-8 after:rounded-full after:bg-[#101828]">
         AI详解
       </h4>
-      <p className="mt-4 whitespace-pre-wrap text-[16px] leading-8 text-[#1f2937]">{explanation}</p>
+      <p
+        className="mt-4 text-[16px] leading-8 text-[#1f2937] [&_.katex-display]:my-4 [&_.katex-display]:overflow-x-auto [&_.katex-display]:overflow-y-hidden"
+        dangerouslySetInnerHTML={{ __html: renderMathPlainText(explanation) }}
+      />
     </section>
   );
 }
@@ -376,7 +386,7 @@ function getGenerationProgress(project: AiStudyLearningProject) {
     return { percent: 100, text: "知识图谱已生成" };
   }
   if (project.status === "failed") {
-    return { percent: 100, text: "生成失败" };
+    return { percent: 100, text: "项目解析失败" };
   }
   if (project.status !== "processing") {
     return { percent: 0, text: "等待创建" };

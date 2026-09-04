@@ -74,7 +74,6 @@ export default async function AdminAiStudyProjectDetailPage({ params, searchPara
   const ownerName = project.owner.studentProfile?.nickname || project.owner.username;
   const canPublish = project.status === "ready" && !project.deletedAt && project.visibility !== "public";
   const canPrivatize = !project.deletedAt && project.visibility !== "private";
-  const canDelete = !project.deletedAt;
   const publishFormId = `publish-detail-${project.id}`;
   const privatizeFormId = `privatize-detail-${project.id}`;
   const deleteFormId = `delete-detail-${project.id}`;
@@ -94,10 +93,12 @@ export default async function AdminAiStudyProjectDetailPage({ params, searchPara
             <p className="mt-2 text-sm text-slate-500">项目 ID：{project.id}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link className="secondary-button inline-flex items-center gap-2" href={`/admin/ai-study-projects/${project.id}/preview`}>
-              <BookOpen size={16} />
-              预览学习内容
-            </Link>
+            {project.deletedAt ? null : (
+              <Link className="secondary-button inline-flex items-center gap-2" href={`/admin/ai-study-projects/${project.id}/preview`}>
+                <BookOpen size={16} />
+                预览学习内容
+              </Link>
+            )}
             <form id={publishFormId} action={publishAiStudyProject}>
               <input type="hidden" name="projectId" value={project.id} />
               <input type="hidden" name="returnTo" value={currentPath} />
@@ -125,7 +126,6 @@ export default async function AdminAiStudyProjectDetailPage({ params, searchPara
             </form>
             <ConfirmSubmitButton
               className="secondary-button inline-flex items-center gap-2 text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!canDelete}
               form={deleteFormId}
               message="确认删除这个项目的数据库记录？项目、资料元信息、知识框架、知识卡片和进度记录会从 PostgreSQL 删除，MinIO 源文件保留。"
             >
@@ -137,9 +137,14 @@ export default async function AdminAiStudyProjectDetailPage({ params, searchPara
 
         {notice ? <div className="mt-4 rounded-2xl bg-teal/10 p-3 text-sm font-semibold text-teal">{notice}</div> : null}
         {error ? <div className="mt-4 rounded-2xl bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</div> : null}
+        {project.deletedAt ? (
+          <div className="mt-4 rounded-2xl bg-red-50 p-3 text-sm font-semibold text-red-700">
+            该项目已由学生于 {formatDate(project.deletedAt)} 删除，仅在管理后台保留查看。
+          </div>
+        ) : null}
 
         <div className="mt-6 grid gap-4 lg:grid-cols-4">
-          <InfoTile label="生成状态" value={<ProjectStatusBadge status={project.status} />} />
+          <InfoTile label="生成状态" value={<ProjectStatusBadge deleted={Boolean(project.deletedAt)} status={project.status} />} />
           <InfoTile label="公开状态" value={<VisibilityBadge visibility={project.visibility} />} />
           <InfoTile label="资料 / 片段" value={`${project._count.sources} / ${project._count.sourceChunks}`} />
           <InfoTile label="节点 / 卡片" value={`${project._count.nodes} / ${project._count.cards}`} />
@@ -279,7 +284,10 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function ProjectStatusBadge({ status }: { status: string }) {
+function ProjectStatusBadge({ deleted = false, status }: { deleted?: boolean; status: string }) {
+  if (deleted) {
+    return <span className="badge bg-red-50 text-red-700">学生已删除</span>;
+  }
   const className = status === "ready"
     ? "bg-teal/10 text-teal"
     : status === "processing"

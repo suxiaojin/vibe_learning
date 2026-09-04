@@ -68,6 +68,7 @@ export async function POST(request: Request, context: RouteContext) {
 
       return createTextStream(async (push) => {
         let rawAnswer = "";
+        let promptVersionId: string | null = null;
         try {
           const result = await streamAiStudyBuddy(
             user.id,
@@ -77,13 +78,19 @@ export async function POST(request: Request, context: RouteContext) {
               rawAnswer += chunk;
               await push(chunk);
             },
-            { signal: request.signal }
+            {
+              signal: request.signal,
+              onPromptVersionResolved: (resolvedPromptVersionId) => {
+                promptVersionId = resolvedPromptVersionId;
+              }
+            }
           );
           rawAnswer = result.answer || rawAnswer;
+          promptVersionId = result.promptVersionId;
         } finally {
           const answer = sanitizeAiStudyBuddyAnswer(rawAnswer);
           if (answer) {
-            await createAiStudyChatMessage(user.id, projectId, chatRequest.nodeId, "assistant", answer);
+            await createAiStudyChatMessage(user.id, projectId, chatRequest.nodeId, "assistant", answer, promptVersionId);
           }
         }
       });
@@ -91,8 +98,8 @@ export async function POST(request: Request, context: RouteContext) {
 
     await createPaidAiStudyChatUserMessage(user.id, projectId, chatRequest.nodeId, chatRequest.message);
     const result = await askAiStudyBuddy(user.id, projectId, chatRequest);
-    await createAiStudyChatMessage(user.id, projectId, chatRequest.nodeId, "assistant", result.answer);
-    return apiOk(result);
+    await createAiStudyChatMessage(user.id, projectId, chatRequest.nodeId, "assistant", result.answer, result.promptVersionId);
+    return apiOk({ answer: result.answer, nodeTitle: result.nodeTitle });
   } catch (error) {
     const formatted = formatAiStudyError(error);
     if (formatted) {

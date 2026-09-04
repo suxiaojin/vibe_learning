@@ -36,7 +36,7 @@ type SelectedFile = {
   size: number;
 };
 
-type SupportedStudyMaterialType = "pdf" | "document";
+type SupportedStudyMaterialType = "pdf";
 
 export function StudyMaterialImporter() {
   const router = useRouter();
@@ -226,7 +226,7 @@ export function StudyMaterialImporter() {
     }
     const sourceType = getStudyMaterialType(file);
     if (!sourceType) {
-      throw new Error("当前阶段仅支持上传 PDF、Word（.doc/.docx）文件。");
+      throw new Error("学习搭子仅支持上传 PDF 文件。");
     }
 
     let projectId = "";
@@ -321,12 +321,12 @@ export function StudyMaterialImporter() {
             >
               <img alt="" className="mx-auto h-8 w-11 object-contain" height={32} src="/ai-study/upload-books.png" width={44} />
               <p className="mt-2 text-[16px] font-black text-[#111827]">拖放或点击此处上传本地文件</p>
-              <p className="mt-3 text-[12px] font-medium text-[#98a2b3]">当前支持 PDF、Word（.doc/.docx），单个文件不超过80M</p>
+              <p className="mt-3 text-[12px] font-medium text-[#98a2b3]">当前支持 PDF，单个文件不超过80M，不限制页数</p>
               <input
                 ref={fileInputRef}
                 className="hidden"
                 type="file"
-                accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.pdf,.doc,.docx"
+                accept="application/pdf,.pdf"
                 onChange={handleFileInput}
               />
             </div>
@@ -496,20 +496,12 @@ function getStudyMaterialType(file: File): SupportedStudyMaterialType | null {
   if (mimeType === "application/pdf" || fileName.endsWith(".pdf")) {
     return "pdf";
   }
-  if (
-    mimeType === "application/msword" ||
-    mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-    fileName.endsWith(".doc") ||
-    fileName.endsWith(".docx")
-  ) {
-    return "document";
-  }
   return null;
 }
 
 function validateStudyMaterialFile(file: File) {
   if (!getStudyMaterialType(file)) {
-    return "当前阶段仅支持上传 PDF、Word（.doc/.docx）文件。";
+    return "学习搭子仅支持上传 PDF 文件。";
   }
   if (file.size <= 0) {
     return "上传文件不能为空。";

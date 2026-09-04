@@ -1,8 +1,7 @@
 import { z } from "zod";
-import type { AiStudyGenerationTask, AiStudyNode, AiStudySourceChunk } from "@prisma/client";
-import pdfParse from "pdf-parse";
-import WordExtractor from "word-extractor";
-import { buildAiStudyTextChunks, markAiStudyTaskFailed, markAiStudyTaskSucceeded } from "@/lib/ai-study";
+import crypto from "crypto";
+import type { AiStudyGenerationTask, AiStudyNode, Prisma } from "@prisma/client";
+import { markAiStudyTaskFailed, markAiStudyTaskSucceeded } from "@/lib/ai-study";
 import {
   ackAiStudyQueuedTask,
   aiStudyQueueTaskTypes,
@@ -13,19 +12,39 @@ import {
   readAiStudyQueuedTaskEntries,
   type AiStudyQueuedTaskEntry
 } from "@/lib/ai-study-task-queue";
-import { askQwen, type ChatMessage } from "@/lib/qwen";
+import { askQwen, askQwenDetailed, type ChatMessage, type QwenJsonSchema } from "@/lib/qwen";
 import { prisma } from "@/lib/prisma";
-import { downloadAiStudyObject } from "@/lib/ai-study-storage";
+import { downloadAiStudyObject, uploadAiStudyObject } from "@/lib/ai-study-storage";
 import { refreshAiStudyProgressCache, writeAiStudyTaskProgressCache } from "@/lib/ai-study-progress-cache";
+import { assertCompleteFourLevelOutline } from "@/lib/ai-study-outline-validation";
+import {
+  buildOutlineCandidateJsonSchema,
+  buildNestedOutlineJsonSchema,
+  flattenNestedOutline,
+  nestedOutlineSchema,
+  outlineCandidateListSchema,
+  type NestedOutline,
+  type OutlineCandidate
+} from "@/lib/ai-study-outline-contract";
 import { getAiStudyPromptConfig, type AiStudyPromptConfig } from "@/lib/ai-study-prompts";
+import { parsePdfWithMineru, type MineruContentBlock, type MineruParseResult } from "@/lib/ai-study-mineru";
+import {
+  formatAiStudySourceBlockContent,
+  loadAiStudySourceChunksWithContent,
+  type AiStudySourceChunkWithContent
+} from "@/lib/ai-study-source-content";
 
-const outlineTimeoutMs = Number(process.env.AI_STUDY_OUTLINE_TIMEOUT_MS || 120_000);
+const outlineTimeoutMs = Number(process.env.AI_STUDY_OUTLINE_TIMEOUT_MS || 200_000);
 const cardTimeoutMs = Number(process.env.AI_STUDY_CARD_TIMEOUT_MS || 120_000);
 const maxNodesPerProject = Number(process.env.AI_STUDY_MAX_NODES_PER_PROJECT || 60);
-const maxOutlineSourceChars = Number(process.env.AI_STUDY_OUTLINE_SOURCE_CHARS || 50_000);
-const maxCardSourceChars = Number(process.env.AI_STUDY_CARD_SOURCE_CHARS || 8_000);
-const maxParsedTextChars = Number(process.env.AI_STUDY_MAX_PARSED_TEXT_CHARS || 200_000);
+const maxSourceChunks = Number(process.env.AI_STUDY_MAX_SOURCE_CHUNKS || 5_000);
+const modelBatchChars = Number(process.env.AI_STUDY_MODEL_BATCH_CHARS || 24_000);
+const outlinePartialMaxTokens = Number(process.env.AI_STUDY_OUTLINE_PARTIAL_MAX_TOKENS || 8_192);
+const outlineMergeMaxTokens = Number(process.env.AI_STUDY_OUTLINE_MERGE_MAX_TOKENS || 16_384);
+const cardMaxTokens = Number(process.env.AI_STUDY_CARD_MAX_TOKENS || 8_192);
+const structuredJsonMaxAttempts = Math.max(1, Number(process.env.AI_STUDY_JSON_MAX_ATTEMPTS || 2));
 const queueFallbackScanMs = Number(process.env.AI_STUDY_QUEUE_FALLBACK_SCAN_MS || 60_000);
+const promptItemSeparator = "\n\n---\n\n";
 let lastQueueFallbackScanAt = 0;
 
 const outlineNodeSchema = z.object({
@@ -33,11 +52,7 @@ const outlineNodeSchema = z.object({
   parentClientId: z.string().trim().min(1).max(80).nullable().optional(),
   title: z.string().trim().min(1).max(80),
   summary: z.string().trim().min(1).max(600),
-  sourceChunkIds: z.array(z.string().trim().min(1)).min(1).max(24)
-});
-
-const outlineSchema = z.object({
-  nodes: z.array(outlineNodeSchema).min(1)
+  sourceChunkIds: z.array(z.string().trim().min(1)).min(1).max(5000)
 });
 
 const cardSchema = z.object({
@@ -52,6 +67,44 @@ const cardSchema = z.object({
   })).max(0).default([])
 });
 
+const cardJsonSchema: Record<string, unknown> = {
+  type: "object",
+  additionalProperties: false,
+  required: ["overview", "explanation", "keyPoints", "pitfalls", "examples", "flashcards"],
+  properties: {
+    overview: { type: "string", minLength: 1, maxLength: 1200 },
+    explanation: { type: "string", maxLength: 5000 },
+    keyPoints: {
+      type: "array",
+      maxItems: 10,
+      items: { type: "string", minLength: 1, maxLength: 240 }
+    },
+    pitfalls: {
+      type: "array",
+      maxItems: 6,
+      items: { type: "string", minLength: 1, maxLength: 240 }
+    },
+    examples: {
+      type: "array",
+      maxItems: 5,
+      items: { type: "string", minLength: 1, maxLength: 500 }
+    },
+    flashcards: {
+      type: "array",
+      maxItems: 0,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["front", "back"],
+        properties: {
+          front: { type: "string", minLength: 1, maxLength: 200 },
+          back: { type: "string", minLength: 1, maxLength: 500 }
+        }
+      }
+    }
+  }
+};
+
 type OutlineNode = z.infer<typeof outlineNodeSchema> & {
   depth: number;
   sortOrder: number;
@@ -61,7 +114,35 @@ type GeneratedCard = z.infer<typeof cardSchema> & {
   nodeId: string;
 };
 
-type SupportedParsedSourceType = "pdf" | "document";
+type SupportedParsedSourceType = "pdf";
+
+type PersistedMineruBlock = {
+  id: string;
+  projectId: string;
+  sourceId: string;
+  pageNumber: number;
+  blockIndex: number;
+  blockType: string;
+  readingOrder: number;
+  bbox: Prisma.InputJsonValue | undefined;
+  textContent: string | null;
+  latexContent: string | null;
+  assetKey: string | null;
+  headingPath: string[];
+  confidence: number | null;
+  parserBlockId: string | null;
+};
+
+type SemanticChunk = {
+  pageStart: number;
+  pageEnd: number;
+  chunkIndex: number;
+  chunkType: string;
+  content: string;
+  sourceBlockIds: string[];
+  tokenCount: number;
+  contentHash: string;
+};
 
 export async function runAiStudyWorkerCycle(batchSize = Number(process.env.AI_STUDY_WORKER_BATCH_SIZE || 1)) {
   const normalizedBatchSize = Math.max(1, batchSize);
@@ -158,7 +239,7 @@ async function claimAndProcessAiStudyTask(taskId: string) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "AI 学习搭子任务执行失败。";
     await markAiStudyTaskFailed(task.id, message, "failed");
-    if (task.sourceId) {
+    if (task.type === "parse_source" && task.sourceId) {
       await prisma.aiStudySource.updateMany({
         where: { id: task.sourceId },
         data: { status: "failed" }
@@ -224,7 +305,7 @@ async function parseSource(task: AiStudyGenerationTask) {
     throw new Error("资料源不存在或项目已删除。");
   }
   if (!isSupportedParsedSourceType(source.sourceType)) {
-    throw new Error(`当前 parse_source 只支持 PDF 或 Word，收到 ${source.sourceType}。`);
+    throw new Error(`学习搭子仅支持由 MinerU 解析 PDF，收到 ${source.sourceType}。`);
   }
   if (!source.storageKey) {
     throw new Error("学习资料缺少 MinIO storageKey。");
@@ -234,11 +315,15 @@ async function parseSource(task: AiStudyGenerationTask) {
 
   const object = await downloadAiStudyObject(source.storageKey);
 
-  await updateAiStudyTaskStage(task, "extracting_source_text");
+  await updateAiStudyTaskStage(task, "submitting_to_mineru");
 
-  const parsed = await extractSourceText(source.sourceType, object.body);
-  const text = normalizeParsedText(parsed.text).slice(0, maxParsedTextChars);
-  const chunks = buildAiStudyTextChunks(text);
+  const parsed = await parseAndPersistMineruArtifacts({
+    body: object.body,
+    fileName: source.fileName || "learning-material.pdf",
+    projectId: source.projectId,
+    sourceId: source.id
+  });
+  const chunks = parsed.chunks;
 
   if (chunks.length === 0) {
     throw new Error("学习资料未解析出可学习文本。");
@@ -247,21 +332,33 @@ async function parseSource(task: AiStudyGenerationTask) {
   let nextTask: AiStudyGenerationTask | null = null;
   await prisma.$transaction(async (tx) => {
     await tx.aiStudySourceChunk.deleteMany({ where: { sourceId: source.id } });
+    await tx.aiStudySourceBlock.deleteMany({ where: { sourceId: source.id } });
+    if (parsed.blocks.length > 0) {
+      await tx.aiStudySourceBlock.createMany({
+        data: parsed.blocks.map(({ headingPath: _headingPath, ...block }) => block)
+      });
+    }
     await tx.aiStudySourceChunk.createMany({
-      data: chunks.map((content, chunkIndex) => ({
+      data: chunks.map(({ content: _content, ...chunk }) => ({
         projectId: source.projectId,
         sourceId: source.id,
-        pageNumber: null,
-        chunkIndex,
-        content
+        ...chunk
       }))
     });
 
     await tx.aiStudySource.update({
       where: { id: source.id },
       data: {
-        textContent: text,
         pageCount: parsed.pageCount,
+        parserVersion: parsed.parserVersion,
+        parseBackend: parsed.parseBackend,
+        sourceSha256: parsed.sourceSha256,
+        parseManifestKey: parsed.parseManifestKey,
+        parseContentListKey: parsed.parseContentListKey,
+        parseMarkdownKey: parsed.parseMarkdownKey,
+        parsedPageCount: parsed.pageCount,
+        failedPageCount: parsed.failedPageCount,
+        parseWarnings: parsed.parseWarnings,
         status: "parsed"
       }
     });
@@ -270,12 +367,17 @@ async function parseSource(task: AiStudyGenerationTask) {
       where: { id: task.id },
       data: {
         status: "succeeded",
-        stage: "source_text_extracted",
+        stage: "mineru_result_persisted",
         outputSummary: {
           sourceType: source.sourceType,
           pageCount: parsed.pageCount,
           chunkCount: chunks.length,
-          textLength: text.length
+          blockCount: parsed.blocks.length,
+          textLength: chunks.reduce((total, chunk) => total + chunk.content.length, 0),
+          parserVersion: parsed.parserVersion,
+          parseBackend: parsed.parseBackend,
+          imageFallbackAnalysisCount: parsed.imageFallbackAnalysisCount,
+          warningCount: parsed.warningCount
         },
         finishedAt: new Date(),
         errorMessage: null
@@ -291,7 +393,7 @@ async function parseSource(task: AiStudyGenerationTask) {
         inputSummary: {
           sourceType: source.sourceType,
           chunkCount: chunks.length,
-          textLength: text.length
+          blockCount: parsed.blocks.length
         }
       }
     });
@@ -306,62 +408,323 @@ async function parseSource(task: AiStudyGenerationTask) {
   await enqueueAiStudyTask(nextTask);
 }
 
-async function extractSourceText(sourceType: SupportedParsedSourceType, body: Buffer) {
-  if (sourceType === "pdf") {
-    const parsed = await pdfParse(body);
-    return {
-      text: parsed.text,
-      pageCount: parsed.numpages || null
-    };
+async function parseAndPersistMineruArtifacts(input: {
+  body: Buffer;
+  fileName: string;
+  projectId: string;
+  sourceId: string;
+}) {
+  const result = await parsePdfWithMineru({ body: input.body, fileName: input.fileName });
+  const artifactPrefix = `ai-study/${input.projectId}/${input.sourceId}/mineru`;
+  const parseMarkdownKey = `${artifactPrefix}/document.md`;
+  const parseContentListKey = `${artifactPrefix}/content-list.json`;
+  const middleJsonKey = `${artifactPrefix}/middle.json`;
+  const parseManifestKey = `${artifactPrefix}/manifest.json`;
+
+  await Promise.all([
+    uploadAiStudyObject({ key: parseMarkdownKey, body: Buffer.from(result.markdown, "utf8"), contentType: "text/markdown; charset=utf-8" }),
+    uploadAiStudyObject({ key: parseContentListKey, body: Buffer.from(JSON.stringify(result.contentList), "utf8"), contentType: "application/json" }),
+    uploadAiStudyObject({ key: middleJsonKey, body: Buffer.from(JSON.stringify(result.middleJson), "utf8"), contentType: "application/json" })
+  ]);
+
+  const assetKeyByMineruPath = new Map<string, string>();
+  await Promise.all(Object.entries(result.images).map(async ([mineruPath, body]) => {
+    const normalizedPath = normalizeMineruAssetPath(mineruPath);
+    const key = `${artifactPrefix}/images/${normalizedPath.split("/").pop() || crypto.randomUUID()}`;
+    await uploadAiStudyObject({ key, body, contentType: inferImageContentType(key) });
+    assetKeyByMineruPath.set(normalizedPath, key);
+    assetKeyByMineruPath.set(normalizedPath.split("/").pop() || normalizedPath, key);
+  }));
+
+  const blocks = buildPersistedMineruBlocks(result, input.projectId, input.sourceId, assetKeyByMineruPath);
+  const chunks = buildMineruSemanticChunks(blocks);
+  if (chunks.length === 0) {
+    throw new Error("MinerU 结果中没有可用于学习的正文、公式、表格或图片内容。");
+  }
+  if (chunks.length > maxSourceChunks) {
+    throw new Error(`MinerU 解析产生 ${chunks.length} 个语义片段，超过单项目上限 ${maxSourceChunks}。`);
   }
 
-  const extractor = new WordExtractor();
-  const document = await extractor.extract(body);
+  const manifest = {
+    parser: "mineru",
+    parserVersion: result.version,
+    backend: result.backend,
+    sourceSha256: result.sourceSha256,
+    pageCount: result.pageCount,
+    blockCount: blocks.length,
+    chunkCount: chunks.length,
+    imageFallbackAnalysisCount: result.imageFallbackAnalysisCount,
+    warnings: result.warnings,
+    artifacts: {
+      markdown: parseMarkdownKey,
+      contentList: parseContentListKey,
+      middleJson: middleJsonKey,
+      images: Array.from(new Set(assetKeyByMineruPath.values()))
+    }
+  };
+  await uploadAiStudyObject({
+    key: parseManifestKey,
+    body: Buffer.from(JSON.stringify(manifest), "utf8"),
+    contentType: "application/json"
+  });
+
   return {
-    text: [
-      document.getBody(),
-      document.getFootnotes(),
-      document.getEndnotes(),
-      document.getHeaders({ includeFooters: false }),
-      document.getFooters(),
-      document.getAnnotations(),
-      document.getTextboxes()
-    ].map((section) => section.trim()).filter(Boolean).join("\n\n"),
-    pageCount: null
+    pageCount: result.pageCount,
+    parserVersion: result.version,
+    parseBackend: result.backend,
+    sourceSha256: result.sourceSha256,
+    parseManifestKey,
+    parseContentListKey,
+    parseMarkdownKey,
+    failedPageCount: 0,
+    parseWarnings: result.warnings as Prisma.InputJsonValue,
+    imageFallbackAnalysisCount: result.imageFallbackAnalysisCount,
+    warningCount: result.warnings.length,
+    blocks,
+    chunks
   };
 }
 
+function buildPersistedMineruBlocks(
+  result: MineruParseResult,
+  projectId: string,
+  sourceId: string,
+  assetKeyByMineruPath: Map<string, string>
+) {
+  const headingPath: string[] = [];
+  return result.contentList.map((block, blockIndex): PersistedMineruBlock => {
+    const blockType = String(block.type || "unknown");
+    const latexContent = readMineruLatex(block);
+    const textContent = blockType === "equation" && latexContent ? "" : readMineruBlockText(block);
+    const headingLevel = readMineruHeadingLevel(block);
+    if (headingLevel !== null && textContent) {
+      headingPath.splice(Math.max(0, headingLevel - 1));
+      headingPath[Math.max(0, headingLevel - 1)] = textContent;
+    }
+    const imagePath = typeof block.img_path === "string"
+      ? block.img_path
+      : typeof block.image_path === "string" ? block.image_path : "";
+    const normalizedImagePath = normalizeMineruAssetPath(imagePath);
+    const pageIndex = typeof block.page_idx === "number"
+      ? block.page_idx
+      : typeof block.page_index === "number" ? block.page_index : 0;
+    const confidence = typeof block.score === "number"
+      ? block.score
+      : typeof block.confidence === "number" ? block.confidence : null;
+
+    return {
+      id: crypto.randomUUID(),
+      projectId,
+      sourceId,
+      pageNumber: pageIndex + 1,
+      blockIndex,
+      blockType,
+      readingOrder: blockIndex,
+      bbox: toJsonValue(block.bbox),
+      textContent: textContent || null,
+      latexContent,
+      assetKey: assetKeyByMineruPath.get(normalizedImagePath)
+        || assetKeyByMineruPath.get(normalizedImagePath.split("/").pop() || "")
+        || null,
+      headingPath: [...headingPath],
+      confidence,
+      parserBlockId: typeof block.id === "string" ? block.id : null
+    };
+  }).filter((block) => !isNonLearningMineruBlock(block.blockType)
+    && Boolean(block.textContent || block.latexContent || block.assetKey));
+}
+
+export function buildMineruSemanticChunks(blocks: PersistedMineruBlock[]) {
+  const chunks: SemanticChunk[] = [];
+  const duplicateChunkByKey = new Map<string, SemanticChunk>();
+  let current: PersistedMineruBlock[] = [];
+  let currentText: string[] = [];
+  let currentHeading = "";
+  let currentChunkType = "text";
+  const maxChunkChars = 4_000;
+
+  function resetCurrent() {
+    current = [];
+    currentText = [];
+    currentChunkType = "text";
+  }
+
+  function flush() {
+    const content = normalizeParsedText(Array.from(new Set(currentText)).join("\n\n"));
+    if (!content || current.length === 0) {
+      resetCurrent();
+      return;
+    }
+    const pageStart = Math.min(...current.map((block) => block.pageNumber));
+    const pageEnd = Math.max(...current.map((block) => block.pageNumber));
+    const contentHash = crypto.createHash("sha256").update(content).digest("hex");
+    const duplicateKey = `${currentChunkType}\u0000${contentHash}`;
+    const duplicate = duplicateChunkByKey.get(duplicateKey);
+    if (duplicate) {
+      duplicate.pageStart = Math.min(duplicate.pageStart || pageStart, pageStart);
+      duplicate.pageEnd = Math.max(duplicate.pageEnd || pageEnd, pageEnd);
+      duplicate.sourceBlockIds.push(...current.map((block) => block.id));
+      resetCurrent();
+      return;
+    }
+
+    const chunk: SemanticChunk = {
+      pageStart,
+      pageEnd,
+      chunkIndex: chunks.length,
+      chunkType: currentChunkType,
+      content,
+      sourceBlockIds: current.map((block) => block.id),
+      tokenCount: estimateTokenCount(content),
+      contentHash
+    };
+    chunks.push(chunk);
+    duplicateChunkByKey.set(duplicateKey, chunk);
+    resetCurrent();
+  }
+
+  for (const block of blocks) {
+    const content = formatAiStudySourceBlockContent(block);
+    if (!content || isNonLearningMineruBlock(block.blockType)) {
+      continue;
+    }
+    const headingKey = JSON.stringify(block.headingPath);
+    const typedChunk = ["equation", "table", "image", "chart", "code", "list"].includes(block.blockType)
+      ? block.blockType
+      : "text";
+    const standalone = ["equation", "table", "image", "chart"].includes(block.blockType);
+    if (current.length > 0 && (
+      headingKey !== currentHeading
+      || typedChunk !== currentChunkType
+      || currentText.join("\n\n").length + content.length > maxChunkChars
+    )) {
+      flush();
+    }
+    currentHeading = headingKey;
+    currentChunkType = typedChunk;
+    current.push(block);
+    currentText.push(content);
+    if (standalone) {
+      flush();
+    }
+  }
+  flush();
+  return chunks;
+}
+
+function readMineruBlockText(block: MineruContentBlock) {
+  const listText = readMineruListItems(block.list_items);
+  const values = [
+    block.text,
+    block.content,
+    block.table_body,
+    block.table_caption,
+    block.table_footnote,
+    block.image_caption,
+    block.image_footnote,
+    block.chart_caption,
+    block.chart_footnote,
+    block.code_caption,
+    block.code_body,
+    listText
+  ]
+    .flatMap((value) => Array.isArray(value) ? value : [value])
+    .filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
+    .map((value) => normalizeParsedText(value));
+  return normalizeParsedText(Array.from(new Set(values)).join("\n"));
+}
+
+function readMineruListItems(value: unknown): string {
+  const items = flattenMineruListItems(value);
+  return items.map((item) => /^\s*(?:[-*+] |\d+[.)] )/.test(item) ? item : `- ${item}`).join("\n");
+}
+
+function flattenMineruListItems(value: unknown): string[] {
+  if (typeof value === "string") {
+    return value.trim() ? [value.trim()] : [];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap(flattenMineruListItems);
+  }
+  if (value && typeof value === "object") {
+    const item = value as Record<string, unknown>;
+    return [item.text, item.content, item.list_items].flatMap(flattenMineruListItems);
+  }
+  return [];
+}
+
+function readMineruLatex(block: MineruContentBlock) {
+  for (const key of ["latex", "text"]) {
+    const value = block[key];
+    if (typeof value === "string" && block.type === "equation") {
+      return value.replace(/^\$\$?|\$\$?$/g, "").trim() || null;
+    }
+  }
+  return null;
+}
+
+function readMineruHeadingLevel(block: MineruContentBlock) {
+  if (!["header", "title"].includes(String(block.type || ""))) {
+    return null;
+  }
+  return typeof block.text_level === "number" ? Math.max(1, Math.min(block.text_level, 6)) : 1;
+}
+
+function isNonLearningMineruBlock(blockType: string) {
+  return ["page_number", "footer", "discarded"].includes(blockType);
+}
+
+function normalizeMineruAssetPath(value: string) {
+  return value.replace(/\\/g, "/").replace(/^\.\//, "").replace(/^\/+/, "");
+}
+
+function inferImageContentType(key: string) {
+  const extension = key.split(".").pop()?.toLowerCase();
+  if (extension === "png") return "image/png";
+  if (extension === "webp") return "image/webp";
+  if (extension === "gif") return "image/gif";
+  return "image/jpeg";
+}
+
+function estimateTokenCount(content: string) {
+  return Math.max(1, Math.ceil(content.length / 2));
+}
+
+function toJsonValue(value: unknown): Prisma.InputJsonValue | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
 function isSupportedParsedSourceType(sourceType: string): sourceType is SupportedParsedSourceType {
-  return sourceType === "pdf" || sourceType === "document";
+  return sourceType === "pdf";
 }
 
 async function generateOutline(task: AiStudyGenerationTask) {
   const project = await prisma.aiStudyProject.findUnique({
-    where: { id: task.projectId },
-    include: {
-      sourceChunks: {
-        orderBy: [{ sourceId: "asc" }, { chunkIndex: "asc" }]
-      }
-    }
+    where: { id: task.projectId }
   });
 
   if (!project || project.deletedAt) {
     throw new Error("学习项目不存在或已删除。");
   }
-  if (project.sourceChunks.length === 0) {
+  const sourceChunks = await loadAiStudySourceChunksWithContent(project.id);
+  if (sourceChunks.length === 0) {
     throw new Error("学习项目没有可生成的原文片段。");
   }
 
   await updateAiStudyTaskStage(task, "generating_outline");
 
-  const promptConfig = await getAiStudyPromptConfig();
+  const promptConfig = await getAiStudyPromptConfig(project.aiPromptVersionId);
   const promptVersion = promptConfig.version;
-  const responseText = await askQwen(buildOutlineMessages(project.title, project.sourceChunks, promptConfig), {
-    temperature: 0.2,
-    timeoutMs: outlineTimeoutMs
+  const outline = await generateCompleteOutline(task, project.title, sourceChunks, promptConfig);
+  const preparedNodes = prepareOutlineNodes(outline.nodes, sourceChunks, project.title);
+  const finalOutputSummary = await buildFinalTaskOutputSummary(task.id, {
+    nodeCount: preparedNodes.length,
+    promptVersion,
+    outlineCheckpoint: null
   });
-  const outline = parseJsonWithSchema(responseText, outlineSchema, "知识框架 JSON 格式不合法。");
-  const preparedNodes = prepareOutlineNodes(outline.nodes, project.sourceChunks, project.title);
 
   let nextTask: AiStudyGenerationTask | null = null;
   await prisma.$transaction(async (tx) => {
@@ -400,10 +763,7 @@ async function generateOutline(task: AiStudyGenerationTask) {
       data: {
         status: "succeeded",
         stage: "outline_generated",
-        outputSummary: {
-          nodeCount: preparedNodes.length,
-          promptVersion
-        },
+        outputSummary: finalOutputSummary,
         finishedAt: new Date(),
         errorMessage: null
       }
@@ -424,6 +784,7 @@ async function generateOutline(task: AiStudyGenerationTask) {
     await tx.aiStudyProject.update({
       where: { id: project.id },
       data: {
+        aiPromptVersionId: project.aiPromptVersionId || promptConfig.id,
         status: "processing",
         knowledgeCount: preparedNodes.length,
         masteredCount: 0
@@ -443,40 +804,52 @@ async function generateCards(task: AiStudyGenerationTask) {
         where: { status: "ready" },
         orderBy: [{ depth: "asc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
         include: { cards: true }
-      },
-      sourceChunks: true
+      }
     }
   });
 
   if (!project || project.deletedAt) {
     throw new Error("学习项目不存在或已删除。");
   }
+  const sourceChunks = await loadAiStudySourceChunksWithContent(project.id);
+  if (sourceChunks.length === 0) {
+    throw new Error("学习项目没有可生成的原文片段。");
+  }
 
   const nodes = project.nodes.filter((node) => node.cards.length === 0);
-  const promptConfig = await getAiStudyPromptConfig();
+  const promptConfig = await getAiStudyPromptConfig(project.aiPromptVersionId);
   const promptVersion = promptConfig.version;
   if (nodes.length === 0) {
     await markAiStudyTaskSucceeded(task.id, { cardCount: 0, promptVersion });
     await prisma.aiStudyProject.update({
       where: { id: project.id },
-      data: { status: "ready" }
+      data: { aiPromptVersionId: project.aiPromptVersionId || promptConfig.id, status: "ready" }
     });
     await refreshAiStudyProgressCache(project.id);
     return;
   }
 
-  const chunksById = new Map(project.sourceChunks.map((chunk) => [chunk.id, chunk]));
+  const chunksById = new Map(sourceChunks.map((chunk) => [chunk.id, chunk]));
   const generatedCards: GeneratedCard[] = [];
 
   for (const [index, node] of nodes.entries()) {
-    await updateAiStudyTaskStage(task, `generating_card_${index + 1}_of_${nodes.length}`);
-
-    const sourceChunks = node.depth === 0 ? project.sourceChunks : getNodeSourceChunks(node, chunksById);
-    const responseText = await askQwen(buildCardMessages(project.title, node, sourceChunks, promptConfig), {
+    const nodeSourceChunks = node.depth === 0 ? sourceChunks : getNodeSourceChunks(node, chunksById);
+    const sourceContext = await buildCompleteCardEvidence(project.title, node, nodeSourceChunks, promptConfig);
+    const cardMessages = buildCardMessages(project.title, node, sourceContext, promptConfig);
+    const card = await requestValidatedJsonWithRetry({
+      task,
+      stage: `generating_card_${index + 1}_of_${nodes.length}`,
+      messages: cardMessages,
+      retryMessages: buildCardRetryMessages(cardMessages),
+      schema: cardSchema,
+      jsonSchema: { name: "ai_study_card", schema: cardJsonSchema },
+      relaxedJsonRetry: true,
+      maxCompletionTokens: cardMaxTokens,
+      timeoutMs: cardTimeoutMs,
       temperature: 0.2,
-      timeoutMs: cardTimeoutMs
+      invalidMessage: `知识卡片 JSON 格式不合法：${node.title}`,
+      parseResponse: (responseText) => parseGeneratedCard(responseText, node)
     });
-    const card = parseGeneratedCard(responseText, node);
     generatedCards.push({
       nodeId: node.id,
       overview: card.overview,
@@ -487,6 +860,11 @@ async function generateCards(task: AiStudyGenerationTask) {
       flashcards: card.flashcards ?? []
     });
   }
+
+  const finalOutputSummary = await buildFinalTaskOutputSummary(task.id, {
+    cardCount: generatedCards.length,
+    promptVersion
+  });
 
   await prisma.$transaction(async (tx) => {
     for (const card of generatedCards) {
@@ -502,6 +880,7 @@ async function generateCards(task: AiStudyGenerationTask) {
           flashcards: card.flashcards,
           modelName: process.env.QWEN_MODEL || null,
           promptVersion,
+          aiPromptVersionId: promptConfig.id,
           reviewStatus: "unreviewed"
         }
       });
@@ -512,10 +891,7 @@ async function generateCards(task: AiStudyGenerationTask) {
       data: {
         status: "succeeded",
         stage: "cards_generated",
-        outputSummary: {
-          cardCount: generatedCards.length,
-          promptVersion
-        },
+        outputSummary: finalOutputSummary,
         finishedAt: new Date(),
         errorMessage: null
       }
@@ -523,7 +899,7 @@ async function generateCards(task: AiStudyGenerationTask) {
 
     await tx.aiStudyProject.update({
       where: { id: project.id },
-      data: { status: "ready" }
+      data: { aiPromptVersionId: project.aiPromptVersionId || promptConfig.id, status: "ready" }
     });
   });
 
@@ -623,16 +999,233 @@ async function updateAiStudyTaskStage(task: AiStudyGenerationTask, stage: string
   });
 }
 
+type StructuredJsonRequest<T> = {
+  task: AiStudyGenerationTask;
+  stage: string;
+  messages: ChatMessage[];
+  retryMessages?: ChatMessage[];
+  schema: z.ZodType<T>;
+  jsonSchema: QwenJsonSchema;
+  relaxedJsonRetry?: boolean;
+  maxCompletionTokens: number;
+  timeoutMs: number;
+  temperature: number;
+  invalidMessage: string;
+  validate?: (value: T) => void;
+  parseResponse?: (responseText: string) => T;
+};
+
+type OutlineCheckpoint = {
+  promptVersion: string;
+  sourceFingerprint: string;
+  batchCount: number;
+  batches: Array<{
+    batchIndex: number;
+    candidates: OutlineCandidate[];
+  }>;
+};
+
+async function requestValidatedJsonWithRetry<T>(request: StructuredJsonRequest<T>): Promise<T> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= structuredJsonMaxAttempts; attempt += 1) {
+    const attemptStage = attempt === 1 ? request.stage : `${request.stage}_retry_${attempt - 1}`;
+    if (attempt > 1) {
+      await prisma.aiStudyGenerationTask.update({
+        where: { id: request.task.id },
+        data: { retryCount: { increment: 1 } }
+      });
+    }
+    await updateAiStudyTaskStage(request.task, attemptStage);
+
+    const startedAt = Date.now();
+    let response: Awaited<ReturnType<typeof askQwenDetailed>> | null = null;
+    try {
+      const useRelaxedJsonMode = request.relaxedJsonRetry === true && attempt > 1;
+      response = await askQwenDetailed(
+        attempt > 1 && request.retryMessages ? request.retryMessages : request.messages,
+        {
+          temperature: request.temperature,
+          timeoutMs: request.timeoutMs,
+          jsonSchema: useRelaxedJsonMode ? undefined : request.jsonSchema,
+          jsonMode: useRelaxedJsonMode,
+          maxCompletionTokens: request.maxCompletionTokens,
+          enableThinking: false
+        }
+      );
+      if (response.finishReason === "length") {
+        throw new Error(`Qwen 输出达到 ${request.maxCompletionTokens} token 上限，内容被截断。`);
+      }
+
+      const parsed = request.parseResponse
+        ? request.parseResponse(response.content)
+        : parseJsonWithSchema(response.content, request.schema, request.invalidMessage);
+      request.validate?.(parsed);
+      await appendAiStudyTaskDiagnostic(request.task.id, {
+        stage: request.stage,
+        attempt,
+        status: "succeeded",
+        durationMs: Date.now() - startedAt,
+        finishReason: response.finishReason,
+        responseMode: useRelaxedJsonMode ? "json_object" : "json_schema",
+        usage: response.usage,
+        contentLength: response.content.length
+      });
+      return parsed;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(request.invalidMessage);
+      await appendAiStudyTaskDiagnostic(request.task.id, {
+        stage: request.stage,
+        attempt,
+        status: "failed",
+        durationMs: Date.now() - startedAt,
+        finishReason: response?.finishReason ?? null,
+        responseMode: request.relaxedJsonRetry === true && attempt > 1 ? "json_object" : "json_schema",
+        usage: response?.usage ?? null,
+        contentLength: response?.content.length ?? 0,
+        error: lastError.message.slice(0, 1000),
+        contentPreview: response?.content.slice(0, 1200) || null
+      });
+    }
+  }
+
+  throw new Error(`${request.invalidMessage} 已尝试 ${structuredJsonMaxAttempts} 次；最后错误：${lastError?.message || "未知错误"}`);
+}
+
+async function appendAiStudyTaskDiagnostic(taskId: string, diagnostic: Record<string, unknown>) {
+  const current = await readAiStudyTaskOutputSummary(taskId);
+  const existing = Array.isArray(current.diagnostics) ? current.diagnostics : [];
+  await prisma.aiStudyGenerationTask.update({
+    where: { id: taskId },
+    data: {
+      outputSummary: toJsonValue({
+        ...current,
+        diagnostics: [...existing.slice(-39), diagnostic]
+      })
+    }
+  });
+}
+
+async function mergeAiStudyTaskOutputSummary(taskId: string, patch: Record<string, unknown>) {
+  const current = await readAiStudyTaskOutputSummary(taskId);
+  await prisma.aiStudyGenerationTask.update({
+    where: { id: taskId },
+    data: { outputSummary: toJsonValue({ ...current, ...patch }) }
+  });
+}
+
+async function buildFinalTaskOutputSummary(taskId: string, patch: Record<string, unknown>) {
+  const current = await readAiStudyTaskOutputSummary(taskId);
+  return toJsonValue({ ...current, ...patch });
+}
+
+async function readAiStudyTaskOutputSummary(taskId: string): Promise<Record<string, unknown>> {
+  const record = await prisma.aiStudyGenerationTask.findUnique({
+    where: { id: taskId },
+    select: { outputSummary: true }
+  });
+  return asJsonRecord(record?.outputSummary);
+}
+
+function asJsonRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+async function readOutlineCheckpoint(
+  taskId: string,
+  promptVersion: string,
+  sourceFingerprint: string,
+  batchCount: number
+): Promise<OutlineCheckpoint> {
+  const emptyCheckpoint: OutlineCheckpoint = { promptVersion, sourceFingerprint, batchCount, batches: [] };
+  const summary = await readAiStudyTaskOutputSummary(taskId);
+  const raw = asJsonRecord(summary.outlineCheckpoint);
+  if (raw.promptVersion !== promptVersion || raw.sourceFingerprint !== sourceFingerprint || raw.batchCount !== batchCount) {
+    return emptyCheckpoint;
+  }
+
+  const batches = Array.isArray(raw.batches) ? raw.batches.flatMap((value) => {
+    const record = asJsonRecord(value);
+    const batchIndex = typeof record.batchIndex === "number" ? record.batchIndex : -1;
+    const parsed = outlineCandidateListSchema.safeParse({ candidates: record.candidates });
+    return batchIndex >= 0 && batchIndex < batchCount && parsed.success
+      ? [{ batchIndex, candidates: parsed.data.candidates }]
+      : [];
+  }) : [];
+
+  return { ...emptyCheckpoint, batches };
+}
+
+function buildOutlineSourceFingerprint(chunks: AiStudySourceChunkWithContent[]) {
+  return crypto.createHash("sha256")
+    .update(chunks.map((chunk) => `${chunk.id}:${chunk.content.length}`).join("\0"))
+    .digest("hex");
+}
+
+function validateOutlineCandidates(
+  candidates: OutlineCandidate[],
+  chunks: AiStudySourceChunkWithContent[],
+  maxCandidates: number
+) {
+  if (candidates.length > maxCandidates) {
+    throw new Error(`知识候选数量超过当前批次上限 ${maxCandidates}。`);
+  }
+  validateOutlineSourceReferences(candidates, chunks);
+}
+
+function validateNestedOutline(outline: NestedOutline, chunks: AiStudySourceChunkWithContent[]) {
+  const nodes = flattenNestedOutline(outline);
+  if (nodes.length > maxNodesPerProject) {
+    throw new Error(`知识节点数量超过上限 ${maxNodesPerProject}。`);
+  }
+  validateOutlineSourceReferences(nodes, chunks);
+}
+
+function validateOutlineSourceReferences(
+  nodes: Array<{ title: string; sourceChunkIds: string[] }>,
+  chunks: AiStudySourceChunkWithContent[]
+) {
+  const validChunkIds = new Set(chunks.map((chunk) => chunk.id));
+  for (const node of nodes) {
+    const invalidChunkId = node.sourceChunkIds.find((id) => !validChunkIds.has(id));
+    if (invalidChunkId) {
+      throw new Error(`知识节点“${node.title}”引用了不存在的来源片段：${invalidChunkId}`);
+    }
+  }
+}
+
+function buildOutlineCandidateTransportInstruction(partialMaxNodes: number) {
+  return [
+    "【固定输出协议，优先级高于上方可配置提示词中的格式描述】",
+    `只输出 JSON 对象：{\"candidates\":[{\"title\":\"...\",\"summary\":\"...\",\"sourceChunkIds\":[\"真实片段ID\"]}]}，候选不超过 ${partialMaxNodes} 个。`,
+    "候选只是待归并的原子主题，不要输出 clientId、parentClientId、nodes、层级关系、Markdown 或解释文字。"
+  ].join("\n");
+}
+
+function buildNestedOutlineTransportInstruction(maxNodes: number) {
+  return [
+    "【固定输出协议，优先级高于上方可配置提示词中的格式描述】",
+    "只输出 JSON 对象，结构必须严格为 root -> modules -> groups -> points 四层。",
+    "root、每个 module、每个 group、每个 point 都必须包含 title、summary、sourceChunkIds；root 还包含 modules，module 还包含 groups，group 还包含 points。",
+    "modules 必须有 3-6 个；每个 module 必须有 1-4 个 groups；每个 group 必须有 2-4 个 points。",
+    `总节点数不得超过 ${maxNodes}；sourceChunkIds 只能使用输入中的真实片段 ID。`,
+    "不要输出 clientId、parentClientId、nodes、Markdown 或解释文字。"
+  ].join("\n");
+}
+
 function buildOutlineMessages(
   projectTitle: string,
-  chunks: AiStudySourceChunk[],
-  promptConfig: AiStudyPromptConfig
+  chunks: AiStudySourceChunkWithContent[],
+  promptConfig: AiStudyPromptConfig,
+  partialMaxNodes = maxNodesPerProject
 ): ChatMessage[] {
-  const sourceChunks = formatChunksForPrompt(chunks, maxOutlineSourceChars);
+  const sourceChunks = formatChunksForPrompt(chunks);
   return [
     {
       role: "system",
-      content: promptConfig.render("outline.system", { maxNodesPerProject })
+      content: `${promptConfig.render("outline.system", { maxNodesPerProject: partialMaxNodes })}\n\n${buildNestedOutlineTransportInstruction(partialMaxNodes)}`
     },
     {
       role: "user",
@@ -644,16 +1237,15 @@ function buildOutlineMessages(
 function buildCardMessages(
   projectTitle: string,
   node: AiStudyNode,
-  chunks: AiStudySourceChunk[],
+  sourceChunks: string,
   promptConfig: AiStudyPromptConfig
 ): ChatMessage[] {
   const level = node.depth + 1;
   const cardInstruction = getCardInstruction(level, promptConfig);
-  const sourceChunks = formatChunksForPrompt(chunks, maxCardSourceChars);
   return [
     {
       role: "system",
-      content: promptConfig.render("card.system")
+      content: `${promptConfig.render("card.system")}\n\n${buildCardTransportInstruction()}`
     },
     {
       role: "user",
@@ -669,6 +1261,191 @@ function buildCardMessages(
   ];
 }
 
+function buildCardTransportInstruction() {
+  return [
+    "【固定输出协议，优先级高于上方可配置提示词中的格式描述】",
+    "只输出单个 JSON 对象，不要输出 Markdown 代码围栏、思考过程或解释文字。",
+    "overview 不超过 800 个中文字符；explanation 不超过 1800 个中文字符；keyPoints 最多 8 条、每条不超过 200 个中文字符。",
+    "pitfalls、examples、flashcards 必须输出空数组。避免重复同一句话；字符串中需要引用术语时使用中文引号。"
+  ].join("\n");
+}
+
+function buildCardRetryMessages(messages: ChatMessage[]): ChatMessage[] {
+  const retryInstruction = "【重试要求】上次严格 Schema 输出失败。本次改用精简 JSON：overview 控制在 400 字以内，explanation 控制在 1000 字以内，keyPoints 仅保留 2-4 条；不要重复内容，务必闭合所有字符串、数组和对象。";
+  return messages.map((message, index) => index === 0 && message.role === "system"
+    ? { ...message, content: `${message.content}\n\n${retryInstruction}` }
+    : message);
+}
+
+async function generateCompleteOutline(
+  task: AiStudyGenerationTask,
+  projectTitle: string,
+  chunks: AiStudySourceChunkWithContent[],
+  promptConfig: AiStudyPromptConfig
+) {
+  const batches = splitChunksForPrompt(chunks, modelBatchChars);
+  if (batches.length === 1) {
+    const nestedOutline = await requestValidatedJsonWithRetry({
+      task,
+      stage: "generating_outline_direct",
+      messages: buildOutlineMessages(projectTitle, batches[0], promptConfig),
+      schema: nestedOutlineSchema,
+      jsonSchema: {
+        name: "ai_study_four_level_outline",
+        schema: buildNestedOutlineJsonSchema(batches[0].map((chunk) => chunk.id))
+      },
+      maxCompletionTokens: outlineMergeMaxTokens,
+      timeoutMs: outlineTimeoutMs,
+      temperature: 0.15,
+      invalidMessage: "知识框架 JSON 格式不合法。",
+      validate: (value) => validateNestedOutline(value, chunks)
+    });
+    return { nodes: flattenNestedOutline(nestedOutline) };
+  }
+
+  const partialMaxNodes = Math.max(8, Math.ceil((maxNodesPerProject - 1) / batches.length) + 3);
+  const sourceFingerprint = buildOutlineSourceFingerprint(chunks);
+  const checkpoint = await readOutlineCheckpoint(task.id, promptConfig.version, sourceFingerprint, batches.length);
+  const partialCandidates: OutlineCandidate[] = [];
+  const completedBatches = new Map(checkpoint.batches.map((batch) => [batch.batchIndex, batch.candidates]));
+
+  for (const [batchIndex, batch] of batches.entries()) {
+    const existingCandidates = completedBatches.get(batchIndex);
+    if (existingCandidates) {
+      await updateAiStudyTaskStage(task, `resuming_outline_partial_${batchIndex + 1}_of_${batches.length}`);
+      partialCandidates.push(...existingCandidates);
+      continue;
+    }
+
+    const partial = await requestValidatedJsonWithRetry({
+      task,
+      stage: `generating_outline_partial_${batchIndex + 1}_of_${batches.length}`,
+      messages: [
+        {
+          role: "system",
+          content: `${promptConfig.render("outline.partial.system", { partialMaxNodes })}\n\n${buildOutlineCandidateTransportInstruction(partialMaxNodes)}`
+        },
+        {
+          role: "user",
+          content: promptConfig.render("outline.partial.user", {
+            projectTitle,
+            batchNumber: batchIndex + 1,
+            batchCount: batches.length,
+            sourceChunks: formatChunksForPrompt(batch)
+          })
+        }
+      ],
+      schema: outlineCandidateListSchema,
+      jsonSchema: {
+        name: "ai_study_outline_candidates",
+        schema: buildOutlineCandidateJsonSchema(partialMaxNodes, batch.map((chunk) => chunk.id))
+      },
+      maxCompletionTokens: outlinePartialMaxTokens,
+      timeoutMs: outlineTimeoutMs,
+      temperature: 0.15,
+      invalidMessage: `第 ${batchIndex + 1} 批知识候选 JSON 格式不合法。`,
+      validate: (value) => validateOutlineCandidates(value.candidates, batch, partialMaxNodes)
+    });
+    partialCandidates.push(...partial.candidates);
+    checkpoint.batches.push({ batchIndex, candidates: partial.candidates });
+    await mergeAiStudyTaskOutputSummary(task.id, { outlineCheckpoint: checkpoint });
+  }
+
+  const nestedOutline = await requestValidatedJsonWithRetry({
+    task,
+    stage: "merging_outline",
+    messages: [
+      {
+        role: "system",
+        content: `${promptConfig.render("outline.merge.system", { maxNodesPerProject })}\n\n${buildNestedOutlineTransportInstruction(maxNodesPerProject)}`
+      },
+      {
+        role: "user",
+        content: promptConfig.render("outline.merge.user", {
+          projectTitle,
+          candidateNodes: JSON.stringify({ candidates: partialCandidates })
+        })
+      }
+    ],
+    schema: nestedOutlineSchema,
+    jsonSchema: {
+      name: "ai_study_four_level_outline",
+      schema: buildNestedOutlineJsonSchema(chunks.map((chunk) => chunk.id))
+    },
+    maxCompletionTokens: outlineMergeMaxTokens,
+    timeoutMs: outlineTimeoutMs,
+    temperature: 0.1,
+    invalidMessage: "合并后的知识框架 JSON 格式不合法。",
+    validate: (value) => validateNestedOutline(value, chunks)
+  });
+  return { nodes: flattenNestedOutline(nestedOutline) };
+}
+
+async function buildCompleteCardEvidence(
+  projectTitle: string,
+  node: AiStudyNode,
+  chunks: AiStudySourceChunkWithContent[],
+  promptConfig: AiStudyPromptConfig
+) {
+  const batches = splitChunksForPrompt(chunks, modelBatchChars);
+  if (batches.length === 1) {
+    return formatChunksForPrompt(batches[0]);
+  }
+
+  let summaries: string[] = [];
+  for (const [batchIndex, batch] of batches.entries()) {
+    summaries.push(await askQwen([
+      { role: "system", content: promptConfig.render("card.evidence.system") },
+      {
+        role: "user",
+        content: promptConfig.render("card.evidence.user", {
+          projectTitle,
+          nodeTitle: node.title,
+          batchNumber: batchIndex + 1,
+          batchCount: batches.length,
+          sourceChunks: formatChunksForPrompt(batch)
+        })
+      }
+    ], {
+      temperature: 0.1,
+      timeoutMs: cardTimeoutMs,
+      maxCompletionTokens: 4_096,
+      enableThinking: false
+    }));
+  }
+
+  while (summaries.join(promptItemSeparator).length > modelBatchChars) {
+    const groups = splitStringsByChars(summaries, modelBatchChars);
+    const reduced: string[] = [];
+    for (const group of groups) {
+      reduced.push(await askQwen([
+        { role: "system", content: promptConfig.render("card.evidence.system") },
+        {
+          role: "user",
+          content: promptConfig.render("card.evidence.user", {
+            projectTitle,
+            nodeTitle: node.title,
+            batchNumber: 1,
+            batchCount: groups.length,
+            sourceChunks: group.join(promptItemSeparator)
+          })
+        }
+      ], {
+        temperature: 0.1,
+        timeoutMs: cardTimeoutMs,
+        maxCompletionTokens: 4_096,
+        enableThinking: false
+      }));
+    }
+    if (reduced.join("").length >= summaries.join("").length) {
+      throw new Error(`节点证据归并后未能收敛：${node.title}`);
+    }
+    summaries = reduced;
+  }
+
+  return summaries.join(promptItemSeparator);
+}
+
 function getCardInstruction(level: number, promptConfig: AiStudyPromptConfig) {
   if (level === 1) {
     return promptConfig.render("card.instruction.level1");
@@ -681,7 +1458,7 @@ function getCardInstruction(level: number, promptConfig: AiStudyPromptConfig) {
   return promptConfig.render("card.instruction.level4");
 }
 
-function prepareOutlineNodes(nodes: z.infer<typeof outlineNodeSchema>[], chunks: AiStudySourceChunk[], projectTitle: string): OutlineNode[] {
+function prepareOutlineNodes(nodes: z.infer<typeof outlineNodeSchema>[], chunks: AiStudySourceChunkWithContent[], projectTitle: string): OutlineNode[] {
   const normalizedNodes = ensureOutlineMaxDepth(ensureSingleRootNode(nodes, chunks, projectTitle));
 
   if (normalizedNodes.length > maxNodesPerProject) {
@@ -719,9 +1496,11 @@ function prepareOutlineNodes(nodes: z.infer<typeof outlineNodeSchema>[], chunks:
     return depth;
   }
 
-  return normalizedNodes
+  const preparedNodes = normalizedNodes
     .map((node, sortOrder) => {
-      const sourceChunkIds = resolveOutlineSourceChunkIds(node, normalizedNodes, validChunkIds, chunks);
+      const sourceChunkIds = node.parentClientId
+        ? resolveOutlineSourceChunkIds(node, validChunkIds)
+        : chunks.map((chunk) => chunk.id);
       return {
         ...node,
         parentClientId: node.parentClientId || null,
@@ -729,8 +1508,50 @@ function prepareOutlineNodes(nodes: z.infer<typeof outlineNodeSchema>[], chunks:
         depth: resolveDepth(node),
         sortOrder
       };
-    })
+    });
+
+  assertCompleteFourLevelOutline(preparedNodes);
+  return ensureNonRootChunkCoverage(preparedNodes, chunks)
     .sort((left, right) => left.depth - right.depth || left.sortOrder - right.sortOrder);
+}
+
+function ensureNonRootChunkCoverage(nodes: OutlineNode[], chunks: AiStudySourceChunkWithContent[]) {
+  const nonRootNodes = nodes.filter((node) => node.depth > 0);
+  if (nonRootNodes.length === 0) {
+    throw new Error("知识框架至少需要一个非根学习节点。");
+  }
+
+  const chunksById = new Map(chunks.map((chunk) => [chunk.id, chunk]));
+  const coveredChunkIds = new Set(nonRootNodes.flatMap((node) => node.sourceChunkIds));
+  for (const chunk of chunks) {
+    if (coveredChunkIds.has(chunk.id)) {
+      continue;
+    }
+
+    const target = [...nonRootNodes].sort((left, right) => {
+      const distanceDifference = readOutlineChunkDistance(left, chunk, chunksById)
+        - readOutlineChunkDistance(right, chunk, chunksById);
+      return distanceDifference || right.depth - left.depth || left.sortOrder - right.sortOrder;
+    })[0];
+    target.sourceChunkIds = [...target.sourceChunkIds, chunk.id];
+    coveredChunkIds.add(chunk.id);
+  }
+
+  return nodes;
+}
+
+function readOutlineChunkDistance(
+  node: OutlineNode,
+  chunk: AiStudySourceChunkWithContent,
+  chunksById: Map<string, AiStudySourceChunkWithContent>
+) {
+  const sourceChunks = node.sourceChunkIds
+    .map((id) => chunksById.get(id))
+    .filter((value): value is AiStudySourceChunkWithContent => Boolean(value));
+  if (sourceChunks.length === 0) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  return Math.min(...sourceChunks.map((sourceChunk) => Math.abs(sourceChunk.chunkIndex - chunk.chunkIndex)));
 }
 
 function ensureOutlineMaxDepth(nodes: z.infer<typeof outlineNodeSchema>[]) {
@@ -799,78 +1620,32 @@ function findOutlineAncestorAtDepth(
 
 function resolveOutlineSourceChunkIds(
   node: z.infer<typeof outlineNodeSchema>,
-  nodes: z.infer<typeof outlineNodeSchema>[],
-  validChunkIds: Set<string>,
-  chunks: AiStudySourceChunk[]
+  validChunkIds: Set<string>
 ) {
   const directChunkIds = normalizeOutlineSourceChunkIds(node.sourceChunkIds, validChunkIds);
   if (directChunkIds.length > 0) {
     return directChunkIds;
   }
-
-  const titleMatchedChunkIds = findOutlineChunksByTitle(node.title, chunks);
-  if (titleMatchedChunkIds.length > 0) {
-    return titleMatchedChunkIds;
-  }
-
-  const inheritedChunkIds = findAncestorOutlineSourceChunkIds(node, nodes, validChunkIds);
-  if (inheritedChunkIds.length > 0) {
-    return inheritedChunkIds;
-  }
-
-  return chunks.slice(0, 1).map((chunk) => chunk.id);
+  throw new Error(`知识节点引用了不存在的来源片段：${node.title}`);
 }
 
 function normalizeOutlineSourceChunkIds(sourceChunkIds: string[], validChunkIds: Set<string>) {
-  return Array.from(new Set(sourceChunkIds.filter((id) => validChunkIds.has(id)))).slice(0, 24);
+  return Array.from(new Set(sourceChunkIds.filter((id) => validChunkIds.has(id))));
 }
 
-function findAncestorOutlineSourceChunkIds(
-  node: z.infer<typeof outlineNodeSchema>,
-  nodes: z.infer<typeof outlineNodeSchema>[],
-  validChunkIds: Set<string>
-) {
-  const nodeByClientId = new Map(nodes.map((candidate) => [candidate.clientId, candidate]));
-  let current = node.parentClientId ? nodeByClientId.get(node.parentClientId) : null;
-
-  while (current) {
-    const sourceChunkIds = normalizeOutlineSourceChunkIds(current.sourceChunkIds, validChunkIds);
-    if (sourceChunkIds.length > 0) {
-      return sourceChunkIds.slice(0, 8);
-    }
-    current = current.parentClientId ? nodeByClientId.get(current.parentClientId) : null;
-  }
-
-  return [];
-}
-
-function findOutlineChunksByTitle(title: string, chunks: AiStudySourceChunk[]) {
-  const normalizedTitle = normalizeOutlineMatchText(title);
-  if (normalizedTitle.length < 2) {
-    return [];
-  }
-
-  return chunks
-    .filter((chunk) => normalizeOutlineMatchText(chunk.content).includes(normalizedTitle))
-    .slice(0, 4)
-    .map((chunk) => chunk.id);
-}
-
-function normalizeOutlineMatchText(value: string) {
-  return value.replace(/\s+/g, "").toLowerCase();
-}
-
-function ensureSingleRootNode(nodes: z.infer<typeof outlineNodeSchema>[], chunks: AiStudySourceChunk[], projectTitle: string) {
+function ensureSingleRootNode(nodes: z.infer<typeof outlineNodeSchema>[], chunks: AiStudySourceChunkWithContent[], projectTitle: string) {
   const roots = nodes.filter((node) => !node.parentClientId);
   if (roots.length === 1) {
-    return nodes;
+    return nodes.map((node) => node.clientId === roots[0].clientId
+      ? { ...node, sourceChunkIds: chunks.map((chunk) => chunk.id) }
+      : node);
   }
 
   const rootClientId = "__project_root";
   const rootSummary = roots.length > 0
     ? roots.map((node) => node.summary).join("；").slice(0, 600)
     : "整份学习资料的核心内容总览。";
-  const rootChunkIds = chunks.slice(0, 24).map((chunk) => chunk.id);
+  const rootChunkIds = chunks.map((chunk) => chunk.id);
 
   return [
     {
@@ -887,9 +1662,9 @@ function ensureSingleRootNode(nodes: z.infer<typeof outlineNodeSchema>[], chunks
   ];
 }
 
-function getNodeSourceChunks(node: AiStudyNode, chunksById: Map<string, AiStudySourceChunk>) {
+function getNodeSourceChunks(node: AiStudyNode, chunksById: Map<string, AiStudySourceChunkWithContent>) {
   const chunkIds = Array.isArray(node.sourceChunkIds) ? node.sourceChunkIds.filter((value): value is string => typeof value === "string") : [];
-  const chunks = chunkIds.map((id) => chunksById.get(id)).filter((chunk): chunk is AiStudySourceChunk => Boolean(chunk));
+  const chunks = chunkIds.map((id) => chunksById.get(id)).filter((chunk): chunk is AiStudySourceChunkWithContent => Boolean(chunk));
   if (chunks.length === 0) {
     throw new Error(`知识节点缺少来源片段：${node.title}`);
   }
@@ -928,27 +1703,76 @@ function extractJsonObject(text: string) {
   throw new Error("AI 返回内容中没有找到 JSON 对象。");
 }
 
-function formatChunksForPrompt(chunks: AiStudySourceChunk[], maxChars: number) {
-  let used = 0;
-  const lines: string[] = [];
+function formatChunksForPrompt(chunks: AiStudySourceChunkWithContent[]) {
+  return chunks.map((chunk) => {
+    const pageRange = chunk.pageStart && chunk.pageEnd
+      ? `; pages=${chunk.pageStart}-${chunk.pageEnd}`
+      : chunk.pageNumber ? `; page=${chunk.pageNumber}` : "";
+    const chunkType = chunk.chunkType ? `; type=${chunk.chunkType}` : "";
+    return `[sourceChunkId=${chunk.id}; chunkIndex=${chunk.chunkIndex}${pageRange}${chunkType}]\n${chunk.content}`;
+  }).join(promptItemSeparator);
+}
+
+function splitChunksForPrompt(chunks: AiStudySourceChunkWithContent[], maxChars: number) {
+  const batches: AiStudySourceChunkWithContent[][] = [];
+  let current: AiStudySourceChunkWithContent[] = [];
+  let currentLength = 0;
   for (const chunk of chunks) {
-    const header = `[sourceChunkId=${chunk.id}; chunkIndex=${chunk.chunkIndex}${chunk.pageNumber ? `; page=${chunk.pageNumber}` : ""}]`;
-    const remaining = maxChars - used;
-    if (remaining <= 0) {
-      break;
+    const chunkLength = formatChunksForPrompt([chunk]).length;
+    const separatorLength = current.length > 0 ? promptItemSeparator.length : 0;
+    if (chunkLength > maxChars) {
+      throw new Error(`来源片段超过单批模型输入上限：${chunk.id}`);
     }
-    const content = chunk.content.slice(0, remaining);
-    used += content.length;
-    lines.push(`${header}\n${content}`);
+    if (current.length > 0 && currentLength + separatorLength + chunkLength > maxChars) {
+      batches.push(current);
+      current = [];
+      currentLength = 0;
+    }
+    const nextSeparatorLength = current.length > 0 ? promptItemSeparator.length : 0;
+    current.push(chunk);
+    currentLength += nextSeparatorLength + chunkLength;
   }
-  return lines.join("\n\n---\n\n");
+  if (current.length > 0) {
+    batches.push(current);
+  }
+  return batches;
+}
+
+function splitStringsByChars(values: string[], maxChars: number) {
+  const groups: string[][] = [];
+  let current: string[] = [];
+  let currentLength = 0;
+  for (const value of values) {
+    const separatorLength = current.length > 0 ? promptItemSeparator.length : 0;
+    if (value.length > maxChars) {
+      throw new Error("证据摘要超过单批模型输入上限。");
+    }
+    if (current.length > 0 && currentLength + separatorLength + value.length > maxChars) {
+      groups.push(current);
+      current = [];
+      currentLength = 0;
+    }
+    const nextSeparatorLength = current.length > 0 ? promptItemSeparator.length : 0;
+    current.push(value);
+    currentLength += nextSeparatorLength + value.length;
+  }
+  if (current.length > 0) {
+    groups.push(current);
+  }
+  return groups;
 }
 
 function normalizeParsedText(text: string) {
-  return text
-    .replace(/\r\n/g, "\n")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{4,}/g, "\n\n")
-    .replace(/[ \t]{2,}/g, " ")
+  return text.replace(/\r\n/g, "\n")
+    .split(/(```[\s\S]*?```)/g)
+    .map((part) => part.startsWith("```")
+      ? part.trim()
+      : part
+        .replace(/[ \t]+\n/g, "\n")
+        .replace(/\n{4,}/g, "\n\n")
+        .replace(/[ \t]{2,}/g, " ")
+        .trim())
+    .filter(Boolean)
+    .join("\n")
     .trim();
 }

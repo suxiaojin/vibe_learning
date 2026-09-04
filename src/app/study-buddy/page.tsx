@@ -141,7 +141,6 @@ function buildProjectSectionItems(projects: StudyProject[], variant: "personal" 
     const ownerProfileHref = "owner" in project ? `/students/${project.owner.id}` : "";
     const learnerText = variant === "public" ? "公开学习项目" : `${project._count.sources || 1}份资料`;
     const generation = getGenerationProgress(project);
-    const latestFailedRetryCount = "latestFailedRetryCount" in project ? project.latestFailedRetryCount : 0;
 
     return {
       kind: "ai-project",
@@ -154,7 +153,6 @@ function buildProjectSectionItems(projects: StudyProject[], variant: "personal" 
       generationText: generation.text,
       id: project.id,
       knowledgeCount: progressTotal,
-      latestFailedRetryCount,
       learnerText,
       masteredCount: project.masteredCount || 0,
       ownerName,
@@ -183,7 +181,7 @@ function getGenerationProgress(project: StudyProject) {
     return { percent: 100, text: "知识图谱已生成" };
   }
   if (project.status === "failed") {
-    return { percent: 100, text: "生成失败" };
+    return { percent: 100, text: "项目解析失败" };
   }
   if (project.status !== "processing") {
     return { percent: 0, text: "等待创建" };

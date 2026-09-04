@@ -51,12 +51,15 @@ export default async function AdminPromptSettingsPage({
     <main className="space-y-4">
       <header>
         <h1 className="text-xl font-black text-ink">提示词设置</h1>
-        <p className="mt-1 text-sm font-semibold text-slate-500">管理闯关页 AI 解释提示词档案、专业绑定和版本发布。</p>
+        <p className="mt-1 text-sm font-semibold text-slate-500">管理闯关页和学习搭子的Prompt草稿、发布与历史版本。</p>
       </header>
 
       <nav className="flex gap-8 overflow-x-auto whitespace-nowrap border-b border-slate-200 text-sm font-bold text-slate-600" aria-label="提示词设置导航">
         <Link className="border-b-2 border-teal px-0 py-3 text-ink" href="/admin/prompt-settings">
           闯关页prompt
+        </Link>
+        <Link className="border-b-2 border-transparent px-0 py-3 transition hover:border-teal hover:text-teal" href="/admin/prompt-settings/study-buddy">
+          学习搭子prompt
         </Link>
       </nav>
 

@@ -18,7 +18,7 @@ export async function POST(request: Request, context: RouteContext) {
     const formData = await request.formData();
     const file = formData.get("file") || formData.get("source");
     if (!isUploadFile(file)) {
-      return apiError("Please upload a PDF or Word file.", 400, "AI_STUDY_FILE_REQUIRED");
+      return apiError("Please upload a PDF file.", 400, "AI_STUDY_FILE_REQUIRED");
     }
 
     const { projectId } = await context.params;
@@ -50,12 +50,6 @@ function getFallbackMimeType(fileName: string) {
   const normalized = fileName.toLowerCase();
   if (normalized.endsWith(".pdf")) {
     return "application/pdf";
-  }
-  if (normalized.endsWith(".docx")) {
-    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-  }
-  if (normalized.endsWith(".doc")) {
-    return "application/msword";
   }
   return "application/octet-stream";
 }

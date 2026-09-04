@@ -173,7 +173,7 @@ export function buildAiStudyGenerationProgress(project: ProgressProject): AiStud
     return buildProgress(project.id, project.status, 100, "知识图谱已生成", null, "ready", null, steps);
   }
   if (project.status === "failed") {
-    return buildProgress(project.id, project.status, 100, "生成失败", latestFailedTask?.type || null, latestFailedTask?.stage || "failed", latestFailedTask?.errorMessage || null, steps);
+    return buildProgress(project.id, project.status, 100, "项目解析失败", latestFailedTask?.type || null, latestFailedTask?.stage || "failed", latestFailedTask?.errorMessage || null, steps);
   }
   if (project.status !== "processing") {
     return buildProgress(project.id, project.status, 0, "等待创建", null, project.status, null, steps);
@@ -199,8 +199,8 @@ export function buildAiStudyGenerationProgress(project: ProgressProject): AiStud
     return buildProgress(project.id, project.status, 38, "等待生成思维导图...", outlineTask.type, outlineTask.stage, null, steps);
   }
   if (parseTask?.status === "running") {
-    const percent = parseTask.stage === "extracting_source_text" || parseTask.stage === "extracting_pdf_text" ? 24 : 18;
-    return buildProgress(project.id, project.status, percent, "正在解析资料...", parseTask.type, parseTask.stage, null, steps);
+    const percent = parseTask.stage === "submitting_to_mineru" ? 20 : parseTask.stage === "mineru_result_persisted" ? 32 : 18;
+    return buildProgress(project.id, project.status, percent, "AI 正在解析资料...", parseTask.type, parseTask.stage, null, steps);
   }
   if (parseTask?.status === "pending") {
     return buildProgress(project.id, project.status, 8, "等待解析资料...", parseTask.type, parseTask.stage, null, steps);

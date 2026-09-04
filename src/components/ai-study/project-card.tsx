@@ -3,7 +3,7 @@
 import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { MoreHorizontal, Pencil, RotateCcw, Trash2, X } from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2, X } from "lucide-react";
 import { ProjectDiamondPrice } from "@/components/ai-study/project-diamond-price";
 import { ProjectPurchaseFeedback } from "@/components/ai-study/project-purchase-feedback";
 import { useProjectPurchase } from "@/components/ai-study/use-project-purchase";
@@ -33,14 +33,13 @@ type ProjectCardProps = {
   owned?: boolean;
   generationPercent?: number;
   generationText?: string;
-  latestFailedRetryCount?: number;
 };
 
 const statusLabels = {
   draft: "待开始",
   processing: "生成中",
   ready: "学习中",
-  failed: "生成失败",
+  failed: "项目解析失败",
   archived: "已归档"
 };
 
@@ -64,8 +63,7 @@ export function AiStudyProjectCard({
   ownerProfileHref = "",
   canManage = false,
   generationPercent,
-  generationText,
-  latestFailedRetryCount = 0
+  generationText
 }: ProjectCardProps) {
   const router = useRouter();
   const purchase = useProjectPurchase({ kind: "ai", id, title, diamondPrice: diamondPrice ?? 0, purchased, owned });
@@ -76,7 +74,6 @@ export function AiStudyProjectCard({
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isRetrying, setIsRetrying] = useState(false);
   const [isTitleOverflowing, setIsTitleOverflowing] = useState(false);
   const [error, setError] = useState("");
   const [displayStatus, setDisplayStatus] = useState(status);
@@ -92,7 +89,6 @@ export function AiStudyProjectCard({
       percent: generationPercent,
       text: generationText
     });
-    setIsRetrying(false);
     terminalRefreshRef.current = status === "processing" ? null : status;
   }, [generationPercent, generationText, status]);
 
@@ -174,8 +170,7 @@ export function AiStudyProjectCard({
   const isGenerating = displayStatus === "processing";
   const isFailed = displayStatus === "failed";
   const canOpenProject = !isGenerating && !isFailed;
-  const isRetryLimitReached = isFailed && latestFailedRetryCount >= 3;
-  const failedDisplayText = isRetryLimitReached ? "无法解析此文档，请删除" : (displayGeneration.text || statusLabels.failed);
+  const failedDisplayText = "项目解析失败";
   const shownGenerationPercent = Math.max(1, Math.min(displayGeneration.percent || 8, 99));
   const overviewText = contentOverview.trim() || "暂无内容概述";
   const canSubmitRename = Boolean(draftTitle.trim()) && !isSaving;
@@ -283,28 +278,6 @@ export function AiStudyProjectCard({
     }
   }
 
-  async function retryProject(event: MouseEvent<HTMLButtonElement>) {
-    event.stopPropagation();
-    if (!canManage || isRetrying || isRetryLimitReached) {
-      return;
-    }
-
-    setIsRetrying(true);
-    setError("");
-    try {
-      await postJson(`/api/ai-study/projects/${id}/retry`, {});
-      setDisplayStatus("processing");
-      setDisplayGeneration({
-        percent: displayGeneration.percent && displayGeneration.percent < 100 ? displayGeneration.percent : 8,
-        text: "正在重新生成..."
-      });
-      router.refresh();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "重新生成失败，请稍后重试。");
-      setIsRetrying(false);
-    }
-  }
-
   return (
     <>
       <article
@@ -356,28 +329,9 @@ export function AiStudyProjectCard({
               </p>
             ) : null}
             {displayStatus === "failed" ? (
-              <div className="flex h-4 items-center gap-1.5">
-                <p className="min-w-0 truncate text-[12px] font-bold leading-4 text-[#f04438]">
-                  {failedDisplayText}
-                </p>
-                {canManage && !isRetryLimitReached ? (
-                  <div className="group/retry relative inline-flex h-6 items-center" data-card-action>
-                    <button
-                      aria-label="重新生成"
-                      className="grid size-6 place-items-center rounded-full border border-[#bdecc6] bg-white text-[#12a425] transition hover:border-[#12a425] hover:bg-[#effaf1] hover:text-[#0f8f20] disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={isRetrying}
-                      onClick={retryProject}
-                      title="重新生成"
-                      type="button"
-                    >
-                      <RotateCcw className={isRetrying ? "animate-spin" : ""} size={13} />
-                    </button>
-                    <span className="pointer-events-none absolute left-7 top-1/2 -translate-y-1/2 whitespace-nowrap text-[12px] font-bold text-[#12a425] opacity-0 transition-opacity duration-150 group-hover/retry:opacity-100 group-focus-within/retry:opacity-100">
-                      重新生成
-                    </span>
-                  </div>
-                ) : null}
-              </div>
+              <p className="h-4 min-w-0 truncate text-[12px] font-bold leading-4 text-[#f04438]">
+                {failedDisplayText}
+              </p>
             ) : null}
             {displayStatus !== "draft" && displayStatus !== "failed" && !isGenerating ? (
               <p className="line-clamp-2 text-[13px] font-medium leading-[20px] text-[#667085] transition-all duration-150 group-hover:line-clamp-4">
@@ -521,11 +475,7 @@ async function patchJson(url: string, body: unknown) {
   return sendJson("PATCH", url, body);
 }
 
-async function postJson(url: string, body: unknown) {
-  return sendJson("POST", url, body);
-}
-
-async function sendJson(method: "PATCH" | "POST", url: string, body: unknown) {
+async function sendJson(method: "PATCH", url: string, body: unknown) {
   const response = await fetch(url, {
     method,
     headers: {

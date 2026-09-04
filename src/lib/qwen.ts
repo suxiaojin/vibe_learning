@@ -3,13 +3,37 @@ export type ChatMessage = {
   content: string;
 };
 
-type AskQwenOptions = {
+export type QwenJsonSchema = {
+  name: string;
+  schema: Record<string, unknown>;
+  strict?: boolean;
+};
+
+export type AskQwenOptions = {
   signal?: AbortSignal;
   temperature?: number;
   timeoutMs?: number;
+  jsonMode?: boolean;
+  jsonSchema?: QwenJsonSchema;
+  maxCompletionTokens?: number;
+  enableThinking?: boolean;
+};
+
+export type AskQwenResult = {
+  content: string;
+  finishReason: string | null;
+  usage: {
+    promptTokens: number | null;
+    completionTokens: number | null;
+    totalTokens: number | null;
+  };
 };
 
 export async function askQwen(messages: ChatMessage[], options: AskQwenOptions = {}) {
+  return (await askQwenDetailed(messages, options)).content;
+}
+
+export async function askQwenDetailed(messages: ChatMessage[], options: AskQwenOptions = {}): Promise<AskQwenResult> {
   const baseUrl = process.env.QWEN_API_BASE_URL;
   if (!baseUrl) {
     throw new Error("QWEN_API_BASE_URL is not configured.");
@@ -38,7 +62,25 @@ export async function askQwen(messages: ChatMessage[], options: AskQwenOptions =
       body: JSON.stringify({
         model: process.env.QWEN_MODEL || "qwen3.5",
         messages,
-        temperature: options.temperature ?? 0.4
+        temperature: options.temperature ?? 0.4,
+        ...(options.maxCompletionTokens
+          ? { max_completion_tokens: Math.max(1, Math.floor(options.maxCompletionTokens)) }
+          : {}),
+        ...(options.enableThinking === false
+          ? { chat_template_kwargs: { enable_thinking: false } }
+          : {}),
+        ...(options.jsonSchema
+          ? {
+              response_format: {
+                type: "json_schema",
+                json_schema: {
+                  name: options.jsonSchema.name,
+                  strict: options.jsonSchema.strict ?? true,
+                  schema: options.jsonSchema.schema
+                }
+              }
+            }
+          : options.jsonMode ? { response_format: { type: "json_object" } } : {})
       })
     });
   } catch (error) {
@@ -58,9 +100,25 @@ export async function askQwen(messages: ChatMessage[], options: AskQwenOptions =
   }
 
   const payload = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
+    choices?: Array<{
+      finish_reason?: string | null;
+      message?: { content?: string };
+    }>;
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+    };
   };
-  return payload.choices?.[0]?.message?.content?.trim() || "暂时没有生成解释，请稍后重试。";
+  return {
+    content: payload.choices?.[0]?.message?.content?.trim() || "暂时没有生成解释，请稍后重试。",
+    finishReason: payload.choices?.[0]?.finish_reason ?? null,
+    usage: {
+      promptTokens: payload.usage?.prompt_tokens ?? null,
+      completionTokens: payload.usage?.completion_tokens ?? null,
+      totalTokens: payload.usage?.total_tokens ?? null
+    }
+  };
 }
 
 export async function streamQwen(

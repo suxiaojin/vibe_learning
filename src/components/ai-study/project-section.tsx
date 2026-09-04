@@ -21,7 +21,6 @@ export type AiStudyProjectSectionItem = {
   generationText: string;
   id: string;
   knowledgeCount: number;
-  latestFailedRetryCount: number;
   learnerText: string;
   masteredCount: number;
   ownerName: string;
@@ -65,7 +64,6 @@ export function AiStudyProjectSection({ title, projects, emptyText }: AiStudyPro
               generationText={project.generationText}
               id={project.id}
               knowledgeCount={project.knowledgeCount}
-              latestFailedRetryCount={project.latestFailedRetryCount}
               learnerText={project.learnerText}
               masteredCount={project.masteredCount}
               ownerName={project.ownerName}

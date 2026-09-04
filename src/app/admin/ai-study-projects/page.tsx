@@ -170,7 +170,6 @@ export default async function AdminAiStudyProjectsPage({
               const ownerName = project.owner.studentProfile?.nickname || project.owner.username;
               const canPublish = project.status === "ready" && !project.deletedAt && project.visibility !== "public";
               const canPrivatize = !project.deletedAt && project.visibility !== "private";
-              const canDelete = !project.deletedAt;
               const publishFormId = `publish-${project.id}`;
               const privatizeFormId = `privatize-${project.id}`;
               const deleteFormId = `delete-${project.id}`;
@@ -182,7 +181,7 @@ export default async function AdminAiStudyProjectsPage({
                       {project.title}
                     </Link>
                     <div className="mt-1 text-xs text-slate-400">{project.id}</div>
-                    {project.deletedAt ? <div className="mt-2 text-xs font-semibold text-red-600">删除于 {formatDate(project.deletedAt)}</div> : null}
+                    {project.deletedAt ? <div className="mt-2 text-xs font-semibold text-red-600">学生删除于 {formatDate(project.deletedAt)}</div> : null}
                   </td>
                   <td className="border-b border-slate-100 py-4 pr-4">
                     <Link className="font-semibold text-ink hover:text-teal hover:underline" href={`/admin/students/${project.owner.id}`}>
@@ -191,7 +190,7 @@ export default async function AdminAiStudyProjectsPage({
                     <div className="mt-1 text-xs text-slate-400">{project.owner.username}</div>
                   </td>
                   <td className="border-b border-slate-100 py-4 pr-4">
-                    <ProjectStatusBadge status={project.status} />
+                    <ProjectStatusBadge deleted={Boolean(project.deletedAt)} status={project.status} />
                   </td>
                   <td className="border-b border-slate-100 py-4 pr-4">
                     <VisibilityBadge visibility={project.visibility} />
@@ -232,7 +231,6 @@ export default async function AdminAiStudyProjectsPage({
                       </form>
                       <ConfirmSubmitButton
                         className="secondary-button inline-flex items-center gap-1 px-3 py-2 text-xs text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={!canDelete}
                         form={deleteFormId}
                         message="确认删除这个项目的数据库记录？项目、资料元信息、知识框架、知识卡片和进度记录会从 PostgreSQL 删除，MinIO 源文件保留。"
                       >
@@ -252,7 +250,10 @@ export default async function AdminAiStudyProjectsPage({
   );
 }
 
-function ProjectStatusBadge({ status }: { status: string }) {
+function ProjectStatusBadge({ deleted = false, status }: { deleted?: boolean; status: string }) {
+  if (deleted) {
+    return <span className="badge bg-red-50 text-red-700">学生已删除</span>;
+  }
   const className = status === "ready"
     ? "bg-teal/10 text-teal"
     : status === "processing"

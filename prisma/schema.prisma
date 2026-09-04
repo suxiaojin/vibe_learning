@@ -1001,6 +1001,42 @@ model AiExplainPromptVersion {
   @@map("ai_explain_prompt_versions")
 }
 
+model AiStudyPromptProfile {
+  id              String                @id @default(cuid())
+  key             String                @unique
+  name            String
+  activeVersionId String?               @unique
+  activeVersion   AiStudyPromptVersion? @relation("AiStudyPromptActiveVersion", fields: [activeVersionId], references: [id], onDelete: SetNull)
+  versions        AiStudyPromptVersion[] @relation("AiStudyPromptVersions")
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@map("ai_study_prompt_profiles")
+}
+
+model AiStudyPromptVersion {
+  id               String                @id @default(cuid())
+  profileId        String
+  version          Int
+  sourceVersion    String
+  templates        Json
+  changeNote       String?
+  publishedAt      DateTime?
+  createdById      String?
+  createdByName    String?
+  profile          AiStudyPromptProfile  @relation("AiStudyPromptVersions", fields: [profileId], references: [id], onDelete: Cascade)
+  activeForProfile AiStudyPromptProfile? @relation("AiStudyPromptActiveVersion")
+  projects         AiStudyProject[]
+  cards            AiStudyCard[]
+  chatMessages     AiStudyChatMessage[]
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  @@unique([profileId, version])
+  @@index([profileId, publishedAt, version])
+  @@map("ai_study_prompt_versions")
+}
+
 model AiConversation {
   id                String                  @id @default(cuid())
   userId            String
@@ -1423,6 +1459,7 @@ model AiStudyProject {
   sourceType     AiStudySourceType
   learningGoal   AiStudyLearningGoal
   courseId       String?
+  aiPromptVersionId String?
   visibility     AiStudyVisibility       @default(private)
   diamondPrice   Int                     @default(0)
   status         AiStudyProjectStatus    @default(draft)
@@ -1434,8 +1471,10 @@ model AiStudyProject {
   updatedAt      DateTime                @updatedAt
   owner          User                    @relation("AiStudyProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   course         LearningCourse?         @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  aiPromptVersion AiStudyPromptVersion?   @relation(fields: [aiPromptVersionId], references: [id], onDelete: SetNull)
   sources        AiStudySource[]
   sourceChunks   AiStudySourceChunk[]
+  sourceBlocks   AiStudySourceBlock[]
   nodes          AiStudyNode[]
   cards          AiStudyCard[]
   progress       AiStudyProgress[]
@@ -1446,27 +1485,37 @@ model AiStudyProject {
   @@index([ownerId, status, updatedAt])
   @@index([ownerId, deletedAt, createdAt])
   @@index([courseId])
+  @@index([aiPromptVersionId])
   @@index([visibility, status, updatedAt])
   @@map("ai_study_projects")
 }
 
 model AiStudySource {
-  id            String                  @id @default(cuid())
-  projectId     String
-  sourceType    AiStudySourceType
-  fileName      String?
-  mimeType      String?
-  fileSizeBytes Int?
-  storageBucket String?
-  storageKey    String?
-  storagePath   String?
-  textContent   String?                 @db.Text
-  pageCount     Int?
-  status        AiStudySourceStatus     @default(uploaded)
-  createdAt     DateTime                @default(now())
-  project       AiStudyProject          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  chunks        AiStudySourceChunk[]
-  tasks         AiStudyGenerationTask[]
+  id                  String                  @id @default(cuid())
+  projectId           String
+  sourceType          AiStudySourceType
+  fileName            String?
+  mimeType            String?
+  fileSizeBytes       Int?
+  storageBucket       String?
+  storageKey          String?
+  storagePath         String?
+  pageCount           Int?
+  parserVersion       String?
+  parseBackend        String?
+  sourceSha256        String?
+  parseManifestKey    String?
+  parseContentListKey String?
+  parseMarkdownKey    String?
+  parsedPageCount     Int?
+  failedPageCount     Int                     @default(0)
+  parseWarnings       Json?
+  status              AiStudySourceStatus     @default(uploaded)
+  createdAt           DateTime                @default(now())
+  project             AiStudyProject          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chunks              AiStudySourceChunk[]
+  blocks              AiStudySourceBlock[]
+  tasks               AiStudyGenerationTask[]
 
   @@index([projectId, status, createdAt])
   @@index([storageBucket, storageKey])
@@ -1538,20 +1587,48 @@ model StudyProjectPurchase {
 }
 
 model AiStudySourceChunk {
-  id         String         @id @default(cuid())
-  projectId  String
-  sourceId   String
-  pageNumber Int?
-  chunkIndex Int
-  content    String         @db.Text
-  bbox       Json?
-  createdAt  DateTime       @default(now())
-  project    AiStudyProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  source     AiStudySource  @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  id             String         @id @default(cuid())
+  projectId      String
+  sourceId       String
+  pageStart      Int
+  pageEnd        Int
+  chunkIndex     Int
+  chunkType      String
+  sourceBlockIds Json
+  tokenCount     Int
+  contentHash    String
+  createdAt      DateTime       @default(now())
+  project        AiStudyProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  source         AiStudySource  @relation(fields: [sourceId], references: [id], onDelete: Cascade)
 
   @@unique([sourceId, chunkIndex])
+  @@unique([sourceId, chunkType, contentHash])
   @@index([projectId, sourceId])
   @@map("ai_study_source_chunks")
+}
+
+model AiStudySourceBlock {
+  id                String         @id @default(cuid())
+  projectId         String
+  sourceId          String
+  pageNumber        Int
+  blockIndex        Int
+  blockType         String
+  readingOrder      Int
+  bbox              Json?
+  textContent       String?        @db.Text
+  latexContent      String?        @db.Text
+  assetKey          String?
+  confidence        Float?
+  parserBlockId     String?
+  createdAt         DateTime       @default(now())
+  project           AiStudyProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  source            AiStudySource  @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceId, blockIndex])
+  @@index([projectId, sourceId, pageNumber, readingOrder])
+  @@index([sourceId, blockType])
+  @@map("ai_study_source_blocks")
 }
 
 model AiStudyNode {
@@ -1590,14 +1667,17 @@ model AiStudyCard {
   flashcards    Json
   modelName     String?
   promptVersion String?
+  aiPromptVersionId String?
   reviewStatus  AiStudyCardReviewStatus @default(unreviewed)
   createdAt     DateTime                @default(now())
   updatedAt     DateTime                @updatedAt
   project       AiStudyProject          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   node          AiStudyNode             @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  aiPromptVersion AiStudyPromptVersion? @relation(fields: [aiPromptVersionId], references: [id], onDelete: SetNull)
 
   @@unique([nodeId])
   @@index([projectId, reviewStatus])
+  @@index([aiPromptVersionId])
   @@map("ai_study_cards")
 }
 
@@ -1626,15 +1706,18 @@ model AiStudyChatMessage {
   userId    String         @map("user_id")
   projectId String         @map("project_id")
   nodeId    String?        @map("node_id")
+  aiPromptVersionId String? @map("ai_prompt_version_id")
   role      String
   content   String         @db.Text
   createdAt DateTime       @default(now()) @map("created_at")
   user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   project   AiStudyProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   node      AiStudyNode?   @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+  aiPromptVersion AiStudyPromptVersion? @relation(fields: [aiPromptVersionId], references: [id], onDelete: SetNull)
 
   @@index([userId, projectId, nodeId, createdAt], map: "ai_study_chat_messages_user_project_node_created_idx")
   @@index([projectId, createdAt], map: "ai_study_chat_messages_project_created_idx")
+  @@index([aiPromptVersionId], map: "ai_study_chat_messages_prompt_version_idx")
   @@map("ai_study_chat_messages")
 }
 

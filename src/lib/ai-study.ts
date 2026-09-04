@@ -15,6 +15,7 @@ import {
 } from "@/lib/ai-study-progress-cache";
 import { askQwen, streamQwen, type ChatMessage } from "@/lib/qwen";
 import { getAiStudyPromptConfig, type AiStudyPromptConfig } from "@/lib/ai-study-prompts";
+import { loadAiStudySourceChunksWithContent } from "@/lib/ai-study-source-content";
 import {
   consumeDiamondsByRule,
   InsufficientDiamondBalanceError
@@ -28,10 +29,9 @@ const progressStatusSchema = z.enum(["not_started", "learning", "review_needed",
 const createProjectSchema = z.object({
   title: z.string().trim().min(1).max(80),
   description: z.string().trim().max(300).optional().nullable(),
-  sourceType: sourceTypeSchema.default("text"),
+  sourceType: z.literal("pdf").default("pdf"),
   learningGoal: learningGoalSchema.default("review"),
-  courseId: z.string().trim().min(1).optional().nullable(),
-  textContent: z.string().trim().min(1).max(200_000).optional().nullable()
+  courseId: z.string().trim().min(1).optional().nullable()
 });
 
 const listProjectsSchema = z.object({
@@ -56,8 +56,6 @@ const aiStudyBuddyChatSchema = z.object({
 });
 const aiStudyChatMessageRoleSchema = z.enum(["assistant", "user"]);
 
-const MAX_AI_STUDY_RETRY_COUNT = 3;
-
 type UploadedSourceInput = {
   fileName: string;
   mimeType: string;
@@ -66,7 +64,7 @@ type UploadedSourceInput = {
   startParsing?: boolean;
 };
 
-type UploadableSourceType = "pdf" | "document";
+type UploadableSourceType = "pdf";
 
 export class AiStudyError extends Error {
   constructor(message: string, readonly status = 400, readonly code = "AI_STUDY_ERROR") {
@@ -127,36 +125,7 @@ export async function listAiStudyProjects(ownerId: string, input: unknown = {}) 
       }
     }
   });
-  const projectsWithProgress = await attachAiStudyGenerationProgress(projects, { loadTasksOnMiss: true });
-  const failedProjectIds = projectsWithProgress.filter((project) => project.status === "failed").map((project) => project.id);
-  if (failedProjectIds.length === 0) {
-    return projectsWithProgress.map((project) => ({ ...project, latestFailedRetryCount: 0 }));
-  }
-
-  const latestFailedTaskMap = new Map<string, number>();
-  const failedTasks = await prisma.aiStudyGenerationTask.findMany({
-    where: {
-      projectId: { in: failedProjectIds },
-      status: "failed",
-      type: { in: ["parse_source", "generate_outline", "generate_cards"] }
-    },
-    orderBy: [{ projectId: "asc" }, { createdAt: "desc" }],
-    select: {
-      projectId: true,
-      retryCount: true
-    }
-  });
-
-  for (const task of failedTasks) {
-    if (!latestFailedTaskMap.has(task.projectId)) {
-      latestFailedTaskMap.set(task.projectId, task.retryCount);
-    }
-  }
-
-  return projectsWithProgress.map((project) => ({
-    ...project,
-    latestFailedRetryCount: latestFailedTaskMap.get(project.id) ?? 0
-  }));
+  return attachAiStudyGenerationProgress(projects, { loadTasksOnMiss: true });
 }
 
 export async function listPublicAiStudyProjects(input: { take?: number } = {}) {
@@ -213,86 +182,17 @@ export async function createAiStudyProject(ownerId: string, input: unknown) {
   await assertProjectCreateLimit(ownerId);
   await assertCourseExists(parsed.courseId || null);
 
-  const textContent = parsed.textContent?.trim() || "";
-  const sourceType = parsed.sourceType ?? "text";
-  const learningGoal = parsed.learningGoal ?? "review";
-  const status = textContent ? "processing" : "draft";
-  let taskToQueue: AiStudyGenerationTask | null = null;
-
-  const project = await prisma.$transaction(async (tx) => {
-    const project = await tx.aiStudyProject.create({
-      data: {
-        ownerId,
-        title: parsed.title,
-        description: parsed.description || null,
-        sourceType: textContent ? "text" : sourceType,
-        learningGoal,
-        courseId: parsed.courseId || null,
-        status
-      }
-    });
-
-    if (!textContent) {
-      return project;
+  return prisma.aiStudyProject.create({
+    data: {
+      ownerId,
+      title: parsed.title,
+      description: parsed.description || null,
+      sourceType: "pdf",
+      learningGoal: parsed.learningGoal ?? "review",
+      courseId: parsed.courseId || null,
+      status: "draft"
     }
-
-    const source = await tx.aiStudySource.create({
-      data: {
-        projectId: project.id,
-        sourceType: "text",
-        fileName: null,
-        mimeType: "text/plain",
-        fileSizeBytes: Buffer.byteLength(textContent, "utf8"),
-        textContent,
-        status: "parsed"
-      }
-    });
-
-    const chunks = buildAiStudyTextChunks(textContent).map((content, chunkIndex) => ({
-      projectId: project.id,
-      sourceId: source.id,
-      chunkIndex,
-      content
-    }));
-
-    if (chunks.length > 0) {
-      await tx.aiStudySourceChunk.createMany({ data: chunks });
-    }
-
-    await consumeDiamondsByRule(tx, {
-      userId: ownerId,
-      ruleKey: "ai_study_project_create",
-      dedupeKey: `ai_study_project_create:${project.id}`,
-      note: "学习搭子：创建项目",
-      metadata: {
-        projectId: project.id,
-        sourceId: source.id,
-        sourceType: "text"
-      }
-    });
-
-    taskToQueue = await tx.aiStudyGenerationTask.create({
-      data: {
-        projectId: project.id,
-        sourceId: source.id,
-        type: "generate_outline",
-        stage: "waiting_for_ai_generation",
-        inputSummary: {
-          sourceType: "text",
-          chunkCount: chunks.length,
-          textLength: textContent.length
-        }
-      }
-    });
-
-    return project;
-  }).catch(rethrowAiStudyDiamondError);
-
-  await enqueueAiStudyTask(taskToQueue);
-  if (taskToQueue) {
-    await writeAiStudyTaskProgressCache(taskToQueue);
-  }
-  return project;
+  });
 }
 
 export async function getAiStudyProject(ownerId: string, projectId: string) {
@@ -351,13 +251,16 @@ export async function getAiStudyProject(ownerId: string, projectId: string) {
 }
 
 export async function deleteAiStudyProject(ownerId: string, projectId: string) {
-  const result = await prisma.aiStudyProject.deleteMany({
+  const result = await prisma.aiStudyProject.updateMany({
     where: {
       id: projectId,
-      ownerId
+      ownerId,
+      deletedAt: null
+    },
+    data: {
+      deletedAt: new Date()
     }
   });
-
   if (result.count === 0) {
     throw new AiStudyError("学习项目不存在。", 404, "AI_STUDY_PROJECT_NOT_FOUND");
   }
@@ -398,8 +301,9 @@ export async function uploadAiStudySource(ownerId: string, projectId: string, in
   }
   const sourceFile = getSupportedUploadSource(input.fileName, input.mimeType);
   if (!sourceFile) {
-    throw new AiStudyError("当前阶段仅支持上传 PDF、Word（.doc/.docx）文件。", 400, "AI_STUDY_UNSUPPORTED_FILE_TYPE");
+    throw new AiStudyError("学习搭子仅支持上传 PDF 文件。", 400, "AI_STUDY_UNSUPPORTED_FILE_TYPE");
   }
+  const promptConfig = shouldStartParsing ? await getAiStudyPromptConfig() : null;
 
   const sourceId = randomUUID();
   const safeFileName = sanitizeFileName(input.fileName) || sourceFile.defaultFileName;
@@ -421,6 +325,7 @@ export async function uploadAiStudySource(ownerId: string, projectId: string, in
         },
         data: {
           sourceType: mergeUploadedSourceType(project.sourceType, sourceFile.sourceType),
+          aiPromptVersionId: promptConfig?.id,
           status: "processing"
         }
       });
@@ -470,7 +375,8 @@ export async function uploadAiStudySource(ownerId: string, projectId: string, in
               sourceType: sourceFile.sourceType,
               mimeType: sourceFile.mimeType,
               fileSizeBytes: input.size,
-              storagePath: uploaded.storagePath
+              storagePath: uploaded.storagePath,
+              promptVersion: promptConfig?.version
             }
           }
         })
@@ -505,7 +411,7 @@ export async function startAiStudyProjectGeneration(ownerId: string, projectId: 
     include: {
       sources: {
         where: {
-          sourceType: { in: ["pdf", "document"] },
+          sourceType: "pdf",
           status: "uploaded"
         },
         orderBy: { createdAt: "desc" },
@@ -530,7 +436,7 @@ export async function startAiStudyProjectGeneration(ownerId: string, projectId: 
     throw new AiStudyError("项目已经解析完成。", 400, "AI_STUDY_PROJECT_READY");
   }
   if (project.status === "failed") {
-    throw new AiStudyError("项目已失败，请使用重新解析。", 400, "AI_STUDY_PROJECT_FAILED");
+    throw new AiStudyError("项目解析失败，请删除后重新上传。", 400, "AI_STUDY_PROJECT_FAILED");
   }
   if (project.tasks.length > 0) {
     throw new AiStudyError("项目已有待处理任务，请稍后刷新。", 400, "AI_STUDY_TASK_ALREADY_RUNNING");
@@ -540,6 +446,7 @@ export async function startAiStudyProjectGeneration(ownerId: string, projectId: 
   if (!source) {
     throw new AiStudyError("请先上传学习资料。", 400, "AI_STUDY_SOURCE_REQUIRED");
   }
+  const promptConfig = await getAiStudyPromptConfig();
 
   let task: AiStudyGenerationTask;
   try {
@@ -552,6 +459,7 @@ export async function startAiStudyProjectGeneration(ownerId: string, projectId: 
           deletedAt: null
         },
         data: {
+          aiPromptVersionId: promptConfig.id,
           status: "processing"
         }
       });
@@ -583,7 +491,8 @@ export async function startAiStudyProjectGeneration(ownerId: string, projectId: 
             sourceType: source.sourceType,
             mimeType: sourceMimeType,
             fileSizeBytes: source.fileSizeBytes,
-            storagePath: source.storagePath
+            storagePath: source.storagePath,
+            promptVersion: promptConfig.version
           }
         }
       });
@@ -624,73 +533,6 @@ export async function listAiStudyProjectTasks(ownerId: string, projectId: string
 export async function getAiStudyProjectProgress(ownerId: string, projectId: string) {
   await assertOwnedProject(ownerId, projectId);
   return getAiStudyProjectGenerationProgress(projectId);
-}
-
-export async function retryAiStudyProjectGeneration(ownerId: string, projectId: string) {
-  const project = await prisma.aiStudyProject.findFirst({
-    where: {
-      id: projectId,
-      ownerId,
-      deletedAt: null
-    },
-    include: {
-      tasks: {
-        where: {
-          status: "failed",
-          type: { in: ["parse_source", "generate_outline", "generate_cards"] }
-        },
-        orderBy: { createdAt: "desc" },
-        take: 1
-      }
-    }
-  });
-
-  if (!project) {
-    throw new AiStudyError("学习项目不存在。", 404, "AI_STUDY_PROJECT_NOT_FOUND");
-  }
-  if (project.status !== "failed") {
-    throw new AiStudyError("只有生成失败的项目可以重新解析。", 400, "AI_STUDY_PROJECT_NOT_FAILED");
-  }
-
-  const failedTask = project.tasks[0];
-  if (!failedTask) {
-    throw new AiStudyError("没有找到可重试的失败任务。", 400, "AI_STUDY_RETRY_TASK_NOT_FOUND");
-  }
-  if (failedTask.retryCount >= MAX_AI_STUDY_RETRY_COUNT) {
-    throw new AiStudyError("无法解析此文档，请删除。", 400, "AI_STUDY_RETRY_LIMIT_REACHED");
-  }
-
-  const retriedTask = await prisma.$transaction(async (tx) => {
-    if (failedTask.sourceId) {
-      await tx.aiStudySource.updateMany({
-        where: { id: failedTask.sourceId },
-        data: { status: getRetrySourceStatus(failedTask.type) }
-      });
-    }
-
-    const task = await tx.aiStudyGenerationTask.update({
-      where: { id: failedTask.id },
-      data: {
-        status: "pending",
-        stage: getRetryTaskStage(failedTask.type),
-        errorMessage: null,
-        retryCount: { increment: 1 },
-        startedAt: null,
-        finishedAt: null
-      }
-    });
-
-    await tx.aiStudyProject.update({
-      where: { id: project.id },
-      data: { status: "processing" }
-    });
-
-    return task;
-  });
-
-  await enqueueAiStudyTask(retriedTask);
-  await refreshAiStudyProgressCache(project.id);
-  return { task: retriedTask };
 }
 
 export async function listAiStudyProjectNodes(ownerId: string, projectId: string) {
@@ -784,19 +626,16 @@ export async function getAiStudyNodeDetail(ownerId: string, nodeId: string) {
 
   const sourceChunkIds = Array.isArray(node.sourceChunkIds) ? node.sourceChunkIds.filter((value): value is string => typeof value === "string") : [];
   const sourceChunks = sourceChunkIds.length
-    ? await prisma.aiStudySourceChunk.findMany({
-        where: { id: { in: sourceChunkIds } },
-        orderBy: [{ sourceId: "asc" }, { chunkIndex: "asc" }],
-        select: {
-          id: true,
-          sourceId: true,
-          pageNumber: true,
-          chunkIndex: true,
-          content: true,
-          bbox: true,
-          createdAt: true
-        }
-      })
+    ? (await loadAiStudySourceChunksWithContent(node.projectId, { ids: sourceChunkIds }))
+        .map(({ id, sourceId, pageNumber, chunkIndex, content, bbox, createdAt }) => ({
+          id,
+          sourceId,
+          pageNumber,
+          chunkIndex,
+          content,
+          bbox,
+          createdAt
+        }))
     : [];
 
   const { cards, progress, ...nodeDetail } = node;
@@ -873,7 +712,8 @@ export async function askAiStudyBuddy(ownerId: string, projectId: string, input:
 
   return {
     answer: sanitizeAiStudyBuddyAnswer(answer),
-    nodeTitle: context.nodeTitle
+    nodeTitle: context.nodeTitle,
+    promptVersionId: context.promptVersionId
   };
 }
 
@@ -882,9 +722,10 @@ export async function streamAiStudyBuddy(
   projectId: string,
   input: unknown,
   onChunk: (chunk: string) => void | Promise<void>,
-  options: { signal?: AbortSignal } = {}
+  options: { signal?: AbortSignal; onPromptVersionResolved?: (promptVersionId: string) => void } = {}
 ) {
   const context = await prepareAiStudyBuddyChat(ownerId, projectId, input);
+  options.onPromptVersionResolved?.(context.promptVersionId);
   const answer = await streamQwen(context.messages, onChunk, {
     signal: options.signal,
     temperature: 0.35,
@@ -893,7 +734,8 @@ export async function streamAiStudyBuddy(
 
   return {
     answer: sanitizeAiStudyBuddyAnswer(answer),
-    nodeTitle: context.nodeTitle
+    nodeTitle: context.nodeTitle,
+    promptVersionId: context.promptVersionId
   };
 }
 
@@ -924,7 +766,8 @@ export async function createAiStudyChatMessage(
   projectId: string,
   nodeId: string | null | undefined,
   role: AiStudyChatMessageRole,
-  content: string
+  content: string,
+  aiPromptVersionId?: string | null
 ) {
   const normalizedRole = aiStudyChatMessageRoleSchema.parse(role);
   const normalizedNodeId = normalizeAiStudyChatNodeId(nodeId);
@@ -937,8 +780,8 @@ export async function createAiStudyChatMessage(
 
   const id = randomUUID();
   const rows = await prisma.$queryRaw<AiStudyChatMessageRow[]>`
-    INSERT INTO "ai_study_chat_messages" ("id", "user_id", "project_id", "node_id", "role", "content")
-    VALUES (${id}, ${ownerId}, ${projectId}, ${normalizedNodeId}, ${normalizedRole}, ${normalizedContent.slice(0, 20_000)})
+    INSERT INTO "ai_study_chat_messages" ("id", "user_id", "project_id", "node_id", "role", "content", "ai_prompt_version_id")
+    VALUES (${id}, ${ownerId}, ${projectId}, ${normalizedNodeId}, ${normalizedRole}, ${normalizedContent.slice(0, 20_000)}, ${aiPromptVersionId || null})
     RETURNING "id", "role", "content", "created_at"
   `;
 
@@ -1091,7 +934,8 @@ async function prepareAiStudyBuddyChat(ownerId: string, projectId: string, input
       projectNodes,
       sourceChunks
     }, promptConfig),
-    nodeTitle: node?.title || null
+    nodeTitle: node?.title || null,
+    promptVersionId: promptConfig.id
   };
 }
 
@@ -1139,31 +983,13 @@ function buildAiStudyBuddyMessages({
 
 async function listAiStudyBuddySourceChunks(projectId: string, sourceChunkIds: string[]) {
   if (sourceChunkIds.length > 0) {
-    return prisma.aiStudySourceChunk.findMany({
-      where: {
-        id: { in: sourceChunkIds.slice(0, 8) },
-        projectId
-      },
-      orderBy: [{ sourceId: "asc" }, { chunkIndex: "asc" }],
-      take: 8,
-      select: {
-        pageNumber: true,
-        chunkIndex: true,
-        content: true
-      }
+    return loadAiStudySourceChunksWithContent(projectId, {
+      ids: sourceChunkIds.slice(0, 8),
+      take: 8
     });
   }
 
-  return prisma.aiStudySourceChunk.findMany({
-    where: { projectId },
-    orderBy: [{ sourceId: "asc" }, { chunkIndex: "asc" }],
-    take: 4,
-    select: {
-      pageNumber: true,
-      chunkIndex: true,
-      content: true
-    }
-  });
+  return loadAiStudySourceChunksWithContent(projectId, { take: 4 });
 }
 
 function buildAiStudyBuddyOutline(nodes: AiStudyBuddyOutlineNode[]) {
@@ -1495,45 +1321,6 @@ function accessibleProjectRelationWhere(ownerId: string) {
   return accessibleAiStudyProjectWhere(ownerId);
 }
 
-export function buildAiStudyTextChunks(text: string) {
-  const normalized = text.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
-  if (!normalized) {
-    return [];
-  }
-
-  const maxChunkLength = 1200;
-  const paragraphs = normalized.split(/\n{2,}/).map((item) => item.trim()).filter(Boolean);
-  const chunks: string[] = [];
-  let current = "";
-
-  for (const paragraph of paragraphs) {
-    if (paragraph.length > maxChunkLength) {
-      if (current) {
-        chunks.push(current);
-        current = "";
-      }
-      for (let index = 0; index < paragraph.length; index += maxChunkLength) {
-        chunks.push(paragraph.slice(index, index + maxChunkLength));
-      }
-      continue;
-    }
-
-    const next = current ? `${current}\n\n${paragraph}` : paragraph;
-    if (next.length > maxChunkLength) {
-      chunks.push(current);
-      current = paragraph;
-    } else {
-      current = next;
-    }
-  }
-
-  if (current) {
-    chunks.push(current);
-  }
-
-  return chunks;
-}
-
 function getSupportedUploadSource(fileName: string, mimeType: string): { sourceType: UploadableSourceType; mimeType: string; defaultFileName: string } | null {
   const normalizedMimeType = mimeType.toLowerCase();
   const normalizedFileName = fileName.toLowerCase();
@@ -1544,28 +1331,12 @@ function getSupportedUploadSource(fileName: string, mimeType: string): { sourceT
       defaultFileName: "source.pdf"
     };
   }
-  if (
-    normalizedMimeType === "application/msword" ||
-    normalizedMimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-    normalizedFileName.endsWith(".doc") ||
-    normalizedFileName.endsWith(".docx")
-  ) {
-    const isLegacyDoc = normalizedFileName.endsWith(".doc");
-    return {
-      sourceType: "document",
-      mimeType: normalizedMimeType || (isLegacyDoc ? "application/msword" : getDefaultMimeTypeForSourceType("document")),
-      defaultFileName: isLegacyDoc ? "source.doc" : "source.docx"
-    };
-  }
   return null;
 }
 
 function getDefaultMimeTypeForSourceType(sourceType: string) {
   if (sourceType === "pdf") {
     return "application/pdf";
-  }
-  if (sourceType === "document") {
-    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   }
   return "application/octet-stream";
 }
@@ -1586,25 +1357,8 @@ function sanitizeFileName(fileName: string) {
   return safe.slice(0, 120);
 }
 
-function getRetryTaskStage(type: AiStudyGenerationTask["type"]) {
-  if (type === "parse_source") {
-    return "waiting_for_source_parse";
-  }
-  if (type === "generate_outline") {
-    return "waiting_for_ai_generation";
-  }
-  return "waiting_for_card_generation";
-}
-
-function getRetrySourceStatus(type: AiStudyGenerationTask["type"]) {
-  if (type === "parse_source") {
-    return "uploaded";
-  }
-  return "parsed";
-}
-
 function getMaxFileBytes() {
-  return getNumberEnv("AI_STUDY_MAX_FILE_MB", 20) * 1024 * 1024;
+  return getNumberEnv("AI_STUDY_MAX_FILE_MB", 80) * 1024 * 1024;
 }
 
 function getNumberEnv(name: string, defaultValue: number) {
