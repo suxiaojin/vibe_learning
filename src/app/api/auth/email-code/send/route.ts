@@ -5,6 +5,7 @@ import {
   emailVerificationPurposeLogin,
   emailVerificationPurposeRegister,
   generateEmailCode,
+  hasResolvableEmailDomain,
   hashEmailCode,
   isEmailVerificationPurpose,
   isValidEmail,
@@ -56,6 +57,17 @@ export async function POST(request: Request) {
   }
   if (purpose === emailVerificationPurposeLogin && existingUser?.role !== "student") {
     return errorResponse("管理员账号请使用后台登录入口。", 403, "ADMIN_LOGIN_REQUIRED");
+  }
+
+  if (purpose === emailVerificationPurposeRegister) {
+    try {
+      if (!(await hasResolvableEmailDomain(email))) {
+        return errorResponse("邮箱域名不存在或无法接收邮件，请检查后重试。", 400, "INVALID_EMAIL_DOMAIN");
+      }
+    } catch (error) {
+      console.error("Failed to validate email domain", error);
+      return errorResponse("暂时无法验证邮箱地址，请稍后再试。", 503, "EMAIL_DOMAIN_CHECK_FAILED");
+    }
   }
 
   const now = new Date();

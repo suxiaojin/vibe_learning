@@ -4,8 +4,6 @@ import { requireUser } from "@/lib/auth";
 import { getFoundationOptions, getStudentFoundationProfile } from "@/lib/foundation";
 import { getStudentLearningPath, type SyllabusPathGroup } from "@/lib/syllabus-learning";
 
-const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
-
 export default async function CourseCenterPage() {
   const user = await requireUser();
   const [profile, learningPath] = await Promise.all([
@@ -34,7 +32,12 @@ export default async function CourseCenterPage() {
 
   return (
     <StudentPageShell active="course-center" maxWidthClassName="max-w-[1280px]">
-      <CourseCenterForm initialOptions={options} currentProfile={currentProfile} overview={overview} />
+      <CourseCenterForm
+        initialOptions={options}
+        currentProfile={currentProfile}
+        overview={overview}
+        initialDrawerOpen={!learningPath.completed}
+      />
     </StudentPageShell>
   );
 }
@@ -84,74 +87,7 @@ function buildCourseCenterOverview(groups: SyllabusPathGroup[]): CourseCenterOve
     };
   });
 
-  const completedSections = groups
-    .flatMap((group) =>
-      group.courses.flatMap((course) =>
-        course.chapters.flatMap((chapter) =>
-          chapter.sections
-            .filter((section) => section.status === "passed" && section.passedAt)
-            .map((section) => ({
-              id: section.id,
-              title: section.title,
-              courseTitle: group.name,
-              passedAt: section.passedAt as Date
-            }))
-        )
-      )
-    )
-    .sort((left, right) => right.passedAt.getTime() - left.passedAt.getTime());
-  const week = buildCurrentWeek(completedSections.map((section) => section.passedAt));
-
   return {
-    courses: courseCards,
-    week,
-    recentActivities: completedSections.slice(0, 3).map((section) => ({
-      id: section.id,
-      title: section.title,
-      courseTitle: section.courseTitle,
-      completedAt: section.passedAt.toISOString()
-    }))
+    courses: courseCards
   };
-}
-
-function buildCurrentWeek(completedDates: Date[]) {
-  const now = new Date();
-  const beijingNow = new Date(now.getTime() + BEIJING_OFFSET_MS);
-  const weekday = beijingNow.getUTCDay() || 7;
-  const monday = new Date(
-    Date.UTC(beijingNow.getUTCFullYear(), beijingNow.getUTCMonth(), beijingNow.getUTCDate() - weekday + 1) - BEIJING_OFFSET_MS
-  );
-  const countsByDay = new Map<string, number>();
-
-  for (const date of completedDates) {
-    const key = beijingDateKey(date);
-    countsByDay.set(key, (countsByDay.get(key) || 0) + 1);
-  }
-
-  const labels = ["一", "二", "三", "四", "五", "六", "日"];
-  const days = labels.map((label, index) => {
-    const date = new Date(monday.getTime() + index * 24 * 60 * 60 * 1000);
-    const key = beijingDateKey(date);
-
-    return {
-      key,
-      label,
-      count: countsByDay.get(key) || 0,
-      isToday: key === beijingDateKey(now)
-    };
-  });
-
-  return {
-    days,
-    completedCount: days.reduce((total, day) => total + day.count, 0),
-    activeDays: days.filter((day) => day.count > 0).length
-  };
-}
-
-function beijingDateKey(date: Date) {
-  const shifted = new Date(date.getTime() + BEIJING_OFFSET_MS);
-  const year = shifted.getUTCFullYear();
-  const month = String(shifted.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(shifted.getUTCDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }

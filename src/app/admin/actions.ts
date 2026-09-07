@@ -9,6 +9,7 @@ import { redirect } from "next/navigation";
 import { ContentStatus, Difficulty, QuestionType, RegionStatus, ShareCopyContext, SyllabusRequirement } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import { requireAdmin } from "@/lib/auth";
+import { deleteStudentAccountByAdmin, StudentDeletionError } from "@/lib/admin-student-deletion";
 import { getDiamondRuleDefinition, maxDiamondRuleAmount } from "@/lib/diamond-rules";
 import { prisma } from "@/lib/prisma";
 import { buildQuestionBankKnowledgeCopyMapping } from "@/lib/question-bank-copy";
@@ -815,6 +816,34 @@ export async function resetStudentPassword(formData: FormData) {
   revalidatePath("/admin/students");
   revalidatePath(`/admin/students/${id}`);
   redirect(appendAdminStudentsMessage(returnTo, "notice", "学生密码已重置"));
+}
+
+export async function deleteStudentAccount(formData: FormData) {
+  await requireAdmin();
+  const id = String(formData.get("id") || "");
+  const returnTo = getAdminStudentsReturnTo(formData);
+
+  if (!id) {
+    redirect(appendAdminStudentsMessage(returnTo, "error", "缺少学生账号信息"));
+  }
+
+  let result: Awaited<ReturnType<typeof deleteStudentAccountByAdmin>>;
+  try {
+    result = await deleteStudentAccountByAdmin(id);
+  } catch (error) {
+    if (error instanceof StudentDeletionError) {
+      redirect(appendAdminStudentsMessage(returnTo, "error", error.message));
+    }
+    console.error("Failed to delete student", error);
+    redirect(appendAdminStudentsMessage(returnTo, "error", "删除学生失败，请稍后重试"));
+  }
+
+  revalidatePath("/admin/students");
+  const cleanupFailureCount = result.storageCleanupFailureCount + result.cacheCleanupFailureCount;
+  const notice = cleanupFailureCount > 0
+    ? `学生 ${result.username} 已删除，但部分外部资源清理失败，请检查服务日志`
+    : `学生 ${result.username} 已删除`;
+  redirect(appendAdminStudentsMessage(returnTo, "notice", notice));
 }
 
 export async function addStudentDiamonds(formData: FormData) {

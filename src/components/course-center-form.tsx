@@ -78,22 +78,6 @@ export type CourseCenterOverview = {
       href: string;
     }>;
   }>;
-  week: {
-    days: Array<{
-      key: string;
-      label: string;
-      count: number;
-      isToday: boolean;
-    }>;
-    completedCount: number;
-    activeDays: number;
-  };
-  recentActivities: Array<{
-    id: string;
-    title: string;
-    courseTitle: string;
-    completedAt: string;
-  }>;
 };
 
 const text = {
@@ -118,11 +102,13 @@ const text = {
 export function CourseCenterForm({
   initialOptions,
   currentProfile,
-  overview
+  overview,
+  initialDrawerOpen
 }: {
   initialOptions: FoundationOptions;
   currentProfile: CurrentProfile;
   overview: CourseCenterOverview;
+  initialDrawerOpen: boolean;
 }) {
   const router = useRouter();
   const initialRegionId = currentProfile?.regionId || initialOptions.selectedRegionId || initialOptions.regions[0]?.id || "";
@@ -137,7 +123,7 @@ export function CourseCenterForm({
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [savedProfile, setSavedProfile] = useState(currentProfile);
-  const [drawerOpen, setDrawerOpen] = useState(!currentProfile);
+  const [drawerOpen, setDrawerOpen] = useState(initialDrawerOpen);
 
   const provinces = useMemo(() => uniqueValues(options.regions.map((region) => region.province)), [options.regions]);
   const studySystems = useMemo(

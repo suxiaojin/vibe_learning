@@ -1,4 +1,5 @@
 import { createHmac, randomInt } from "crypto";
+import { resolve4, resolve6, resolveMx } from "dns/promises";
 
 export const emailVerificationPurposeRegister = "register";
 export const emailVerificationPurposeLogin = "login";
@@ -13,12 +14,67 @@ export type EmailMailPurpose = EmailVerificationPurpose | typeof emailPurposePas
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+export type EmailDomainResolvers = {
+  resolveMx: (domain: string) => Promise<Array<{ exchange: string }>>;
+  resolve4: (domain: string) => Promise<string[]>;
+  resolve6: (domain: string) => Promise<string[]>;
+};
+
+const defaultEmailDomainResolvers: EmailDomainResolvers = {
+  resolveMx,
+  resolve4,
+  resolve6
+};
+
 export function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
 }
 
 export function isValidEmail(value: string) {
   return emailPattern.test(value) && value.length <= 254;
+}
+
+function isMissingDnsRecordError(error: unknown) {
+  const code = (error as NodeJS.ErrnoException)?.code;
+  return code === "ENODATA" || code === "ENOTFOUND";
+}
+
+async function resolveEmailDomainRecords<T>(lookup: () => Promise<T[]>) {
+  try {
+    return await lookup();
+  } catch (error) {
+    if (isMissingDnsRecordError(error)) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+export async function hasResolvableEmailDomain(
+  value: string,
+  resolvers: EmailDomainResolvers = defaultEmailDomainResolvers
+) {
+  const email = normalizeEmail(value);
+  if (!isValidEmail(email)) {
+    return false;
+  }
+
+  const domain = email.slice(email.lastIndexOf("@") + 1);
+  const mxRecords = await resolveEmailDomainRecords(() => resolvers.resolveMx(domain));
+  if (mxRecords.some((record) => record.exchange === ".")) {
+    return false;
+  }
+  if (mxRecords.some((record) => Boolean(record.exchange.trim()))) {
+    return true;
+  }
+
+  const ipv4Records = await resolveEmailDomainRecords(() => resolvers.resolve4(domain));
+  if (ipv4Records.length > 0) {
+    return true;
+  }
+
+  const ipv6Records = await resolveEmailDomainRecords(() => resolvers.resolve6(domain));
+  return ipv6Records.length > 0;
 }
 
 export function generateEmailCode() {

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { resetStudentPassword, toggleStudentAccountStatus } from "@/app/admin/actions";
+import { AdminDeleteStudentButton } from "@/components/admin-delete-student-button";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatSeconds } from "@/lib/utils";
@@ -106,7 +107,7 @@ export default async function StudentsPage({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">学生管理</h1>
-          <p className="mt-1 text-sm text-slate-600">查看学生学习概况，处理账号禁用、启用和密码重置。</p>
+          <p className="mt-1 text-sm text-slate-600">查看学生学习概况，处理账号禁用、启用、密码重置和删除。</p>
         </div>
         <div className="flex flex-wrap gap-2 text-sm">
           <span className="badge bg-slate-100 text-slate-600">全部 {totalCount}</span>
@@ -205,7 +206,7 @@ export default async function StudentsPage({
                   <td className="border-b border-slate-100 py-4 pr-4">{student.wrongQuestions.length}</td>
                   <td className="border-b border-slate-100 py-4 pr-4">{formatSeconds(totalSeconds)}</td>
                   <td className="border-b border-slate-100 py-4">
-                    <div className="flex min-w-[300px] flex-wrap gap-2">
+                    <div className="flex min-w-[360px] flex-wrap gap-2">
                       <Link className="secondary-button px-3 py-2 text-xs" href={`/admin/students/${student.id}`}>查看详情</Link>
                       <form action={toggleStudentAccountStatus}>
                         <input type="hidden" name="id" value={student.id} />
@@ -224,6 +225,11 @@ export default async function StudentsPage({
                           <button className="primary-button w-full py-2 text-xs" type="submit">确认重置</button>
                         </form>
                       </details>
+                      <AdminDeleteStudentButton
+                        studentId={student.id}
+                        username={student.username}
+                        returnTo={currentPath}
+                      />
                     </div>
                   </td>
                 </tr>

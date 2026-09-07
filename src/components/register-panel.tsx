@@ -23,6 +23,7 @@ const usernamePattern = /^[A-Za-z0-9]+$/;
 type FieldName = "username" | "password" | "confirmPassword" | "phoneNumber" | "email" | "emailCode";
 type FieldErrors = Partial<Record<FieldName, string>>;
 type UsernameStatus = "idle" | "checking" | "available" | "taken" | "error";
+type EmailValidationStatus = "idle" | "checking" | "valid" | "invalid" | "error";
 
 type RegisterResponse = {
   ok: boolean;
@@ -31,12 +32,41 @@ type RegisterResponse = {
     redirectTo?: string;
     cooldownSeconds?: number;
     available?: boolean;
+    valid?: boolean;
   };
   error?: {
+    code?: string;
     message?: string;
     waitSeconds?: number;
   };
 };
+
+function registerErrorField(code?: string): FieldName | null {
+  switch (code) {
+    case "INVALID_USERNAME":
+    case "INVALID_USERNAME_FORMAT":
+    case "USERNAME_ALREADY_REGISTERED":
+      return "username";
+    case "INVALID_PASSWORD":
+      return "password";
+    case "PASSWORD_MISMATCH":
+      return "confirmPassword";
+    case "INVALID_PHONE_NUMBER":
+      return "phoneNumber";
+    case "INVALID_EMAIL":
+    case "INVALID_EMAIL_DOMAIN":
+    case "EMAIL_ALREADY_REGISTERED":
+      return "email";
+    case "INVALID_EMAIL_CODE_FORMAT":
+    case "EMAIL_CODE_EXPIRED":
+    case "EMAIL_CODE_INVALID":
+    case "EMAIL_CODE_CONSUMED":
+    case "EMAIL_CODE_ATTEMPTS_EXCEEDED":
+      return "emailCode";
+    default:
+      return null;
+  }
+}
 
 function VibeTitle() {
   return (
@@ -133,6 +163,9 @@ export function RegisterPanel({
   const [touched, setTouched] = useState<Partial<Record<FieldName, boolean>>>({});
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
+  const [emailValidationStatus, setEmailValidationStatus] = useState<EmailValidationStatus>("idle");
+  const [validatedEmail, setValidatedEmail] = useState("");
+  const [agreementError, setAgreementError] = useState("");
   const [statusText, setStatusText] = useState(error || "");
   const [statusType, setStatusType] = useState<"error" | "success">(error ? "error" : "success");
   const [cooldown, setCooldown] = useState(0);
@@ -143,6 +176,9 @@ export function RegisterPanel({
     () => ({ username, password, confirmPassword, phoneNumber, email, emailCode }),
     [confirmPassword, email, emailCode, password, phoneNumber, username]
   );
+  const emailFormatError = validateField("email", values);
+  const normalizedEmail = email.trim().toLowerCase();
+  const emailReady = emailValidationStatus === "valid" && validatedEmail === normalizedEmail;
 
   useEffect(() => {
     if (cooldown <= 0) {
@@ -205,6 +241,60 @@ export function RegisterPanel({
       window.clearTimeout(timer);
     };
   }, [touched.username, username]);
+
+  useEffect(() => {
+    if (emailFormatError) {
+      setEmailValidationStatus("idle");
+      setValidatedEmail("");
+      return;
+    }
+
+    const emailValue = normalizedEmail;
+    setEmailValidationStatus("checking");
+    setValidatedEmail("");
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch("/api/auth/email/check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({ email: emailValue })
+        });
+        const payload = (await response.json().catch(() => null)) as RegisterResponse | null;
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        if (!response.ok || !payload?.ok || !payload.data?.valid) {
+          setEmailValidationStatus(payload?.error?.code === "EMAIL_DOMAIN_CHECK_FAILED" ? "error" : "invalid");
+          setTouched((current) => ({ ...current, email: true }));
+          setFieldErrors((current) => ({
+            ...current,
+            email: payload?.error?.message || "邮箱地址验证失败，请检查后重试。"
+          }));
+          setStatusText("");
+          return;
+        }
+
+        setEmailValidationStatus("valid");
+        setValidatedEmail(emailValue);
+        setFieldErrors((current) => ({ ...current, email: "" }));
+      } catch (checkError) {
+        if ((checkError as Error).name !== "AbortError") {
+          setEmailValidationStatus("error");
+          setTouched((current) => ({ ...current, email: true }));
+          setFieldErrors((current) => ({ ...current, email: "邮箱地址验证失败，请检查网络后重试。" }));
+          setStatusText("");
+        }
+      }
+    }, 500);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [emailFormatError, normalizedEmail]);
 
   function showError(message: string) {
     setStatusType("error");
@@ -288,7 +378,10 @@ export function RegisterPanel({
     setTouched((current) => ({ ...current, email: true }));
     setFieldErrors((current) => ({ ...current, email: emailError }));
     if (emailError) {
-      showError(emailError);
+      return;
+    }
+    if (!emailReady) {
+      setFieldErrors((current) => ({ ...current, email: "请等待邮箱地址验证完成。" }));
       return;
     }
 
@@ -302,17 +395,29 @@ export function RegisterPanel({
       const payload = (await response.json().catch(() => null)) as RegisterResponse | null;
       if (!response.ok || !payload?.ok) {
         const waitSeconds = payload?.error?.waitSeconds;
+        const errorMessage = payload?.error?.message || "验证码发送失败，请稍后再试。";
         if (typeof waitSeconds === "number") {
           setCooldown(waitSeconds);
         }
-        showError(payload?.error?.message || "验证码发送失败，请稍后再试。");
+        const errorField = payload?.error?.code === "INVALID_EMAIL"
+          || payload?.error?.code === "INVALID_EMAIL_DOMAIN"
+          || payload?.error?.code === "EMAIL_ALREADY_REGISTERED"
+          || payload?.error?.code === "EMAIL_DOMAIN_CHECK_FAILED"
+          ? "email"
+          : "emailCode";
+        setTouched((current) => ({ ...current, [errorField]: true }));
+        setFieldErrors((current) => ({ ...current, [errorField]: errorMessage }));
+        setStatusText("");
         return;
       }
 
       setCooldown(payload.data?.cooldownSeconds || 60);
+      setFieldErrors((current) => ({ ...current, emailCode: "" }));
       showSuccess(payload.data?.message || "验证码已发送，请查收邮箱。");
     } catch {
-      showError("验证码发送失败，请检查网络后重试。");
+      setTouched((current) => ({ ...current, emailCode: true }));
+      setFieldErrors((current) => ({ ...current, emailCode: "验证码发送失败，请检查网络后重试。" }));
+      setStatusText("");
     } finally {
       setSendingCode(false);
     }
@@ -321,17 +426,19 @@ export function RegisterPanel({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!validateAll()) {
-      showError("请先修正表单里的提示。");
+      setStatusText("");
       return;
     }
     if (!(await checkUsernameNow())) {
-      showError("请先更换可用的账号名。");
+      setStatusText("");
       return;
     }
     if (!agreement) {
-      showError("请先同意平台使用协议和隐私政策。");
+      setAgreementError("请先同意平台使用协议和隐私政策。");
+      setStatusText("");
       return;
     }
+    setAgreementError("");
 
     setSubmitting(true);
     try {
@@ -350,12 +457,23 @@ export function RegisterPanel({
       });
       const payload = (await response.json().catch(() => null)) as RegisterResponse | null;
       if (!response.ok || !payload?.ok) {
-        showError(payload?.error?.message || "注册失败，请稍后再试。");
+        const errorMessage = payload?.error?.message || "注册失败，请稍后再试。";
+        const errorField = registerErrorField(payload?.error?.code);
+        if (errorField) {
+          setTouched((current) => ({ ...current, [errorField]: true }));
+          setFieldErrors((current) => ({ ...current, [errorField]: errorMessage }));
+          setStatusText("");
+        } else if (payload?.error?.code === "AGREEMENT_REQUIRED") {
+          setAgreementError(errorMessage);
+          setStatusText("");
+        } else {
+          showError(errorMessage);
+        }
         return;
       }
 
-      showSuccess(payload.data?.message || "恭喜！注册成功");
-      window.setTimeout(() => router.push(payload.data?.redirectTo || "/login"), 1200);
+      showSuccess(payload.data?.message || "注册成功，正在进入系统。");
+      window.setTimeout(() => router.replace(payload.data?.redirectTo || "/learn"), 1200);
     } catch {
       showError("注册失败，请检查网络后重试。");
     } finally {
@@ -382,13 +500,8 @@ export function RegisterPanel({
         <h1 className="whitespace-nowrap text-center text-[clamp(28px,3vw,38px)] font-black leading-tight text-[#292b52]">
           <VibeTitle />
         </h1>
-        {statusText ? (
-          <p
-            className={cn(
-              "mt-5 px-4 py-3 text-sm font-semibold",
-              statusType === "success" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
-            )}
-          >
+        {statusText && statusType === "success" ? (
+          <p className="mt-5 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
             {statusText}
           </p>
         ) : null}
@@ -507,7 +620,13 @@ export function RegisterPanel({
                 }}
               />
             </FieldShell>
-            <FieldMessage>{fieldErrors.email}</FieldMessage>
+            <FieldMessage tone={emailValidationStatus === "checking" ? "muted" : emailReady ? "success" : "error"}>
+              {emailValidationStatus === "checking"
+                ? "正在验证邮箱地址..."
+                : emailReady
+                  ? "邮箱地址可用。"
+                  : fieldErrors.email}
+            </FieldMessage>
           </div>
 
           <div>
@@ -531,11 +650,11 @@ export function RegisterPanel({
               />
               <button
                 className="border-l border-[#cfd8ea] text-sm font-black text-[#6d35ff] transition hover:bg-[#f7f4ff] disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
-                disabled={sendingCode || cooldown > 0}
+                disabled={sendingCode || cooldown > 0 || !emailReady}
                 type="button"
                 onClick={handleSendCode}
               >
-                {cooldown > 0 ? `${cooldown}s` : sendingCode ? "发送中" : "获取验证码"}
+                {cooldown > 0 ? `${cooldown}s` : sendingCode ? "发送中" : emailValidationStatus === "checking" ? "验证中" : "获取验证码"}
               </button>
             </div>
             <FieldMessage>{fieldErrors.emailCode}</FieldMessage>
@@ -549,7 +668,12 @@ export function RegisterPanel({
             required
             type="checkbox"
             checked={agreement}
-            onChange={(event) => setAgreement(event.target.checked)}
+            onChange={(event) => {
+              setAgreement(event.target.checked);
+              if (event.target.checked) {
+                setAgreementError("");
+              }
+            }}
           />
           <span>
             我同意
@@ -562,6 +686,11 @@ export function RegisterPanel({
             </Link>
           </span>
         </label>
+        <FieldMessage>{agreementError}</FieldMessage>
+
+        {statusText && statusType === "error" ? (
+          <p className="mt-2 text-sm font-semibold text-red-600" role="alert">{statusText}</p>
+        ) : null}
 
         <button
           className="mt-5 flex min-h-[54px] w-full items-center justify-center rounded-lg bg-[#6d28f4] text-xl font-black text-white transition hover:bg-[#5920cf] disabled:cursor-not-allowed disabled:bg-slate-400"

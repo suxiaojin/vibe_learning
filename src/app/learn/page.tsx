@@ -1,5 +1,6 @@
 import { LearningPath } from "@/components/learning-path";
 import { StudentPageShell } from "@/components/student-page-shell";
+import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { getStudentLearningPath, type SyllabusPathGroup } from "@/lib/syllabus-learning";
 import { getSystemSettings } from "@/lib/system-settings";
@@ -45,6 +46,10 @@ export default async function LearnPage({
     getSystemSettings()
   ]);
 
+  if (!pathState.completed) {
+    redirect("/course-center");
+  }
+
   const currentGroup = pathState.selectedGroup;
   const currentCourse = selectLearningCourse(currentGroup, params?.chapter);
   const requestedPointId = currentCourse?.chapters.find((chapter) => chapter.id === params?.chapter)?.sections[0]?.id;
@@ -75,11 +80,11 @@ export default async function LearnPage({
         <div className="min-w-0">
           {learningPath && coursePath ? (
             <LearningPath course={coursePath} initialPointId={requestedPointId} path={learningPath} themeKey={settings.learningPathTheme} />
-          ) : pathState.completed ? (
+          ) : (
             <div className="mx-auto max-w-2xl pb-24">
               <div className="panel text-slate-600">{text.empty}</div>
             </div>
-          ) : null}
+          )}
         </div>
       </div>
     </StudentPageShell>

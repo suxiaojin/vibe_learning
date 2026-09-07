@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { Prisma } from "@prisma/client";
+import { createSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   emailCodeMaxAttempts,
@@ -173,7 +174,7 @@ export async function POST(request: Request) {
   const passwordHash = await bcrypt.hash(password, 12);
 
   try {
-    await prisma.$transaction(async (tx) => {
+    const registeredUser = await prisma.$transaction(async (tx) => {
       const consumed = await tx.emailVerificationCode.updateMany({
         where: {
           id: verification.id,
@@ -210,6 +211,11 @@ export async function POST(request: Request) {
               nickname: username
             }
           }
+        },
+        select: {
+          id: true,
+          username: true,
+          role: true
         }
       });
 
@@ -222,13 +228,35 @@ export async function POST(request: Request) {
           username: created.username
         }
       });
+
+      return created;
+    });
+
+    try {
+      await createSession(registeredUser);
+    } catch (sessionError) {
+      console.error("Failed to create session after registration", sessionError);
+      return NextResponse.json({
+        ok: true,
+        data: {
+          message: "注册成功，请重新登录。",
+          redirectTo: "/login"
+        }
+      });
+    }
+
+    await prisma.user.update({
+      where: { id: registeredUser.id },
+      data: { lastLoginAt: new Date() }
+    }).catch((lastLoginError) => {
+      console.error("Failed to update first login time after registration", lastLoginError);
     });
 
     return NextResponse.json({
       ok: true,
       data: {
-        message: "恭喜！注册成功",
-        redirectTo: "/login"
+        message: "注册成功，正在进入系统。",
+        redirectTo: "/learn"
       }
     });
   } catch (error) {
