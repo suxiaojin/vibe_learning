@@ -1,6 +1,7 @@
 "use client";
 
 import { type ChangeEvent, type DragEvent, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, ChevronRight, FileText, Info, X } from "lucide-react";
 import { DiamondInsufficientMessage } from "@/components/diamond-insufficient-message";
@@ -331,8 +332,18 @@ export function StudyMaterialImporter() {
               />
             </div>
 
-            <section className="mt-6">
-              <h3 className="text-[18px] font-black text-[#1d2430]">已上传文件（{selectedFiles.length}）</h3>
+            <section className="mt-2">
+              <p className="text-[12px] font-medium leading-4 text-[#98a2b3]">
+                创建项目会消耗钻石，具体请参考-
+                <Link className="italic no-underline transition hover:text-[#667085]" href="/help?tab=faq">
+                  帮助中心
+                </Link>
+                或
+                <Link className="italic no-underline transition hover:text-[#667085]" href="/me?tab=diamonds">
+                  联系客服
+                </Link>
+              </p>
+              <h3 className="mt-1 text-[18px] font-black text-[#1d2430]">已上传文件（{selectedFiles.length}）</h3>
               <div className="mt-3 min-h-[38px] space-y-2">
                 {selectedFiles.map((file) => (
                   <div key={file.id} className="relative w-[184px] rounded-[10px] bg-[#f3f4f6] px-3 py-2 pr-8">

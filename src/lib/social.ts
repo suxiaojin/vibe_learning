@@ -5,6 +5,15 @@ import { getMedalLevel, getMedalRule } from "@/lib/rewards";
 import { getSystemSettings } from "@/lib/system-settings";
 import { createUserEventNotification } from "@/lib/user-event-notifications";
 
+const socialListProfileSelect = {
+  avatarColor: true,
+  avatarImage: true,
+  bio: true,
+  nickname: true,
+  major: { select: { name: true } },
+  region: { select: { province: true, studySystem: true } }
+} satisfies Prisma.StudentProfileSelect;
+
 export type SocialUserSearchResult = Awaited<ReturnType<typeof searchUsersByNickname>>["items"][number];
 export type SocialRecommendation = Awaited<ReturnType<typeof listRecommendedFollows>>["items"][number];
 export type SocialFollower = Awaited<ReturnType<typeof listFollowers>>["items"][number];
@@ -231,15 +240,14 @@ export async function listFollowers(userId: string) {
         status: "active"
       }
     },
-    include: {
+    select: {
+      id: true,
+      createdAt: true,
       follower: {
-        include: {
-          studentProfile: {
-            include: {
-              region: true,
-              major: true
-            }
-          },
+        select: {
+          id: true,
+          username: true,
+          studentProfile: { select: socialListProfileSelect },
           followers: {
             where: { followerId: userId },
             select: { id: true }
@@ -275,15 +283,14 @@ export async function listFollowing(userId: string) {
         status: "active"
       }
     },
-    include: {
+    select: {
+      id: true,
+      createdAt: true,
       following: {
-        include: {
-          studentProfile: {
-            include: {
-              region: true,
-              major: true
-            }
-          }
+        select: {
+          id: true,
+          username: true,
+          studentProfile: { select: socialListProfileSelect }
         }
       }
     },
@@ -313,15 +320,14 @@ export async function listBlockedUsers(userId: string) {
         role: "student"
       }
     },
-    include: {
+    select: {
+      id: true,
+      createdAt: true,
       blocked: {
-        include: {
-          studentProfile: {
-            include: {
-              region: true,
-              major: true
-            }
-          }
+        select: {
+          id: true,
+          username: true,
+          studentProfile: { select: socialListProfileSelect }
         }
       }
     },
@@ -366,13 +372,10 @@ export async function searchUsersByNickname(viewerId: string, query: string, inp
         }
       }
     },
-    include: {
-      studentProfile: {
-        include: {
-          region: true,
-          major: true
-        }
-      },
+    select: {
+      id: true,
+      username: true,
+      studentProfile: { select: socialListProfileSelect },
       followers: {
         where: { followerId: viewerId },
         select: { id: true }
@@ -410,9 +413,12 @@ export async function listRecommendedFollows(viewerId: string, input?: { limit?:
   const limit = Math.max(1, Math.min(input?.limit || 5, 10));
   const viewer = await prisma.user.findUnique({
     where: { id: viewerId },
-    include: {
+    select: {
       studentProfile: {
-        include: { region: true }
+        select: {
+          majorId: true,
+          region: { select: { province: true, studySystem: true } }
+        }
       }
     }
   });
@@ -444,14 +450,12 @@ export async function listRecommendedFollows(viewerId: string, input?: { limit?:
         }
       }
     },
-    include: {
-      diamondAccount: true,
-      studentProfile: {
-        include: {
-          region: true,
-          major: true
-        }
-      },
+    select: {
+      id: true,
+      username: true,
+      createdAt: true,
+      diamondAccount: { select: { balance: true } },
+      studentProfile: { select: socialListProfileSelect },
       _count: {
         select: {
           followers: true,

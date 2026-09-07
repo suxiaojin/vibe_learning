@@ -114,6 +114,9 @@ export async function AiStudyProjectLearningView({
                 nextNode={nextNode ? { id: nextNode.id, title: nextNode.title } : null}
                 previousNode={previousNode ? { id: previousNode.id, title: previousNode.title } : null}
                 projectId={project.id}
+                selectedNodeCardKeyPoints={stringArray(card?.keyPoints)}
+                selectedNodeCardOverview={card?.overview || ""}
+                selectedNodeDepth={nodeDetail?.depth ?? selectedNode?.depth ?? 0}
                 selectedNodeId={selectedNodeId}
                 selectedNodeSummary={selectedNodeSummary}
                 selectedNodeTitle={selectedNodeTitle}

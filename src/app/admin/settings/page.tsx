@@ -12,6 +12,7 @@ import {
   updateStudyBuddyHeroEffectSettings,
   updateStudyBuddyHeroImageSettings,
   updateStudyBuddyHeroTitleSettings,
+  updateAdminPassword,
   updateSystemSettings
 } from "@/app/admin/actions";
 import { AdminDiamondRuleSettings } from "@/components/admin-diamond-rule-settings";
@@ -39,6 +40,7 @@ const tabs: Array<{ key: SettingsTab; label: string }> = [
 
 const noticeText: Record<string, string> = {
   saved: "系统设置已保存。",
+  "admin-password-saved": "管理员 admin 登录密码已更新。",
   "diamond-recharge-qr-saved": "钻石充值客服二维码已保存。",
   "profile-homepage-background-saved": "个人主页背景图已保存，并已覆盖当前用户的背景显示。",
   "study-buddy-hero-image-saved": "顶部动画已保存。",
@@ -49,6 +51,13 @@ const noticeText: Record<string, string> = {
 };
 
 const errorText: Record<string, string> = {
+  "admin-password-required": "请完整填写当前密码、新密码和确认密码。",
+  "admin-password-too-short": "管理员新密码至少需要 8 位。",
+  "admin-password-too-long": "管理员新密码不能超过 72 个 UTF-8 字节。",
+  "admin-password-mismatch": "两次输入的新密码不一致。",
+  "admin-current-password-invalid": "当前密码不正确。",
+  "admin-password-unchanged": "新密码不能与当前密码相同。",
+  "admin-account-not-found": "未找到可修改的管理员 admin 账号。",
   "image-too-large": "图片不能超过 5MB。",
   "invalid-image-type": "请上传 PNG、JPG、WEBP 或 GIF 图片。",
   "diamond-recharge-qr-required": "请选择要上传的钻石充值客服二维码。",
@@ -340,6 +349,55 @@ export default async function AdminSettingsPage({
 
       {activeTab === "admin" ? (
         <div className="grid gap-4">
+          <form action={updateAdminPassword} className="border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <h2 className="text-lg font-black text-ink">管理员登录密码</h2>
+                <p className="mt-1 text-sm font-semibold text-slate-500">修改后台管理员账号 admin 的登录密码，保存后下一次登录使用新密码。</p>
+              </div>
+              <button className="primary-button rounded-none" type="submit">
+                <Save size={16} />
+                修改密码
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-5 lg:grid-cols-3">
+              <FieldBlock label="当前密码">
+                <input
+                  aria-label="当前密码"
+                  autoComplete="current-password"
+                  className="input rounded-none"
+                  name="currentPassword"
+                  required
+                  type="password"
+                />
+              </FieldBlock>
+              <FieldBlock label="新密码" description="至少 8 位，不能与当前密码相同。">
+                <input
+                  aria-label="新密码"
+                  autoComplete="new-password"
+                  className="input rounded-none"
+                  maxLength={72}
+                  minLength={8}
+                  name="newPassword"
+                  required
+                  type="password"
+                />
+              </FieldBlock>
+              <FieldBlock label="确认新密码">
+                <input
+                  aria-label="确认新密码"
+                  autoComplete="new-password"
+                  className="input rounded-none"
+                  maxLength={72}
+                  minLength={8}
+                  name="confirmPassword"
+                  required
+                  type="password"
+                />
+              </FieldBlock>
+            </div>
+          </form>
           <AdminLearningPathThemeSettings currentThemeKey={settings.learningPathTheme} />
           <AdminRechargeQrUploadForm currentQrCodeUrl={settings.diamondRechargeQrCodeUrl} />
           <AdminProfileBackgroundUploadForm currentBackgroundImageUrl={settings.profileHomepageBackgroundImageUrl} />

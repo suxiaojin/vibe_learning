@@ -55,7 +55,11 @@ async function getStudentSidebarAccount() {
     ensureDiamondAccount(user.id),
     prisma.user.findUnique({
       where: { id: user.id },
-      include: { studentProfile: true }
+      select: {
+        studentProfile: {
+          select: { avatarImage: true, nickname: true }
+        }
+      }
     }),
     getNotificationBellData(user.id)
   ]);

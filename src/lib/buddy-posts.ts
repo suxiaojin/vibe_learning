@@ -7,6 +7,16 @@ import { getMedalLevel, getMedalRule } from "@/lib/rewards";
 import { getBlockedUserIds, getFollowingIds } from "@/lib/social";
 import { createUserEventNotification } from "@/lib/user-event-notifications";
 
+const postStudentProfileSelect = {
+  avatarColor: true,
+  avatarImage: true,
+  bio: true,
+  gender: true,
+  nickname: true,
+  major: { select: { name: true } },
+  region: { select: { province: true, studySystem: true } }
+} satisfies Prisma.StudentProfileSelect;
+
 export type BuddyFeedScope = "discover" | "following";
 export type BuddyFeedSort = "latest" | "hot";
 export type ProfilePostTab = "posts" | "likes" | "reposts";
@@ -26,10 +36,7 @@ type BuddyPostWithDetails = Prisma.BuddyPostGetPayload<{
     author: {
       include: {
         studentProfile: {
-          include: {
-            major: true;
-            region: true;
-          };
+          select: typeof postStudentProfileSelect;
         };
         _count: { select: { attempts: true } };
       };
@@ -39,10 +46,7 @@ type BuddyPostWithDetails = Prisma.BuddyPostGetPayload<{
         author: {
           include: {
             studentProfile: {
-              include: {
-                major: true;
-                region: true;
-              };
+              select: typeof postStudentProfileSelect;
             };
             _count: { select: { attempts: true } };
           };
@@ -566,7 +570,7 @@ async function listProfileInteractionPosts(viewerId: string, targetId: string, l
 }
 
 export async function likeBuddyPost(userId: string, postId: string) {
-  const post = await assertPostInteractable(userId, postId);
+  const post = await assertPostInteractable(postId);
   return prisma.$transaction(async (tx) => {
     const existing = await tx.buddyPostLike.findUnique({
       where: {
@@ -809,14 +813,16 @@ function getFeedWhere(
   return where;
 }
 
-async function assertPostInteractable(userId: string, postId: string) {
+async function assertPostInteractable(postId: string) {
   const post = await prisma.buddyPost.findUnique({
     where: { id: postId },
-    include: {
-      author: { include: { studentProfile: true } },
-      originalPost: { include: { author: { include: { studentProfile: true } } } },
-      likes: { where: { userId }, select: { active: true } },
-      _count: { select: { likes: { where: { active: true } } } }
+    select: {
+      id: true,
+      authorId: true,
+      deletedAt: true,
+      type: true,
+      author: { select: { role: true, status: true } },
+      originalPost: { select: { deletedAt: true } }
     }
   });
   if (!post || post.deletedAt || post.author.role !== "student" || post.author.status !== "active") {
@@ -861,10 +867,7 @@ function postDetailsInclude(userId: string) {
     author: {
       include: {
         studentProfile: {
-          include: {
-            major: true,
-            region: true
-          }
+          select: postStudentProfileSelect
         },
         _count: { select: { attempts: true } }
       }
@@ -874,10 +877,7 @@ function postDetailsInclude(userId: string) {
         author: {
           include: {
             studentProfile: {
-              include: {
-                major: true,
-                region: true
-              }
+              select: postStudentProfileSelect
             },
             _count: { select: { attempts: true } }
           }

@@ -141,6 +141,31 @@ async function grantDiamonds(
   };
 }
 
+export async function assertSufficientDiamondBalanceForRule(
+  client: RewardTransactionClient,
+  input: {
+    userId: string;
+    ruleKey: DiamondRuleKey;
+  }
+) {
+  const rule = await getDiamondRuleConfig(client, input.ruleKey);
+  if (rule.direction !== "consume") {
+    throw new Error(`Diamond rule is not a consume rule: ${rule.key}`);
+  }
+  if (!rule.enabled) {
+    return;
+  }
+
+  const account = await client.diamondAccount.findUnique({
+    where: { userId: input.userId },
+    select: { balance: true }
+  });
+  const currentBalance = account?.balance ?? 0;
+  if (currentBalance < rule.amount) {
+    throw new InsufficientDiamondBalanceError(rule.amount, currentBalance);
+  }
+}
+
 export async function consumeDiamondsByRule(
   tx: RewardTransactionClient,
   input: {

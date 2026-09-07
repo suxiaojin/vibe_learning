@@ -1,11 +1,9 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { AvatarStorageError, deleteStoredAvatarByUrl, storeUploadedAvatar } from "@/lib/avatar-storage";
 import { isDefaultAvatarSrc } from "@/lib/default-avatars";
 import { prisma } from "@/lib/prisma";
-
-const avatarMaxBytes = 800 * 1024;
-const allowedAvatarTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
@@ -18,52 +16,64 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "头像提交数据无效。" }, { status: 400 });
   }
 
-  const uploadedAvatar = await readUploadedAvatar(formData.get("avatarImage"));
-  if ("error" in uploadedAvatar) {
-    return NextResponse.json({ error: uploadedAvatar.error }, { status: uploadedAvatar.status });
+  const previousProfile = await prisma.studentProfile.findUnique({
+    where: { userId: user.id },
+    select: { avatarImage: true }
+  });
+
+  const uploadedFile = formData.get("avatarImage");
+  let storedAvatar: Awaited<ReturnType<typeof storeUploadedAvatar>> | null = null;
+  if (uploadedFile instanceof File && uploadedFile.size > 0) {
+    try {
+      storedAvatar = await storeUploadedAvatar(user.id, uploadedFile);
+    } catch (error) {
+      if (error instanceof AvatarStorageError) {
+        const message = error.code === "too_large"
+          ? "上传失败，大小不超过 800KB"
+          : "上传失败，文件内容必须是真实的 JPG、PNG 或 WebP 图片";
+        return NextResponse.json({ error: message }, { status: 400 });
+      }
+      throw error;
+    }
   }
 
-  const presetAvatar = uploadedAvatar.avatarImage ? { avatarImage: null } : readPresetAvatar(formData.get("presetAvatarImage"));
+  const presetAvatar = storedAvatar ? { avatarImage: null } : readPresetAvatar(formData.get("presetAvatarImage"));
   if ("error" in presetAvatar) {
     return NextResponse.json({ error: presetAvatar.error }, { status: presetAvatar.status });
   }
 
-  const avatarImage = uploadedAvatar.avatarImage || presetAvatar.avatarImage;
+  const avatarImage = storedAvatar?.url || presetAvatar.avatarImage;
   if (!avatarImage) {
     return NextResponse.json({ error: "请选择要保存的头像。" }, { status: 400 });
   }
 
-  await prisma.studentProfile.upsert({
-    where: { userId: user.id },
-    update: { avatarImage },
-    create: {
-      userId: user.id,
-      nickname: user.username,
-      avatarImage
+  try {
+    await prisma.studentProfile.upsert({
+      where: { userId: user.id },
+      update: { avatarImage },
+      create: {
+        userId: user.id,
+        nickname: user.username,
+        avatarImage
+      }
+    });
+  } catch (error) {
+    if (storedAvatar) {
+      await deleteStoredAvatarByUrl(storedAvatar.url).catch(() => undefined);
     }
-  });
+    throw error;
+  }
+
+  if (previousProfile?.avatarImage && previousProfile.avatarImage !== avatarImage) {
+    await deleteStoredAvatarByUrl(previousProfile.avatarImage).catch((error) => {
+      console.error("Failed to delete replaced avatar object", error);
+    });
+  }
 
   revalidatePath("/me");
   revalidatePath(`/students/${user.id}`);
 
   return NextResponse.json({ avatarImage });
-}
-
-async function readUploadedAvatar(value: FormDataEntryValue | null): Promise<{ avatarImage: string | null } | { error: string; status: number }> {
-  if (!(value instanceof File) || value.size === 0) {
-    return { avatarImage: null };
-  }
-
-  if (value.size > avatarMaxBytes) {
-    return { error: "上传失败，大小不超过 800KB", status: 400 };
-  }
-
-  if (!allowedAvatarTypes.has(value.type)) {
-    return { error: "上传失败，仅支持 JPG、PNG、WebP", status: 400 };
-  }
-
-  const bytes = Buffer.from(await value.arrayBuffer());
-  return { avatarImage: `data:${value.type};base64,${bytes.toString("base64")}` };
 }
 
 function readPresetAvatar(value: FormDataEntryValue | null): { avatarImage: string | null } | { error: string; status: number } {

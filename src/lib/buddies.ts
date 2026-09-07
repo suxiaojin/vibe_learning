@@ -5,6 +5,19 @@ import { createUserEventNotification } from "@/lib/user-event-notifications";
 
 const buddyRequestValidDays = 30;
 const withdrawnReapplyCooldownDays = 30;
+const basicStudentProfileSelect = {
+  avatarColor: true,
+  avatarImage: true,
+  gender: true,
+  nickname: true
+} satisfies Prisma.StudentProfileSelect;
+const searchStudentProfileSelect = {
+  ...basicStudentProfileSelect,
+  school: true,
+  region: { select: { province: true, studySystem: true } },
+  major: { select: { name: true } },
+  schoolOption: { select: { name: true } }
+} satisfies Prisma.StudentProfileSelect;
 
 type BuddyClient = Prisma.TransactionClient;
 
@@ -66,9 +79,25 @@ export async function getBuddyList(userId: string) {
       status: "active",
       OR: [{ userAId: userId }, { userBId: userId }]
     },
-    include: {
-      userA: { include: { studentProfile: true } },
-      userB: { include: { studentProfile: true } }
+    select: {
+      id: true,
+      activeSince: true,
+      userAId: true,
+      userBId: true,
+      userA: {
+        select: {
+          id: true,
+          username: true,
+          studentProfile: { select: basicStudentProfileSelect }
+        }
+      },
+      userB: {
+        select: {
+          id: true,
+          username: true,
+          studentProfile: { select: basicStudentProfileSelect }
+        }
+      }
     },
     orderBy: { activeSince: "desc" }
   });
@@ -177,13 +206,12 @@ export async function searchBuddyCandidates(userId: string, filters: BuddySearch
         }
       ]
     },
-    include: {
+    select: {
+      id: true,
+      username: true,
+      createdAt: true,
       studentProfile: {
-        include: {
-          region: { select: { province: true, studySystem: true } },
-          major: { select: { name: true } },
-          schoolOption: { select: { name: true } }
-        }
+        select: searchStudentProfileSelect
       }
     },
     orderBy: { createdAt: "desc" },
@@ -639,7 +667,7 @@ async function assertRequestStillPending(tx: BuddyClient, requestId: string) {
 async function assertActiveStudent(tx: BuddyClient, userId: string) {
   const user = await tx.user.findFirst({
     where: { id: userId, role: "student", status: "active" },
-    include: { studentProfile: true }
+    select: { id: true }
   });
   if (!user) {
     throw new BuddyError("BUDDY_TARGET_UNAVAILABLE", "用户不存在或暂不可添加。", 404);
@@ -721,13 +749,12 @@ function toBasicUser(user: {
 }
 
 function toSearchUser(user: Prisma.UserGetPayload<{
-  include: {
+  select: {
+    id: true;
+    username: true;
+    createdAt: true;
     studentProfile: {
-      include: {
-        region: { select: { province: true; studySystem: true } };
-        major: { select: { name: true } };
-        schoolOption: { select: { name: true } };
-      };
+      select: typeof searchStudentProfileSelect;
     };
   };
 }>) {

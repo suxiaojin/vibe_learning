@@ -17,6 +17,7 @@ import { SocialPostActions } from "@/components/social-post-actions";
 import { StudentPageShell } from "@/components/student-page-shell";
 import { SurfaceCard, TabNav } from "@/components/student-ui";
 import { requireUser } from "@/lib/auth";
+import { AvatarStorageError, deleteStoredAvatarByUrl, storeUploadedAvatar } from "@/lib/avatar-storage";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import { deleteBuddyPost, likeBuddyPost, listProfileBuddyPosts, repostBuddyPost, unlikeBuddyPost, unrepostBuddyPost } from "@/lib/buddy-posts";
 import { isDefaultAvatarSrc } from "@/lib/default-avatars";
@@ -37,7 +38,6 @@ const avatarColors = [
   { key: "violet", className: "bg-violet-500" }
 ];
 
-const avatarMaxBytes = 800 * 1024;
 const coverMaxBytes = 2 * 1024 * 1024;
 const diamondPageSize = 10;
 const allowedAvatarTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -1141,20 +1141,20 @@ async function updateHomeProfile(formData: FormData) {
   const nickname = nicknameInput.slice(0, 30) || user.username;
   const bioInput = String(formData.get("bio") || "").trim();
   const bio = bioInput ? bioInput.slice(0, 300) : null;
-  const uploadedAvatarImage = await readUploadedImage(formData.get("avatarImage"), {
-    maxBytes: avatarMaxBytes,
-    sizeRedirect: "/me?tab=homepage&profile=avatar_size",
-    typeRedirect: "/me?tab=homepage&profile=avatar_type"
+  const previousProfile = await prisma.studentProfile.findUnique({
+    where: { userId: user.id },
+    select: { avatarImage: true }
   });
-  const presetAvatarImage = uploadedAvatarImage
-    ? null
-    : readPresetAvatarImage(formData.get("presetAvatarImage"), "/me?tab=homepage&profile=avatar_type");
-  const avatarImage = uploadedAvatarImage || presetAvatarImage;
   const coverImage = await readUploadedImage(formData.get("coverImage"), {
     maxBytes: coverMaxBytes,
     sizeRedirect: "/me?tab=homepage&profile=cover_size",
     typeRedirect: "/me?tab=homepage&profile=cover_type"
   });
+  const storedAvatar = await storeUploadedProfileAvatar(formData.get("avatarImage"), user.id);
+  const presetAvatarImage = storedAvatar
+    ? null
+    : readPresetAvatarImage(formData.get("presetAvatarImage"), "/me?tab=homepage&profile=avatar_type");
+  const avatarImage = storedAvatar?.url || presetAvatarImage;
   const imageData: { avatarImage?: string; coverImage?: string; coverImageUpdatedAt?: Date } = {};
   if (avatarImage) {
     imageData.avatarImage = avatarImage;
@@ -1164,20 +1164,33 @@ async function updateHomeProfile(formData: FormData) {
     imageData.coverImageUpdatedAt = new Date();
   }
 
-  await prisma.studentProfile.upsert({
-    where: { userId: user.id },
-    update: {
-      nickname,
-      bio,
-      ...imageData
-    },
-    create: {
-      userId: user.id,
-      nickname,
-      bio,
-      ...imageData
+  try {
+    await prisma.studentProfile.upsert({
+      where: { userId: user.id },
+      update: {
+        nickname,
+        bio,
+        ...imageData
+      },
+      create: {
+        userId: user.id,
+        nickname,
+        bio,
+        ...imageData
+      }
+    });
+  } catch (error) {
+    if (storedAvatar) {
+      await deleteStoredAvatarByUrl(storedAvatar.url).catch(() => undefined);
     }
-  });
+    throw error;
+  }
+
+  if (avatarImage && previousProfile?.avatarImage && previousProfile.avatarImage !== avatarImage) {
+    await deleteStoredAvatarByUrl(previousProfile.avatarImage).catch((error) => {
+      console.error("Failed to delete replaced avatar object", error);
+    });
+  }
 
   revalidatePath("/me");
   revalidatePath(`/students/${user.id}`);
@@ -1314,6 +1327,20 @@ function readPresetAvatarImage(value: FormDataEntryValue | null, typeRedirect: s
   }
 
   return avatarImage;
+}
+
+async function storeUploadedProfileAvatar(value: FormDataEntryValue | null, userId: string) {
+  if (!(value instanceof File) || value.size === 0) {
+    return null;
+  }
+  try {
+    return await storeUploadedAvatar(userId, value);
+  } catch (error) {
+    if (error instanceof AvatarStorageError) {
+      redirect(error.code === "too_large" ? "/me?tab=homepage&profile=avatar_size" : "/me?tab=homepage&profile=avatar_type");
+    }
+    throw error;
+  }
 }
 
 async function readUploadedImage(

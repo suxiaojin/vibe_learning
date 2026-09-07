@@ -273,6 +273,7 @@ export function KnowledgeMapView({
     if (event.button !== 0 || (event.target as HTMLElement).closest("[data-map-control]")) {
       return;
     }
+    event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     dragMovedRef.current = false;
     suppressNodeClickRef.current = false;
@@ -475,7 +476,7 @@ export function KnowledgeMapView({
         <div
           ref={viewportRef}
           className={cn(
-            "relative overflow-hidden bg-white",
+            "relative select-none overflow-hidden bg-white",
             isFullscreen ? "h-screen" : "h-[calc(100dvh-168px)]",
             isDragging ? "cursor-grabbing" : "cursor-grab"
           )}
@@ -647,7 +648,7 @@ function MapNodePill({
       {editable ? (
         <input
           autoFocus
-          className="min-w-0 flex-1 rounded-[8px] border border-[#16a329]/35 bg-white px-2 py-1 text-center text-[14px] font-black leading-5 text-[#101828] outline-none ring-4 ring-[#16a329]/10"
+          className="min-w-0 flex-1 select-text rounded-[8px] border border-[#16a329]/35 bg-white px-2 py-1 text-center text-[14px] font-black leading-5 text-[#101828] outline-none ring-4 ring-[#16a329]/10"
           data-map-control
           disabled={saving}
           onBlur={onCommitEditing}

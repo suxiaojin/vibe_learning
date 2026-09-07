@@ -17,6 +17,7 @@ import { askQwen, streamQwen, type ChatMessage } from "@/lib/qwen";
 import { getAiStudyPromptConfig, type AiStudyPromptConfig } from "@/lib/ai-study-prompts";
 import { loadAiStudySourceChunksWithContent } from "@/lib/ai-study-source-content";
 import {
+  assertSufficientDiamondBalanceForRule,
   consumeDiamondsByRule,
   InsufficientDiamondBalanceError
 } from "@/lib/rewards";
@@ -89,6 +90,17 @@ function rethrowAiStudyDiamondError(error: unknown): never {
     );
   }
   throw error;
+}
+
+async function assertAiStudyProjectImportAllowed(ownerId: string) {
+  try {
+    await assertSufficientDiamondBalanceForRule(prisma, {
+      userId: ownerId,
+      ruleKey: "ai_study_project_create"
+    });
+  } catch (error) {
+    rethrowAiStudyDiamondError(error);
+  }
 }
 
 export async function listAiStudyProjects(ownerId: string, input: unknown = {}) {
@@ -181,6 +193,7 @@ export async function createAiStudyProject(ownerId: string, input: unknown) {
   const parsed = parseAiStudyInput(createProjectSchema, input, "学习项目参数不合法。");
   await assertProjectCreateLimit(ownerId);
   await assertCourseExists(parsed.courseId || null);
+  await assertAiStudyProjectImportAllowed(ownerId);
 
   return prisma.aiStudyProject.create({
     data: {
@@ -303,6 +316,7 @@ export async function uploadAiStudySource(ownerId: string, projectId: string, in
   if (!sourceFile) {
     throw new AiStudyError("学习搭子仅支持上传 PDF 文件。", 400, "AI_STUDY_UNSUPPORTED_FILE_TYPE");
   }
+  await assertAiStudyProjectImportAllowed(ownerId);
   const promptConfig = shouldStartParsing ? await getAiStudyPromptConfig() : null;
 
   const sourceId = randomUUID();

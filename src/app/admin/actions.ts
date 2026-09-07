@@ -495,6 +495,60 @@ export async function updateSystemSettings(formData: FormData) {
   redirect("/admin/settings?notice=saved");
 }
 
+export async function updateAdminPassword(formData: FormData) {
+  const operator = await requireAdmin();
+  const currentPassword = String(formData.get("currentPassword") || "");
+  const newPassword = String(formData.get("newPassword") || "");
+  const confirmPassword = String(formData.get("confirmPassword") || "");
+
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    redirect(adminConfigurationSettingsPath("error", "admin-password-required"));
+  }
+  if (newPassword.length < 8) {
+    redirect(adminConfigurationSettingsPath("error", "admin-password-too-short"));
+  }
+  if (Buffer.byteLength(newPassword, "utf8") > 72) {
+    redirect(adminConfigurationSettingsPath("error", "admin-password-too-long"));
+  }
+  if (newPassword !== confirmPassword) {
+    redirect(adminConfigurationSettingsPath("error", "admin-password-mismatch"));
+  }
+
+  const targetAdmin = await prisma.user.findUnique({
+    where: { username: "admin" },
+    select: { id: true, passwordHash: true, role: true }
+  });
+
+  if (!targetAdmin || targetAdmin.role !== "admin") {
+    redirect(adminConfigurationSettingsPath("error", "admin-account-not-found"));
+  }
+  if (!(await bcrypt.compare(currentPassword, targetAdmin.passwordHash))) {
+    redirect(adminConfigurationSettingsPath("error", "admin-current-password-invalid"));
+  }
+  if (await bcrypt.compare(newPassword, targetAdmin.passwordHash)) {
+    redirect(adminConfigurationSettingsPath("error", "admin-password-unchanged"));
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: targetAdmin.id },
+      data: { passwordHash }
+    }),
+    prisma.passwordChangeLog.create({
+      data: {
+        userId: targetAdmin.id,
+        actorUserId: operator.id,
+        source: "admin_reset",
+        note: "系统设置修改 admin 登录密码"
+      }
+    })
+  ]);
+
+  revalidatePath("/admin/settings");
+  redirect(adminConfigurationSettingsPath("notice", "admin-password-saved"));
+}
+
 export async function updateStudyBuddyHeroImageSettings(formData: FormData) {
   await requireAdmin();
   let studyBuddyHeroImageUrl = await getCurrentStudyBuddyHeroImageUrl();

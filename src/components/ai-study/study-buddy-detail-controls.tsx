@@ -2,8 +2,10 @@
 
 import { type FormEvent, type KeyboardEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Bot, Loader2, MessageCircle, Pause, Send, Sparkles, X } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DiamondInsufficientMessage } from "@/components/diamond-insufficient-message";
+import { buildAiStudyOpeningSuggestions } from "@/lib/ai-study-chat-suggestions";
 import { isDiamondInsufficientMessage } from "@/lib/diamond-insufficient";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +19,9 @@ type StudyBuddyDetailControlsProps = {
   nextNode: NavigationNode | null;
   previousNode: NavigationNode | null;
   projectId: string;
+  selectedNodeCardKeyPoints: string[];
+  selectedNodeCardOverview: string;
+  selectedNodeDepth: number;
   selectedNodeId: string;
   selectedNodeSummary: string;
   selectedNodeTitle: string;
@@ -47,6 +52,9 @@ export function StudyBuddyDetailControls({
   nextNode,
   previousNode,
   projectId,
+  selectedNodeCardKeyPoints,
+  selectedNodeCardOverview,
+  selectedNodeDepth,
   selectedNodeId,
   selectedNodeSummary,
   selectedNodeTitle,
@@ -68,14 +76,16 @@ export function StudyBuddyDetailControls({
   const validNodeSet = useMemo(() => new Set(validNodeIds), [validNodeIds]);
   const hasDraft = draft.trim().length > 0;
 
-  const suggestions = useMemo(() => {
-    const shortTitle = compactTitle(selectedNodeTitle || "这个知识点", 18);
-    return [
-      `${shortTitle}考试时容易怎么考？`,
-      `用例子讲清楚${shortTitle}`,
-      `我该怎么记住这一节？`
-    ];
-  }, [selectedNodeTitle]);
+  const suggestions = useMemo(
+    () => buildAiStudyOpeningSuggestions({
+      cardKeyPoints: selectedNodeCardKeyPoints,
+      cardOverview: selectedNodeCardOverview,
+      depth: selectedNodeDepth,
+      summary: selectedNodeSummary,
+      title: selectedNodeTitle
+    }),
+    [selectedNodeCardKeyPoints, selectedNodeCardOverview, selectedNodeDepth, selectedNodeSummary, selectedNodeTitle]
+  );
 
   useEffect(() => {
     if (!selectedNodeId) {
@@ -486,7 +496,16 @@ export function StudyBuddyDetailControls({
                   {sending ? <Pause size={17} /> : <Send size={17} />}
                 </button>
               </form>
-              <p className="mt-2 text-center text-xs font-medium text-[#b6bdc8]">内容由AI生成，请仔细甄别</p>
+              <p className="mt-2 text-center text-xs font-medium text-[#b6bdc8]">
+                内容由AI生成，请仔细甄别。AI回答会消耗钻石，具体请参考-
+                <Link className="italic no-underline transition hover:text-[#8d96a3]" href="/help?tab=faq">
+                  帮助中心
+                </Link>
+                或
+                <Link className="italic no-underline transition hover:text-[#8d96a3]" href="/me?tab=diamonds">
+                  联系客服
+                </Link>
+              </p>
             </div>
           </aside>
         </div>
@@ -510,14 +529,6 @@ function buildNodeHref(projectId: string, nodeId: string) {
 function clampDrawerWidth(value: number) {
   const viewportMax = typeof window === "undefined" ? maxDrawerWidth : Math.max(minDrawerWidth, window.innerWidth - 24);
   return Math.max(minDrawerWidth, Math.min(Math.min(maxDrawerWidth, viewportMax), Number(value.toFixed(0))));
-}
-
-function compactTitle(title: string, maxLength: number) {
-  const normalized = title.replace(/\s+/g, " ").trim();
-  if (normalized.length <= maxLength) {
-    return normalized;
-  }
-  return `${normalized.slice(0, maxLength)}...`;
 }
 
 function cleanAiText(value: string) {

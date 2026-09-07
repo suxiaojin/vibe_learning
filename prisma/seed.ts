@@ -5,14 +5,22 @@ const prisma = new PrismaClient();
 
 async function main() {
   const adminUsername = process.env.ADMIN_USERNAME || "admin";
-  const adminPassword = process.env.ADMIN_PASSWORD || "ChangeMe123!";
-  const passwordHash = await bcrypt.hash(adminPassword, 12);
-
-  await prisma.user.upsert({
+  const existingAdmin = await prisma.user.findUnique({
     where: { username: adminUsername },
-    update: { passwordHash, role: "admin" },
-    create: { username: adminUsername, passwordHash, role: "admin" }
+    select: { role: true }
   });
+  let adminCreated = false;
+
+  if (!existingAdmin) {
+    const adminPassword = process.env.ADMIN_PASSWORD || "ChangeMe123!";
+    const passwordHash = await bcrypt.hash(adminPassword, 12);
+    await prisma.user.create({
+      data: { username: adminUsername, passwordHash, role: "admin" }
+    });
+    adminCreated = true;
+  } else if (existingAdmin.role !== "admin") {
+    throw new Error(`Seed admin username is already used by a non-admin account: ${adminUsername}`);
+  }
 
   await prisma.systemSetting.upsert({
     where: { id: "default" },
@@ -84,7 +92,7 @@ async function main() {
     }
   }
 
-  console.log(`Seed completed. Admin: ${adminUsername} / ${adminPassword}`);
+  console.log(`Seed completed. Admin account ${adminUsername}: ${adminCreated ? "created" : "preserved"}.`);
 }
 
 main()
