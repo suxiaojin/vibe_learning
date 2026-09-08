@@ -17,6 +17,7 @@ import { prisma } from "@/lib/prisma";
 import { downloadAiStudyObject, uploadAiStudyObject } from "@/lib/ai-study-storage";
 import { refreshAiStudyProgressCache, writeAiStudyTaskProgressCache } from "@/lib/ai-study-progress-cache";
 import { assertCompleteFourLevelOutline } from "@/lib/ai-study-outline-validation";
+import { getActiveAiServerConfig } from "@/lib/ai-server-settings";
 import {
   buildOutlineCandidateJsonSchema,
   buildNestedOutlineJsonSchema,
@@ -865,6 +866,7 @@ async function generateCards(task: AiStudyGenerationTask) {
     cardCount: generatedCards.length,
     promptVersion
   });
+  const aiServer = await getActiveAiServerConfig();
 
   await prisma.$transaction(async (tx) => {
     for (const card of generatedCards) {
@@ -878,7 +880,7 @@ async function generateCards(task: AiStudyGenerationTask) {
           pitfalls: card.pitfalls,
           examples: card.examples,
           flashcards: card.flashcards,
-          modelName: process.env.QWEN_MODEL || null,
+          modelName: aiServer.model,
           promptVersion,
           aiPromptVersionId: promptConfig.id,
           reviewStatus: "unreviewed"
@@ -1054,7 +1056,7 @@ async function requestValidatedJsonWithRetry<T>(request: StructuredJsonRequest<T
         }
       );
       if (response.finishReason === "length") {
-        throw new Error(`Qwen 输出达到 ${request.maxCompletionTokens} token 上限，内容被截断。`);
+        throw new Error(`模型输出达到 ${request.maxCompletionTokens} token 上限，内容被截断。`);
       }
 
       const parsed = request.parseResponse

@@ -68,21 +68,17 @@ export default async function StudentsPage({
     prisma.user.findMany({
       where,
       orderBy: { createdAt: "desc" },
-      include: {
-        progress: {
-          where: { status: "passed" },
-          select: { id: true }
-        },
-        studyStats: {
-          select: { studySeconds: true }
-        },
-        wrongQuestions: {
-          where: { status: "active" },
-          select: { id: true }
-        },
+      select: {
+        id: true,
+        username: true,
+        status: true,
+        createdAt: true,
+        lastLoginAt: true,
         _count: {
           select: {
-            attempts: true
+            progress: { where: { status: "passed" } },
+            attempts: true,
+            wrongQuestions: { where: { status: "active" } }
           }
         }
       }
@@ -99,6 +95,16 @@ export default async function StudentsPage({
       select: { id: true, name: true }
     })
   ]);
+  const studyStats = students.length
+    ? await prisma.studyStat.groupBy({
+        by: ["userId"],
+        where: { userId: { in: students.map((student) => student.id) } },
+        _sum: { studySeconds: true }
+      })
+    : [];
+  const studySecondsByUserId = new Map(
+    studyStats.map((item) => [item.userId, item._sum.studySeconds || 0])
+  );
   const provinces = Array.from(new Set(regions.map((region) => region.province)));
   const studySystems = Array.from(new Set(regions.map((region) => region.studySystem)));
 
@@ -186,7 +192,7 @@ export default async function StudentsPage({
                 <td className="py-8 text-center text-slate-500" colSpan={9}>没有找到符合条件的学生。</td>
               </tr>
             ) : students.map((student) => {
-              const totalSeconds = student.studyStats.reduce((sum, item) => sum + item.studySeconds, 0);
+              const totalSeconds = studySecondsByUserId.get(student.id) || 0;
               return (
                 <tr key={student.id} className="align-top text-slate-700">
                   <td className="border-b border-slate-100 py-4 pr-4 font-semibold text-ink">
@@ -201,9 +207,9 @@ export default async function StudentsPage({
                   <td className="border-b border-slate-100 py-4 pr-4">
                     {student.lastLoginAt ? formatDate(student.lastLoginAt) : "暂无"}
                   </td>
-                  <td className="border-b border-slate-100 py-4 pr-4">{student.progress.length} 关</td>
+                  <td className="border-b border-slate-100 py-4 pr-4">{student._count.progress} 关</td>
                   <td className="border-b border-slate-100 py-4 pr-4">{student._count.attempts}</td>
-                  <td className="border-b border-slate-100 py-4 pr-4">{student.wrongQuestions.length}</td>
+                  <td className="border-b border-slate-100 py-4 pr-4">{student._count.wrongQuestions}</td>
                   <td className="border-b border-slate-100 py-4 pr-4">{formatSeconds(totalSeconds)}</td>
                   <td className="border-b border-slate-100 py-4">
                     <div className="flex min-w-[360px] flex-wrap gap-2">

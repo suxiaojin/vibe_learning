@@ -19,7 +19,7 @@ import { SurfaceCard, TabNav } from "@/components/student-ui";
 import { requireUser } from "@/lib/auth";
 import { AvatarStorageError, deleteStoredAvatarByUrl, storeUploadedAvatar } from "@/lib/avatar-storage";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
-import { deleteBuddyPost, likeBuddyPost, listProfileBuddyPosts, repostBuddyPost, unlikeBuddyPost, unrepostBuddyPost } from "@/lib/buddy-posts";
+import { deleteBuddyPost, listProfileBuddyPosts } from "@/lib/buddy-posts";
 import { isDefaultAvatarSrc } from "@/lib/default-avatars";
 import { prisma } from "@/lib/prisma";
 import { medalRules } from "@/lib/rewards";
@@ -147,7 +147,21 @@ export default async function MePage({
   const [fullUser, transactions, totalAttempts, recentAttempts, dailyAttemptStats, schools, homeProfile, homePosts, systemSettings] = await Promise.all([
     prisma.user.findUnique({
       where: { id: user.id },
-      include: { studentProfile: { include: { region: true, schoolOption: true } } }
+      select: {
+        username: true,
+        phoneNumber: true,
+        email: true,
+        studentProfile: {
+          select: {
+            nickname: true,
+            avatarColor: true,
+            avatarImage: true,
+            gender: true,
+            school: true,
+            schoolId: true
+          }
+        }
+      }
     }),
     activeTab === "diamonds"
       ? prisma.diamondTransaction.findMany({
@@ -157,11 +171,15 @@ export default async function MePage({
           take: diamondPageSize
         })
       : Promise.resolve([]),
-    prisma.questionAttempt.count({ where: { userId: user.id } }),
-    prisma.questionAttempt.findMany({
-      where: { userId: user.id, createdAt: { gte: heatmapStart } },
-      select: { createdAt: true }
-    }),
+    activeTab === "medals"
+      ? prisma.questionAttempt.count({ where: { userId: user.id } })
+      : Promise.resolve(0),
+    activeTab === "medals"
+      ? prisma.questionAttempt.findMany({
+          where: { userId: user.id, createdAt: { gte: heatmapStart } },
+          select: { createdAt: true }
+        })
+      : Promise.resolve([]),
     activeTab === "medals"
       ? prisma.$queryRaw<DailyAttemptStat[]>`
           SELECT
@@ -173,13 +191,16 @@ export default async function MePage({
           ORDER BY 1
         `
       : Promise.resolve([] as DailyAttemptStat[]),
-    prisma.school.findMany({
-      where: { status: "published" },
-      orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
-    }),
+    activeTab === "profile"
+      ? prisma.school.findMany({
+          where: { status: "published" },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+          select: { id: true, name: true, province: true }
+        })
+      : Promise.resolve([]),
     activeTab === "homepage" ? getSocialProfile(user.id, user.id) : Promise.resolve(null),
     activeTab === "homepage" ? listProfileBuddyPosts(user.id, user.id, { includeInteractions: true, tab: "posts", limit: 30 }) : Promise.resolve({ items: [], nextCursor: null }),
-    activeTab === "diamonds" ? getSystemSettings() : Promise.resolve(null)
+    activeTab === "diamonds" ? getSystemSettings(["diamondRechargeQrCodeUrl"]) : Promise.resolve(null)
   ]);
 
   if (!fullUser) {
@@ -1201,42 +1222,6 @@ async function deleteHomePost(formData: FormData) {
   "use server";
   const user = await requireUser();
   await deleteBuddyPost(user.id, String(formData.get("postId") || ""));
-  revalidatePath("/me");
-  revalidatePath("/buddy-circle");
-  redirect("/me?tab=homepage");
-}
-
-async function likeHomePost(formData: FormData) {
-  "use server";
-  const user = await requireUser();
-  await likeBuddyPost(user.id, String(formData.get("postId") || ""));
-  revalidatePath("/me");
-  revalidatePath("/buddy-circle");
-  redirect("/me?tab=homepage");
-}
-
-async function unlikeHomePost(formData: FormData) {
-  "use server";
-  const user = await requireUser();
-  await unlikeBuddyPost(user.id, String(formData.get("postId") || ""));
-  revalidatePath("/me");
-  revalidatePath("/buddy-circle");
-  redirect("/me?tab=homepage");
-}
-
-async function repostHomePost(formData: FormData) {
-  "use server";
-  const user = await requireUser();
-  await repostBuddyPost(user.id, String(formData.get("postId") || ""), String(formData.get("content") || ""));
-  revalidatePath("/me");
-  revalidatePath("/buddy-circle");
-  redirect("/me?tab=homepage");
-}
-
-async function unrepostHomePost(formData: FormData) {
-  "use server";
-  const user = await requireUser();
-  await unrepostBuddyPost(user.id, String(formData.get("postId") || ""));
   revalidatePath("/me");
   revalidatePath("/buddy-circle");
   redirect("/me?tab=homepage");

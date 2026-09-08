@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export const systemSettingsId = "default";
@@ -30,15 +31,33 @@ export type PublicSystemSettings = typeof systemSettingsDefaults & {
   updatedAt?: Date;
 };
 
-export async function getSystemSettings(): Promise<PublicSystemSettings> {
+type SystemSettingsKey = keyof typeof systemSettingsDefaults;
+
+export async function getSystemSettings(): Promise<PublicSystemSettings>;
+export async function getSystemSettings<const K extends readonly SystemSettingsKey[]>(
+  keys: K
+): Promise<Pick<PublicSystemSettings, K[number]>>;
+export async function getSystemSettings(keys?: readonly SystemSettingsKey[]) {
   try {
-    return await prisma.systemSetting.upsert({
+    if (!keys) {
+      return (await prisma.systemSetting.findUnique({ where: { id: systemSettingsId } })) ?? systemSettingsDefaults;
+    }
+
+    const select = Object.fromEntries(keys.map((key) => [key, true])) as Prisma.SystemSettingSelect;
+    const record = (await prisma.systemSetting.findUnique({
       where: { id: systemSettingsId },
-      update: {},
-      create: systemSettingsDefaults
-    });
+      select
+    })) as Partial<PublicSystemSettings> | null;
+
+    return Object.fromEntries(
+      keys.map((key) => [key, record?.[key] ?? systemSettingsDefaults[key]])
+    ) as Pick<PublicSystemSettings, (typeof keys)[number]>;
   } catch (error) {
     console.error("Failed to load system settings, using defaults", error);
-    return systemSettingsDefaults;
+    if (!keys) return systemSettingsDefaults;
+    return Object.fromEntries(keys.map((key) => [key, systemSettingsDefaults[key]])) as Pick<
+      PublicSystemSettings,
+      (typeof keys)[number]
+    >;
   }
 }

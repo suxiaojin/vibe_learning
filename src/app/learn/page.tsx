@@ -43,7 +43,7 @@ export default async function LearnPage({
   const params = await searchParams;
   const [pathState, settings] = await Promise.all([
     getStudentLearningPath(user.id, params?.course),
-    getSystemSettings()
+    getSystemSettings(["learningPathTheme"])
   ]);
 
   if (!pathState.completed) {

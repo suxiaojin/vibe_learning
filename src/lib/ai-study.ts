@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { z } from "zod";
-import type { AiStudyGenerationTask, AiStudyProgressStatus, AiStudyTaskStatus } from "@prisma/client";
+import type { AiStudyGenerationTask, AiStudyTaskStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { accessibleAiStudyProjectWhere } from "@/lib/study-project-access";
 import { diamondInsufficientMessage } from "@/lib/diamond-insufficient";
@@ -10,7 +10,6 @@ import {
   attachAiStudyGenerationProgress,
   clearAiStudyProgressCache,
   getAiStudyProjectGenerationProgress,
-  refreshAiStudyProgressCache,
   writeAiStudyTaskProgressCache
 } from "@/lib/ai-study-progress-cache";
 import { askQwen, streamQwen, type ChatMessage } from "@/lib/qwen";
@@ -22,7 +21,6 @@ import {
   InsufficientDiamondBalanceError
 } from "@/lib/rewards";
 
-const sourceTypeSchema = z.enum(["pdf", "document", "image", "text", "mixed"]);
 const learningGoalSchema = z.enum(["preview", "review", "sprint", "weak_point", "other"]);
 const projectStatusSchema = z.enum(["draft", "processing", "ready", "failed", "archived"]);
 const progressStatusSchema = z.enum(["not_started", "learning", "review_needed", "mastered"]);

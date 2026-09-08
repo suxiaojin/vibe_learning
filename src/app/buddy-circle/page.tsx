@@ -1,39 +1,29 @@
-import type { ReactNode } from "react";
-import { Ban, Check, ChevronDown, MoreHorizontal, SlidersHorizontal, Trash2, UserMinus, UserPlus } from "lucide-react";
+import { Check, ChevronDown, SlidersHorizontal } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { BuddyErrorNotice } from "@/components/buddy-error-notice";
 import { BuddyFeedLoadMore } from "@/components/buddy-feed-load-more";
 import { BuddyPostComposer } from "@/components/buddy-post-composer";
-import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
-import { DismissibleDetails } from "@/components/dismissible-details";
 import { FollowingFeedReadMarker } from "@/components/following-feed-read-marker";
-import { SocialAvatar, SocialPostCard, type SocialPostNode } from "@/components/social-post-card";
-import { SocialPostActions } from "@/components/social-post-actions";
+import { SocialAvatar } from "@/components/social-post-card";
 import { StudentPageShell } from "@/components/student-page-shell";
 import { SurfaceCard } from "@/components/student-ui";
 import {
-  deleteBuddyPost,
   getFollowingFeedUnreadCount,
-  likeBuddyPost,
   listBuddyFeed,
   markFollowingFeedRead,
-  repostBuddyPost,
-  unlikeBuddyPost,
-  unrepostBuddyPost,
   type BuddyFeedScope,
   type BuddyFeedSort
 } from "@/lib/buddy-posts";
 import { formatBuddyError } from "@/lib/buddies";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { blockUser, followUser, listRecommendedFollows, unfollowUser, type SocialRecommendation } from "@/lib/social";
+import { followUser, listRecommendedFollows, type SocialRecommendation } from "@/lib/social";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type BuddyFeedItem = Awaited<ReturnType<typeof listBuddyFeed>>["items"][number];
 type CircleSearchParams = {
   error?: string;
   majorId?: string;
@@ -302,151 +292,6 @@ function RecommendedFollowPanel({ returnTo, users }: { returnTo: string; users: 
   );
 }
 
-function BuddyPostCard({ post, returnTo, scope }: { post: BuddyFeedItem; returnTo: string; scope: BuddyFeedScope }) {
-  return (
-    <SocialPostCard
-      actionMenu={<PostMoreMenu post={post} returnTo={returnTo} scope={scope} />}
-      getDateLabel={formatDateTime}
-      post={post as SocialPostNode}
-      renderActions={(targetPost) => <BuddyPostActions post={targetPost} />}
-    />
-  );
-}
-
-function BuddyPostActions({ post }: { post: SocialPostNode }) {
-  return (
-    <SocialPostActions
-      canLike={post.canLike}
-      canRepost={post.canRepost}
-      initialLikeCount={post.likeCount}
-      initialLiked={post.likedByMe}
-      initialRepostCount={post.repostCount}
-      initialReposted={post.repostedByMe}
-      postId={post.id}
-      repostSource={getPostRepostSource(post)}
-    />
-  );
-}
-
-function getPostRepostSource(post: {
-  author: { nickname: string; username: string };
-  canRepost: boolean;
-  content: string;
-  createdAt: Date | string;
-  originalPost?: { content: string } | null;
-}) {
-  return post.canRepost
-    ? {
-        authorName: post.author.nickname,
-        content: post.content || post.originalPost?.content || "",
-        createdAtLabel: formatDateTime(post.createdAt),
-        username: post.author.username
-      }
-    : undefined;
-}
-
-function PostMoreMenu({ post, returnTo, scope }: { post: BuddyFeedItem; returnTo: string; scope: BuddyFeedScope }) {
-  const showAuthorActions = !post.canDelete;
-  const hasActions = post.canDelete || showAuthorActions;
-  const blockFormId = `post-menu-block-${post.id}`;
-  const deleteFormId = `post-menu-delete-${post.id}`;
-  const unfollowFormId = `post-menu-unfollow-${post.id}`;
-  if (!hasActions) {
-    return null;
-  }
-
-  return (
-    <DismissibleDetails className="group relative shrink-0" group="buddy-post-menu">
-      <summary
-        aria-label="更多操作"
-        className="grid size-11 cursor-pointer list-none place-items-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-ink [&::-webkit-details-marker]:hidden"
-      >
-        <MoreHorizontal size={20} />
-      </summary>
-      <div className="absolute right-0 top-12 z-40 w-56 overflow-hidden rounded-2xl border border-border-soft bg-white py-2 shadow-popover">
-        {scope === "discover" && showAuthorActions ? (
-          <>
-            <form action={followFromCircle}>
-              <input name="targetId" type="hidden" value={post.author.id} />
-              <input name="returnTo" type="hidden" value={returnTo} />
-              <MenuButton icon={<UserPlus size={18} />} label={`关注 @${post.author.username}`} />
-            </form>
-            <form id={blockFormId} action={blockFromCircle}>
-              <input name="targetId" type="hidden" value={post.author.id} />
-              <input name="returnTo" type="hidden" value={returnTo} />
-              <MenuButton
-                confirmMessage={`确认屏蔽 @${post.author.username}？屏蔽后将不再看到对方的帖子。`}
-                formId={blockFormId}
-                icon={<Ban size={18} />}
-                label={`屏蔽 @${post.author.username}`}
-              />
-            </form>
-          </>
-        ) : null}
-
-        {scope === "following" && showAuthorActions ? (
-          <form id={unfollowFormId} action={unfollowFromCircle}>
-            <input name="targetId" type="hidden" value={post.author.id} />
-            <input name="returnTo" type="hidden" value={returnTo} />
-            <MenuButton
-              confirmMessage={`确认取消关注 @${post.author.username}？`}
-              formId={unfollowFormId}
-              icon={<UserMinus size={18} />}
-              label={`取消关注 @${post.author.username}`}
-            />
-          </form>
-        ) : null}
-
-        {post.canDelete ? (
-          <form id={deleteFormId} action={deletePost}>
-            <input name="postId" type="hidden" value={post.id} />
-            <input name="returnTo" type="hidden" value={returnTo} />
-            <MenuButton danger confirmMessage="确认删除这条帖子？删除后不可恢复。" formId={deleteFormId} icon={<Trash2 size={18} />} label="删除帖子" />
-          </form>
-        ) : null}
-      </div>
-    </DismissibleDetails>
-  );
-}
-
-function MenuButton({
-  confirmMessage,
-  danger = false,
-  formId,
-  icon,
-  label
-}: {
-  confirmMessage?: string;
-  danger?: boolean;
-  formId?: string;
-  icon: ReactNode;
-  label: string;
-}) {
-  const className = cn(
-    "flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm font-semibold transition hover:bg-slate-50",
-    danger ? "text-coral" : "text-slate-700"
-  );
-
-  if (confirmMessage && formId) {
-    return (
-      <ConfirmSubmitButton className={className} form={formId} message={confirmMessage}>
-        {icon}
-        {label}
-      </ConfirmSubmitButton>
-    );
-  }
-
-  return (
-    <button
-      className={className}
-      type="submit"
-    >
-      {icon}
-      {label}
-    </button>
-  );
-}
-
 function getScope(tab?: string): BuddyFeedScope {
   return tab === "following" ? "following" : "discover";
 }
@@ -466,18 +311,6 @@ function buildCircleHref(params?: CircleSearchParams, overrides?: { sort?: Buddy
   return `/buddy-circle?${query.toString()}`;
 }
 
-function formatDateTime(value: Date | string) {
-  return new Date(value).toLocaleString("zh-CN", {
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    month: "2-digit",
-    second: "2-digit",
-    timeZone: "Asia/Shanghai",
-    year: "numeric"
-  });
-}
-
 async function markFollowingFeedAsRead(readThroughAt: string) {
   "use server";
   const user = await requireUser();
@@ -491,100 +324,11 @@ async function markFollowingFeedAsRead(readThroughAt: string) {
   await markFollowingFeedRead(user.id, parsedReadThroughAt);
 }
 
-async function deletePost(formData: FormData) {
-  "use server";
-  const user = await requireUser();
-  try {
-    await deleteBuddyPost(user.id, String(formData.get("postId") || ""));
-  } catch (error) {
-    redirectWithError(formData, error);
-  }
-  revalidatePath("/buddy-circle");
-  revalidatePath("/me");
-  redirect(getReturnTo(formData));
-}
-
-async function likePost(formData: FormData) {
-  "use server";
-  const user = await requireUser();
-  try {
-    await likeBuddyPost(user.id, String(formData.get("postId") || ""));
-  } catch (error) {
-    redirectWithError(formData, error);
-  }
-  revalidatePath("/buddy-circle");
-  revalidatePath("/me");
-  redirect(getReturnTo(formData));
-}
-
-async function unlikePost(formData: FormData) {
-  "use server";
-  const user = await requireUser();
-  try {
-    await unlikeBuddyPost(user.id, String(formData.get("postId") || ""));
-  } catch (error) {
-    redirectWithError(formData, error);
-  }
-  revalidatePath("/buddy-circle");
-  revalidatePath("/me");
-  redirect(getReturnTo(formData));
-}
-
-async function repostPost(formData: FormData) {
-  "use server";
-  const user = await requireUser();
-  try {
-    await repostBuddyPost(user.id, String(formData.get("postId") || ""), String(formData.get("content") || ""));
-  } catch (error) {
-    redirectWithError(formData, error);
-  }
-  revalidatePath("/buddy-circle");
-  revalidatePath("/me");
-  redirect(getReturnTo(formData));
-}
-
-async function unrepostPost(formData: FormData) {
-  "use server";
-  const user = await requireUser();
-  try {
-    await unrepostBuddyPost(user.id, String(formData.get("postId") || ""));
-  } catch (error) {
-    redirectWithError(formData, error);
-  }
-  revalidatePath("/buddy-circle");
-  revalidatePath("/me");
-  redirect(getReturnTo(formData));
-}
-
 async function followFromCircle(formData: FormData) {
   "use server";
   const user = await requireUser();
   try {
     await followUser(user.id, String(formData.get("targetId") || ""));
-  } catch (error) {
-    redirectWithError(formData, error);
-  }
-  revalidatePath("/buddy-circle");
-  redirect(getReturnTo(formData));
-}
-
-async function unfollowFromCircle(formData: FormData) {
-  "use server";
-  const user = await requireUser();
-  try {
-    await unfollowUser(user.id, String(formData.get("targetId") || ""));
-  } catch (error) {
-    redirectWithError(formData, error);
-  }
-  revalidatePath("/buddy-circle");
-  redirect(getReturnTo(formData));
-}
-
-async function blockFromCircle(formData: FormData) {
-  "use server";
-  const user = await requireUser();
-  try {
-    await blockUser(user.id, String(formData.get("targetId") || ""));
   } catch (error) {
     redirectWithError(formData, error);
   }

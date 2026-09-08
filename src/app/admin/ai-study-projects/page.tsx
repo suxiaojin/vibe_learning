@@ -64,17 +64,21 @@ export default async function AdminAiStudyProjectsPage({
 }) {
   await requireAdmin();
   const params = await searchParams;
-  const [{ filters, projects, stats }, officialMaterials, materialScopes] = await Promise.all([
-    listAdminAiStudyProjects({
+  const activeTab = params?.tab === "official" ? "official" : "ai";
+  const aiData = activeTab === "ai"
+    ? await listAdminAiStudyProjects({
       keyword: params?.keyword,
       status: params?.status,
       visibility: params?.visibility
-    }),
-    listAdminOfficialStudyMaterials(),
-    listOfficialStudyMaterialScopes()
-  ]);
+    })
+    : null;
+  const [officialMaterials, materialScopes] = activeTab === "official"
+    ? await Promise.all([listAdminOfficialStudyMaterials(), listOfficialStudyMaterialScopes()])
+    : [[], []];
+  const filters = aiData?.filters || { keyword: "", status: "", visibility: "" };
+  const projects = aiData?.projects || [];
+  const stats = aiData?.stats || { filteredCount: 0, activeCount: 0, publicCount: 0, pendingCount: 0 };
   const currentPath = buildAdminAiStudyProjectsPath(filters);
-  const activeTab = params?.tab === "official" ? "official" : "ai";
   const notice = params?.notice ? noticeText[params.notice] : "";
   const error = params?.error ? errorText[params.error] : "";
 

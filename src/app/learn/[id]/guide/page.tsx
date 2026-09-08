@@ -30,7 +30,7 @@ export default async function GuidePage({
   }
 
   const guideContent = access.chapter.description ?? "";
-  const settings = await getSystemSettings();
+  const settings = await getSystemSettings(["learningPathTheme"]);
 
   return (
     <StudentPageShell active="learn" maxWidthClassName="max-w-3xl">

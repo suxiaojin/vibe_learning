@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
+import { getActiveAiServerConfig } from "@/lib/ai-server-settings";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isAiGeneratedQuestionBankTitle } from "@/lib/question-bank-source";
@@ -295,8 +296,10 @@ function streamGeneratedDefaultAnswer(
   signal: AbortSignal
 ) {
   return createTextStream(async (push) => {
+    const aiServer = await getActiveAiServerConfig();
     const answer = await streamQwen(buildDefaultDoubtMessages(question), push, {
       signal,
+      serverConfig: aiServer,
       temperature: 0.25,
       timeoutMs: 60000
     });
@@ -304,6 +307,7 @@ function streamGeneratedDefaultAnswer(
     await completeAiConversation({
       answer,
       conversationId,
+      modelName: aiServer.model,
       purpose: DEFAULT_PURPOSE,
       userPrompt: defaultDoubtPrompt()
     });
@@ -319,8 +323,10 @@ function streamFollowUpAnswer(
   signal: AbortSignal
 ) {
   return createTextStream(async (push) => {
+    const aiServer = await getActiveAiServerConfig();
     const answer = await streamQwen(buildFollowUpMessages(question, prompt, defaultAnswer, followUps), push, {
       signal,
+      serverConfig: aiServer,
       temperature: 0.35,
       timeoutMs: 60000
     });
@@ -328,6 +334,7 @@ function streamFollowUpAnswer(
     await completeAiConversation({
       answer,
       conversationId,
+      modelName: aiServer.model,
       purpose: FOLLOW_UP_PURPOSE,
       userPrompt: prompt
     });
@@ -539,11 +546,13 @@ async function getAiConversationReplayResponse({
 async function completeAiConversation({
   answer,
   conversationId,
+  modelName,
   purpose,
   userPrompt
 }: {
   answer: string;
   conversationId: string;
+  modelName: string;
   purpose: string;
   userPrompt: string;
 }) {
@@ -552,7 +561,7 @@ async function completeAiConversation({
       where: { id: conversationId },
       data: {
         purpose,
-        modelName: process.env.QWEN_MODEL || null,
+        modelName,
         answerSource: "generated",
         messages: [
           { role: "user", content: userPrompt },

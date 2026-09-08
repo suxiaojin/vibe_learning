@@ -29,7 +29,12 @@ export default async function StudyBuddyPage({
   const user = await requireUser();
   const params = await searchParams;
   const [settings, projects, publicProjects, officialMaterials] = await Promise.all([
-    getSystemSettings(),
+    getSystemSettings([
+      "studyBuddyHeroImageUrl",
+      "studyBuddyHeroTitle",
+      "studyBuddyHeroEffect",
+      "studyBuddyHeroTypeSpeedMs"
+    ]),
     listAiStudyProjects(user.id),
     listPublicAiStudyProjects(),
     listPublicOfficialStudyMaterials({ userId: user.id })

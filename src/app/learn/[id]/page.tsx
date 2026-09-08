@@ -147,7 +147,7 @@ export default async function SectionQuizPage({
     }
   }
   const initialScoredTotal = contextualAutoGradedQuestionIds.size;
-  const settings = await getSystemSettings();
+  const settings = await getSystemSettings(["learningPathTheme"]);
 
   return (
     <main className="h-dvh overflow-hidden bg-white" style={getLearningPathThemeStyle(settings.learningPathTheme)}>

@@ -45,13 +45,11 @@ export async function POST(
 
   if (existingAttempt) {
     return apiOk({
-      questionId: question.id,
       correct: existingAttempt.gradingStatus === "auto_graded" ? existingAttempt.isCorrect : null,
       correctAnswer: question.answer,
       gradingStatus: existingAttempt.gradingStatus,
       attemptId: existingAttempt.id,
-      sessionId: session.id,
-      diamondRewards: []
+      resultPath: null
     });
   }
 
@@ -110,15 +108,11 @@ export async function POST(
   revalidatePath("/me");
 
   return apiOk({
-    questionId: question.id,
     correct,
     correctAnswer: question.answer,
     gradingStatus,
     attemptId: attempt.id,
-    sessionId: session.id,
-    completed,
-    resultPath: completed ? `/learn/${sectionId}/result?sessionId=${session.id}` : null,
-    diamondRewards
+    resultPath: completed ? `/learn/${sectionId}/result?sessionId=${session.id}` : null
   });
 }
 

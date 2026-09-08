@@ -455,6 +455,19 @@ model SystemSetting {
   @@map("system_settings")
 }
 
+model AiServerSetting {
+  id                    String   @id @default("default")
+  mode                  String   @default("built_in")
+  customName            String   @default("")
+  customBaseUrl         String   @default("")
+  customModel           String   @default("")
+  customApiKeyEncrypted String   @default("")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("ai_server_settings")
+}
+
 model ShareCopyStyle {
   id        String            @id @default(cuid())
   context   ShareCopyContext

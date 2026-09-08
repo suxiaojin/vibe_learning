@@ -1,4 +1,5 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
+import { getActiveAiServerConfig } from "@/lib/ai-server-settings";
 import { getCurrentAdmin } from "@/lib/auth";
 
 export const runtime = "nodejs";
@@ -49,9 +50,10 @@ export async function POST(request: NextRequest) {
     }
   });
 
-  outbound.append("ai_api_base_url", process.env.QWEN_API_BASE_URL || "http://10.138.12.88:30001/v1");
-  outbound.append("ai_api_key", process.env.QWEN_API_KEY || "");
-  outbound.append("ai_model", process.env.QWEN_MODEL || "qwen3.5-35B-A3B");
+  const aiServer = await getActiveAiServerConfig();
+  outbound.append("ai_api_base_url", aiServer.baseUrl);
+  outbound.append("ai_api_key", aiServer.apiKey);
+  outbound.append("ai_model", aiServer.model);
 
   const response = await fetch(`${parserBaseUrl()}/parse-question-paper-tasks`, {
     method: "POST",

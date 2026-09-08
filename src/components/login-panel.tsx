@@ -164,7 +164,10 @@ export function LoginPanel({
   settings,
   error
 }: {
-  settings: PublicSystemSettings;
+  settings: Pick<
+    PublicSystemSettings,
+    "loginMarketingIcon" | "loginMarketingTitle" | "loginMarketingDescription" | "loginWelcomeTitle"
+  >;
   error?: string;
 }) {
   const router = useRouter();

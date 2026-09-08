@@ -1,4 +1,5 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
+import { getActiveAiServerConfig } from "@/lib/ai-server-settings";
 import { getCurrentAdmin } from "@/lib/auth";
 import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 import type { ImportQuestionType } from "@/lib/question-paper-import";
@@ -257,6 +258,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "当前所选章节或题型下可参考题目少于 3 道，暂不适合 AI 生题。" }, { status: 400 });
   }
 
+  const aiServer = await getActiveAiServerConfig();
   const response = await fetch(`${generatorBaseUrl()}/generate-question-bank-tasks`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -276,9 +278,9 @@ export async function POST(request: NextRequest) {
       sourceLabel: "AI模拟真题",
       referenceChapterIds,
       referenceChapters: chapterTypes.map(({ descendantIds, ...chapter }) => chapter),
-      aiApiBaseUrl: process.env.QWEN_API_BASE_URL || "http://10.138.12.88:30001/v1",
-      aiApiKey: process.env.QWEN_API_KEY || "",
-      aiModel: process.env.QWEN_MODEL || "qwen3.5-35B-A3B",
+      aiApiBaseUrl: aiServer.baseUrl,
+      aiApiKey: aiServer.apiKey,
+      aiModel: aiServer.model,
       samples: samples.map((sample) => ({
         ...sample,
         referenceChapterIds: chapterTypes

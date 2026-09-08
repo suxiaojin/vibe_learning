@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { ContentStatus } from "@prisma/client";
 import { ArrowLeft, Plus } from "lucide-react";
 import { createPublicSubjectCourse, updatePublicSubjectCourse, updatePublicSubjectCourseStatus } from "@/app/admin/actions";
 import { CopyPublicSubjectCourseDialog } from "@/components/copy-public-subject-course-dialog";

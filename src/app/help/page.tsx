@@ -17,7 +17,10 @@ const tabs = [
 
 export default async function HelpPage({ searchParams }: { searchParams?: Promise<{ tab?: string }> }) {
   await requireUser();
-  const [settings, params] = await Promise.all([getSystemSettings(), searchParams]);
+  const [settings, params] = await Promise.all([
+    getSystemSettings(["faqContent", "changelogContent", "customerServiceEmail"]),
+    searchParams
+  ]);
   const activeTab = params?.tab === "changelog" ? tabs[1] : tabs[0];
   const content = activeTab.key === "changelog" ? settings.changelogContent : settings.faqContent;
 

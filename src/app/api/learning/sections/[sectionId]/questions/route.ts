@@ -33,9 +33,6 @@ export async function GET(
     return apiError("Question is unavailable.", 404, "SYLLABUS_SECTION_QUESTION_NOT_FOUND");
   }
 
-  const { challengeVersionId: _challengeVersionId, questionSyllabusItemIds: _questionSyllabusItemIds, ...section } = result.section;
-  const { sections: _sections, ...chapter } = result.chapter;
-  const { chapters: _chapters, ...course } = result.course;
   const recordedAttempt = sessionId
     ? await prisma.questionAttempt.findFirst({
         where: {
@@ -65,5 +62,5 @@ export async function GET(
       }
     : null;
 
-  return apiOk({ course, chapter, section, index: result.index, total: result.total, question: result.question, attempt });
+  return apiOk({ total: result.total, question: result.question, attempt });
 }

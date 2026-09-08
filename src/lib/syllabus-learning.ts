@@ -437,15 +437,19 @@ async function getPublishedStudentCourses(profile: { regionId: string; publicSub
   return courses as CourseRecord[];
 }
 
-export async function getStudentLearningPath(userId: string, requestedCourseType?: string | null) {
+async function loadStudentLearningPath(userId: string, requestedCourseType?: string | null) {
   const profile = await getStudentFoundationProfile(userId);
 
   if (!profile?.regionId || !profile.publicSubjectId || !profile.majorId) {
     return {
-      completed: false,
-      profile,
-      groups: [] as SyllabusPathGroup[],
-      selectedGroup: null as SyllabusPathGroup | null
+      path: {
+        completed: false,
+        profile,
+        groups: [] as SyllabusPathGroup[],
+        selectedGroup: null as SyllabusPathGroup | null
+      },
+      courses: [] as CourseRecord[],
+      shape: buildSyllabusShape([])
     };
   }
 
@@ -482,11 +486,19 @@ export async function getStudentLearningPath(userId: string, requestedCourseType
   const selectedGroup = groups.find((group) => group.key === requested) || groups.find((group) => group.key === "major") || groups[0] || null;
 
   return {
-    completed: true,
-    profile,
-    groups,
-    selectedGroup
+    path: {
+      completed: true,
+      profile,
+      groups,
+      selectedGroup
+    },
+    courses,
+    shape
   };
+}
+
+export async function getStudentLearningPath(userId: string, requestedCourseType?: string | null) {
+  return (await loadStudentLearningPath(userId, requestedCourseType)).path;
 }
 
 function buildKnowledgeMapGroups(
@@ -579,21 +591,16 @@ function buildKnowledgeMapGroups(
 }
 
 export async function getStudentKnowledgeMap(userId: string, requestedCourseType?: string | null) {
-  const learningPath = await getStudentLearningPath(userId, requestedCourseType);
+  const loaded = await loadStudentLearningPath(userId, requestedCourseType);
+  const learningPath = loaded.path;
   const profile = learningPath.profile;
 
   if (!profile?.regionId || !profile.publicSubjectId || !profile.majorId) {
     return learningPath;
   }
 
-  const courses = await getPublishedStudentCourses({
-    regionId: profile.regionId,
-    publicSubjectId: profile.publicSubjectId,
-    majorId: profile.majorId
-  });
-  const shape = buildSyllabusShape(courses);
-  const questionIdsBySectionId = await getQuestionCountsByDisplaySection(shape);
-  const groups = buildKnowledgeMapGroups(courses, shape, questionIdsBySectionId, learningPath.groups);
+  const questionIdsBySectionId = await getQuestionCountsByDisplaySection(loaded.shape);
+  const groups = buildKnowledgeMapGroups(loaded.courses, loaded.shape, questionIdsBySectionId, learningPath.groups);
   const requested = normalizeOwnerType(requestedCourseType);
   const selectedGroup = groups.find((group) => group.key === requested) || groups.find((group) => group.key === "major") || groups[0] || null;
 

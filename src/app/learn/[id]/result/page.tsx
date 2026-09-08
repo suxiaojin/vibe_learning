@@ -21,24 +21,61 @@ type Option = {
   text: string;
 };
 
-type SessionWithAttempts = Prisma.QuizSessionGetPayload<{
-  include: {
-    chapterChallengeVersion: {
-      select: {
-        difficultyRating: true;
-        status: true;
-        version: true;
-      };
-    };
-    attempts: {
-      include: {
-        question: true;
-      };
-    };
-  };
+const sessionSummarySelect = {
+  id: true,
+  totalCount: true,
+  correctCount: true,
+  score: true,
+  diamondRewardAmount: true,
+  completedAt: true,
+  updatedAt: true,
+  chapterChallengeVersion: {
+    select: {
+      difficultyRating: true,
+      status: true,
+      version: true
+    }
+  },
+  attempts: {
+    select: {
+      gradingStatus: true,
+      isCorrect: true,
+      selectedAnswer: true
+    }
+  }
+} satisfies Prisma.QuizSessionSelect;
+
+const sessionDetailSelect = {
+  attempts: {
+    select: {
+      id: true,
+      questionId: true,
+      sessionId: true,
+      selectedAnswer: true,
+      gradingStatus: true,
+      isCorrect: true,
+      question: {
+        select: {
+          stem: true,
+          options: true,
+          answer: true,
+          analysis: true
+        }
+      }
+    },
+    orderBy: { createdAt: "asc" as const }
+  }
+} satisfies Prisma.QuizSessionSelect;
+
+type SessionSummary = Prisma.QuizSessionGetPayload<{
+  select: typeof sessionSummarySelect;
 }>;
 
-type AttemptWithQuestion = SessionWithAttempts["attempts"][number];
+type SessionDetail = Prisma.QuizSessionGetPayload<{
+  select: typeof sessionDetailSelect;
+}>;
+
+type AttemptWithQuestion = SessionDetail["attempts"][number];
 
 const HISTORY_PAGE_SIZE = 6;
 const MAX_HISTORY_LIMIT = 60;
@@ -154,9 +191,9 @@ function historyGroupLabel(date: Date, now: Date) {
   return "更早";
 }
 
-function groupHistorySessions(sessions: SessionWithAttempts[]) {
+function groupHistorySessions(sessions: SessionSummary[]) {
   const now = new Date();
-  const groups: Array<{ label: string; sessions: SessionWithAttempts[] }> = [];
+  const groups: Array<{ label: string; sessions: SessionSummary[] }> = [];
 
   for (const session of sessions) {
     const label = historyGroupLabel(session.completedAt || session.updatedAt, now);
@@ -171,7 +208,7 @@ function groupHistorySessions(sessions: SessionWithAttempts[]) {
   return groups;
 }
 
-function getChallengeNumber(session: SessionWithAttempts) {
+function getChallengeNumber(session: SessionSummary) {
   const challenge = session.chapterChallengeVersion;
   return challenge?.status === "published" && challenge.version > 0 ? challenge.version : null;
 }
@@ -205,7 +242,7 @@ export default async function QuizResultPage({
 }) {
   const [{ id }, query, user] = await Promise.all([params, searchParams, requireUser()]);
   const historyLimit = normalizeHistoryLimit(query?.historyLimit);
-  const [access, sessions, requestedSession, historyCount, chapterChallengeCount, settings] = await Promise.all([
+  const [access, sessions, historyCount, chapterChallengeCount, settings] = await Promise.all([
     getSyllabusSectionForStudent(user.id, id),
     prisma.quizSession.findMany({
       where: {
@@ -213,37 +250,10 @@ export default async function QuizResultPage({
         syllabusItemId: id,
         status: "completed"
       },
-      include: {
-        chapterChallengeVersion: {
-          select: { difficultyRating: true, status: true, version: true }
-        },
-        attempts: {
-          include: { question: true },
-          orderBy: { createdAt: "asc" }
-        }
-      },
+      select: sessionSummarySelect,
       orderBy: [{ completedAt: "desc" }, { updatedAt: "desc" }],
       take: historyLimit + 1
     }),
-    query?.sessionId
-      ? prisma.quizSession.findFirst({
-          where: {
-            id: query.sessionId,
-            userId: user.id,
-            syllabusItemId: id,
-            status: "completed"
-          },
-          include: {
-            chapterChallengeVersion: {
-              select: { difficultyRating: true, status: true, version: true }
-            },
-            attempts: {
-              include: { question: true },
-              orderBy: { createdAt: "asc" }
-            }
-          }
-        })
-      : Promise.resolve(null),
     prisma.quizSession.count({
       where: {
         userId: user.id,
@@ -258,7 +268,7 @@ export default async function QuizResultPage({
         questions: { some: {} }
       }
     }),
-    getSystemSettings()
+    getSystemSettings(["learningPathTheme"])
   ]);
 
   if (!access) {
@@ -267,7 +277,20 @@ export default async function QuizResultPage({
 
   const visibleSessions = sessions.slice(0, historyLimit);
   const hasMoreHistory = sessions.length > historyLimit && historyLimit < MAX_HISTORY_LIMIT;
-  const currentSession = requestedSession || visibleSessions[0];
+  let currentSession = query?.sessionId
+    ? visibleSessions.find((session) => session.id === query.sessionId) || null
+    : visibleSessions[0] || null;
+  if (query?.sessionId && !currentSession) {
+    currentSession = await prisma.quizSession.findFirst({
+      where: {
+        id: query.sessionId,
+        userId: user.id,
+        syllabusItemId: id,
+        status: "completed"
+      },
+      select: sessionSummarySelect
+    });
+  }
 
   if (!currentSession) {
     return (
@@ -319,9 +342,26 @@ export default async function QuizResultPage({
   const resultShareSuggestions = getResultShareSuggestions(passed);
   const historyGroups = groupHistorySessions(visibleSessions);
   const showHistoryDetails = query?.details === "1";
-  const selectedCorrectAttempts = gradedAttempts.filter((attempt) => attempt.isCorrect);
-  const selectedWrongAttempts = gradedAttempts.filter((attempt) => !attempt.isCorrect);
-  const selectedUngradedAttempts = ungradedAttempts;
+  const detailedSession = showHistoryDetails
+    ? await prisma.quizSession.findFirst({
+        where: {
+          id: currentSession.id,
+          userId: user.id,
+          syllabusItemId: id,
+          status: "completed"
+        },
+        select: sessionDetailSelect
+      })
+    : null;
+  const selectedCorrectAttempts = detailedSession?.attempts.filter(
+    (attempt) => attempt.gradingStatus === "auto_graded" && attempt.isCorrect
+  ) ?? [];
+  const selectedWrongAttempts = detailedSession?.attempts.filter(
+    (attempt) => attempt.gradingStatus === "auto_graded" && !attempt.isCorrect
+  ) ?? [];
+  const selectedUngradedAttempts = detailedSession?.attempts.filter(
+    (attempt) => attempt.gradingStatus === "ungraded"
+  ) ?? [];
   const hideAiExplanation = isAdvancedMathPublicSubject(access.group.key, access.group.name);
   const nextHistoryLimit = Math.min(MAX_HISTORY_LIMIT, historyLimit + HISTORY_PAGE_SIZE, historyCount);
   const moreHistoryHref = buildHistoryHref({
@@ -480,7 +520,7 @@ function HistorySessionCard({
   historyLimit,
   showHistoryDetails
 }: {
-  session: SessionWithAttempts;
+  session: SessionSummary;
   currentSessionId: string;
   sectionId: string;
   historyLimit: number;

@@ -7,7 +7,13 @@ export default async function LoginPage({
   searchParams?: Promise<{ error?: string }>;
 }) {
   const params = await searchParams;
-  const settings = await getSystemSettings();
+  const settings = await getSystemSettings([
+    "loginHeroImageUrl",
+    "loginMarketingIcon",
+    "loginMarketingTitle",
+    "loginMarketingDescription",
+    "loginWelcomeTitle"
+  ]);
 
   return (
     <main className="min-h-dvh bg-white">

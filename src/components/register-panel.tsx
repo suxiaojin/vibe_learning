@@ -149,7 +149,10 @@ export function RegisterPanel({
   settings
 }: {
   error?: string;
-  settings: PublicSystemSettings;
+  settings: Pick<
+    PublicSystemSettings,
+    "loginMarketingIcon" | "loginMarketingTitle" | "loginMarketingDescription"
+  >;
 }) {
   const router = useRouter();
   const MarketingIcon = marketingIconMap[settings.loginMarketingIcon as keyof typeof marketingIconMap] || Gift;

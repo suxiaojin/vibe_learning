@@ -75,11 +75,15 @@ export function getMedalRule(level: MedalLevel) {
 }
 
 export async function ensureDiamondAccount(userId: string) {
-  return prisma.diamondAccount.upsert({
-    where: { userId },
-    update: {},
-    create: { userId, balance: 0 }
-  });
+  const existing = await prisma.diamondAccount.findUnique({ where: { userId } });
+  if (existing) return existing;
+
+  try {
+    return await prisma.diamondAccount.create({ data: { userId, balance: 0 } });
+  } catch (error) {
+    if (!uniqueConstraintFailed(error)) throw error;
+    return prisma.diamondAccount.findUniqueOrThrow({ where: { userId } });
+  }
 }
 
 async function grantDiamonds(

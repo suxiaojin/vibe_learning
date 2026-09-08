@@ -15,7 +15,6 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as {
     sectionId?: string;
     answers?: Record<string, string[]>;
-    recordedAttempts?: Record<string, string>;
     sessionId?: string;
   } | null;
   if (!body?.sectionId || !body.answers) {
@@ -28,11 +27,9 @@ export async function POST(request: Request) {
     return apiError("Syllabus section is locked or unavailable", 403, "SYLLABUS_SECTION_LOCKED");
   }
 
-  const submittedAt = new Date();
   let correct = 0;
   let scoredTotal = 0;
   let newlyRecordedQuestions = 0;
-  const wrongAttemptIds: string[] = [];
   const questions = result.questions as Array<(typeof result.questions)[number] & { answer: unknown }>;
   for (const question of questions) {
     const existingAttempt = await prisma.questionAttempt.findFirst({
@@ -41,7 +38,7 @@ export async function POST(request: Request) {
         userId: user.id,
         questionId: question.id
       },
-      select: { id: true, isCorrect: true, gradingStatus: true }
+      select: { isCorrect: true, gradingStatus: true }
     });
 
     if (existingAttempt) {
@@ -49,8 +46,6 @@ export async function POST(request: Request) {
         scoredTotal += 1;
         if (existingAttempt.isCorrect) {
           correct += 1;
-        } else {
-          wrongAttemptIds.push(existingAttempt.id);
         }
       }
       continue;
@@ -68,7 +63,7 @@ export async function POST(request: Request) {
       correct += 1;
     }
 
-    const attempt = await prisma.questionAttempt.create({
+    await prisma.questionAttempt.create({
       data: {
         userId: user.id,
         sessionId: session.id,
@@ -81,7 +76,6 @@ export async function POST(request: Request) {
     newlyRecordedQuestions += 1;
 
     if (gradingStatus === "auto_graded" && !isCorrect) {
-      wrongAttemptIds.push(attempt.id);
       await prisma.wrongQuestion.upsert({
         where: { userId_questionId: { userId: user.id, questionId: question.id } },
         update: { wrongCount: { increment: 1 }, lastWrongAt: new Date(), status: "active" },
@@ -115,7 +109,7 @@ export async function POST(request: Request) {
   revalidatePath("/me");
 
   const resultPath = `/learn/${body.sectionId}/result?sessionId=${session.id}`;
-  return apiOk({ score, passed, correct, total: scoredTotal, wrongAttemptIds, diamondRewards, sessionId: session.id, resultPath });
+  return apiOk({ resultPath });
 }
 
 async function getOrCreateQuizSession(userId: string, sectionId: string, sessionId?: string) {

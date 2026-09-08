@@ -1,15 +1,13 @@
 import { CourseCenterForm, type CourseCenterOverview } from "@/components/course-center-form";
 import { StudentPageShell } from "@/components/student-page-shell";
 import { requireUser } from "@/lib/auth";
-import { getFoundationOptions, getStudentFoundationProfile } from "@/lib/foundation";
+import { getFoundationOptions } from "@/lib/foundation";
 import { getStudentLearningPath, type SyllabusPathGroup } from "@/lib/syllabus-learning";
 
 export default async function CourseCenterPage() {
   const user = await requireUser();
-  const [profile, learningPath] = await Promise.all([
-    getStudentFoundationProfile(user.id),
-    getStudentLearningPath(user.id)
-  ]);
+  const learningPath = await getStudentLearningPath(user.id);
+  const profile = learningPath.profile;
   let options = await getFoundationOptions(profile?.regionId || undefined).catch(() => null);
 
   if (!options) {
@@ -74,7 +72,6 @@ function buildCourseCenterOverview(groups: SyllabusPathGroup[]): CourseCenterOve
       publishedCourseCount: group.courses.length,
       chapterCount: group.courses.reduce((total, course) => total + course.chapters.length, 0),
       sectionCount: totalSections,
-      passedCount: passedSections.length,
       progressPercent: totalSections ? Math.round((passedSections.length / totalSections) * 100) : 0,
       currentSection: currentSection
         ? {

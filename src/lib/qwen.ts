@@ -1,3 +1,5 @@
+import { getActiveAiServerConfig, type ActiveAiServerConfig } from "@/lib/ai-server-settings";
+
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
   content: string;
@@ -17,6 +19,7 @@ export type AskQwenOptions = {
   jsonSchema?: QwenJsonSchema;
   maxCompletionTokens?: number;
   enableThinking?: boolean;
+  serverConfig?: ActiveAiServerConfig;
 };
 
 export type AskQwenResult = {
@@ -34,10 +37,8 @@ export async function askQwen(messages: ChatMessage[], options: AskQwenOptions =
 }
 
 export async function askQwenDetailed(messages: ChatMessage[], options: AskQwenOptions = {}): Promise<AskQwenResult> {
-  const baseUrl = process.env.QWEN_API_BASE_URL;
-  if (!baseUrl) {
-    throw new Error("QWEN_API_BASE_URL is not configured.");
-  }
+  const serverConfig = options.serverConfig || await getActiveAiServerConfig();
+  const { apiKey, baseUrl, model, mode } = serverConfig;
 
   const controller = options.timeoutMs || options.signal ? new AbortController() : null;
   const abortFromExternalSignal = () => controller?.abort(options.signal?.reason);
@@ -56,17 +57,19 @@ export async function askQwenDetailed(messages: ChatMessage[], options: AskQwenO
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(process.env.QWEN_API_KEY ? { Authorization: `Bearer ${process.env.QWEN_API_KEY}` } : {})
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
       },
       signal: controller?.signal,
       body: JSON.stringify({
-        model: process.env.QWEN_MODEL || "qwen3.5",
+        model,
         messages,
         temperature: options.temperature ?? 0.4,
         ...(options.maxCompletionTokens
-          ? { max_completion_tokens: Math.max(1, Math.floor(options.maxCompletionTokens)) }
+          ? mode === "built_in"
+            ? { max_completion_tokens: Math.max(1, Math.floor(options.maxCompletionTokens)) }
+            : { max_tokens: Math.max(1, Math.floor(options.maxCompletionTokens)) }
           : {}),
-        ...(options.enableThinking === false
+        ...(mode === "built_in" && options.enableThinking === false
           ? { chat_template_kwargs: { enable_thinking: false } }
           : {}),
         ...(options.jsonSchema
@@ -85,7 +88,7 @@ export async function askQwenDetailed(messages: ChatMessage[], options: AskQwenO
     });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error("Qwen API timed out.");
+      throw new Error("AI API timed out.");
     }
     throw error;
   } finally {
@@ -96,7 +99,7 @@ export async function askQwenDetailed(messages: ChatMessage[], options: AskQwenO
   }
 
   if (!response.ok) {
-    throw new Error(`Qwen API failed with ${response.status}.`);
+    throw new Error(`AI API failed with ${response.status}.`);
   }
 
   const payload = (await response.json()) as {
@@ -126,10 +129,8 @@ export async function streamQwen(
   onChunk: (chunk: string) => void | Promise<void>,
   options: AskQwenOptions = {}
 ) {
-  const baseUrl = process.env.QWEN_API_BASE_URL;
-  if (!baseUrl) {
-    throw new Error("QWEN_API_BASE_URL is not configured.");
-  }
+  const serverConfig = options.serverConfig || await getActiveAiServerConfig();
+  const { apiKey, baseUrl, model } = serverConfig;
 
   const controller = options.timeoutMs || options.signal ? new AbortController() : null;
   const abortFromExternalSignal = () => controller?.abort(options.signal?.reason);
@@ -148,11 +149,11 @@ export async function streamQwen(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(process.env.QWEN_API_KEY ? { Authorization: `Bearer ${process.env.QWEN_API_KEY}` } : {})
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
       },
       signal: controller?.signal,
       body: JSON.stringify({
-        model: process.env.QWEN_MODEL || "qwen3.5",
+        model,
         messages,
         temperature: options.temperature ?? 0.4,
         stream: true
@@ -160,7 +161,7 @@ export async function streamQwen(
     });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error("Qwen API timed out.");
+      throw new Error("AI API timed out.");
     }
     throw error;
   } finally {
@@ -171,7 +172,7 @@ export async function streamQwen(
   }
 
   if (!response.ok || !response.body) {
-    throw new Error(`Qwen API failed with ${response.status}.`);
+    throw new Error(`AI API failed with ${response.status}.`);
   }
 
   const reader = response.body.getReader();

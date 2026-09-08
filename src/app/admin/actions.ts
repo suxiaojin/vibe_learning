@@ -8,6 +8,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ContentStatus, Difficulty, QuestionType, RegionStatus, ShareCopyContext, SyllabusRequirement } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
+import {
+  aiServerModes,
+  aiServerSettingsId,
+  encryptAiApiKey,
+  normalizeAiBaseUrl
+} from "@/lib/ai-server-settings";
 import { requireAdmin } from "@/lib/auth";
 import { deleteStudentAccountByAdmin, StudentDeletionError } from "@/lib/admin-student-deletion";
 import { getDiamondRuleDefinition, maxDiamondRuleAmount } from "@/lib/diamond-rules";
@@ -548,6 +554,60 @@ export async function updateAdminPassword(formData: FormData) {
 
   revalidatePath("/admin/settings");
   redirect(adminConfigurationSettingsPath("notice", "admin-password-saved"));
+}
+
+export async function updateAiServerSettings(formData: FormData) {
+  await requireAdmin();
+  const modeValue = String(formData.get("mode") || "");
+  if (!aiServerModes.includes(modeValue as (typeof aiServerModes)[number])) {
+    redirect(adminConfigurationSettingsPath("error", "invalid-ai-server-mode"));
+  }
+
+  const mode = modeValue as (typeof aiServerModes)[number];
+  const customName = String(formData.get("customName") || "").trim();
+  const customBaseUrlValue = String(formData.get("customBaseUrl") || "").trim();
+  const customModel = String(formData.get("customModel") || "").trim();
+  const customApiKey = String(formData.get("customApiKey") || "").trim();
+  const clearCustomApiKey = formData.get("clearCustomApiKey") === "true";
+
+  if (customName.length > 80 || customBaseUrlValue.length > 1000 || customModel.length > 160 || customApiKey.length > 8192) {
+    redirect(adminConfigurationSettingsPath("error", "ai-server-value-too-long"));
+  }
+
+  let customBaseUrl = "";
+  try {
+    customBaseUrl = normalizeAiBaseUrl(customBaseUrlValue);
+  } catch {
+    redirect(adminConfigurationSettingsPath("error", "invalid-ai-server-url"));
+  }
+
+  if (mode === "custom" && (!customName || !customBaseUrl || !customModel)) {
+    redirect(adminConfigurationSettingsPath("error", "custom-ai-server-required"));
+  }
+
+  const existing = await prisma.aiServerSetting.findUnique({
+    where: { id: aiServerSettingsId },
+    select: { customApiKeyEncrypted: true }
+  });
+  let customApiKeyEncrypted = existing?.customApiKeyEncrypted || "";
+  if (clearCustomApiKey) {
+    customApiKeyEncrypted = "";
+  } else if (customApiKey) {
+    try {
+      customApiKeyEncrypted = encryptAiApiKey(customApiKey);
+    } catch {
+      redirect(adminConfigurationSettingsPath("error", "ai-server-secret-unavailable"));
+    }
+  }
+
+  await prisma.aiServerSetting.upsert({
+    where: { id: aiServerSettingsId },
+    update: { mode, customName, customBaseUrl, customModel, customApiKeyEncrypted },
+    create: { id: aiServerSettingsId, mode, customName, customBaseUrl, customModel, customApiKeyEncrypted }
+  });
+
+  revalidatePath("/admin/settings");
+  redirect(adminConfigurationSettingsPath("notice", "ai-server-saved"));
 }
 
 export async function updateStudyBuddyHeroImageSettings(formData: FormData) {

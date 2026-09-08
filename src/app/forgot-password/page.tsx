@@ -2,7 +2,7 @@ import { ForgotPasswordPanel } from "@/components/forgot-password-panel";
 import { getSystemSettings } from "@/lib/system-settings";
 
 export default async function ForgotPasswordPage() {
-  const settings = await getSystemSettings();
+  const settings = await getSystemSettings(["loginHeroImageUrl", "customerServiceEmail"]);
 
   return (
     <main className="min-h-dvh bg-white">

@@ -24,14 +24,11 @@ type RegionOption = {
   name: string;
   province: string;
   studySystem: string;
-  description: string | null;
 };
 
 type SubjectOption = {
   id: string;
   name: string;
-  code?: string | null;
-  description?: string | null;
 };
 
 type FoundationOptions = {
@@ -64,7 +61,6 @@ export type CourseCenterOverview = {
     publishedCourseCount: number;
     chapterCount: number;
     sectionCount: number;
-    passedCount: number;
     progressPercent: number;
     currentSection: {
       title: string;

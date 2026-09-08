@@ -21,8 +21,7 @@ export async function getFoundationOptions(regionId?: string) {
       id: true,
       name: true,
       province: true,
-      studySystem: true,
-      description: true
+      studySystem: true
     },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
   });
@@ -43,9 +42,7 @@ export async function getFoundationOptions(regionId?: string) {
       },
       select: {
         id: true,
-        name: true,
-        code: true,
-        description: true
+        name: true
       },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
     }),
@@ -56,8 +53,7 @@ export async function getFoundationOptions(regionId?: string) {
       },
       select: {
         id: true,
-        name: true,
-        description: true
+        name: true
       },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
     })
@@ -69,10 +65,13 @@ export async function getFoundationOptions(regionId?: string) {
 export async function getStudentFoundationProfile(userId: string) {
   return prisma.studentProfile.findUnique({
     where: { userId },
-    include: {
-      region: true,
-      publicSubject: true,
-      major: true
+    select: {
+      regionId: true,
+      publicSubjectId: true,
+      majorId: true,
+      region: { select: { id: true, name: true, province: true, studySystem: true } },
+      publicSubject: { select: { id: true, name: true } },
+      major: { select: { id: true, name: true } }
     }
   });
 }

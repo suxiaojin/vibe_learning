@@ -53,7 +53,6 @@ export async function listAdminAiStudyProjects(input: AdminAiStudyProjectFilters
           select: {
             id: true,
             username: true,
-            status: true,
             studentProfile: {
               select: {
                 nickname: true
@@ -61,37 +60,9 @@ export async function listAdminAiStudyProjects(input: AdminAiStudyProjectFilters
             }
           }
         },
-        sources: {
-          orderBy: { createdAt: "desc" },
-          take: 2,
-          select: {
-            id: true,
-            fileName: true,
-            storageBucket: true,
-            storageKey: true,
-            storagePath: true
-          }
-        },
-        tasks: {
-          orderBy: { createdAt: "desc" },
-          take: 1,
-          select: {
-            id: true,
-            type: true,
-            status: true,
-            stage: true,
-            errorMessage: true,
-            updatedAt: true
-          }
-        },
         _count: {
           select: {
-            sources: true,
-            sourceChunks: true,
-            purchases: { where: adminPurchaseStudentWhere },
-            nodes: true,
-            cards: true,
-            tasks: true
+            purchases: { where: adminPurchaseStudentWhere }
           }
         }
       }

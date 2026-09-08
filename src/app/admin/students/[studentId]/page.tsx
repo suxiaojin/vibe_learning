@@ -136,26 +136,26 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
   const sevenDaysAgo = new Date(Date.now() - 7 * dayMs);
   const student = await prisma.user.findFirst({
     where: { id: studentId, role: "student" },
-    include: {
+    select: {
+      id: true,
+      username: true,
+      status: true,
+      createdAt: true,
+      lastLoginAt: true,
+      phoneNumber: true,
+      email: true,
+      adminRemark: true,
       studentProfile: {
-        include: {
-          region: true,
-          publicSubject: true,
-          major: true
+        select: {
+          nickname: true,
+          avatarColor: true,
+          avatarImage: true,
+          gender: true,
+          school: true,
+          region: { select: { name: true, province: true, studySystem: true } },
+          publicSubject: { select: { name: true } },
+          major: { select: { name: true } }
         }
-      },
-      diamondAccount: true,
-      passwordChangeLogs: {
-        include: {
-          actor: {
-            select: {
-              username: true,
-              role: true
-            }
-          }
-        },
-        orderBy: { createdAt: "desc" },
-        take: 10
       }
     }
   });
@@ -165,113 +165,131 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
   }
 
   const postFetchLimit = Math.min(postPage * portraitPageSize + 1, 50);
-  const [
-    totalAttempts,
-    gradedAttempts,
-    correctAttempts,
-    latestAttempt,
-    sevenDayAttempts,
-    recentSessions,
-    wrongQuestions,
-    diamondTransactionCount,
-    diamondTransactions,
-    userPosts,
-    learningPath
-  ] = await Promise.all([
-    prisma.questionAttempt.count({ where: { userId: student.id } }),
-    prisma.questionAttempt.count({ where: { userId: student.id, gradingStatus: "auto_graded" } }),
-    prisma.questionAttempt.count({ where: { userId: student.id, gradingStatus: "auto_graded", isCorrect: true } }),
-    prisma.questionAttempt.findFirst({
-      where: { userId: student.id },
-      orderBy: { createdAt: "desc" },
-      select: { createdAt: true }
-    }),
-    prisma.questionAttempt.count({ where: { userId: student.id, createdAt: { gte: sevenDaysAgo } } }),
-    prisma.quizSession.findMany({
-      where: { userId: student.id, status: "completed" },
-      orderBy: [{ completedAt: "desc" }, { updatedAt: "desc" }],
-      take: 5,
-      select: {
-        id: true,
-        score: true,
-        correctCount: true,
-        totalCount: true,
-        completedAt: true,
-        syllabusItem: {
+  const [passwordChangeLogs, learningData, portraitData] = await Promise.all([
+    activeTab === "basic"
+      ? prisma.passwordChangeLog.findMany({
+          where: { userId: student.id },
           select: {
-            title: true,
-            parent: { select: { title: true } },
-            course: { select: { name: true } }
-          }
-        }
-      }
-    }),
-    prisma.wrongQuestion.findMany({
-      where: { userId: student.id, status: "active" },
-      orderBy: [{ wrongCount: "desc" }, { lastWrongAt: "desc" }],
-      take: 100,
-      select: {
-        id: true,
-        wrongCount: true,
-        lastWrongAt: true,
-        question: {
-          select: {
-            knowledgePoint: {
-              select: {
-                id: true,
-                title: true,
-                chapter: { select: { title: true } }
+            id: true,
+            source: true,
+            note: true,
+            createdAt: true,
+            actor: { select: { username: true, role: true } }
+          },
+          orderBy: { createdAt: "desc" },
+          take: 10
+        })
+      : Promise.resolve([]),
+    activeTab === "learning"
+      ? Promise.all([
+          prisma.questionAttempt.count({ where: { userId: student.id } }),
+          prisma.questionAttempt.count({ where: { userId: student.id, gradingStatus: "auto_graded" } }),
+          prisma.questionAttempt.count({ where: { userId: student.id, gradingStatus: "auto_graded", isCorrect: true } }),
+          prisma.questionAttempt.findFirst({
+            where: { userId: student.id },
+            orderBy: { createdAt: "desc" },
+            select: { createdAt: true }
+          }),
+          prisma.questionAttempt.count({ where: { userId: student.id, createdAt: { gte: sevenDaysAgo } } }),
+          prisma.quizSession.findMany({
+            where: { userId: student.id, status: "completed" },
+            orderBy: [{ completedAt: "desc" }, { updatedAt: "desc" }],
+            take: 5,
+            select: {
+              id: true,
+              score: true,
+              correctCount: true,
+              totalCount: true,
+              completedAt: true,
+              syllabusItem: {
+                select: {
+                  title: true,
+                  parent: { select: { title: true } },
+                  course: { select: { name: true } }
+                }
               }
-            },
-            syllabusItem: {
-              select: {
-                id: true,
-                title: true,
-                parent: { select: { title: true } },
-                course: { select: { name: true } }
-              }
-            },
-            knowledgeTags: {
-              select: {
-                syllabusItem: {
-                  select: {
-                    id: true,
-                    title: true,
-                    parent: { select: { title: true } },
-                    course: { select: { name: true } }
+            }
+          }),
+          prisma.wrongQuestion.findMany({
+            where: { userId: student.id, status: "active" },
+            orderBy: [{ wrongCount: "desc" }, { lastWrongAt: "desc" }],
+            take: 100,
+            select: {
+              wrongCount: true,
+              lastWrongAt: true,
+              question: {
+                select: {
+                  knowledgePoint: {
+                    select: { id: true, title: true, chapter: { select: { title: true } } }
+                  },
+                  syllabusItem: {
+                    select: {
+                      id: true,
+                      title: true,
+                      parent: { select: { title: true } },
+                      course: { select: { name: true } }
+                    }
+                  },
+                  knowledgeTags: {
+                    select: {
+                      syllabusItem: {
+                        select: {
+                          id: true,
+                          title: true,
+                          parent: { select: { title: true } },
+                          course: { select: { name: true } }
+                        }
+                      }
+                    }
                   }
                 }
               }
             }
-          }
-        }
-      }
-    }),
-    prisma.diamondTransaction.count({
-      where: { userId: student.id }
-    }),
-    prisma.diamondTransaction.findMany({
-      where: { userId: student.id },
-      orderBy: { createdAt: "desc" },
-      skip: (diamondPage - 1) * portraitPageSize,
-      take: portraitPageSize
-    }),
-    listProfileBuddyPosts(admin.id, student.id, { includeInteractions: true, tab: "posts", limit: postFetchLimit }),
-    getStudentLearningPath(student.id)
+          }),
+          getStudentLearningPath(student.id)
+        ])
+      : Promise.resolve(null),
+    activeTab === "portrait"
+      ? Promise.all([
+          prisma.questionAttempt.count({ where: { userId: student.id } }),
+          prisma.diamondAccount.findUnique({ where: { userId: student.id }, select: { balance: true } }),
+          prisma.diamondTransaction.count({ where: { userId: student.id } }),
+          prisma.diamondTransaction.findMany({
+            where: { userId: student.id },
+            orderBy: { createdAt: "desc" },
+            skip: (diamondPage - 1) * portraitPageSize,
+            take: portraitPageSize
+          }),
+          listProfileBuddyPosts(admin.id, student.id, { includeInteractions: true, tab: "posts", limit: postFetchLimit })
+        ])
+      : Promise.resolve(null)
   ]);
+
+  const totalAttempts = learningData?.[0] ?? portraitData?.[0] ?? 0;
+  const gradedAttempts = learningData?.[1] ?? 0;
+  const correctAttempts = learningData?.[2] ?? 0;
+  const latestAttempt = learningData?.[3] ?? null;
+  const sevenDayAttempts = learningData?.[4] ?? 0;
+  const recentSessions = learningData?.[5] ?? [];
+  const wrongQuestions = learningData?.[6] ?? [];
+  const learningPath = learningData?.[7] ?? null;
+  const diamondAccount = portraitData?.[1] ?? null;
+  const diamondTransactionCount = portraitData?.[2] ?? 0;
+  const diamondTransactions = portraitData?.[3] ?? [];
+  const userPosts = portraitData?.[4] ?? null;
 
   const profile = student.studentProfile;
   const nickname = profile?.nickname || student.username;
   const avatarColor = avatarColors.some((item) => item.key === profile?.avatarColor) ? profile?.avatarColor || "green" : "green";
   const medal = getMedalRule(getMedalLevel(totalAttempts));
   const returnTo = `/admin/students/${student.id}?tab=${activeTab}`;
-  const currentStages = getUnlockedStages(learningPath);
+  const currentStages = learningPath ? getUnlockedStages(learningPath) : [];
   const selectedSpecialty = getSelectedSpecialty(profile);
   const correctRate = gradedAttempts > 0 ? Math.round((correctAttempts / gradedAttempts) * 100) : 0;
-  const passedStageCount = getPassedStageCount(learningPath);
+  const passedStageCount = learningPath ? getPassedStageCount(learningPath) : 0;
   const weakAreas = buildWeakAreas(wrongQuestions);
-  const userPostPageItems = userPosts.items.slice((postPage - 1) * portraitPageSize, postPage * portraitPageSize);
-  const userPostsHasNext = userPosts.items.length > postPage * portraitPageSize;
+  const userPostPageItems = userPosts?.items.slice((postPage - 1) * portraitPageSize, postPage * portraitPageSize) ?? [];
+  const userPostsHasNext = (userPosts?.items.length ?? 0) > postPage * portraitPageSize;
   const portraitBasePath = `/admin/students/${student.id}`;
 
   return (
@@ -334,7 +352,7 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
             <DetailRow label="注册日期" value={formatDateTime(student.createdAt)} />
             <DetailRow label="最后登录日期" value={student.lastLoginAt ? formatDateTime(student.lastLoginAt) : "暂无"} />
             <PasswordRow studentId={student.id} returnTo={`/admin/students/${student.id}?tab=basic`} />
-            <PasswordChangeLogRow logs={student.passwordChangeLogs} />
+            <PasswordChangeLogRow logs={passwordChangeLogs} />
           </div>
         </DetailSection>
       ) : null}
@@ -351,7 +369,7 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
             </div>
 
             <DetailSubsection title="当前关卡">
-              {!learningPath.completed ? (
+              {!learningPath?.completed ? (
                 <p className="text-sm font-semibold text-slate-500">学生尚未完成地区、公共课、专业课选择。</p>
               ) : currentStages.length === 0 ? (
                 <p className="text-sm font-semibold text-slate-500">暂无正在闯关的关卡。</p>
@@ -392,7 +410,7 @@ export default async function StudentDetailPage({ params, searchParams }: PagePr
               <div className="min-w-0">
                 <div className="flex items-center gap-2 font-semibold text-slate-700">
                   <Gem className="text-sky-500" size={17} />
-                  {student.diamondAccount?.balance || 0} 颗
+                  {diamondAccount?.balance || 0} 颗
                 </div>
                 <form action={addStudentDiamonds} className="mt-3 flex max-w-2xl flex-wrap items-end gap-3">
                   <input type="hidden" name="id" value={student.id} />

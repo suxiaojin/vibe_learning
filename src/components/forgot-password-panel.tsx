@@ -18,7 +18,7 @@ type ApiResponse = {
   };
 };
 
-export function ForgotPasswordPanel({ settings }: { settings: PublicSystemSettings }) {
+export function ForgotPasswordPanel({ settings }: { settings: Pick<PublicSystemSettings, "customerServiceEmail"> }) {
   const [email, setEmail] = useState("");
   const [temporaryPassword, setTemporaryPassword] = useState("");
   const [sending, setSending] = useState(false);

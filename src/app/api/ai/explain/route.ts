@@ -9,6 +9,7 @@ import {
   renderAiExplainPromptTemplate
 } from "@/lib/ai-explain-prompt-template";
 import { resolveAiExplainPromptContext } from "@/lib/ai-explain-prompts";
+import { getActiveAiServerConfig } from "@/lib/ai-server-settings";
 import { getCurrentUser } from "@/lib/auth";
 import { canExplainAttemptedQuestion } from "@/lib/learning";
 import { streamQwen } from "@/lib/qwen";
@@ -301,6 +302,7 @@ export async function POST(request: Request) {
 
   return createTextStream("generated", async (push) => {
     let emitted = false;
+    const aiServer = await getActiveAiServerConfig();
     const answer = await streamQwen(
       [
         { role: "system", content: system },
@@ -312,6 +314,7 @@ export async function POST(request: Request) {
       },
       {
         signal: request.signal,
+        serverConfig: aiServer,
         temperature: prompt ? 0.35 : 0.4,
         timeoutMs: 60_000
       }
@@ -324,6 +327,7 @@ export async function POST(request: Request) {
     await completeAiConversation({
       answer,
       conversationId,
+      modelName: aiServer.model,
       purpose: prompt ? FOLLOW_UP_PURPOSE : DEFAULT_PURPOSE,
       userPrompt
     });
@@ -529,11 +533,13 @@ async function getAiConversationReplayResponse({
 async function completeAiConversation({
   answer,
   conversationId,
+  modelName,
   purpose,
   userPrompt
 }: {
   answer: string;
   conversationId: string;
+  modelName: string;
   purpose: string;
   userPrompt: string;
 }) {
@@ -542,7 +548,7 @@ async function completeAiConversation({
       where: { id: conversationId },
       data: {
         purpose,
-        modelName: process.env.QWEN_MODEL || null,
+        modelName,
         answerSource: "generated",
         messages: [
           { role: "user", content: userPrompt },

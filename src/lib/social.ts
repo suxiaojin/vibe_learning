@@ -101,7 +101,7 @@ export async function getSocialProfile(viewerId: string, targetId: string) {
     viewerId === targetId
       ? Promise.resolve(false)
       : prisma.socialFollow.count({ where: { followerId: viewerId, followingId: targetId } }),
-    getSystemSettings()
+    getSystemSettings(["profileHomepageBackgroundImageUrl", "profileHomepageBackgroundUpdatedAt"])
   ]);
 
   if (!target) {

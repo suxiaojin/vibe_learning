@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SignJWT, jwtVerify } from "jose";
@@ -111,7 +112,7 @@ async function getUserFromSession(cookieName: string) {
   }
 }
 
-export async function getCurrentUser() {
+export const getCurrentUser = cache(async () => {
   const user = await getUserFromSession(studentCookieName);
   if (!user || user.role !== "student") {
     return null;
@@ -125,12 +126,12 @@ export async function getCurrentUser() {
   }
 
   return user;
-}
+});
 
-export async function getCurrentAdmin() {
+export const getCurrentAdmin = cache(async () => {
   const user = await getUserFromSession(adminCookieName);
   return user?.role === "admin" ? user : null;
-}
+});
 
 export async function requireUser() {
   const user = await getCurrentUser();

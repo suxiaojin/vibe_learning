@@ -775,15 +775,6 @@ function buildAiFollowUpExchanges(messages: AiMessage[]) {
   return [...exchanges.values()].filter((exchange) => exchange.question);
 }
 
-function StreamingPlaceholder() {
-  return (
-    <p className="flex items-center gap-2 text-slate-500">
-      <Loader2 className="animate-spin" size={20} />
-      AI正在组织答案...
-    </p>
-  );
-}
-
 function AiAnswerText({ content }: { content: string }) {
   if (isDiamondInsufficientMessage(content)) {
     return <DiamondInsufficientMessage className="text-base leading-8" />;

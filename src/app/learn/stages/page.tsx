@@ -51,7 +51,7 @@ export default async function StagesPage({
   const params = await searchParams;
   const [pathState, settings] = await Promise.all([
     getStudentLearningPath(user.id, params?.course),
-    getSystemSettings()
+    getSystemSettings(["learningPathTheme"])
   ]);
   const group = pathState.selectedGroup;
   const currentChapterId = getCurrentChapterId(group);
