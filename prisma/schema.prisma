@@ -1543,6 +1543,7 @@ model OfficialStudyMaterial {
   publicSubjectId  String?
   title            String
   description      String?                         @db.Text
+  tag              String?                         @db.VarChar(50)
   fileType         OfficialStudyMaterialFileType
   originalFileName String
   mimeType         String

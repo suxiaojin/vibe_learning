@@ -2173,7 +2173,19 @@ export function QuestionBankDetailWorkbench({ ownerName, paperId, paperTitle, ow
         <input ref={orderInputRef} type="hidden" name="order" />
       </form>
       {selectedQuestion ? (
-        <form id="delete-question-form" action={deleteQuestionBankPaperQuestion} className="hidden">
+        <form
+          id="delete-question-form"
+          action={deleteQuestionBankPaperQuestion}
+          className="hidden"
+          onSubmit={(event) => {
+            const confirmed = window.confirm(
+              "确认彻底删除这道题吗？此操作会同时删除该题在所有题库、综合闯关、答题记录、错题、知识标签和 AI 问答中的数据，且不可恢复。"
+            );
+            if (!confirmed) {
+              event.preventDefault();
+            }
+          }}
+        >
           <input type="hidden" name="paperId" value={paperId} />
           <input type="hidden" name="paperQuestionId" value={selectedQuestion.id} />
         </form>

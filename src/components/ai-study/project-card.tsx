@@ -306,7 +306,7 @@ export function AiStudyProjectCard({
           </div>
         ) : null}
         <div className="relative z-10 h-full">
-          <h3 ref={titleRef} className={`line-clamp-2 pr-[74px] text-[19px] font-semibold leading-[1.45] tracking-normal ${isGenerating ? "text-white" : "text-[#1d2430]"}`}>
+          <h3 ref={titleRef} className={`line-clamp-2 pr-[74px] text-[18px] font-semibold leading-[1.45] tracking-normal ${isGenerating ? "text-white" : "text-[#1d2430]"}`}>
             {currentTitle}
           </h3>
           <img
@@ -334,7 +334,7 @@ export function AiStudyProjectCard({
               </p>
             ) : null}
             {displayStatus !== "draft" && displayStatus !== "failed" && !isGenerating ? (
-              <p className="line-clamp-2 text-[13px] font-medium leading-[20px] text-[#667085] transition-all duration-150 group-hover:line-clamp-4">
+              <p className="line-clamp-2 text-[14px] font-normal leading-6 text-[#667085] transition-all duration-150 group-hover:line-clamp-4">
                 {overviewText}
               </p>
             ) : null}

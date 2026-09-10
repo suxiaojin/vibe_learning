@@ -11,6 +11,7 @@ export type OfficialStudyMaterialCardItem = {
   id: string;
   title: string;
   description: string;
+  tag: string;
   fileType: "pdf" | "word";
   fileSizeBytes: number;
   diamondPrice: number;
@@ -19,6 +20,7 @@ export type OfficialStudyMaterialCardItem = {
 
 export function OfficialStudyMaterialCard({ material }: { material: OfficialStudyMaterialCardItem }) {
   const purchase = useProjectPurchase({ ...material, kind: "official" });
+  const description = material.description.trim();
   return (
     <>
     <Link
@@ -33,20 +35,20 @@ export function OfficialStudyMaterialCard({ material }: { material: OfficialStud
       }}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1 rounded-md bg-[#eaf8ec] px-2 py-1 text-[11px] font-black text-[#108a20]">
+        <span className="inline-flex items-center gap-1 rounded-md bg-[#eaf8ec] px-2 py-1 text-[11px] font-semibold text-[#108a20]">
           <ShieldCheck size={13} />官方资料
         </span>
-        <span className={`rounded-md px-2 py-1 text-[11px] font-black ${material.fileType === "pdf" ? "bg-red-50 text-red-600" : "bg-blue-50 text-blue-700"}`}>
-          {material.fileType === "pdf" ? "PDF" : "Word"}
-        </span>
+        {material.fileType === "word" ? (
+          <span className="rounded-md bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700">Word</span>
+        ) : null}
       </div>
 
-      <h3 className="mt-3 line-clamp-2 pr-10 text-[19px] font-semibold leading-[1.42] text-[#1d2430]">{material.title}</h3>
-      <div className="mt-2 w-[190px]">
-        <p className="line-clamp-2 text-[13px] font-medium leading-5 text-[#667085]">
-          {material.description || "无需 AI 解析，打开即可阅读原始学习资料。"}
-        </p>
-      </div>
+      <h3 className="mt-3 line-clamp-2 pr-10 text-[18px] font-semibold leading-[1.45] text-[#1d2430]">{material.title}</h3>
+      {description ? (
+        <div className="mt-2 w-[190px]">
+          <p className="line-clamp-2 text-[14px] font-normal leading-6 text-[#667085]">{description}</p>
+        </div>
+      ) : null}
 
       <div className="absolute bottom-[46px] right-5 grid size-12 place-items-center rounded-xl border border-white bg-white/90 text-[#16a329] shadow-[0_7px_18px_rgba(16,24,40,0.10)] transition group-hover:scale-105">
         <BookOpen size={24} />

@@ -12,7 +12,7 @@ type StudyBuddyHeroTitleProps = {
   startDelayMs?: number;
 };
 
-const baseTitleClass = "study-buddy-hero-title text-[30px] font-black leading-tight tracking-normal text-[#06122b] md:text-[34px]";
+const baseTitleClass = "study-buddy-hero-title text-[28px] font-bold leading-tight tracking-normal text-[#06122b] md:text-[32px]";
 
 export function StudyBuddyHeroTitle({
   text,

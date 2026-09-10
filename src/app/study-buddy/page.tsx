@@ -124,6 +124,7 @@ async function PublicProjectSection({
     id: material.id,
     title: material.title,
     description: material.description || "",
+    tag: material.tag || "",
     diamondPrice: material.diamondPrice,
     purchased: purchasedMaterialIds.has(material.id),
     fileType: material.fileType,
@@ -133,6 +134,8 @@ async function PublicProjectSection({
   return (
     <AiStudyProjectSection
       emptyText="暂无公开项目。"
+      enableTagFilter
+      loadMoreStep={10}
       projects={[...officialItems, ...aiItems]}
       title="公开项目"
     />

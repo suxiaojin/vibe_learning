@@ -274,7 +274,7 @@ export function StudyMaterialImporter() {
   return (
     <>
       <button
-        className="inline-flex h-10 items-center gap-2 rounded-[11px] bg-[linear-gradient(112deg,#101319_0%,#101319_45%,#0f4a22_100%)] px-5 text-[15px] font-extrabold text-white shadow-[0_10px_22px_rgba(15,74,34,0.18)] transition hover:translate-y-[-1px] hover:shadow-[0_14px_28px_rgba(15,74,34,0.22)]"
+        className="inline-flex h-10 items-center gap-2 rounded-[11px] bg-[linear-gradient(112deg,#101319_0%,#101319_45%,#0f4a22_100%)] px-5 text-[14px] font-semibold text-white shadow-[0_10px_22px_rgba(15,74,34,0.18)] transition hover:translate-y-[-1px] hover:shadow-[0_14px_28px_rgba(15,74,34,0.22)]"
         onClick={openModal}
         type="button"
       >

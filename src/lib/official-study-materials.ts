@@ -5,11 +5,10 @@ import { adminPurchaseStudentWhere } from "@/lib/admin-study-project-purchases";
 import { publicOfficialMaterialWhere } from "@/lib/study-project-access";
 import { deleteAiStudyObject, uploadAiStudyObject } from "@/lib/ai-study-storage";
 
-const maxOfficialMaterialBytes = 80 * 1024 * 1024;
-
 const updateMaterialSchema = z.object({
   title: z.string().trim().min(1).max(120),
   description: z.string().trim().max(2000).optional().nullable(),
+  tag: z.string().trim().max(50).optional().nullable(),
   scopeType: z.enum(["major", "public_subject"]).optional().nullable(),
   scopeId: z.string().trim().max(120).optional().nullable(),
   sortOrder: z.number().int().min(-10000).max(10000).optional()
@@ -92,25 +91,43 @@ export async function createOfficialStudyMaterial(
   if (input.size <= 0 || input.body.length <= 0) {
     throw new OfficialStudyMaterialError("资料文件不能为空。", 400, "OFFICIAL_MATERIAL_EMPTY_FILE");
   }
-  if (input.size > maxOfficialMaterialBytes || input.body.length > maxOfficialMaterialBytes) {
-    throw new OfficialStudyMaterialError("单个资料文件不能超过 80MB。", 413, "OFFICIAL_MATERIAL_FILE_TOO_LARGE");
-  }
   const id = crypto.randomUUID();
   const title = buildDefaultTitle(input.fileName);
   const safeFileName = sanitizeFileName(input.fileName);
+  const normalizedFileName = input.fileName.trim().toLowerCase();
   const storageKey = `official-study-materials/${id}/${safeFileName}`;
-  await prisma.officialStudyMaterial.create({
-    data: {
-      id,
-      createdById: adminId,
-      title,
-      fileType: detected.fileType,
-      originalFileName: input.fileName,
-      mimeType: detected.mimeType,
-      fileSizeBytes: input.body.length,
-      fileStatus: "uploading",
-      allowDownload: true
+  await prisma.$transaction(async (transaction) => {
+    await transaction.$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtextextended(${normalizedFileName}, 0))
+    `;
+    const duplicate = await transaction.$queryRaw<Array<{ id: string }>>`
+      SELECT "id"
+      FROM "official_study_materials"
+      WHERE "deletedAt" IS NULL
+        AND LOWER(TRIM("originalFileName")) = ${normalizedFileName}
+      LIMIT 1
+    `;
+    if (duplicate.length > 0) {
+      throw new OfficialStudyMaterialError(
+        `已存在同名文件“${input.fileName}”，请删除原文件或更换文件名后再上传。`,
+        409,
+        "OFFICIAL_MATERIAL_FILE_NAME_CONFLICT"
+      );
     }
+
+    await transaction.officialStudyMaterial.create({
+      data: {
+        id,
+        createdById: adminId,
+        title,
+        fileType: detected.fileType,
+        originalFileName: input.fileName,
+        mimeType: detected.mimeType,
+        fileSizeBytes: input.body.length,
+        fileStatus: "uploading",
+        allowDownload: true
+      }
+    });
   });
 
   try {
@@ -159,6 +176,7 @@ export async function updateOfficialStudyMaterial(materialId: string, input: unk
     data: {
       title: parsed.data.title,
       description: parsed.data.description?.trim() || null,
+      ...(parsed.data.tag !== undefined ? { tag: parsed.data.tag?.trim() || null } : {}),
       courseId: null,
       majorId: scope.majorId,
       publicSubjectId: scope.publicSubjectId,

@@ -14,6 +14,7 @@ export type AdminOfficialStudyMaterial = {
   diamondPrice: number;
   title: string;
   description: string | null;
+  tag: string | null;
   fileType: "pdf" | "word";
   originalFileName: string;
   mimeType: string;
@@ -37,13 +38,12 @@ type EditDraft = {
   id: string;
   title: string;
   description: string;
+  tag: string;
   scopeValue: string;
   sortOrder: string;
 };
 
 type UploadResult = { name: string; state: "uploading" | "done" | "failed"; message?: string };
-
-const maxFileBytes = 80 * 1024 * 1024;
 
 export function OfficialStudyMaterialPanel({
   initialMaterials,
@@ -62,6 +62,7 @@ export function OfficialStudyMaterialPanel({
   const [busyId, setBusyId] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const tagOptions = buildTagOptions(materials);
 
   function selectFiles(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files || []);
@@ -71,9 +72,23 @@ export function OfficialStudyMaterialPanel({
       setError(`${invalid.name} 不是 PDF 文件。`);
       return;
     }
-    const oversized = files.find((file) => file.size > maxFileBytes);
-    if (oversized) {
-      setError(`${oversized.name} 超过 80MB。`);
+    const existingFileNames = new Set(materials.map((material) => normalizeFileName(material.originalFileName)));
+    const existing = files.find((file) => existingFileNames.has(normalizeFileName(file.name)));
+    if (existing) {
+      setError(`已存在同名文件“${existing.name}”，禁止重复上传。`);
+      return;
+    }
+    const selectedFileNames = new Set<string>();
+    const repeated = files.find((file) => {
+      const normalizedName = normalizeFileName(file.name);
+      if (selectedFileNames.has(normalizedName)) {
+        return true;
+      }
+      selectedFileNames.add(normalizedName);
+      return false;
+    });
+    if (repeated) {
+      setError(`本次选择中包含同名文件“${repeated.name}”，禁止重复上传。`);
       return;
     }
     setError("");
@@ -131,6 +146,7 @@ export function OfficialStudyMaterialPanel({
       id: material.id,
       title: material.title,
       description: material.description || "",
+      tag: material.tag || "",
       scopeValue: material.majorId
         ? `major:${material.majorId}`
         : material.publicSubjectId
@@ -150,6 +166,7 @@ export function OfficialStudyMaterialPanel({
       action: "update",
       title: editing.title.trim(),
       description: editing.description.trim(),
+      tag: editing.tag.trim(),
       scopeType,
       scopeId,
       sortOrder: Number(editing.sortOrder || 0)
@@ -304,8 +321,22 @@ export function OfficialStudyMaterialPanel({
             <div className="mt-5 grid gap-4">
               <label className="label">标题<input className="input mt-1" maxLength={120} onChange={(event) => setEditing({ ...editing, title: event.target.value })} value={editing.title} /></label>
               <label className="label">简介<textarea className="input mt-1 min-h-24" maxLength={2000} onChange={(event) => setEditing({ ...editing, description: event.target.value })} value={editing.description} /></label>
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-3">
                 <label className="label">所属课程<select className="input mt-1" onChange={(event) => setEditing({ ...editing, scopeValue: event.target.value })} value={editing.scopeValue}><option value="">不指定课程</option><optgroup label="专业">{scopes.filter((scope) => scope.type === "major").map((scope) => <option key={`major:${scope.id}`} value={`major:${scope.id}`}>{scope.name}</option>)}</optgroup><optgroup label="公共课">{scopes.filter((scope) => scope.type === "public_subject").map((scope) => <option key={`public_subject:${scope.id}`} value={`public_subject:${scope.id}`}>{scope.name}</option>)}</optgroup></select></label>
+                <label className="label">
+                  Tag
+                  <input
+                    className="input mt-1"
+                    list="official-material-tag-options"
+                    maxLength={50}
+                    onChange={(event) => setEditing({ ...editing, tag: event.target.value })}
+                    placeholder="输入或选择"
+                    value={editing.tag}
+                  />
+                  <datalist id="official-material-tag-options">
+                    {tagOptions.map((tag) => <option key={tag} value={tag} />)}
+                  </datalist>
+                </label>
                 <label className="label">排序权重<input className="input mt-1" max={10000} min={-10000} onChange={(event) => setEditing({ ...editing, sortOrder: event.target.value })} type="number" value={editing.sortOrder} /></label>
               </div>
             </div>
@@ -354,6 +385,21 @@ function formatBytes(value: number) {
     return `${Math.max(1, Math.round(value / 1024))} KB`;
   }
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function normalizeFileName(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function buildTagOptions(materials: AdminOfficialStudyMaterial[]) {
+  const options = new Map<string, string>();
+  for (const material of materials) {
+    const tag = material.tag?.trim();
+    if (tag && !options.has(tag.toLowerCase())) {
+      options.set(tag.toLowerCase(), tag);
+    }
+  }
+  return Array.from(options.values()).sort((left, right) => left.localeCompare(right, "zh-CN"));
 }
 
 function formatDate(value: Date | string) {

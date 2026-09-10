@@ -2910,17 +2910,12 @@ export async function deleteQuestionBankPaperQuestion(formData: FormData) {
   });
 
   await prisma.$transaction(async (tx) => {
-    await tx.examPaperQuestion.delete({
-      where: { id: paperQuestionId }
-    });
-    const remainingLinks = await tx.examPaperQuestion.count({
+    await tx.chapterChallengeQuestion.deleteMany({
       where: { questionId: paperQuestion.questionId }
     });
-    if (remainingLinks === 0) {
-      await tx.question.delete({
-        where: { id: paperQuestion.questionId }
-      });
-    }
+    await tx.question.delete({
+      where: { id: paperQuestion.questionId }
+    });
   });
   await touchQuestionBankPaper(paperQuestion.paperId);
 
