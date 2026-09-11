@@ -15,13 +15,11 @@ import {
   updateAdminPassword,
   updateSystemSettings
 } from "@/app/admin/actions";
-import { AdminAiServerSettingsPanel } from "@/components/admin-ai-server-settings";
 import { AdminDiamondRuleSettings } from "@/components/admin-diamond-rule-settings";
 import { AdminLearningPathThemeSettings } from "@/components/admin-learning-path-theme-settings";
 import { AdminProfileBackgroundUploadForm } from "@/components/admin-profile-background-upload-form";
 import { AdminRechargeQrUploadForm } from "@/components/admin-recharge-qr-upload-form";
 import { requireAdmin } from "@/lib/auth";
-import { getAdminAiServerSettings } from "@/lib/ai-server-settings";
 import { listDiamondRuleSettings } from "@/lib/diamond-rules";
 import { prisma } from "@/lib/prisma";
 import { isShareCopyContext, shareCopyContextLabels } from "@/lib/share-copy";
@@ -43,7 +41,6 @@ const tabs: Array<{ key: SettingsTab; label: string }> = [
 const noticeText: Record<string, string> = {
   saved: "系统设置已保存。",
   "admin-password-saved": "管理员 admin 登录密码已更新。",
-  "ai-server-saved": "AI 服务器配置已保存，后续新模型请求将使用当前选择。",
   "diamond-recharge-qr-saved": "钻石充值客服二维码已保存。",
   "profile-homepage-background-saved": "个人主页背景图已保存，并已覆盖当前用户的背景显示。",
   "study-buddy-hero-image-saved": "顶部动画已保存。",
@@ -61,11 +58,6 @@ const errorText: Record<string, string> = {
   "admin-current-password-invalid": "当前密码不正确。",
   "admin-password-unchanged": "新密码不能与当前密码相同。",
   "admin-account-not-found": "未找到可修改的管理员 admin 账号。",
-  "invalid-ai-server-mode": "请选择内置或自定义 AI 服务器。",
-  "invalid-ai-server-url": "API Base URL 必须是有效的 HTTP 或 HTTPS 地址，且不要包含账号密码。",
-  "custom-ai-server-required": "启用自定义 AI 服务器前，请完整填写配置名称、API Base URL 和模型 ID。",
-  "ai-server-value-too-long": "AI 服务器配置内容过长，请缩短后重试。",
-  "ai-server-secret-unavailable": "无法加密 API Key，请先配置至少 24 字节的 AI_SERVER_CONFIG_SECRET 或 AUTH_SECRET。",
   "image-too-large": "图片不能超过 5MB。",
   "invalid-image-type": "请上传 PNG、JPG、WEBP 或 GIF 图片。",
   "diamond-recharge-qr-required": "请选择要上传的钻石充值客服二维码。",
@@ -154,7 +146,6 @@ export default async function AdminSettingsPage({
       })
     : [];
   const diamondRules = activeTab === "diamonds" ? await listDiamondRuleSettings() : [];
-  const aiServerSettings = activeTab === "admin" ? await getAdminAiServerSettings() : null;
   const notice = params?.notice ? noticeText[params.notice] : null;
   const error = params?.error ? errorText[params.error] : null;
 
@@ -358,7 +349,6 @@ export default async function AdminSettingsPage({
 
       {activeTab === "admin" ? (
         <div className="grid gap-4">
-          {aiServerSettings ? <AdminAiServerSettingsPanel settings={aiServerSettings} /> : null}
           <form action={updateAdminPassword} className="border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
               <div>

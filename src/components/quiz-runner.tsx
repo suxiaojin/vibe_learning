@@ -101,9 +101,15 @@ function answerText(answer: unknown) {
 
 const richTextHtmlPattern = /<\/?[a-z][\s\S]*>/i;
 
-function RichTextContent({ className, value }: { className?: string; value: string }) {
+function RichTextContent({ className, inline = false, value }: { className?: string; inline?: boolean; value: string }) {
   if (!richTextHtmlPattern.test(value)) {
+    if (inline) {
+      return <span className={cn("whitespace-pre-wrap", className)}>{value}</span>;
+    }
     return <p className={cn("whitespace-pre-wrap", className)}>{value}</p>;
+  }
+  if (inline) {
+    return <span className={cn("break-words [&_img]:inline-block [&_img]:h-auto [&_img]:max-w-full", className)} dangerouslySetInnerHTML={{ __html: value }} />;
   }
   return (
     <div
@@ -512,7 +518,8 @@ export function QuizRunner({
                   disabled={checkState !== "idle"}
                   onClick={() => toggleAnswer(current, option.key)}
                 >
-                  <span className="mr-2 text-slate-400">{option.key}.</span> {option.text}
+                  <span className="mr-2 text-slate-400">{option.key}.</span>
+                  <RichTextContent className="inline" inline value={option.text} />
                 </button>
               );
             })}

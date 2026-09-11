@@ -1,3 +1,5 @@
+import { richTextToAiText } from "@/lib/rich-text-plain";
+
 export const aiExplainPromptVariables = [
   "courseName",
   "knowledgePointTitle",
@@ -75,7 +77,7 @@ export function formatAiExplainOptions(options: unknown) {
   return options
     .map((option) => {
       if (typeof option === "object" && option && "key" in option && "text" in option) {
-        return `${String(option.key)}. ${String(option.text)}`;
+        return `${String(option.key)}. ${richTextToAiText(String(option.text))}`;
       }
       return String(option);
     })
@@ -83,5 +85,7 @@ export function formatAiExplainOptions(options: unknown) {
 }
 
 export function formatAiExplainAnswer(answer: unknown) {
-  return Array.isArray(answer) ? answer.map(String).join("、") : String(answer || "");
+  return Array.isArray(answer)
+    ? answer.map((item) => richTextToAiText(String(item))).join("、")
+    : richTextToAiText(String(answer || ""));
 }

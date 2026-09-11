@@ -6,6 +6,7 @@ import { AlertTriangle, CheckCircle2, FileInput, Loader2, Maximize2, Minimize2, 
 import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 import type { ImportQuestion, ImportQuestionPaperPayload } from "@/lib/question-paper-import";
 import { cn } from "@/lib/utils";
+import { RichTextContent } from "@/components/rich-text-content";
 
 type RegionOption = {
   id: string;
@@ -61,9 +62,45 @@ function answerToText(answer: string[]) {
 
 function textToAnswer(value: string) {
   return value
+    .replace(/<br\b[^>]*\/?\s*>/gi, "\n")
+    .replace(/<\/?div\b[^>]*>/gi, "\n")
     .split(/[、,\n]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function ImportRichTextEditor({
+  ariaLabel,
+  className,
+  onChange,
+  value
+}: {
+  ariaLabel: string;
+  className: string;
+  onChange: (html: string) => void;
+  value: string;
+}) {
+  const editorRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (editor && editor.innerHTML !== value) {
+      editor.innerHTML = value;
+    }
+  }, [value]);
+
+  return (
+    <div
+      ref={editorRef}
+      aria-label={ariaLabel}
+      className={className}
+      contentEditable
+      onInput={(event) => onChange(event.currentTarget.innerHTML)}
+      role="textbox"
+      suppressContentEditableWarning
+      tabIndex={0}
+    />
+  );
 }
 
 function questionIssues(question: ImportQuestion) {
@@ -592,8 +629,8 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
                                 >
                                   <td className="px-2 py-2 font-semibold">{question.number}</td>
                                   <td className="px-2 py-2">{typeLabels[question.type] || question.type}</td>
-                                  <td className="max-w-[520px] truncate px-2 py-2">{question.stem}</td>
-                                  <td className="px-2 py-2">{answerToText(question.answer)}</td>
+                                  <td className="max-w-[520px] px-2 py-2"><RichTextContent className="line-clamp-1" value={question.stem} /></td>
+                                  <td className="px-2 py-2"><RichTextContent value={answerToText(question.answer)} /></td>
                                 </tr>
                               );})}
                             </tbody>
@@ -613,45 +650,49 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
                                 ))}
                               </div>
                             ) : null}
-                            <label className="grid gap-1">
+                            <div className="grid gap-1">
                               <span className="font-semibold text-[#071b38]">题干</span>
-                              <textarea
+                              <ImportRichTextEditor
+                                ariaLabel="题干"
                                 className="min-h-24 resize-y border border-[#d6dce7] bg-white p-2 leading-6 outline-none focus:border-[#6f8dff]"
                                 value={selectedQuestion.stem}
-                                onChange={(event) => updateQuestion(selectedQuestion.number, (question) => ({ ...question, stem: event.target.value }))}
+                                onChange={(html) => updateQuestion(selectedQuestion.number, (question) => ({ ...question, stem: html }))}
                               />
-                            </label>
+                            </div>
                             {selectedQuestion.options.length > 0 ? (
                               <div className="grid gap-2">
                                 <div className="font-semibold text-[#071b38]">选项</div>
                                 {selectedQuestion.options.map((option) => (
-                                  <label key={option.key} className="grid grid-cols-[28px_minmax(0,1fr)] items-center gap-2">
+                                  <div key={option.key} className="grid grid-cols-[28px_minmax(0,1fr)] items-center gap-2">
                                     <span className="font-bold">{option.key}</span>
-                                    <input
-                                      className="h-9 border border-[#d6dce7] bg-white px-2 outline-none focus:border-[#6f8dff]"
+                                    <ImportRichTextEditor
+                                      ariaLabel={`${option.key} 选项`}
+                                      className="min-h-9 border border-[#d6dce7] bg-white px-2 py-2 outline-none focus:border-[#6f8dff]"
                                       value={option.text}
-                                      onChange={(event) => updateOption(selectedQuestion, option.key, event.target.value)}
+                                      onChange={(html) => updateOption(selectedQuestion, option.key, html)}
                                     />
-                                  </label>
+                                  </div>
                                 ))}
                               </div>
                             ) : null}
-                            <label className="grid gap-1">
+                            <div className="grid gap-1">
                               <span className="font-semibold text-[#071b38]">答案</span>
-                              <input
-                                className="h-9 border border-[#d6dce7] bg-white px-2 outline-none focus:border-[#6f8dff]"
+                              <ImportRichTextEditor
+                                ariaLabel="答案"
+                                className="min-h-9 border border-[#d6dce7] bg-white px-2 py-2 outline-none focus:border-[#6f8dff]"
                                 value={answerToText(selectedQuestion.answer)}
-                                onChange={(event) => updateQuestion(selectedQuestion.number, (question) => ({ ...question, answer: textToAnswer(event.target.value) }))}
+                                onChange={(html) => updateQuestion(selectedQuestion.number, (question) => ({ ...question, answer: textToAnswer(html) }))}
                               />
-                            </label>
-                            <label className="grid gap-1">
+                            </div>
+                            <div className="grid gap-1">
                               <span className="font-semibold text-[#071b38]">解析</span>
-                              <textarea
+                              <ImportRichTextEditor
+                                ariaLabel="解析"
                                 className="min-h-40 resize-y border border-[#d6dce7] bg-white p-2 leading-6 outline-none focus:border-[#6f8dff]"
                                 value={selectedQuestion.analysis}
-                                onChange={(event) => updateQuestion(selectedQuestion.number, (question) => ({ ...question, analysis: event.target.value }))}
+                                onChange={(html) => updateQuestion(selectedQuestion.number, (question) => ({ ...question, analysis: html }))}
                               />
-                            </label>
+                            </div>
                           </div>
                         ) : null}
                       </div>

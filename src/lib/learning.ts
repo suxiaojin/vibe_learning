@@ -3,11 +3,12 @@ import { dailyAnswerStepSize } from "@/lib/diamond-rules";
 import { getStudentFoundationProfileStatus } from "@/lib/foundation";
 import { prisma } from "@/lib/prisma";
 import { getBeijingDate, grantDailyAnswerDiamondBonuses } from "@/lib/rewards";
+import { normalizeRichTextAnswer } from "@/lib/rich-text-plain";
 
 export function normalizeAnswer(value: unknown) {
   const array = Array.isArray(value) ? value : [value];
   return array
-    .map((item) => String(item).trim())
+    .map(normalizeRichTextAnswer)
     .filter(Boolean)
     .sort();
 }

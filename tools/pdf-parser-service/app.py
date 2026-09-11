@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import html
 import logging
 import os
 import re
@@ -150,6 +151,65 @@ def meaningful_text_length(text: str) -> int:
     return len(re.findall(r"[A-Za-z0-9\u3400-\u9fff]", cleaned))
 
 
+def rich_text_from_spans(spans: list[dict[str, Any]]) -> str:
+    visible_spans = [span for span in spans if str(span.get("text", ""))]
+    sized_spans = [span for span in visible_spans if str(span.get("text", "")).strip() and float(span.get("size") or 0) > 0]
+    if not sized_spans:
+        return ""
+
+    base_size = max(float(span.get("size") or 0) for span in sized_spans)
+    base_candidates = [span for span in sized_spans if float(span.get("size") or 0) >= base_size * 0.86]
+    base_origins = [float((span.get("origin") or (0, span.get("bbox", (0, 0, 0, 0))[3]))[1]) for span in base_candidates]
+    base_origin = median(base_origins) if base_origins else 0.0
+    offset_threshold = max(0.65, base_size * 0.07)
+    normalized_sources = [
+        unicodedata.normalize("NFKC", str(span.get("text", ""))).replace("\u200b", "").replace("\ufeff", "")
+        for span in visible_spans
+    ]
+    line_source = "".join(normalized_sources)
+    prefix_match = re.match(
+        r"^\s*(?:(?:第\s*)?\d{1,3}\s*(?:题)?\s*[\.、,，。:：\)）]|[A-Ha-h]\s*[\.、,，:：\)）])",
+        line_source,
+    )
+    protected_prefix_end = prefix_match.end() if prefix_match else 0
+
+    parts: list[str] = []
+    cursor = 0
+    for span, original_source in zip(visible_spans, normalized_sources):
+        protected_chars = max(0, min(len(original_source), protected_prefix_end - cursor))
+        cursor += len(original_source)
+        if protected_chars:
+            parts.append(html.escape(original_source[:protected_chars], quote=False))
+        source = original_source[protected_chars:]
+        if not source:
+            continue
+        escaped = html.escape(source, quote=False)
+        if not source.strip():
+            parts.append(escaped)
+            continue
+
+        size = float(span.get("size") or base_size)
+        origin = span.get("origin") or (0, span.get("bbox", (0, 0, 0, 0))[3])
+        vertical_offset = float(origin[1]) - base_origin
+        is_small = size < base_size * 0.86
+        flags = int(span.get("flags") or 0)
+        whitespace_match = re.match(r"^(\s*)(.*?)(\s*)$", source, re.S)
+        leading, core, trailing = whitespace_match.groups() if whitespace_match else ("", source, "")
+        escaped_core = html.escape(core, quote=False)
+        is_formula_fragment = bool(
+            re.fullmatch(r"[A-Za-z0-9+\-\u2212\u0370-\u03ff]+", core)
+        )
+        if is_formula_fragment and is_small and vertical_offset <= -offset_threshold:
+            parts.append(f"{html.escape(leading, quote=False)}<sup>{escaped_core}</sup>{html.escape(trailing, quote=False)}")
+        elif is_formula_fragment and is_small and vertical_offset >= offset_threshold:
+            parts.append(f"{html.escape(leading, quote=False)}<sub>{escaped_core}</sub>{html.escape(trailing, quote=False)}")
+        elif is_formula_fragment and is_small and (flags & 1):
+            parts.append(f"{html.escape(leading, quote=False)}<sup>{escaped_core}</sup>{html.escape(trailing, quote=False)}")
+        else:
+            parts.append(escaped)
+    return "".join(parts)
+
+
 def inspect_native_text(pdf_path: Path) -> dict[str, Any]:
     document = fitz.open(pdf_path)
     page_texts = [page.get_text("text", sort=True) for page in document]
@@ -180,7 +240,7 @@ def native_blocks_from_pdf(pdf_path: Path) -> list[list[dict[str, Any]]]:
                 direction = line.get("dir") or (1.0, 0.0)
                 if abs(float(direction[1])) > 0.18:
                     continue
-                text = remove_noise_fragments("".join(str(span.get("text", "")) for span in line.get("spans", [])))
+                text = remove_noise_fragments(rich_text_from_spans(line.get("spans", [])))
                 if not text:
                     continue
                 x, y, x2, y2 = [float(value) for value in line.get("bbox", (0, 0, 0, 0))]
@@ -612,7 +672,11 @@ def extract_answer_text(
 ) -> tuple[str, dict[str, Any]]:
     inspection = inspect_native_text(pdf_path)
     if inspection["usable"]:
-        return "\n".join(str(text) for text in inspection["pageTexts"]), {
+        native_pages = native_blocks_from_pdf(pdf_path)
+        # Keep PyMuPDF's native reading order for answer sheets. Re-grouping
+        # by visual rows can move standalone answer letters behind analysis
+        # text in multi-column or irregular layouts.
+        return "\n".join("\n".join(str(item["text"]) for item in page) for page in native_pages), {
             "method": "native_text",
             "meaningfulChars": inspection["meaningfulChars"],
             "pageMeaningfulChars": inspection["pageMeaningfulChars"],
@@ -919,10 +983,11 @@ def build_ai_review_prompt(questions: list[dict[str, Any]]) -> str:
     template = read_prompt_template(AI_REVIEW_USER_PROMPT_PATH, DEFAULT_AI_REVIEW_USER_PROMPT_TEMPLATE)
     if "{{QUESTIONS_JSON}}" not in template:
         template = f"{template.rstrip()}\n\n题目如下：\n{{{{QUESTIONS_JSON}}}}"
-    return (
+    prompt = (
         template.replace("{{QUESTIONS_JSON}}", questions_json)
         .replace("{{MIN_CONFIDENCE}}", f"{AI_REVIEW_MIN_CONFIDENCE:.2f}")
     )
+    return f"{prompt}\n\n原字段中的 <sub>...</sub> 和 <sup>...</sup> 是 PDF 上下标语义；如修改字段，必须原样保留这些标签及其内容。"
 
 
 def call_openai_compatible_chat(api_base_url: str, api_key: str, model: str, messages: list[dict[str, str]]) -> str:
@@ -966,6 +1031,18 @@ def sanitize_ai_answer(value: Any) -> list[str] | None:
     return None
 
 
+def formula_markup_signature(value: Any) -> list[tuple[str, str]]:
+    return [
+        (tag.lower(), html.unescape(re.sub(r"<[^>]*>", "", content)))
+        for tag, content in re.findall(r"<(sub|sup)>\s*([\s\S]*?)\s*</\1>", str(value or ""), re.I)
+    ]
+
+
+def preserves_formula_markup(source: Any, candidate: Any) -> bool:
+    source_signature = formula_markup_signature(source)
+    return not source_signature or source_signature == formula_markup_signature(candidate)
+
+
 def apply_ai_correction(question: dict[str, Any], correction: dict[str, Any]) -> tuple[list[str], list[str]]:
     changed: list[str] = []
     blocked: list[str] = []
@@ -982,6 +1059,8 @@ def apply_ai_correction(question: dict[str, Any], correction: dict[str, Any]) ->
             if text and text != question.get(key):
                 if not normalize_text(str(question.get(key) or "")):
                     blocked.append(label)
+                elif not preserves_formula_markup(question.get(key), text):
+                    blocked.append(f"{label}公式")
                 else:
                     question[key] = text
                     changed.append(label)
@@ -993,6 +1072,12 @@ def apply_ai_correction(question: dict[str, Any], correction: dict[str, Any]) ->
         next_keys = {str(item.get("key")) for item in options}
         if not source_options or source_keys != next_keys:
             blocked.append("选项")
+        elif any(
+            not preserves_formula_markup(source_item.get("text"), next_item.get("text"))
+            for source_item, next_item in zip(source_options, options)
+            if isinstance(source_item, dict) and isinstance(next_item, dict)
+        ):
+            blocked.append("选项公式")
         else:
             question["options"] = options
             changed.append("选项")
@@ -1001,6 +1086,8 @@ def apply_ai_correction(question: dict[str, Any], correction: dict[str, Any]) ->
     if answer is not None and answer != question.get("answer"):
         if not question.get("answer"):
             blocked.append("答案")
+        elif not preserves_formula_markup("\n".join(map(str, question.get("answer") or [])), "\n".join(answer)):
+            blocked.append("答案公式")
         else:
             question["answer"] = answer
             changed.append("答案")
@@ -1078,7 +1165,7 @@ def review_payload_with_ai(
             changed, blocked = apply_ai_correction(question, correction)
             if blocked:
                 warnings.append(
-                    f"AI 未应用无来源补写：第 {number} 题（{','.join(blocked)}），请依据原 PDF 人工补充。"
+                    f"AI 未应用不安全修改：第 {number} 题（{','.join(blocked)}），请依据原 PDF 人工确认。"
                 )
             if changed:
                 applied.append(
@@ -1355,6 +1442,19 @@ def parse_question_files(
     logger.info("[%s] parsed questions=%s warnings=%s", request_id, len(questions), len(question_warnings))
     answer_text, answer_debug = extract_answer_text(answer_path, request_id=request_id)
     answers = parse_answers(answer_text, questions)
+    if answer_debug["method"] == "native_text":
+        visual_pages = [rows_from_page(page) for page in native_blocks_from_pdf(answer_path)]
+        visual_answers = parse_answers("\n".join("\n".join(page) for page in visual_pages), questions)
+
+        def answer_parse_score(items: dict[int, dict[str, str]]) -> tuple[int, int]:
+            answered = sum(bool(str(item.get("answer") or "").strip()) for item in items.values())
+            return answered, len(items)
+
+        if answer_parse_score(visual_answers) > answer_parse_score(answers):
+            answers = visual_answers
+            answer_debug["layout"] = "visual_rows"
+        else:
+            answer_debug["layout"] = "native_order"
     logger.info("[%s] parsed answers=%s method=%s", request_id, len(answers), answer_debug["method"])
     quality_gate = build_quality_gate(questions=questions, answers=answers, question_debug=question_debug)
     payload, merge_warnings = merge_payload(

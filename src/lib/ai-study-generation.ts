@@ -19,13 +19,21 @@ import { refreshAiStudyProgressCache, writeAiStudyTaskProgressCache } from "@/li
 import { assertCompleteFourLevelOutline } from "@/lib/ai-study-outline-validation";
 import { getActiveAiServerConfig } from "@/lib/ai-server-settings";
 import {
+  buildNestedCandidateOutlineJsonSchema,
   buildOutlineCandidateJsonSchema,
   buildNestedOutlineJsonSchema,
+  ensureOutlineCandidateSourceCoverage,
+  flattenNestedCandidateOutline,
   flattenNestedOutline,
+  maximumStructuredOutlineNodes,
+  nestedCandidateOutlineSchema,
   nestedOutlineSchema,
+  outlineTreeLimits,
   outlineCandidateListSchema,
+  type NestedCandidateOutline,
   type NestedOutline,
-  type OutlineCandidate
+  type OutlineCandidate,
+  type OutlineCandidateWithId
 } from "@/lib/ai-study-outline-contract";
 import { getAiStudyPromptConfig, type AiStudyPromptConfig } from "@/lib/ai-study-prompts";
 import { parsePdfWithMineru, type MineruContentBlock, type MineruParseResult } from "@/lib/ai-study-mineru";
@@ -1180,9 +1188,51 @@ function validateOutlineCandidates(
 function validateNestedOutline(outline: NestedOutline, chunks: AiStudySourceChunkWithContent[]) {
   const nodes = flattenNestedOutline(outline);
   if (nodes.length > maxNodesPerProject) {
-    throw new Error(`知识节点数量超过上限 ${maxNodesPerProject}。`);
+    throw new Error(`知识节点实际生成 ${nodes.length} 个，超过上限 ${maxNodesPerProject}。`);
   }
   validateOutlineSourceReferences(nodes, chunks);
+}
+
+function validateNestedCandidateOutline(
+  outline: NestedCandidateOutline,
+  candidates: OutlineCandidateWithId[]
+) {
+  const nodes = flattenNestedCandidateOutline(outline, candidates);
+  if (nodes.length > maxNodesPerProject) {
+    throw new Error(`知识节点实际生成 ${nodes.length} 个，超过上限 ${maxNodesPerProject}。`);
+  }
+  const validCandidateIds = new Set(candidates.map((candidate) => candidate.candidateId));
+  const referencedCandidateIds = new Set<string>();
+  for (const module of outline.root.modules) {
+    for (const candidateId of module.candidateIds) {
+      if (!validCandidateIds.has(candidateId)) {
+        throw new Error(`知识框架引用了不存在的候选：${candidateId}`);
+      }
+      referencedCandidateIds.add(candidateId);
+    }
+    for (const group of module.groups) {
+      for (const candidateId of group.candidateIds) {
+        if (!validCandidateIds.has(candidateId)) {
+          throw new Error(`知识框架引用了不存在的候选：${candidateId}`);
+        }
+        referencedCandidateIds.add(candidateId);
+      }
+      for (const point of group.points) {
+        for (const candidateId of point.candidateIds) {
+          if (!validCandidateIds.has(candidateId)) {
+            throw new Error(`知识框架引用了不存在的候选：${candidateId}`);
+          }
+          referencedCandidateIds.add(candidateId);
+        }
+      }
+    }
+  }
+  const missingCandidateIds = candidates
+    .map((candidate) => candidate.candidateId)
+    .filter((candidateId) => !referencedCandidateIds.has(candidateId));
+  if (missingCandidateIds.length > 0) {
+    throw new Error(`知识框架遗漏了 ${missingCandidateIds.length} 个候选：${missingCandidateIds.slice(0, 8).join("、")}`);
+  }
 }
 
 function validateOutlineSourceReferences(
@@ -1202,19 +1252,47 @@ function buildOutlineCandidateTransportInstruction(partialMaxNodes: number) {
   return [
     "【固定输出协议，优先级高于上方可配置提示词中的格式描述】",
     `只输出 JSON 对象：{\"candidates\":[{\"title\":\"...\",\"summary\":\"...\",\"sourceChunkIds\":[\"真实片段ID\"]}]}，候选不超过 ${partialMaxNodes} 个。`,
+    "本批每一个输入 sourceChunkId 都必须至少出现在一个候选中；同一候选可以绑定多个相关片段。",
     "候选只是待归并的原子主题，不要输出 clientId、parentClientId、nodes、层级关系、Markdown 或解释文字。"
   ].join("\n");
 }
 
 function buildNestedOutlineTransportInstruction(maxNodes: number) {
+  const guaranteedMaxNodes = Math.min(maxNodes, maximumStructuredOutlineNodes);
   return [
     "【固定输出协议，优先级高于上方可配置提示词中的格式描述】",
     "只输出 JSON 对象，结构必须严格为 root -> modules -> groups -> points 四层。",
     "root、每个 module、每个 group、每个 point 都必须包含 title、summary、sourceChunkIds；root 还包含 modules，module 还包含 groups，group 还包含 points。",
-    "modules 必须有 3-6 个；每个 module 必须有 1-4 个 groups；每个 group 必须有 2-4 个 points。",
-    `总节点数不得超过 ${maxNodes}；sourceChunkIds 只能使用输入中的真实片段 ID。`,
+    `modules 必须有 ${outlineTreeLimits.modules.min}-${outlineTreeLimits.modules.max} 个；每个 module 必须有 ${outlineTreeLimits.groupsPerModule.min}-${outlineTreeLimits.groupsPerModule.max} 个 groups；每个 group 必须有 ${outlineTreeLimits.pointsPerGroup.min}-${outlineTreeLimits.pointsPerGroup.max} 个 points。`,
+    `按上述结构总节点最多 ${guaranteedMaxNodes} 个，且不得超过业务上限 ${maxNodes}。`,
+    "sourceChunkIds 只需为每个节点选择 1-3 个最具代表性的真实片段 ID，不要为了逐个搬运全部来源而增加节点；程序会在结构通过后补齐完整来源绑定。",
     "不要输出 clientId、parentClientId、nodes、Markdown 或解释文字。"
   ].join("\n");
+}
+
+function buildCandidateOutlineTransportInstruction(maxNodes: number) {
+  const guaranteedMaxNodes = Math.min(maxNodes, maximumStructuredOutlineNodes);
+  return [
+    "【长文档固定输出协议，优先级高于上方可配置提示词中的格式和来源字段描述】",
+    "输入 candidates 中每项只有 candidateId、title、summary；candidateId 代表程序已经保存的完整来源集合。",
+    "只输出 JSON 对象，结构必须严格为 root -> modules -> groups -> points 四层。",
+    "root 只包含 title、summary、modules；每个 module、group、point 都包含 title、summary、candidateIds，并分别包含下一级数组。",
+    `modules 必须有 ${outlineTreeLimits.modules.min}-${outlineTreeLimits.modules.max} 个；每个 module 必须有 ${outlineTreeLimits.groupsPerModule.min}-${outlineTreeLimits.groupsPerModule.max} 个 groups；每个 group 必须有 ${outlineTreeLimits.pointsPerGroup.min}-${outlineTreeLimits.pointsPerGroup.max} 个 points。`,
+    `按上述结构总节点最多 ${guaranteedMaxNodes} 个，且不得超过业务上限 ${maxNodes}。`,
+    "每一个输入 candidateId 都必须至少出现在一个非根节点的 candidateIds 中，只能使用输入里真实存在的 candidateId。",
+    "本阶段不要输出 sourceChunkIds、clientId、parentClientId、nodes、Markdown 或解释文字；完整 sourceChunkIds 由程序根据 candidateIds 恢复。"
+  ].join("\n");
+}
+
+function buildOutlineRetryMessages(messages: ChatMessage[], maxNodes: number): ChatMessage[] {
+  const retryInstruction = [
+    "【重试要求】上次输出没有通过程序硬校验。",
+    `严格遵守本消息末尾的固定输出协议，总节点不得超过 ${Math.min(maxNodes, maximumStructuredOutlineNodes)} 个。`,
+    "合并重复主题，不要通过增加模块、概念组或知识点来覆盖来源；不要改变字段名或输出额外文字。"
+  ].join("\n");
+  return messages.map((message, index) => index === 0 && message.role === "system"
+    ? { ...message, content: `${message.content}\n\n${retryInstruction}` }
+    : message);
 }
 
 function buildOutlineMessages(
@@ -1287,10 +1365,12 @@ async function generateCompleteOutline(
 ) {
   const batches = splitChunksForPrompt(chunks, modelBatchChars);
   if (batches.length === 1) {
+    const outlineMessages = buildOutlineMessages(projectTitle, batches[0], promptConfig);
     const nestedOutline = await requestValidatedJsonWithRetry({
       task,
       stage: "generating_outline_direct",
-      messages: buildOutlineMessages(projectTitle, batches[0], promptConfig),
+      messages: outlineMessages,
+      retryMessages: buildOutlineRetryMessages(outlineMessages, maxNodesPerProject),
       schema: nestedOutlineSchema,
       jsonSchema: {
         name: "ai_study_four_level_outline",
@@ -1308,14 +1388,21 @@ async function generateCompleteOutline(
   const partialMaxNodes = Math.max(8, Math.ceil((maxNodesPerProject - 1) / batches.length) + 3);
   const sourceFingerprint = buildOutlineSourceFingerprint(chunks);
   const checkpoint = await readOutlineCheckpoint(task.id, promptConfig.version, sourceFingerprint, batches.length);
-  const partialCandidates: OutlineCandidate[] = [];
+  const partialCandidates: OutlineCandidateWithId[] = [];
   const completedBatches = new Map(checkpoint.batches.map((batch) => [batch.batchIndex, batch.candidates]));
 
   for (const [batchIndex, batch] of batches.entries()) {
     const existingCandidates = completedBatches.get(batchIndex);
     if (existingCandidates) {
       await updateAiStudyTaskStage(task, `resuming_outline_partial_${batchIndex + 1}_of_${batches.length}`);
-      partialCandidates.push(...existingCandidates);
+      const coveredCandidates = ensureOutlineCandidateSourceCoverage(
+        existingCandidates,
+        batch.map((chunk) => chunk.id)
+      );
+      partialCandidates.push(...coveredCandidates.map((candidate, candidateIndex) => ({
+        ...candidate,
+        candidateId: `candidate_${batchIndex + 1}_${candidateIndex + 1}`
+      })));
       continue;
     }
 
@@ -1348,39 +1435,50 @@ async function generateCompleteOutline(
       invalidMessage: `第 ${batchIndex + 1} 批知识候选 JSON 格式不合法。`,
       validate: (value) => validateOutlineCandidates(value.candidates, batch, partialMaxNodes)
     });
-    partialCandidates.push(...partial.candidates);
-    checkpoint.batches.push({ batchIndex, candidates: partial.candidates });
+    const coveredCandidates = ensureOutlineCandidateSourceCoverage(
+      partial.candidates,
+      batch.map((chunk) => chunk.id)
+    );
+    partialCandidates.push(...coveredCandidates.map((candidate, candidateIndex) => ({
+      ...candidate,
+      candidateId: `candidate_${batchIndex + 1}_${candidateIndex + 1}`
+    })));
+    checkpoint.batches.push({ batchIndex, candidates: coveredCandidates });
     await mergeAiStudyTaskOutputSummary(task.id, { outlineCheckpoint: checkpoint });
   }
 
+  const mergeMessages: ChatMessage[] = [
+    {
+      role: "system",
+      content: `${promptConfig.render("outline.merge.system", { maxNodesPerProject })}\n\n${buildCandidateOutlineTransportInstruction(maxNodesPerProject)}`
+    },
+    {
+      role: "user",
+      content: promptConfig.render("outline.merge.user", {
+        projectTitle,
+        candidateNodes: JSON.stringify({
+          candidates: partialCandidates.map(({ candidateId, title, summary }) => ({ candidateId, title, summary }))
+        })
+      })
+    }
+  ];
   const nestedOutline = await requestValidatedJsonWithRetry({
     task,
     stage: "merging_outline",
-    messages: [
-      {
-        role: "system",
-        content: `${promptConfig.render("outline.merge.system", { maxNodesPerProject })}\n\n${buildNestedOutlineTransportInstruction(maxNodesPerProject)}`
-      },
-      {
-        role: "user",
-        content: promptConfig.render("outline.merge.user", {
-          projectTitle,
-          candidateNodes: JSON.stringify({ candidates: partialCandidates })
-        })
-      }
-    ],
-    schema: nestedOutlineSchema,
+    messages: mergeMessages,
+    retryMessages: buildOutlineRetryMessages(mergeMessages, maxNodesPerProject),
+    schema: nestedCandidateOutlineSchema,
     jsonSchema: {
-      name: "ai_study_four_level_outline",
-      schema: buildNestedOutlineJsonSchema(chunks.map((chunk) => chunk.id))
+      name: "ai_study_candidate_four_level_outline",
+      schema: buildNestedCandidateOutlineJsonSchema(partialCandidates.map((candidate) => candidate.candidateId))
     },
     maxCompletionTokens: outlineMergeMaxTokens,
     timeoutMs: outlineTimeoutMs,
     temperature: 0.1,
     invalidMessage: "合并后的知识框架 JSON 格式不合法。",
-    validate: (value) => validateNestedOutline(value, chunks)
+    validate: (value) => validateNestedCandidateOutline(value, partialCandidates)
   });
-  return { nodes: flattenNestedOutline(nestedOutline) };
+  return { nodes: flattenNestedCandidateOutline(nestedOutline, partialCandidates) };
 }
 
 async function buildCompleteCardEvidence(

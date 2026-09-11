@@ -38,13 +38,40 @@ EXPECTED: dict[str, dict[str, Any]] = {
             11: "B", 12: "A", 13: "B", 14: "C", 15: "C", 16: "A", 17: "D", 18: "D", 19: "C", 20: "B",
         },
     },
+    "2194dcd8ec56": {
+        "questions": 45,
+        "answers": 45,
+        "stats": {"single_choice": 20, "true_false": 10, "fill_blank": 12, "comprehensive": 3},
+        "formulaFragments": {
+            14: {
+                "stem": ["Ag<sup>+</sup>"],
+                "option:B": ["HNO<sub>3</sub>"],
+                "option:C": ["H<sub>2</sub>SO<sub>4</sub>"],
+            },
+            17: {
+                "stem": ["K<sub>sp</sub>", "10<sup>−10</sup>", "AgNO<sub>3</sub>"],
+            },
+            32: {
+                "stem": ["Fe<sup>3+</sup>", "Cu<sup>2+</sup>"],
+                "answer": ["2Fe<sup>3+</sup>", "Cu<sup>2+</sup>"],
+            },
+            38: {
+                "stem": ["φ<sup>θ</sup>", "Cu<sup>2+</sup>"],
+                "answer": ["e<sup>−</sup>", "Ag<sup>+</sup>"],
+            },
+            44: {
+                "stem": ["K<sub>b</sub>", "NH<sub>3</sub>", "10<sup>−5</sup>"],
+            },
+        },
+    },
 }
 
 
 def pdf_pair(task_dir: Path) -> tuple[Path, Path]:
     pdfs = sorted(task_dir.glob("*.pdf"))
-    answer = next((path for path in pdfs if "答案" in path.name), None)
-    question = next((path for path in pdfs if path != answer), None)
+    answer = next((path for path in pdfs if "答案" in path.name or "解析" in path.name), None)
+    question = next((path for path in pdfs if "题目" in path.name and path != answer), None)
+    question = question or next((path for path in pdfs if path != answer), None)
     if not question or not answer:
         raise FileNotFoundError(f"Question/answer PDF pair not found in {task_dir}")
     return question, answer
@@ -69,6 +96,21 @@ def run_case(task_dir: Path) -> dict[str, Any]:
         for question in result["payload"]["questions"]
         if question.get("answer")
     }
+    question_by_number = {int(question["number"]): question for question in result["payload"]["questions"]}
+    expected = EXPECTED.get(task_dir.name, {})
+    formula_checks: list[dict[str, Any]] = []
+    for number, field_fragments in expected.get("formulaFragments", {}).items():
+        question = question_by_number.get(int(number), {})
+        option_map = {str(option.get("key")): str(option.get("text", "")) for option in question.get("options", [])}
+        for field, fragments in field_fragments.items():
+            if field.startswith("option:"):
+                value = option_map.get(field.split(":", 1)[1], "")
+            elif field == "answer":
+                value = "\n".join(str(item) for item in question.get("answer", []))
+            else:
+                value = str(question.get(field, ""))
+            missing = [fragment for fragment in fragments if fragment not in value]
+            formula_checks.append({"number": number, "field": field, "passed": not missing, "missing": missing})
     return {
         "taskId": task_dir.name,
         "questionCount": debug["questionCount"],
@@ -81,6 +123,8 @@ def run_case(task_dir: Path) -> dict[str, Any]:
         "qualityGate": debug["qualityGate"],
         "warningCount": len(result["warnings"]),
         "warnings": result["warnings"],
+        "formulaChecks": formula_checks,
+        "formulaChecksPassed": all(check["passed"] for check in formula_checks),
     }
 
 
@@ -101,6 +145,7 @@ def main() -> int:
                 report["questionCount"] == expected["questions"]
                 and report["answeredQuestionCount"] == expected["answers"]
                 and report["stats"] == expected["stats"]
+                and ("formulaFragments" not in expected or report["formulaChecksPassed"])
                 and (
                     "answerValues" not in expected
                     or report["answerValues"] == expected["answerValues"]

@@ -82,6 +82,11 @@ function adminConfigurationSettingsPath(kind: "notice" | "error", value: string)
   return `/admin/settings?${query.toString()}`;
 }
 
+function aiServerConfigurationSettingsPath(kind: "notice" | "error", value: string) {
+  const query = new URLSearchParams({ [kind]: value });
+  return `/admin/prompt-settings/ai-server?${query.toString()}`;
+}
+
 function getSyllabusRequirement(formData: FormData) {
   const value = String(formData.get("requirement") || "");
   return value ? (value as SyllabusRequirement) : null;
@@ -560,7 +565,7 @@ export async function updateAiServerSettings(formData: FormData) {
   await requireAdmin();
   const modeValue = String(formData.get("mode") || "");
   if (!aiServerModes.includes(modeValue as (typeof aiServerModes)[number])) {
-    redirect(adminConfigurationSettingsPath("error", "invalid-ai-server-mode"));
+    redirect(aiServerConfigurationSettingsPath("error", "invalid-ai-server-mode"));
   }
 
   const mode = modeValue as (typeof aiServerModes)[number];
@@ -571,18 +576,18 @@ export async function updateAiServerSettings(formData: FormData) {
   const clearCustomApiKey = formData.get("clearCustomApiKey") === "true";
 
   if (customName.length > 80 || customBaseUrlValue.length > 1000 || customModel.length > 160 || customApiKey.length > 8192) {
-    redirect(adminConfigurationSettingsPath("error", "ai-server-value-too-long"));
+    redirect(aiServerConfigurationSettingsPath("error", "ai-server-value-too-long"));
   }
 
   let customBaseUrl = "";
   try {
     customBaseUrl = normalizeAiBaseUrl(customBaseUrlValue);
   } catch {
-    redirect(adminConfigurationSettingsPath("error", "invalid-ai-server-url"));
+    redirect(aiServerConfigurationSettingsPath("error", "invalid-ai-server-url"));
   }
 
   if (mode === "custom" && (!customName || !customBaseUrl || !customModel)) {
-    redirect(adminConfigurationSettingsPath("error", "custom-ai-server-required"));
+    redirect(aiServerConfigurationSettingsPath("error", "custom-ai-server-required"));
   }
 
   const existing = await prisma.aiServerSetting.findUnique({
@@ -596,7 +601,7 @@ export async function updateAiServerSettings(formData: FormData) {
     try {
       customApiKeyEncrypted = encryptAiApiKey(customApiKey);
     } catch {
-      redirect(adminConfigurationSettingsPath("error", "ai-server-secret-unavailable"));
+      redirect(aiServerConfigurationSettingsPath("error", "ai-server-secret-unavailable"));
     }
   }
 
@@ -606,8 +611,8 @@ export async function updateAiServerSettings(formData: FormData) {
     create: { id: aiServerSettingsId, mode, customName, customBaseUrl, customModel, customApiKeyEncrypted }
   });
 
-  revalidatePath("/admin/settings");
-  redirect(adminConfigurationSettingsPath("notice", "ai-server-saved"));
+  revalidatePath("/admin/prompt-settings/ai-server");
+  redirect(aiServerConfigurationSettingsPath("notice", "ai-server-saved"));
 }
 
 export async function updateStudyBuddyHeroImageSettings(formData: FormData) {

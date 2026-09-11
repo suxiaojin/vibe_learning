@@ -4,6 +4,7 @@ import { getCurrentAdmin } from "@/lib/auth";
 import { getQuestionBankAiTaggingPrompt } from "@/lib/question-bank-ai-tagging-prompt";
 import { prisma } from "@/lib/prisma";
 import { askQwen } from "@/lib/qwen";
+import { richTextToAiText as stripHtml, richTextValueToAiText } from "@/lib/rich-text-plain";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -51,10 +52,6 @@ function ownerCourseWhere(scope: PaperScope) {
   return scope.ownerType === "public_subject"
     ? { courseType: "public_subject" as const, publicSubjectId: scope.publicSubjectId, regionId: scope.regionId }
     : { courseType: "major" as const, majorId: scope.majorId, regionId: scope.regionId };
-}
-
-function stripHtml(value: string) {
-  return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function normalizeJsonText(value: string) {
@@ -179,8 +176,8 @@ function questionContext(question: {
   return {
     type: question.type,
     stem: stripHtml(question.stem),
-    options: question.options,
-    answer: question.answer,
+    options: richTextValueToAiText(question.options),
+    answer: richTextValueToAiText(question.answer),
     analysis: stripHtml(question.analysis)
   };
 }

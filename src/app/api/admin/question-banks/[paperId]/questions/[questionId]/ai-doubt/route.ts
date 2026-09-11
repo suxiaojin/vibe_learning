@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { getCurrentAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { askQwen, type ChatMessage } from "@/lib/qwen";
+import { richTextToAiText as stripHtml, richTextValueToAiText } from "@/lib/rich-text-plain";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -17,10 +18,6 @@ type RouteContext = {
 async function requireAdminJson() {
   const user = await getCurrentAdmin();
   return user?.role === "admin";
-}
-
-function stripHtml(value: string) {
-  return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
 async function getQuestionForAdmin(paperId: string, questionId: string) {
@@ -130,8 +127,8 @@ function buildAiDoubtMessages(record: NonNullable<Awaited<ReturnType<typeof getQ
         `知识点正文：${stripHtml(question.knowledgePoint?.content || "")}`,
         `题型：${question.type}`,
         `题干：${stripHtml(question.stem)}`,
-        `选项：${JSON.stringify(question.options)}`,
-        `正确答案：${JSON.stringify(question.answer)}`,
+        `选项：${JSON.stringify(richTextValueToAiText(question.options))}`,
+        `正确答案：${JSON.stringify(richTextValueToAiText(question.answer))}`,
         `原解析：${stripHtml(question.analysis)}`,
         question.aiDoubtAnswer ? `当前已保存 AI 答疑：${question.aiDoubtAnswer}` : ""
       ]

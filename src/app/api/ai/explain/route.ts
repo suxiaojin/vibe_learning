@@ -16,6 +16,7 @@ import { streamQwen } from "@/lib/qwen";
 import { prisma } from "@/lib/prisma";
 import { consumeDiamondsByRule, InsufficientDiamondBalanceError } from "@/lib/rewards";
 import { diamondInsufficientMessage } from "@/lib/diamond-insufficient";
+import { richTextToAiText } from "@/lib/rich-text-plain";
 
 export const runtime = "nodejs";
 
@@ -291,10 +292,10 @@ export async function POST(request: Request) {
       knowledgePointTitle: question.knowledgePoint?.title || "未打标",
       knowledgePointSummary: question.knowledgePoint?.summary || "",
       knowledgePointContent: question.knowledgePoint?.content || "",
-      questionStem: question.stem,
+      questionStem: richTextToAiText(question.stem),
       options: formatAiExplainOptions(question.options),
       correctAnswer: formatAiExplainAnswer(question.answer),
-      analysis: question.analysis,
+      analysis: richTextToAiText(question.analysis),
       adminAiDoubtAnswer: question.aiDoubtAnswer || "无",
       studentQuestion: userPrompt
     }

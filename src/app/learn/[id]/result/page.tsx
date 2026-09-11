@@ -659,7 +659,8 @@ function AttemptCard({
       <div className="mt-4 grid gap-2">
         {options.map((option) => (
           <div key={option.key} className="rounded-xl border border-border-soft bg-surface px-4 py-3 text-sm leading-6">
-            <span className="font-semibold">{option.key}.</span> {option.text}
+            <span className="font-semibold">{option.key}.</span>
+            <RichTextContent className="inline" value={option.text} />
           </div>
         ))}
       </div>

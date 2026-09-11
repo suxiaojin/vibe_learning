@@ -2,6 +2,7 @@ import { getStudentFoundationProfile } from "@/lib/foundation";
 import { prisma } from "@/lib/prisma";
 import { isRealQuestionBankTitle } from "@/lib/question-bank-source";
 import { isQuestionBankAutoGradedForOwner } from "@/lib/question-bank-types";
+import { normalizeRichTextAnswer } from "@/lib/rich-text-plain";
 
 export type LearningOwnerType = "public_subject" | "major";
 export type SyllabusPathStatus = "locked" | "unlocked" | "passed";
@@ -777,7 +778,7 @@ export async function checkSyllabusSectionQuestionAnswer(
 function normalizeAnswerForCheck(value: unknown) {
   const array = Array.isArray(value) ? value : [value];
   return array
-    .map((item) => String(item).trim())
+    .map(normalizeRichTextAnswer)
     .filter(Boolean)
     .sort();
 }

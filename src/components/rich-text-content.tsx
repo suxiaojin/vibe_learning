@@ -7,9 +7,16 @@ function containsRichTextMarkup(value: string) {
   return richTextHtmlPattern.test(value) || richTextWhitespaceEntityPattern.test(value);
 }
 
-export function RichTextContent({ className, value }: { className?: string; value: string }) {
+export function RichTextContent({ className, inline = false, value }: { className?: string; inline?: boolean; value: string }) {
   if (!containsRichTextMarkup(value)) {
+    if (inline) {
+      return <span className={cn("whitespace-pre-wrap break-words", className)}>{value}</span>;
+    }
     return <p className={cn("whitespace-pre-wrap break-words", className)}>{value}</p>;
+  }
+
+  if (inline) {
+    return <span className={cn("break-words [&_img]:inline-block [&_img]:h-auto [&_img]:max-w-full", className)} dangerouslySetInnerHTML={{ __html: value }} />;
   }
 
   return (

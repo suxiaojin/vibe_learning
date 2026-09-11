@@ -22,7 +22,7 @@ const defaultAdminModules: AdminModuleNavItem[] = [
   { key: "notifications", label: "通知管理", href: "/admin/notifications", icon: "bell", status: "published", sortOrder: 7, builtIn: true },
   { key: "ai-study-projects", label: "项目管理", href: "/admin/ai-study-projects", icon: "project", status: "published", sortOrder: 8, builtIn: true },
   { key: "settings", label: "系统设置", href: "/admin/settings", icon: "settings", status: "published", sortOrder: 99, builtIn: true },
-  { key: "prompt-settings", label: "提示词设置", href: "/admin/prompt-settings", icon: "prompt", status: "published", sortOrder: 100, builtIn: true }
+  { key: "prompt-settings", label: "AI配置", href: "/admin/prompt-settings", icon: "prompt", status: "published", sortOrder: 100, builtIn: true }
 ];
 
 async function ensureDefaultAdminModules() {
@@ -37,6 +37,10 @@ async function ensureDefaultAdminModules() {
   await prisma.adminModule.updateMany({
     where: { key: "dashboard", href: "/admin/regions" },
     data: { href: "/admin/dashboard" }
+  });
+  await prisma.adminModule.updateMany({
+    where: { key: "prompt-settings" },
+    data: { label: "AI配置", href: "/admin/prompt-settings" }
   });
 }
 

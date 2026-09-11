@@ -45,7 +45,9 @@ import {
   type QuestionBankQuestionTypeConfig,
   type QuestionBankRichAnswerQuestionType
 } from "@/lib/question-bank-types";
+import { RichTextContent } from "@/components/rich-text-content";
 import { cn } from "@/lib/utils";
+import { richTextToPlainText as stripHtml } from "@/lib/rich-text-plain";
 
 type QuestionOption = {
   key: string;
@@ -327,16 +329,12 @@ function toRichTextHtml(value: string) {
   return escapeHtml(value).replace(/\n/g, "<br>");
 }
 
-function stripHtml(value: string) {
-  return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-}
-
 function questionSearchText(question: QuestionRow) {
   return [
     stripHtml(question.title),
     stripHtml(question.analysis),
     question.aiDoubtAnswer,
-    question.options.map((option) => `${option.key} ${option.text}`).join(" ")
+    question.options.map((option) => `${option.key} ${stripHtml(option.text)}`).join(" ")
   ].join(" ").toLowerCase();
 }
 
@@ -666,12 +664,16 @@ function RichTextEditor({
   name,
   defaultValue = "",
   imageInputRef,
-  minHeightClassName = "min-h-[240px]"
+  minHeightClassName = "min-h-[240px]",
+  onChange,
+  toolbar = true
 }: {
   name: string;
   defaultValue?: string;
   imageInputRef?: RefObject<HTMLInputElement | null>;
   minHeightClassName?: string;
+  onChange?: (html: string) => void;
+  toolbar?: boolean;
 }) {
   const initialHtml = toRichTextHtml(defaultValue);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -718,6 +720,7 @@ function RichTextEditor({
   const syncValue = () => {
     const html = editorRef.current?.innerHTML || "";
     setFormHtml(html);
+    onChange?.(html);
     rememberSelection();
   };
   const applyCommand = (command: string) => {
@@ -916,7 +919,7 @@ function RichTextEditor({
           onChange={insertImage}
         />
       ) : null}
-      <div className="flex h-8 items-center gap-1 border-b border-[#c6d3e6] bg-white px-2">
+      {toolbar ? <div className="flex h-8 items-center gap-1 border-b border-[#c6d3e6] bg-white px-2">
         {[
           { label: "B", command: "bold" },
           { label: "I", command: "italic" },
@@ -997,7 +1000,7 @@ function RichTextEditor({
             </div>
           ) : null}
         </div>
-      </div>
+      </div> : null}
       <div
         ref={editorRef}
         className={`${minHeightClassName} w-full bg-[#d9e5fb] px-4 py-4 text-base leading-8 text-[#071b38] outline-none focus:ring-2 focus:ring-inset focus:ring-[#3b82f6]/40 [&_img]:my-3 [&_img]:h-auto [&_img]:max-w-full [&_td]:min-w-0 [&_td]:border [&_td]:border-[#8ea3c2] [&_td]:bg-white/35 [&_td]:px-2 [&_td]:py-1 [&_table]:my-2 [&_table]:max-w-full [&_table]:border-collapse`}
@@ -1007,6 +1010,7 @@ function RichTextEditor({
         onInput={(event) => {
           const html = event.currentTarget.innerHTML;
           setFormHtml(html);
+          onChange?.(html);
           if (selectedResizableElementRef.current) {
             window.requestAnimationFrame(updateResizeBox);
           }
@@ -1206,7 +1210,7 @@ function ChoiceQuestionForm({
           {choiceOptions.map((option, index) => {
             const checked = question?.answer.includes(option.key) || false;
             return (
-              <label key={index} className="grid min-h-[64px] grid-cols-[48px_1fr_52px] items-center gap-2">
+              <div key={index} className="grid min-h-[64px] grid-cols-[48px_1fr_52px] items-center gap-2">
                 <input
                   className={cn("h-10 border border-[#c6d3e6] bg-white text-center text-sm font-black uppercase outline-none", focusColor)}
                   name="optionKey"
@@ -1217,13 +1221,15 @@ function ChoiceQuestionForm({
                   aria-label="选项字母"
                   onChange={(event) => updateOptionKey(index, event.target.value)}
                 />
-                <input
-                  className={cn("h-12 min-w-0 w-full border border-[#c6d3e6] bg-[#d9e5fb] px-3 text-sm outline-none", focusColor)}
-                  name="optionText"
-                  value={option.text}
-                  required
-                  onChange={(event) => updateOptionText(index, event.target.value)}
-                />
+                <div className={cn("min-w-0 border border-[#c6d3e6]", focusColor)}>
+                  <RichTextEditor
+                    name="optionText"
+                    defaultValue={option.text}
+                    minHeightClassName="min-h-[48px]"
+                    onChange={(html) => updateOptionText(index, html)}
+                    toolbar={false}
+                  />
+                </div>
                 <span className="grid place-items-center">
                   <input
                     className={cn("size-4", accentColor)}
@@ -1235,7 +1241,7 @@ function ChoiceQuestionForm({
                     aria-label={`${option.key || "该"}选项为正确答案`}
                   />
                 </span>
-              </label>
+              </div>
             );
           })}
         </div>
@@ -1423,7 +1429,9 @@ function ReadonlyQuestionPreview({ paperId, question }: { paperId: string; quest
               return (
                 <div key={option.key} className="grid min-h-[64px] grid-cols-[40px_1fr_52px] items-center gap-2">
                   <span className="text-center text-sm font-black">({option.key})</span>
-                  <div className={cn("flex min-h-12 items-center overflow-x-auto bg-[#d9e5fb] px-3 py-2 text-sm", checked && "font-bold text-[#166534]")}>{option.text}</div>
+                  <div className={cn("flex min-h-12 items-center overflow-x-auto bg-[#d9e5fb] px-3 py-2 text-sm", checked && "font-bold text-[#166534]")}>
+                    <RichTextContent value={option.text} />
+                  </div>
                   <span className="grid place-items-center">
                     <span className={cn("grid size-5 place-items-center rounded-full border text-xs", checked ? "border-[#22c55e] bg-[#22c55e] text-white" : "border-[#c8d2df] bg-white text-transparent")}>
                       ✓

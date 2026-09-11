@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { BookOpenCheck } from "lucide-react";
 import { StudentSidebar } from "@/components/student-sidebar";
+import { RichTextContent } from "@/components/rich-text-content";
 import { normalizeQuestionOptions, type MockTestQuestion } from "@/lib/mock-tests";
 import { cn } from "@/lib/utils";
 
@@ -67,14 +68,16 @@ function QuestionCard({ question, index }: { question: MockTestQuestion; index: 
         <span>{questionTypeLabels[question.type] || question.type}</span>
         <span className="min-w-0 truncate">知识点：{question.knowledgePointTitle}</span>
       </div>
-      <h3 className="mt-3 text-base font-semibold leading-7 text-ink">{question.stem}</h3>
+      <div className="mt-3 text-base font-semibold leading-7 text-ink" role="heading" aria-level={3}>
+        <RichTextContent value={question.stem} />
+      </div>
       {options.length > 0 ? (
         <div className="mt-4 grid gap-2">
           {options.map((option) => (
             <label key={`${question.id}-${option.key || option.text}`} className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-teal/30 hover:bg-teal/5">
               <input className="mt-1 accent-teal" name={`question-${question.id}`} type={question.type === "multiple_choice" ? "checkbox" : "radio"} />
               <span className="font-semibold text-slate-500">{option.key}</span>
-              <span className="min-w-0 flex-1">{option.text}</span>
+              <RichTextContent className="min-w-0 flex-1" inline value={option.text} />
             </label>
           ))}
         </div>
