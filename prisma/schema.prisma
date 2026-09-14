@@ -462,6 +462,8 @@ model AiServerSetting {
   customBaseUrl         String   @default("")
   customModel           String   @default("")
   customApiKeyEncrypted String   @default("")
+  customServers         Json     @default("[]")
+  moduleRoutes          Json     @default("{}")
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 

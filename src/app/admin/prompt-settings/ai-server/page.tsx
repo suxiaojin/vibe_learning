@@ -4,15 +4,19 @@ import { getAdminAiServerSettings } from "@/lib/ai-server-settings";
 import { requireAdmin } from "@/lib/auth";
 
 const noticeText: Record<string, string> = {
-  "ai-server-saved": "AI 服务器配置已保存，后续新模型请求将使用当前选择。"
+  "ai-server-profile-saved": "AI 服务器配置已保存。",
+  "ai-server-profile-deleted": "AI 服务器配置已删除。",
+  "ai-module-routes-saved": "AI 模块分配已保存，后续新模型请求将按新的分配调用。"
 };
 
 const errorText: Record<string, string> = {
-  "invalid-ai-server-mode": "请选择内置或自定义 AI 服务器。",
   "invalid-ai-server-url": "API Base URL 必须是有效的 HTTP 或 HTTPS 地址，且不要包含账号密码。",
-  "custom-ai-server-required": "启用自定义 AI 服务器前，请完整填写配置名称、API Base URL 和模型 ID。",
+  "custom-ai-server-required": "请完整填写配置名称、API Base URL 和模型 ID。",
   "ai-server-value-too-long": "AI 服务器配置内容过长，请缩短后重试。",
-  "ai-server-secret-unavailable": "无法加密 API Key，请先配置至少 24 字节的 AI_SERVER_CONFIG_SECRET 或 AUTH_SECRET。"
+  "ai-server-secret-unavailable": "无法加密 API Key，请先配置至少 24 字节的 AI_SERVER_CONFIG_SECRET 或 AUTH_SECRET。",
+  "ai-server-not-found": "没有找到这台自定义 AI 服务器，请刷新页面后重试。",
+  "ai-server-in-use": "这台服务器仍被 AI 模块使用，请先重新分配相关模块。",
+  "invalid-ai-module-routes": "每个 AI 模块至少选择一台已启用的服务器。"
 };
 
 export default async function AdminAiServerSettingsPage({
@@ -29,7 +33,7 @@ export default async function AdminAiServerSettingsPage({
     <main className="space-y-4">
       <header>
         <h1 className="text-xl font-black text-ink">AI配置</h1>
-        <p className="mt-1 text-sm font-semibold text-slate-500">管理闯关页、学习搭子 Prompt 与全局 AI 服务器。</p>
+        <p className="mt-1 text-sm font-semibold text-slate-500">管理闯关页、学习搭子 Prompt、AI 服务器与模块分流。</p>
       </header>
 
       <nav className="flex gap-8 overflow-x-auto whitespace-nowrap border-b border-slate-200 text-sm font-bold text-slate-600" aria-label="AI配置导航">

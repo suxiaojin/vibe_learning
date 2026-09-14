@@ -69,6 +69,7 @@ export async function POST(_request: Request, context: RouteContext) {
 
   try {
     const answer = await askQwen(buildAiDoubtMessages(record), {
+      moduleKey: "question_bank_ai_doubt_draft",
       temperature: 0.2,
       timeoutMs: 60_000
     });

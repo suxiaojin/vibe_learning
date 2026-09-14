@@ -718,6 +718,8 @@ export type AiStudyChatMessage = {
 export async function askAiStudyBuddy(ownerId: string, projectId: string, input: unknown) {
   const context = await prepareAiStudyBuddyChat(ownerId, projectId, input);
   const answer = await askQwen(context.messages, {
+    moduleKey: "ai_study_chat",
+    enableServerFailover: true,
     temperature: 0.35,
     timeoutMs: 60_000
   });
@@ -739,6 +741,8 @@ export async function streamAiStudyBuddy(
   const context = await prepareAiStudyBuddyChat(ownerId, projectId, input);
   options.onPromptVersionResolved?.(context.promptVersionId);
   const answer = await streamQwen(context.messages, onChunk, {
+    moduleKey: "ai_study_chat",
+    enableServerFailover: true,
     signal: options.signal,
     temperature: 0.35,
     timeoutMs: 60_000

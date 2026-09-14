@@ -1,7 +1,9 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState } from "react";
 import { ChevronRight, HelpCircle, Loader2 } from "lucide-react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { DiamondInsufficientMessage } from "@/components/diamond-insufficient-message";
 import { isDiamondInsufficientMessage } from "@/lib/diamond-insufficient";
 
@@ -312,123 +314,47 @@ function MarkdownText({ content }: { content: string }) {
     return <DiamondInsufficientMessage className="text-sm leading-7" />;
   }
 
-  const blocks = toBlocks(content);
-
   return (
     <div className="space-y-3 text-sm leading-7 text-slate-700">
-      {blocks.map((block, index) => {
-        if (block.type === "heading") {
-          return <h3 key={index} className="text-base font-black text-ink">{renderInline(block.text)}</h3>;
-        }
-        if (block.type === "ordered") {
-          return (
-            <ol key={index} className="list-decimal space-y-1 pl-5">
-              {block.items.map((item, itemIndex) => <li key={itemIndex}>{renderInline(item)}</li>)}
-            </ol>
-          );
-        }
-        if (block.type === "unordered") {
-          return (
-            <ul key={index} className="list-disc space-y-1 pl-5">
-              {block.items.map((item, itemIndex) => <li key={itemIndex}>{renderInline(item)}</li>)}
-            </ul>
-          );
-        }
-        return <p key={index}>{renderInline(block.text)}</p>;
-      })}
+      <ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm]} skipHtml>
+        {content}
+      </ReactMarkdown>
     </div>
   );
 }
 
-type MarkdownBlock =
-  | { type: "heading"; text: string }
-  | { type: "paragraph"; text: string }
-  | { type: "ordered"; items: string[] }
-  | { type: "unordered"; items: string[] };
-
-function toBlocks(content: string): MarkdownBlock[] {
-  const lines = content.replace(/\r\n/g, "\n").split("\n");
-  const blocks: MarkdownBlock[] = [];
-  let paragraph: string[] = [];
-  let ordered: string[] = [];
-  let unordered: string[] = [];
-
-  function flushParagraph() {
-    if (paragraph.length > 0) {
-      blocks.push({ type: "paragraph", text: paragraph.join(" ") });
-      paragraph = [];
-    }
-  }
-
-  function flushLists() {
-    if (ordered.length > 0) {
-      blocks.push({ type: "ordered", items: ordered });
-      ordered = [];
-    }
-    if (unordered.length > 0) {
-      blocks.push({ type: "unordered", items: unordered });
-      unordered = [];
-    }
-  }
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) {
-      flushParagraph();
-      flushLists();
-      continue;
-    }
-
-    const heading = line.match(/^#{1,4}\s+(.+)$/);
-    if (heading) {
-      flushParagraph();
-      flushLists();
-      blocks.push({ type: "heading", text: heading[1] });
-      continue;
-    }
-
-    const orderedItem = line.match(/^\d+[.)]\s+(.+)$/);
-    if (orderedItem) {
-      flushParagraph();
-      unordered = [];
-      ordered.push(orderedItem[1]);
-      continue;
-    }
-
-    const unorderedItem = line.match(/^[-*]\s+(.+)$/);
-    if (unorderedItem) {
-      flushParagraph();
-      ordered = [];
-      unordered.push(unorderedItem[1]);
-      continue;
-    }
-
-    flushLists();
-    paragraph.push(line);
-  }
-
-  flushParagraph();
-  flushLists();
-  return blocks.length > 0 ? blocks : [{ type: "paragraph", text: content }];
-}
-
-function renderInline(value: string): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  const pattern = /\*\*(.+?)\*\*/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = pattern.exec(value))) {
-    if (match.index > lastIndex) {
-      nodes.push(value.slice(lastIndex, match.index));
-    }
-    nodes.push(<strong key={`${match.index}-${match[1]}`} className="font-black text-ink">{match[1]}</strong>);
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < value.length) {
-    nodes.push(value.slice(lastIndex));
-  }
-
-  return nodes;
-}
+const markdownComponents: Components = {
+  h1: ({ children }) => <h3 className="text-base font-black text-ink">{children}</h3>,
+  h2: ({ children }) => <h3 className="text-base font-black text-ink">{children}</h3>,
+  h3: ({ children }) => <h3 className="text-base font-black text-ink">{children}</h3>,
+  h4: ({ children }) => <h4 className="font-bold text-ink">{children}</h4>,
+  p: ({ children }) => <p>{children}</p>,
+  ol: ({ children }) => <ol className="list-decimal space-y-1 pl-5">{children}</ol>,
+  ul: ({ children }) => <ul className="list-disc space-y-1 pl-5">{children}</ul>,
+  li: ({ children }) => <li>{children}</li>,
+  strong: ({ children }) => <strong className="font-black text-ink">{children}</strong>,
+  blockquote: ({ children }) => (
+    <blockquote className="border-l-4 border-teal/30 pl-3 text-slate-600">{children}</blockquote>
+  ),
+  hr: () => <hr className="border-border-soft" />,
+  table: ({ children }) => (
+    <div className="overflow-x-auto rounded-xl border border-border-soft bg-surface">
+      <table className="w-full min-w-max border-collapse text-left text-xs leading-5">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead className="bg-slate-100">{children}</thead>,
+  th: ({ children }) => <th className="border-b border-r border-border-soft px-3 py-2 font-bold text-ink last:border-r-0">{children}</th>,
+  td: ({ children }) => <td className="border-b border-r border-border-soft px-3 py-2 align-top last:border-r-0">{children}</td>,
+  tr: ({ children }) => <tr className="last:[&_td]:border-b-0">{children}</tr>,
+  code: ({ children, className }) => (
+    <code className={className ? `${className} font-mono text-xs` : "rounded bg-slate-200 px-1.5 py-0.5 font-mono text-xs text-ink"}>
+      {children}
+    </code>
+  ),
+  pre: ({ children }) => <pre className="overflow-x-auto rounded-xl bg-slate-900 p-4 text-xs leading-6 text-slate-100">{children}</pre>,
+  a: ({ children, href }) => (
+    <a className="font-semibold text-teal underline underline-offset-4" href={href} rel="noreferrer" target="_blank">
+      {children}
+    </a>
+  )
+};

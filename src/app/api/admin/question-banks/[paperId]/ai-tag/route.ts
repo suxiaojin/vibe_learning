@@ -218,7 +218,7 @@ async function classifyQuestion({
       { role: "system", content: system },
       { role: "user", content: prompt }
     ],
-    { temperature: 0.1, timeoutMs: 45_000 }
+    { moduleKey: "question_bank_ai_tagging", temperature: 0.1, timeoutMs: 45_000 }
   );
 
   return findSelectedCandidate(answer, candidates);

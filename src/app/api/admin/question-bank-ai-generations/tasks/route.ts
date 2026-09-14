@@ -1,5 +1,5 @@
-﻿import { NextRequest, NextResponse } from "next/server";
-import { getActiveAiServerConfig } from "@/lib/ai-server-settings";
+import { NextRequest, NextResponse } from "next/server";
+import { getAiServerConfigForModule } from "@/lib/ai-server-settings";
 import { getCurrentAdmin } from "@/lib/auth";
 import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 import type { ImportQuestionType } from "@/lib/question-paper-import";
@@ -258,7 +258,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "当前所选章节或题型下可参考题目少于 3 道，暂不适合 AI 生题。" }, { status: 400 });
   }
 
-  const aiServer = await getActiveAiServerConfig();
+  const aiServer = await getAiServerConfigForModule("question_bank_ai_generation");
   const response = await fetch(`${generatorBaseUrl()}/generate-question-bank-tasks`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

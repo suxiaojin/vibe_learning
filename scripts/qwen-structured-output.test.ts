@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { askQwen, askQwenDetailed } from "../src/lib/qwen";
+import type { ActiveAiServerConfig } from "../src/lib/ai-server-settings";
 
 const originalFetch = globalThis.fetch;
 const originalBaseUrl = process.env.QWEN_API_BASE_URL;
@@ -8,6 +9,14 @@ const requestBodies: Array<Record<string, unknown>> = [];
 
 process.env.QWEN_API_BASE_URL = "http://qwen.test/v1";
 process.env.QWEN_MODEL = "test-model";
+const builtInServer: ActiveAiServerConfig = {
+  id: "built_in",
+  mode: "built_in",
+  name: "test built-in",
+  baseUrl: "http://qwen.test/v1",
+  apiKey: "",
+  model: "test-model"
+};
 globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
   requestBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
   return new Response(JSON.stringify({
@@ -19,6 +28,7 @@ globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) =
 async function main() {
   try {
     const detailed = await askQwenDetailed([{ role: "user", content: "test" }], {
+      serverConfig: builtInServer,
       jsonSchema: {
         name: "test_response",
         schema: {
@@ -51,7 +61,7 @@ async function main() {
       }
     });
 
-    assert.equal(await askQwen([{ role: "user", content: "legacy" }]), "{\"ok\":true}");
+    assert.equal(await askQwen([{ role: "user", content: "legacy" }], { serverConfig: builtInServer }), "{\"ok\":true}");
     assert.equal("response_format" in requestBodies[1], false);
     console.log("qwen structured output tests passed");
   } finally {

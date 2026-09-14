@@ -17,7 +17,7 @@ import { prisma } from "@/lib/prisma";
 import { downloadAiStudyObject, uploadAiStudyObject } from "@/lib/ai-study-storage";
 import { refreshAiStudyProgressCache, writeAiStudyTaskProgressCache } from "@/lib/ai-study-progress-cache";
 import { assertCompleteFourLevelOutline } from "@/lib/ai-study-outline-validation";
-import { getActiveAiServerConfig } from "@/lib/ai-server-settings";
+import { getAiServerConfigForModule } from "@/lib/ai-server-settings";
 import {
   buildNestedCandidateOutlineJsonSchema,
   buildOutlineCandidateJsonSchema,
@@ -874,7 +874,7 @@ async function generateCards(task: AiStudyGenerationTask) {
     cardCount: generatedCards.length,
     promptVersion
   });
-  const aiServer = await getActiveAiServerConfig();
+  const aiServer = await getAiServerConfigForModule("ai_study_generation");
 
   await prisma.$transaction(async (tx) => {
     for (const card of generatedCards) {
@@ -1055,6 +1055,7 @@ async function requestValidatedJsonWithRetry<T>(request: StructuredJsonRequest<T
       response = await askQwenDetailed(
         attempt > 1 && request.retryMessages ? request.retryMessages : request.messages,
         {
+          moduleKey: "ai_study_generation",
           temperature: request.temperature,
           timeoutMs: request.timeoutMs,
           jsonSchema: useRelaxedJsonMode ? undefined : request.jsonSchema,
@@ -1507,6 +1508,7 @@ async function buildCompleteCardEvidence(
         })
       }
     ], {
+      moduleKey: "ai_study_generation",
       temperature: 0.1,
       timeoutMs: cardTimeoutMs,
       maxCompletionTokens: 4_096,
@@ -1531,6 +1533,7 @@ async function buildCompleteCardEvidence(
           })
         }
       ], {
+        moduleKey: "ai_study_generation",
         temperature: 0.1,
         timeoutMs: cardTimeoutMs,
         maxCompletionTokens: 4_096,

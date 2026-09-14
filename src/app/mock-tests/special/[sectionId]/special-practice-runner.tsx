@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Bot, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Loader2, Send, X } from "lucide-react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
 import { DiamondInsufficientMessage } from "@/components/diamond-insufficient-message";
 import { RichTextContent } from "@/components/rich-text-content";
@@ -780,154 +782,50 @@ function AiAnswerText({ content }: { content: string }) {
     return <DiamondInsufficientMessage className="text-base leading-8" />;
   }
 
-  const blocks = parseAiAnswerBlocks(content);
-
   return (
     <div className="space-y-4">
-      {blocks.map((block, index) => {
-        if (block.type === "heading") {
-          return (
-            <h3 key={index} className="text-lg font-semibold leading-8 text-ink">
-              {renderAiInline(block.text)}
-            </h3>
-          );
-        }
-        if (block.type === "ordered") {
-          return (
-            <ol key={index} className="list-decimal space-y-2 pl-6">
-              {block.items.map((item, itemIndex) => (
-                <li key={itemIndex} className="pl-1">
-                  {renderAiInline(item)}
-                </li>
-              ))}
-            </ol>
-          );
-        }
-        if (block.type === "unordered") {
-          return (
-            <ul key={index} className="list-disc space-y-2 pl-6">
-              {block.items.map((item, itemIndex) => (
-                <li key={itemIndex} className="pl-1">
-                  {renderAiInline(item)}
-                </li>
-              ))}
-            </ul>
-          );
-        }
-        return (
-          <p key={index} className="whitespace-pre-wrap">
-            {renderAiInline(block.text)}
-          </p>
-        );
-      })}
+      <ReactMarkdown components={aiAnswerMarkdownComponents} remarkPlugins={[remarkGfm]} skipHtml>
+        {content}
+      </ReactMarkdown>
     </div>
   );
 }
 
-type AiAnswerBlock =
-  | { type: "heading"; text: string }
-  | { type: "paragraph"; text: string }
-  | { type: "ordered"; items: string[] }
-  | { type: "unordered"; items: string[] };
-
-function parseAiAnswerBlocks(content: string): AiAnswerBlock[] {
-  const lines = content.replace(/\r\n/g, "\n").split("\n");
-  const blocks: AiAnswerBlock[] = [];
-  let paragraph: string[] = [];
-  let ordered: string[] = [];
-  let unordered: string[] = [];
-
-  function flushParagraph() {
-    if (paragraph.length > 0) {
-      blocks.push({ type: "paragraph", text: paragraph.join("\n") });
-      paragraph = [];
-    }
-  }
-
-  function flushLists() {
-    if (ordered.length > 0) {
-      blocks.push({ type: "ordered", items: ordered });
-      ordered = [];
-    }
-    if (unordered.length > 0) {
-      blocks.push({ type: "unordered", items: unordered });
-      unordered = [];
-    }
-  }
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) {
-      flushParagraph();
-      flushLists();
-      continue;
-    }
-
-    const heading = line.match(/^#{1,4}\s+(.+)$/) || line.match(/^(解析|解题步骤|答案|结论|具体来说)[:：]?$/);
-    if (heading) {
-      flushParagraph();
-      flushLists();
-      blocks.push({ type: "heading", text: normalizeAiMarkdownText(heading[1] || line) });
-      continue;
-    }
-
-    const orderedItem = line.match(/^\d+[.)、]\s*(.+)$/);
-    if (orderedItem) {
-      flushParagraph();
-      unordered = [];
-      ordered.push(normalizeAiMarkdownText(orderedItem[1]));
-      continue;
-    }
-
-    const unorderedItem = line.match(/^[-*]\s+(.+)$/);
-    if (unorderedItem) {
-      flushParagraph();
-      ordered = [];
-      unordered.push(normalizeAiMarkdownText(unorderedItem[1]));
-      continue;
-    }
-
-    flushLists();
-    paragraph.push(normalizeAiMarkdownText(line));
-  }
-
-  flushParagraph();
-  flushLists();
-  return blocks.length > 0 ? blocks : [{ type: "paragraph", text: normalizeAiMarkdownText(content) }];
-}
-
-function normalizeAiMarkdownText(value: string) {
-  return value
-    .replace(/^#{1,6}\s+/, "")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/^\s*>\s?/, "")
-    .trim();
-}
-
-function renderAiInline(value: string): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  const pattern = /\*\*(.+?)\*\*/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = pattern.exec(value))) {
-    if (match.index > lastIndex) {
-      nodes.push(value.slice(lastIndex, match.index));
-    }
-    nodes.push(
-      <strong key={`${match.index}-${match[1]}`} className="font-semibold text-ink">
-        {match[1]}
-      </strong>
-    );
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < value.length) {
-    nodes.push(value.slice(lastIndex));
-  }
-
-  return nodes.length > 0 ? nodes : [value];
-}
+const aiAnswerMarkdownComponents: Components = {
+  h1: ({ children }) => <h3 className="text-lg font-semibold leading-8 text-ink">{children}</h3>,
+  h2: ({ children }) => <h3 className="text-lg font-semibold leading-8 text-ink">{children}</h3>,
+  h3: ({ children }) => <h3 className="text-lg font-semibold leading-8 text-ink">{children}</h3>,
+  h4: ({ children }) => <h4 className="font-semibold leading-8 text-ink">{children}</h4>,
+  p: ({ children }) => <p className="whitespace-pre-wrap">{children}</p>,
+  ol: ({ children }) => <ol className="list-decimal space-y-2 pl-6">{children}</ol>,
+  ul: ({ children }) => <ul className="list-disc space-y-2 pl-6">{children}</ul>,
+  li: ({ children }) => <li className="pl-1">{children}</li>,
+  strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>,
+  blockquote: ({ children }) => (
+    <blockquote className="border-l-4 border-teal/30 pl-4 text-slate-600">{children}</blockquote>
+  ),
+  hr: () => <hr className="border-slate-200" />,
+  table: ({ children }) => (
+    <div className="overflow-x-auto rounded-xl border border-slate-200">
+      <table className="w-full min-w-max border-collapse text-left text-sm leading-6">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead className="bg-slate-50">{children}</thead>,
+  th: ({ children }) => <th className="border-b border-r border-slate-200 px-3 py-2 font-semibold last:border-r-0">{children}</th>,
+  td: ({ children }) => <td className="border-b border-r border-slate-200 px-3 py-2 align-top last:border-r-0">{children}</td>,
+  tr: ({ children }) => <tr className="last:[&_td]:border-b-0">{children}</tr>,
+  code: ({ children, className }) => (
+    <code className={className ? `${className} font-mono text-sm` : "rounded bg-slate-100 px-1.5 py-0.5 font-mono text-sm"}>
+      {children}
+    </code>
+  ),
+  pre: ({ children }) => <pre className="overflow-x-auto rounded-xl bg-slate-900 p-4 text-sm leading-6 text-slate-100">{children}</pre>,
+  a: ({ children, href }) => (
+    <a className="font-medium text-teal underline underline-offset-4" href={href} rel="noreferrer" target="_blank">
+      {children}
+    </a>
+  )
+};
 
 function readStoredPracticeState(
   storageKey: string,

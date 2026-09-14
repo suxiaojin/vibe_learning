@@ -1,5 +1,5 @@
-﻿import { NextRequest, NextResponse } from "next/server";
-import { getActiveAiServerConfig } from "@/lib/ai-server-settings";
+import { NextRequest, NextResponse } from "next/server";
+import { getAiServerConfigForModule } from "@/lib/ai-server-settings";
 import { getCurrentAdmin } from "@/lib/auth";
 import { assertImportQuestionPaperPayload, getQuestionPaperImportStats } from "@/lib/question-paper-import";
 
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     }
   });
 
-  const aiServer = await getActiveAiServerConfig();
+  const aiServer = await getAiServerConfigForModule("question_bank_pdf_ai_review");
   outbound.append("ai_api_base_url", aiServer.baseUrl);
   outbound.append("ai_api_key", aiServer.apiKey);
   outbound.append("ai_model", aiServer.model);

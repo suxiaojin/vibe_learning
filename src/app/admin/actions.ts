@@ -9,10 +9,11 @@ import { redirect } from "next/navigation";
 import { ContentStatus, Difficulty, QuestionType, RegionStatus, ShareCopyContext, SyllabusRequirement } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import {
-  aiServerModes,
-  aiServerSettingsId,
-  encryptAiApiKey,
-  normalizeAiBaseUrl
+  aiModuleDefinitions,
+  deleteCustomAiServer,
+  saveAiModuleRoutes,
+  saveCustomAiServer,
+  type AiModuleKey
 } from "@/lib/ai-server-settings";
 import { requireAdmin } from "@/lib/auth";
 import { deleteStudentAccountByAdmin, StudentDeletionError } from "@/lib/admin-student-deletion";
@@ -561,58 +562,51 @@ export async function updateAdminPassword(formData: FormData) {
   redirect(adminConfigurationSettingsPath("notice", "admin-password-saved"));
 }
 
-export async function updateAiServerSettings(formData: FormData) {
+export async function saveAiServerProfileSettings(formData: FormData) {
   await requireAdmin();
-  const modeValue = String(formData.get("mode") || "");
-  if (!aiServerModes.includes(modeValue as (typeof aiServerModes)[number])) {
-    redirect(aiServerConfigurationSettingsPath("error", "invalid-ai-server-mode"));
-  }
-
-  const mode = modeValue as (typeof aiServerModes)[number];
-  const customName = String(formData.get("customName") || "").trim();
-  const customBaseUrlValue = String(formData.get("customBaseUrl") || "").trim();
-  const customModel = String(formData.get("customModel") || "").trim();
-  const customApiKey = String(formData.get("customApiKey") || "").trim();
-  const clearCustomApiKey = formData.get("clearCustomApiKey") === "true";
-
-  if (customName.length > 80 || customBaseUrlValue.length > 1000 || customModel.length > 160 || customApiKey.length > 8192) {
-    redirect(aiServerConfigurationSettingsPath("error", "ai-server-value-too-long"));
-  }
-
-  let customBaseUrl = "";
-  try {
-    customBaseUrl = normalizeAiBaseUrl(customBaseUrlValue);
-  } catch {
-    redirect(aiServerConfigurationSettingsPath("error", "invalid-ai-server-url"));
-  }
-
-  if (mode === "custom" && (!customName || !customBaseUrl || !customModel)) {
-    redirect(aiServerConfigurationSettingsPath("error", "custom-ai-server-required"));
-  }
-
-  const existing = await prisma.aiServerSetting.findUnique({
-    where: { id: aiServerSettingsId },
-    select: { customApiKeyEncrypted: true }
+  const result = await saveCustomAiServer({
+    id: String(formData.get("serverId") || "").trim() || undefined,
+    name: String(formData.get("name") || ""),
+    baseUrl: String(formData.get("baseUrl") || ""),
+    model: String(formData.get("model") || ""),
+    apiKey: String(formData.get("apiKey") || ""),
+    clearApiKey: formData.get("clearApiKey") === "true",
+    enabled: formData.get("enabled") === "true"
   });
-  let customApiKeyEncrypted = existing?.customApiKeyEncrypted || "";
-  if (clearCustomApiKey) {
-    customApiKeyEncrypted = "";
-  } else if (customApiKey) {
-    try {
-      customApiKeyEncrypted = encryptAiApiKey(customApiKey);
-    } catch {
-      redirect(aiServerConfigurationSettingsPath("error", "ai-server-secret-unavailable"));
-    }
+  if (!result.ok) {
+    redirect(aiServerConfigurationSettingsPath("error", result.error));
   }
-
-  await prisma.aiServerSetting.upsert({
-    where: { id: aiServerSettingsId },
-    update: { mode, customName, customBaseUrl, customModel, customApiKeyEncrypted },
-    create: { id: aiServerSettingsId, mode, customName, customBaseUrl, customModel, customApiKeyEncrypted }
-  });
 
   revalidatePath("/admin/prompt-settings/ai-server");
-  redirect(aiServerConfigurationSettingsPath("notice", "ai-server-saved"));
+  redirect(aiServerConfigurationSettingsPath("notice", "ai-server-profile-saved"));
+}
+
+export async function deleteAiServerProfileSettings(formData: FormData) {
+  await requireAdmin();
+  const result = await deleteCustomAiServer(String(formData.get("serverId") || "").trim());
+  if (!result.ok) {
+    redirect(aiServerConfigurationSettingsPath("error", result.error));
+  }
+
+  revalidatePath("/admin/prompt-settings/ai-server");
+  redirect(aiServerConfigurationSettingsPath("notice", "ai-server-profile-deleted"));
+}
+
+export async function updateAiModuleRouteSettings(formData: FormData) {
+  await requireAdmin();
+  const routes = Object.fromEntries(
+    aiModuleDefinitions.map((module) => [
+      module.key,
+      formData.getAll(`route_${module.key}`).map((serverId) => String(serverId).trim()).filter(Boolean)
+    ])
+  ) as Record<AiModuleKey, string[]>;
+  const result = await saveAiModuleRoutes(routes);
+  if (!result.ok) {
+    redirect(aiServerConfigurationSettingsPath("error", result.error));
+  }
+
+  revalidatePath("/admin/prompt-settings/ai-server");
+  redirect(aiServerConfigurationSettingsPath("notice", "ai-module-routes-saved"));
 }
 
 export async function updateStudyBuddyHeroImageSettings(formData: FormData) {

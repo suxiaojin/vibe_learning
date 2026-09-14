@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
-import { getActiveAiServerConfig } from "@/lib/ai-server-settings";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isAiGeneratedQuestionBankTitle } from "@/lib/question-bank-source";
@@ -296,10 +295,14 @@ function streamGeneratedDefaultAnswer(
   signal: AbortSignal
 ) {
   return createTextStream(async (push) => {
-    const aiServer = await getActiveAiServerConfig();
+    let modelName = "";
     const answer = await streamQwen(buildDefaultDoubtMessages(question), push, {
       signal,
-      serverConfig: aiServer,
+      moduleKey: "special_practice_ai_doubt",
+      enableServerFailover: true,
+      onServerResolved: (server) => {
+        modelName = server.model;
+      },
       temperature: 0.25,
       timeoutMs: 60000
     });
@@ -307,7 +310,7 @@ function streamGeneratedDefaultAnswer(
     await completeAiConversation({
       answer,
       conversationId,
-      modelName: aiServer.model,
+      modelName,
       purpose: DEFAULT_PURPOSE,
       userPrompt: defaultDoubtPrompt()
     });
@@ -323,10 +326,14 @@ function streamFollowUpAnswer(
   signal: AbortSignal
 ) {
   return createTextStream(async (push) => {
-    const aiServer = await getActiveAiServerConfig();
+    let modelName = "";
     const answer = await streamQwen(buildFollowUpMessages(question, prompt, defaultAnswer, followUps), push, {
       signal,
-      serverConfig: aiServer,
+      moduleKey: "special_practice_ai_follow_up",
+      enableServerFailover: true,
+      onServerResolved: (server) => {
+        modelName = server.model;
+      },
       temperature: 0.35,
       timeoutMs: 60000
     });
@@ -334,7 +341,7 @@ function streamFollowUpAnswer(
     await completeAiConversation({
       answer,
       conversationId,
-      modelName: aiServer.model,
+      modelName,
       purpose: FOLLOW_UP_PURPOSE,
       userPrompt: prompt
     });
