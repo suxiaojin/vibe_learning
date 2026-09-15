@@ -366,8 +366,8 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
     setError("");
     setParsed(null);
     setSelectedQuestionNumber(null);
-    if (!questionPdf || !answerPdf) {
-      setError("请先选择真题 PDF 和答案解析 PDF。");
+    if (!questionPdf) {
+      setError("请先选择真题 PDF。");
       return;
     }
     if (!title.trim()) {
@@ -382,7 +382,9 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
       try {
         const body = new FormData();
         body.append("questionPdf", questionPdf);
-        body.append("answerPdf", answerPdf);
+        if (answerPdf) {
+          body.append("answerPdf", answerPdf);
+        }
         body.append("title", title.trim());
         body.append("year", year.trim());
         body.append("regionName", selectedRegionName);
@@ -518,7 +520,7 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
                     <input className="sr-only" type="file" accept="application/pdf,.pdf" onChange={(event) => { setQuestionPdf(event.target.files?.[0] || null); resetState(); }} />
                   </label>
                   <label className="grid cursor-pointer gap-2 rounded-md border border-dashed border-[#b8c2d2] bg-[#f9fafc] p-4 text-sm text-[#071b38] hover:border-[#6f8dff]">
-                    <span className="inline-flex items-center gap-2 font-semibold"><UploadCloud size={17} />答案解析 PDF</span>
+                    <span className="inline-flex items-center gap-2 font-semibold"><UploadCloud size={17} />答案解析 PDF（选填）</span>
                     <span className="truncate text-xs text-slate-500">{answerPdf?.name || "选择文件"}</span>
                     <input className="sr-only" type="file" accept="application/pdf,.pdf" onChange={(event) => { setAnswerPdf(event.target.files?.[0] || null); resetState(); }} />
                   </label>

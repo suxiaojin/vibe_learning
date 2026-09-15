@@ -1,6 +1,6 @@
 # Vibe Learning PDF Parser Service
 
-This service receives a question PDF and an answer PDF, extracts questions and answers, optionally asks an OpenAI-compatible model to review the parsed result, and returns the JSON payload consumed by the admin question-bank importer.
+This service receives a required question PDF and an optional answer PDF, extracts questions and any provided answers, optionally asks an OpenAI-compatible model to review the parsed result, and returns the JSON payload consumed by the admin question-bank importer. When no answer PDF is provided, answers and analyses remain empty for manual completion after import.
 
 ## API
 
@@ -34,7 +34,7 @@ Returns recent task history kept in memory by the parser process.
 Multipart fields:
 
 - `question_pdf`: question paper PDF
-- `answer_pdf`: answer/explanation PDF
+- `answer_pdf`: optional answer/explanation PDF; omit it to import questions with empty answers and analyses for later manual completion
 - `title`: exam paper title
 - `year`: exam year
 - `region_name`: region display name

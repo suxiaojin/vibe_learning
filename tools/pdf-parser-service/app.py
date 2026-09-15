@@ -1393,6 +1393,7 @@ def build_quality_gate(
     questions: list[dict[str, Any]],
     answers: dict[int, dict[str, str]],
     question_debug: dict[str, Any],
+    answer_provided: bool = True,
 ) -> dict[str, Any]:
     question_count = len(questions)
     answered_count = sum(bool(str(answer.get("answer") or "").strip()) for answer in answers.values())
@@ -1403,7 +1404,9 @@ def build_quality_gate(
         reasons.append("没有识别到题目")
     if expected_count > question_count:
         reasons.append(f"预计 {expected_count} 题，实际识别 {question_count} 题")
-    if question_count and answer_ratio < ANSWER_MATCH_MIN_RATIO:
+    if question_count and not answer_provided:
+        reasons.append("未上传答案解析 PDF，全部题目需要人工补充答案与解析")
+    elif question_count and answer_ratio < ANSWER_MATCH_MIN_RATIO:
         reasons.append(
             f"有来源答案仅匹配 {answered_count}/{question_count}，低于 {ANSWER_MATCH_MIN_RATIO:.0%} 门槛"
         )
@@ -1421,7 +1424,7 @@ def build_quality_gate(
 def parse_question_files(
     *,
     question_path: Path,
-    answer_path: Path,
+    answer_path: Path | None,
     title: str,
     year: int,
     region_name: str,
@@ -1440,9 +1443,15 @@ def parse_question_files(
         progress_callback=progress_callback,
     )
     logger.info("[%s] parsed questions=%s warnings=%s", request_id, len(questions), len(question_warnings))
-    answer_text, answer_debug = extract_answer_text(answer_path, request_id=request_id)
-    answers = parse_answers(answer_text, questions)
-    if answer_debug["method"] == "native_text":
+    answers: dict[int, dict[str, str]] = {}
+    answer_debug: dict[str, Any] = {
+        "method": "not_provided",
+        "pageCount": 0,
+    }
+    if answer_path is not None:
+        answer_text, answer_debug = extract_answer_text(answer_path, request_id=request_id)
+        answers = parse_answers(answer_text, questions)
+    if answer_path is not None and answer_debug["method"] == "native_text":
         visual_pages = [rows_from_page(page) for page in native_blocks_from_pdf(answer_path)]
         visual_answers = parse_answers("\n".join("\n".join(page) for page in visual_pages), questions)
 
@@ -1456,7 +1465,12 @@ def parse_question_files(
         else:
             answer_debug["layout"] = "native_order"
     logger.info("[%s] parsed answers=%s method=%s", request_id, len(answers), answer_debug["method"])
-    quality_gate = build_quality_gate(questions=questions, answers=answers, question_debug=question_debug)
+    quality_gate = build_quality_gate(
+        questions=questions,
+        answers=answers,
+        question_debug=question_debug,
+        answer_provided=answer_path is not None,
+    )
     payload, merge_warnings = merge_payload(
         title=title,
         year=year,
@@ -1467,7 +1481,9 @@ def parse_question_files(
         questions=questions,
         answers=answers,
     )
-    if len(questions) != len(answers):
+    if answer_path is None:
+        merge_warnings.append("未上传答案解析 PDF，答案与解析已留空，请在导入后逐题人工补充。")
+    elif len(questions) != len(answers):
         merge_warnings.append(
             f"题目数量 {len(questions)}，答案数量 {len(answers)}，请检查 OCR 是否漏题，或真题 PDF 与答案解析 PDF 是否对应。"
         )
@@ -1508,7 +1524,7 @@ def parse_question_files(
     }
 
 
-def run_parse_task(task_id: str, question_path: Path, answer_path: Path, meta: dict[str, Any]) -> None:
+def run_parse_task(task_id: str, question_path: Path, answer_path: Path | None, meta: dict[str, Any]) -> None:
     started_at = time.time()
     logger.info("[%s] async parse started: %s", task_id, meta)
 
@@ -1612,7 +1628,7 @@ def health() -> dict[str, str]:
 @app.post("/parse-question-paper")
 async def parse_question_paper(
     question_pdf: UploadFile = File(...),
-    answer_pdf: UploadFile = File(...),
+    answer_pdf: UploadFile | None = File(None),
     title: str = Form(...),
     year: int = Form(...),
     region_name: str = Form("江苏三年制"),
@@ -1629,11 +1645,12 @@ async def parse_question_paper(
     with tempfile.TemporaryDirectory() as temp_dir:
         temp = Path(temp_dir)
         question_path = temp / (question_pdf.filename or "question.pdf")
-        answer_path = temp / (answer_pdf.filename or "answer.pdf")
+        answer_path = temp / (answer_pdf.filename or "answer.pdf") if answer_pdf else None
         question_bytes = await question_pdf.read()
-        answer_bytes = await answer_pdf.read()
+        answer_bytes = await answer_pdf.read() if answer_pdf else b""
         question_path.write_bytes(question_bytes)
-        answer_path.write_bytes(answer_bytes)
+        if answer_path is not None:
+            answer_path.write_bytes(answer_bytes)
         logger.info("[%s] uploads saved: question=%s bytes answer=%s bytes", request_id, len(question_bytes), len(answer_bytes))
 
         result = parse_question_files(
@@ -1659,7 +1676,7 @@ async def parse_question_paper(
 async def create_parse_task(
     background_tasks: BackgroundTasks,
     question_pdf: UploadFile = File(...),
-    answer_pdf: UploadFile = File(...),
+    answer_pdf: UploadFile | None = File(None),
     title: str = Form(...),
     year: int = Form(...),
     region_name: str = Form("江苏三年制"),
@@ -1674,11 +1691,12 @@ async def create_parse_task(
     task_path = TASK_DIR / task_id
     task_path.mkdir(parents=True, exist_ok=True)
     question_path = task_path / (question_pdf.filename or "question.pdf")
-    answer_path = task_path / (answer_pdf.filename or "answer.pdf")
+    answer_path = task_path / (answer_pdf.filename or "answer.pdf") if answer_pdf else None
     question_bytes = await question_pdf.read()
-    answer_bytes = await answer_pdf.read()
+    answer_bytes = await answer_pdf.read() if answer_pdf else b""
     question_path.write_bytes(question_bytes)
-    answer_path.write_bytes(answer_bytes)
+    if answer_path is not None:
+        answer_path.write_bytes(answer_bytes)
     created_at = time.time()
     remember_task(
         task_id,

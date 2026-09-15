@@ -27,13 +27,18 @@ export async function POST(request: NextRequest) {
   const questionPdf = formData.get("questionPdf");
   const answerPdf = formData.get("answerPdf");
 
-  if (!isUploadFile(questionPdf) || !isUploadFile(answerPdf)) {
-    return NextResponse.json({ error: "请上传真题 PDF 和答案解析 PDF。" }, { status: 400 });
+  if (!isUploadFile(questionPdf)) {
+    return NextResponse.json({ error: "请上传真题 PDF。" }, { status: 400 });
+  }
+  if (answerPdf !== null && !isUploadFile(answerPdf)) {
+    return NextResponse.json({ error: "答案解析 PDF 格式不正确。" }, { status: 400 });
   }
 
   const outbound = new FormData();
   outbound.append("question_pdf", questionPdf, questionPdf.name);
-  outbound.append("answer_pdf", answerPdf, answerPdf.name);
+  if (answerPdf) {
+    outbound.append("answer_pdf", answerPdf, answerPdf.name);
+  }
 
   const fieldMap: Record<string, string> = {
     title: "title",
