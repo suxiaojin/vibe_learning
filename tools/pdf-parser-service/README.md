@@ -2,6 +2,8 @@
 
 This service receives a required question PDF and an optional answer PDF, extracts questions and any provided answers, optionally asks an OpenAI-compatible model to review the parsed result, and returns the JSON payload consumed by the admin question-bank importer. When no answer PDF is provided, answers and analyses remain empty for manual completion after import.
 
+Question numbers may restart from 1 in each question-type section. The parser keeps the section-local number while extracting and matching answers, then emits one globally ordered `number` sequence for preview and import so existing question-bank storage does not require duplicate display numbers.
+
 ## API
 
 `GET /health`

@@ -31,6 +31,8 @@ type FollowUpExchange = {
   answer: string;
 };
 
+type AiAnswerSource = "question_cache" | "conversation_cache" | "generated";
+
 export async function GET(request: Request) {
   const user = await requireUser();
   const questionId = new URL(request.url).searchParams.get("questionId")?.trim() || "";
@@ -57,8 +59,10 @@ export async function GET(request: Request) {
     getFollowUpHistory(user.id, question.id)
   ]);
 
+  const answer = readConversationMessage(defaultConversation?.messages, "assistant");
   return NextResponse.json({
-    answer: readConversationMessage(defaultConversation?.messages, "assistant"),
+    answer,
+    answerFormat: answer && answer === question.aiDoubtAnswer?.trim() ? "rich_html" : "markdown",
     followUps
   });
 }
@@ -155,7 +159,10 @@ export async function POST(request: Request) {
   ]);
   const priorAnswer = readConversationMessage(savedConversation?.messages, "assistant");
   if (priorAnswer) {
-    return streamCachedAnswer({ answer: priorAnswer });
+    return streamCachedAnswer({
+      answer: priorAnswer,
+      source: priorAnswer === cachedAnswer ? "question_cache" : "conversation_cache"
+    });
   }
 
   if (cachedAnswer) {
@@ -186,7 +193,7 @@ export async function POST(request: Request) {
     if (reservationError) {
       return reservationError;
     }
-    return streamCachedAnswer({ answer: cachedAnswer });
+    return streamCachedAnswer({ answer: cachedAnswer, source: "question_cache" });
   }
 
   const conversationId = priorExplanation
@@ -294,7 +301,7 @@ function streamGeneratedDefaultAnswer(
   conversationId: string,
   signal: AbortSignal
 ) {
-  return createTextStream(async (push) => {
+  return createTextStream("generated", async (push) => {
     let modelName = "";
     const answer = await streamQwen(buildDefaultDoubtMessages(question), push, {
       signal,
@@ -325,7 +332,7 @@ function streamFollowUpAnswer(
   conversationId: string,
   signal: AbortSignal
 ) {
-  return createTextStream(async (push) => {
+  return createTextStream("generated", async (push) => {
     let modelName = "";
     const answer = await streamQwen(buildFollowUpMessages(question, prompt, defaultAnswer, followUps), push, {
       signal,
@@ -369,8 +376,8 @@ async function getFollowUpHistory(userId: string, questionId: string) {
   });
 }
 
-function streamCachedAnswer({ answer }: { answer: string }) {
-  return createTextStream(async (push) => {
+function streamCachedAnswer({ answer, source }: { answer: string; source: Extract<AiAnswerSource, "question_cache" | "conversation_cache"> }) {
+  return createTextStream(source, async (push) => {
     const chunks = answer.match(/[\s\S]{1,12}/g) || [answer];
     for (const chunk of chunks) {
       await push(chunk);
@@ -379,7 +386,7 @@ function streamCachedAnswer({ answer }: { answer: string }) {
   });
 }
 
-function createTextStream(work: (push: (chunk: string) => Promise<void>) => Promise<void>) {
+function createTextStream(source: AiAnswerSource, work: (push: (chunk: string) => Promise<void>) => Promise<void>) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
@@ -399,7 +406,8 @@ function createTextStream(work: (push: (chunk: string) => Promise<void>) => Prom
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
       "Cache-Control": "no-store, no-transform",
-      "X-Accel-Buffering": "no"
+      "X-Accel-Buffering": "no",
+      "X-AI-Answer-Source": source
     }
   });
 }
@@ -536,7 +544,7 @@ async function getAiConversationReplayResponse({
 
   const answer = readConversationMessage(conversation.messages, "assistant");
   if (conversation.purpose === purpose && answer) {
-    return streamCachedAnswer({ answer });
+    return streamCachedAnswer({ answer, source: "conversation_cache" });
   }
   if (conversation.purpose === pendingPurpose) {
     return NextResponse.json(

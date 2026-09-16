@@ -5,6 +5,7 @@ import { ChevronRight, HelpCircle, Loader2 } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { DiamondInsufficientMessage } from "@/components/diamond-insufficient-message";
+import { RichTextContent } from "@/components/rich-text-content";
 import { isDiamondInsufficientMessage } from "@/lib/diamond-insufficient";
 
 const text = {
@@ -46,6 +47,7 @@ export function WrongQuestionAi({
   const [open, setOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [answer, setAnswer] = useState("");
+  const [answerFormat, setAnswerFormat] = useState<"markdown" | "rich_html">("markdown");
   const [followUps, setFollowUps] = useState<FollowUpExchange[]>([]);
   const [expandedFollowUpIds, setExpandedFollowUpIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -98,6 +100,7 @@ export function WrongQuestionAi({
     setRequestError("");
     if (followUpId === null) {
       setAnswer("");
+      setAnswerFormat("markdown");
       void loadFollowUpHistory();
     } else {
       setFollowUps((current) => [...current, { id: followUpId, question: content, answer: "" }]);
@@ -133,6 +136,9 @@ export function WrongQuestionAi({
       });
       if (!response.ok) {
         throw new AiExplainRequestError(await readApiErrorMessage(response));
+      }
+      if (followUpId === null) {
+        setAnswerFormat(response.headers.get("X-AI-Answer-Source") === "question_cache" ? "rich_html" : "markdown");
       }
       if (!response.body) {
         throw new Error("AI_EXPLAIN_EMPTY_STREAM");
@@ -210,7 +216,11 @@ export function WrongQuestionAi({
             <section aria-label={text.explanation}>
               <p className="text-xs font-bold text-slate-500">{text.explanation}</p>
               <div className="mt-2">
-                <MarkdownText content={answer} />
+                {answerFormat === "rich_html" ? (
+                  <RichTextContent className="text-sm leading-7 text-slate-700" value={answer} />
+                ) : (
+                  <MarkdownText content={answer} />
+                )}
               </div>
             </section>
           ) : null}

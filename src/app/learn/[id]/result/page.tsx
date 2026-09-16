@@ -59,7 +59,8 @@ const sessionDetailSelect = {
           stem: true,
           options: true,
           answer: true,
-          analysis: true
+          analysis: true,
+          showAnalysis: true
         }
       }
     },
@@ -673,7 +674,7 @@ function AttemptCard({
           <RichTextContent className="leading-6" value={answerText(attempt.question.answer)} />
         </div>
       </div>
-      {hasMeaningfulRichText(attempt.question.analysis) ? (
+      {attempt.question.showAnalysis && hasMeaningfulRichText(attempt.question.analysis) ? (
         <div className="mt-3 rounded-xl bg-mist p-4">
           <p className="text-xs font-semibold text-slate-500">解析</p>
           <RichTextContent className="mt-2 block text-sm leading-6 text-slate-700" value={attempt.question.analysis} />

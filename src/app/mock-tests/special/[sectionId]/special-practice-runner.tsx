@@ -24,6 +24,7 @@ type PracticeQuestion = {
   options: unknown;
   answer: unknown;
   analysis: string;
+  showAnalysis: boolean;
   source?: string;
   questionBank?: {
     id: string;
@@ -45,6 +46,7 @@ type AiMessage = {
   role: "assistant" | "user";
   content: string;
   exchangeId?: string;
+  format?: "markdown" | "rich_html";
 };
 
 type AiFollowUpExchange = {
@@ -276,6 +278,7 @@ export function SpecialPracticeRunner({
       });
       const payload = (await response.json().catch(() => null)) as {
         answer?: unknown;
+        answerFormat?: unknown;
         error?: unknown;
         followUps?: Array<{ id?: unknown; question?: unknown; answer?: unknown }>;
       } | null;
@@ -293,7 +296,12 @@ export function SpecialPracticeRunner({
           : [];
       });
       const restoredMessages: AiMessage[] = [
-        ...(answer ? [{ id: `default-${questionId}`, role: "assistant" as const, content: answer }] : []),
+        ...(answer ? [{
+          id: `default-${questionId}`,
+          role: "assistant" as const,
+          content: answer,
+          format: payload?.answerFormat === "rich_html" ? "rich_html" as const : "markdown" as const
+        }] : []),
         ...followUps.flatMap((exchange) => [
           { id: `${exchange.id}-user`, exchangeId: exchange.id, role: "user" as const, content: exchange.question },
           { id: `${exchange.id}-assistant`, exchangeId: exchange.id, role: "assistant" as const, content: exchange.answer }
@@ -364,7 +372,7 @@ export function SpecialPracticeRunner({
 
       if (response.headers.get("content-type")?.includes("application/json")) {
         const payload = (await response.json()) as { answer?: string };
-        replaceAiMessage(questionId, assistantMessageId, payload.answer || "暂时没有生成解释，请稍后重试。");
+        replaceAiMessage(questionId, assistantMessageId, payload.answer || "暂时没有生成解释，请稍后重试。", "markdown");
         return;
       }
 
@@ -374,6 +382,7 @@ export function SpecialPracticeRunner({
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      const answerFormat = !prompt && response.headers.get("X-AI-Answer-Source") === "question_cache" ? "rich_html" : "markdown";
       let streamedAnswer = "";
 
       while (true) {
@@ -383,7 +392,7 @@ export function SpecialPracticeRunner({
         }
         const chunk = decoder.decode(value, { stream: true });
         streamedAnswer += chunk;
-        replaceAiMessage(questionId, assistantMessageId, streamedAnswer);
+        replaceAiMessage(questionId, assistantMessageId, streamedAnswer, answerFormat);
       }
     } catch (error) {
       replaceAiMessage(questionId, assistantMessageId, error instanceof Error ? error.message : "AI 服务暂时不可用，请稍后重试。");
@@ -395,10 +404,12 @@ export function SpecialPracticeRunner({
     }
   }
 
-  function replaceAiMessage(questionId: string, messageId: string, content: string) {
+  function replaceAiMessage(questionId: string, messageId: string, content: string, format?: "markdown" | "rich_html") {
     setAiMessagesByQuestionId((current) => ({
       ...current,
-      [questionId]: (current[questionId] || []).map((message) => (message.id === messageId ? { ...message, content } : message))
+      [questionId]: (current[questionId] || []).map((message) => (
+        message.id === messageId ? { ...message, content, ...(format ? { format } : {}) } : message
+      ))
     }));
   }
 
@@ -506,10 +517,12 @@ export function SpecialPracticeRunner({
                   <span className="font-semibold">参考答案：</span>
                   <RichTextContent className="mt-2 text-slate-700" value={answerText(correctAnswer) || "暂无"} />
                 </div>
-                <div className="mt-3">
-                  <span className="font-semibold">文字解析：</span>
-                  <RichTextContent className="mt-2 text-slate-600" value={question.analysis || "暂无解析。"} />
-                </div>
+                {question.showAnalysis ? (
+                  <div className="mt-3">
+                    <span className="font-semibold">文字解析：</span>
+                    <RichTextContent className="mt-2 text-slate-600" value={question.analysis || "暂无解析。"} />
+                  </div>
+                ) : null}
               </section>
             ) : null}
           </article>
@@ -525,7 +538,9 @@ export function SpecialPracticeRunner({
               上一题
             </button>
             <button className="inline-flex items-center gap-1 justify-self-center text-ink transition hover:text-teal" type="button" onClick={toggleAnswer}>
-              {revealed ? "收起答案/解析" : "查看答案/解析"}
+              {revealed
+                ? question.showAnalysis ? "收起答案/解析" : "收起答案"
+                : question.showAnalysis ? "查看答案/解析" : "查看答案"}
               <ChevronDown className={revealed ? "rotate-180 transition" : "transition"} size={20} />
             </button>
             <button
@@ -623,7 +638,8 @@ function AiDoubtDialog({
   onClose: () => void;
   onSubmitFollowUp: () => void;
 }) {
-  const initialAnswer = messages.find((message) => message.role === "assistant" && !message.exchangeId)?.content || "";
+  const initialMessage = messages.find((message) => message.role === "assistant" && !message.exchangeId);
+  const initialAnswer = initialMessage?.content || "";
   const followUps = useMemo(() => buildAiFollowUpExchanges(messages), [messages]);
   const [expandedFollowUpIds, setExpandedFollowUpIds] = useState<string[]>([]);
   const latestMessage = messages.at(-1);
@@ -674,7 +690,7 @@ function AiDoubtDialog({
             {initialAnswer ? (
               <section aria-label="AI答疑">
                 <div className="rounded-2xl bg-white text-ink">
-                  <AiAnswerText content={initialAnswer} />
+                  <AiAnswerText content={initialAnswer} format={initialMessage?.format} />
                 </div>
               </section>
             ) : null}
@@ -777,9 +793,13 @@ function buildAiFollowUpExchanges(messages: AiMessage[]) {
   return [...exchanges.values()].filter((exchange) => exchange.question);
 }
 
-function AiAnswerText({ content }: { content: string }) {
+function AiAnswerText({ content, format = "markdown" }: { content: string; format?: "markdown" | "rich_html" }) {
   if (isDiamondInsufficientMessage(content)) {
     return <DiamondInsufficientMessage className="text-base leading-8" />;
+  }
+
+  if (format === "rich_html") {
+    return <RichTextContent className="text-base leading-8 text-ink" value={content} />;
   }
 
   return (

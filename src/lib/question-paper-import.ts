@@ -424,6 +424,7 @@ export async function importQuestionPaperPayload(
           options: question.options,
           answer: question.answer,
           analysis: question.analysis,
+          aiDoubtAnswer: question.analysis.trim() || null,
           source: question.source || payload.title,
           sourceType: question.sourceType || options.defaultSourceType || "import",
           sourceYear: question.sourceYear || payload.year,

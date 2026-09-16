@@ -77,6 +77,15 @@ SECTION_PATTERNS = (
     ("single_choice", ("单项选择题", "单选题")),
 )
 
+SECTION_HEADING_ALIASES = (
+    ("multiple_choice", ("多项选择", "多选")),
+    ("true_false", ("判断",)),
+    ("fill_blank", ("填空",)),
+    ("mixed", ("阅读理解",)),
+    ("comprehensive", ("名词解释", "简答", "论述", "分析计算", "计算分析", "计算", "证明", "综合分析", "综合", "古诗词鉴赏", "作文")),
+    ("single_choice", ("单项选择", "单选", "选择")),
+)
+
 QUESTION_TYPE_LABELS = {
     "single_choice": "单选",
     "multiple_choice": "多选",
@@ -488,6 +497,12 @@ def question_range_label(start: int, end: int) -> str:
 
 def detect_section(row: str) -> str | None:
     compact = re.sub(r"\s+", "", normalize_text(row))
+    short_heading = re.sub(r"^[一二三四五六七八九十]+(?:[、.．])?", "", compact)
+    short_heading = re.sub(r"[（(].*$", "", short_heading)
+    short_heading = re.sub(r"题?[。．]$", "", short_heading)
+    for section, aliases in SECTION_HEADING_ALIASES:
+        if short_heading in aliases:
+            return section
     for section, tokens in SECTION_PATTERNS:
         if any(token in compact for token in tokens):
             return section
@@ -529,6 +544,8 @@ def parse_questions_from_rows(pages: list[list[str]]) -> tuple[list[dict[str, An
     skipping_out_of_sequence = False
     expected_total = 0
     counted_headings: set[str] = set()
+    seen_section_headings: set[str] = set()
+    section_index = -1
 
     def finish_current() -> None:
         nonlocal current
@@ -536,6 +553,7 @@ def parse_questions_from_rows(pages: list[list[str]]) -> tuple[list[dict[str, An
             return
         stem = normalize_text(" ".join(current.pop("stem_parts")))
         source_section = str(current.pop("section", current.get("type", "single_choice")))
+        current["_sourceSection"] = source_section
         if stem.endswith("（"):
             stem += "）"
         option_map = {option["key"]: option["text"] for option in current["options"]}
@@ -550,12 +568,17 @@ def parse_questions_from_rows(pages: list[list[str]]) -> tuple[list[dict[str, An
         questions.append(current)
         current = None
 
-    def begin_question(number: int, body: str) -> dict[str, Any]:
+    def begin_question(source_number: int, body: str) -> dict[str, Any]:
+        nonlocal section_index
+        if section_index < 0:
+            section_index = 0
         body = body.strip()
         matches = list(OPTION_START.finditer(body))
         stem = body[: matches[0].start()].strip() if matches else body
         return {
-            "number": number,
+            "number": len(questions) + 1,
+            "_sourceNumber": source_number,
+            "_sectionIndex": section_index,
             "type": question_type_from_section(section),
             "section": section,
             "stem_parts": [stem] if stem else [],
@@ -578,9 +601,16 @@ def parse_questions_from_rows(pages: list[list[str]]) -> tuple[list[dict[str, An
 
             detected_section = detect_section(row)
             if detected_section:
+                if heading_key in seen_section_headings:
+                    continue
+                seen_section_headings.add(heading_key)
                 finish_current()
                 started = True
                 section = detected_section
+                section_index += 1
+                expected = 1
+                skipping_out_of_sequence = False
+                row = normalize_question_row(raw_row, expected)
                 expected_token = re.search(rf"(?<!\d){expected}\s*[\.．、,，。:：\)）]", row)
                 if not expected_token:
                     continue
@@ -645,7 +675,7 @@ def parse_questions_from_rows(pages: list[list[str]]) -> tuple[list[dict[str, An
     for question in questions:
         if question["type"] in {"single_choice", "multiple_choice"} and len(question["options"]) != 4:
             warnings.append(f"第 {question['number']} 题选项数量为 {len(question['options'])}，请预览确认。")
-    maximum_number = max((int(question["number"]) for question in questions), default=0)
+    maximum_number = len(questions)
     if expected_total > maximum_number:
         warnings.append(
             f"章节题量合计为 {expected_total} 题，当前最大题号为 {maximum_number}，疑似漏识尾部 {question_range_label(maximum_number + 1, expected_total)}。"
@@ -730,7 +760,7 @@ def normalize_choice_answer(answer: str, question_type: str) -> str:
     return "".join(dict.fromkeys(re.findall(r"[A-H]", normalized)))
 
 
-def parse_answers(answer_text: str, questions: list[dict[str, Any]] | None = None) -> dict[int, dict[str, str]]:
+def _parse_answers_unique(answer_text: str, questions: list[dict[str, Any]] | None = None) -> dict[int, dict[str, str]]:
     normalized = normalize_answer_document(answer_text)
     question_types = {int(question["number"]): str(question["type"]) for question in questions or []}
     answers: dict[int, dict[str, str]] = {}
@@ -925,6 +955,114 @@ def parse_answers(answer_text: str, questions: list[dict[str, Any]] | None = Non
                 analysis_value = content[marker.end() : end].strip()
                 save(question_cursor + review_index, "", analysis_value)
         question_cursor += count
+    return answers
+
+
+def parse_answers(answer_text: str, questions: list[dict[str, Any]] | None = None) -> dict[int, dict[str, str]]:
+    source_questions = questions or []
+    source_numbers = [int(question.get("_sourceNumber", question["number"])) for question in source_questions]
+    if len(source_numbers) == len(set(source_numbers)):
+        return _parse_answers_unique(answer_text, source_questions)
+
+    question_groups: dict[int, list[dict[str, Any]]] = {}
+    for question in source_questions:
+        section_index = int(question.get("_sectionIndex", 0))
+        question_groups.setdefault(section_index, []).append(question)
+
+    normalized = normalize_answer_document(answer_text)
+    heading_rows: list[dict[str, Any]] = []
+    offset = 0
+    for raw_line in normalized.splitlines(keepends=True):
+        stripped_line = raw_line.strip()
+        section = detect_section(stripped_line)
+        compact_line = re.sub(r"\s+", "", normalize_text(stripped_line))
+        if section is None and re.fullmatch(r"[一二三四五六七八九十]+[、.．]?", compact_line):
+            section = "unknown"
+        if section:
+            heading_rows.append({"start": offset, "section": section})
+        offset += len(raw_line)
+
+    answer_sections: list[dict[str, Any]] = []
+    for index, heading in enumerate(heading_rows):
+        end = int(heading_rows[index + 1]["start"]) if index + 1 < len(heading_rows) else len(normalized)
+        answer_sections.append(
+            {
+                "section": str(heading["section"]),
+                "text": normalized[int(heading["start"]) : end],
+            }
+        )
+
+    answers: dict[int, dict[str, str]] = {}
+    answer_section_cursor = 0
+    groups = list(question_groups.values())
+    use_positional_sections = len(answer_sections) == len(groups)
+    for group_index, group in enumerate(groups):
+        source_section = str(group[0].get("_sourceSection", group[0].get("type", "single_choice")))
+        if use_positional_sections:
+            matching_index = group_index
+            detected_answer_section = str(answer_sections[matching_index]["section"])
+            if detected_answer_section not in {"unknown", source_section}:
+                continue
+        else:
+            matching_candidates = [
+                index
+                for index in range(answer_section_cursor, len(answer_sections))
+                if answer_sections[index]["section"] == source_section
+            ]
+            same_type_group_count = sum(
+                str(candidate[0].get("_sourceSection", candidate[0].get("type", "single_choice"))) == source_section
+                for candidate in groups
+            )
+            same_type_answer_section_count = sum(
+                str(candidate["section"]) == source_section
+                for candidate in answer_sections
+            )
+            matching_index = (
+                matching_candidates[0]
+                if matching_candidates and same_type_answer_section_count == same_type_group_count
+                else None
+            )
+        if matching_index is None:
+            continue
+        answer_section_cursor = matching_index + 1
+        local_questions = [
+            {
+                **question,
+                "number": int(question.get("_sourceNumber", question["number"])),
+            }
+            for question in group
+        ]
+        local_answers = _parse_answers_unique(str(answer_sections[matching_index]["text"]), local_questions)
+        global_number_by_source = {
+            int(question.get("_sourceNumber", question["number"])): int(question["number"])
+            for question in group
+        }
+        for source_number, answer in local_answers.items():
+            global_number = global_number_by_source.get(source_number)
+            if global_number is not None:
+                answers[global_number] = answer
+
+    source_number_counts = Counter(source_numbers)
+    globally_unique_questions = [
+        {
+            **question,
+            "number": int(question.get("_sourceNumber", question["number"])),
+        }
+        for question in source_questions
+        if source_number_counts[int(question.get("_sourceNumber", question["number"]))] == 1
+    ]
+    if globally_unique_questions:
+        fallback_answers = _parse_answers_unique(answer_text, globally_unique_questions)
+        global_number_by_source = {
+            int(question.get("_sourceNumber", question["number"])): int(question["number"])
+            for question in source_questions
+            if source_number_counts[int(question.get("_sourceNumber", question["number"]))] == 1
+        }
+        for source_number, answer in fallback_answers.items():
+            global_number = global_number_by_source.get(source_number)
+            if global_number is not None and global_number not in answers:
+                answers[global_number] = answer
+
     return answers
 
 
@@ -1340,18 +1478,29 @@ def extract_questions_adaptive(
             )
             repair_pages_ocr = run_ocr(repair_images, repair_request_id)
             repair_questions, _, repair_structure = parse_questions_from_ocr(repair_pages_ocr)
-            merged_by_number = {int(question["number"]): question for question in ocr_questions}
-            repaired_numbers: list[int] = []
+            def source_identity(question: dict[str, Any]) -> tuple[int, int]:
+                return (
+                    int(question.get("_sectionIndex", 0)),
+                    int(question.get("_sourceNumber", question["number"])),
+                )
+
+            merged_by_source = {source_identity(question): question for question in ocr_questions}
+            repaired_source_ids: set[tuple[int, int]] = set()
             for repair_question in repair_questions:
-                number = int(repair_question["number"])
-                current = merged_by_number.get(number)
+                source_id = source_identity(repair_question)
+                current = merged_by_source.get(source_id)
                 if current is None:
-                    merged_by_number[number] = repair_question
-                    repaired_numbers.append(number)
+                    merged_by_source[source_id] = repair_question
+                    repaired_source_ids.add(source_id)
                     continue
                 if len(repair_question.get("options") or []) > len(current.get("options") or []):
                     current["options"] = repair_question["options"]
-            merged_questions = [merged_by_number[number] for number in sorted(merged_by_number)]
+            merged_questions = [merged_by_source[source_id] for source_id in sorted(merged_by_source)]
+            repaired_numbers: list[int] = []
+            for number, question in enumerate(merged_questions, start=1):
+                question["number"] = number
+                if source_identity(question) in repaired_source_ids:
+                    repaired_numbers.append(number)
             merged_warnings = [warning for warning in ocr_warnings if not warning.startswith("疑似漏识")]
             merged_structure = {
                 **ocr_structure,

@@ -69,6 +69,7 @@ type QuestionRow = {
   options: QuestionOption[];
   answer: string[];
   analysis: string;
+  showAnalysis: boolean;
   aiDoubtAnswer: string;
   knowledgePointTitle: string;
   chapterTitle: string;
@@ -416,12 +417,16 @@ function EditorShell({
   title,
   children,
   questionTypeControl,
-  onInsertImage
+  onInsertImage,
+  analysisVisibility
 }: {
   title: string;
   children: ReactNode;
   questionTypeControl?: QuestionTypeControl;
   onInsertImage?: () => void;
+  analysisVisibility?: {
+    defaultChecked: boolean;
+  };
 }) {
   return (
     <section>
@@ -438,9 +443,23 @@ function EditorShell({
           {questionTypeControl ? (
             <QuestionTypeSelect {...questionTypeControl} />
           ) : (
-            <button className="grid h-8 w-9 place-items-center bg-[#ef3e46] text-white" type="button" aria-label="删除内容">
-              <Trash2 size={14} />
-            </button>
+            <div className="flex h-8 items-center">
+              {analysisVisibility ? (
+                <label className="flex h-8 cursor-pointer items-center gap-2 border-l border-[#d4dae4] bg-[#f8fafc] px-3 text-xs font-semibold text-[#475467]" title="开启后，学生端显示该题的解答详情">
+                  <span>前端显示</span>
+                  <input
+                    className="peer sr-only"
+                    defaultChecked={analysisVisibility.defaultChecked}
+                    name="showAnalysis"
+                    type="checkbox"
+                  />
+                  <span className="relative h-5 w-9 rounded-full bg-[#cbd5e1] transition peer-checked:bg-[#1d4ed8] peer-focus-visible:ring-2 peer-focus-visible:ring-[#93c5fd] peer-focus-visible:ring-offset-1 after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:after:translate-x-4" aria-hidden="true" />
+                </label>
+              ) : null}
+              <button className="grid h-8 w-9 place-items-center bg-[#ef3e46] text-white" type="button" aria-label="删除内容">
+                <Trash2 size={14} />
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -1246,7 +1265,7 @@ function ChoiceQuestionForm({
           })}
         </div>
       </section>
-      <EditorShell title="解答详情">
+      <EditorShell title="解答详情" analysisVisibility={{ defaultChecked: question?.showAnalysis || false }}>
         <RichTextEditor name="analysis" defaultValue={question?.analysis || ""} />
       </EditorShell>
       {question ? <AiDoubtReviewPanel paperId={paperId} question={question} /> : null}
@@ -1313,7 +1332,7 @@ function TrueFalseQuestionForm({
           ))}
         </div>
       </section>
-      <EditorShell title="解答详情">
+      <EditorShell title="解答详情" analysisVisibility={{ defaultChecked: question?.showAnalysis || false }}>
         <RichTextEditor name="analysis" defaultValue={question?.analysis || ""} />
       </EditorShell>
       {question ? <AiDoubtReviewPanel paperId={paperId} question={question} /> : null}
@@ -1363,7 +1382,7 @@ function FillBlankQuestionForm({
           </div>
         </div>
       </section>
-      <EditorShell title="解答详情">
+      <EditorShell title="解答详情" analysisVisibility={{ defaultChecked: question?.showAnalysis || false }}>
         <RichTextEditor name="analysis" defaultValue={question?.analysis || ""} />
       </EditorShell>
       {question ? <AiDoubtReviewPanel paperId={paperId} question={question} /> : null}
@@ -1404,7 +1423,7 @@ function RichAnswerQuestionForm({
       <EditorShell title="答案">
         <RichTextEditor name="answer" defaultValue={question?.answer[0] || ""} />
       </EditorShell>
-      <EditorShell title="解答详情">
+      <EditorShell title="解答详情" analysisVisibility={{ defaultChecked: question?.showAnalysis || false }}>
         <RichTextEditor name="analysis" defaultValue={question?.analysis || ""} />
       </EditorShell>
       {question ? <AiDoubtReviewPanel paperId={paperId} question={question} /> : null}
@@ -1554,15 +1573,15 @@ function AiDoubtReviewPanel({ paperId, question }: { paperId: string; question: 
         </div>
       </div>
       <div className="bg-[#eef3f8] p-4">
-        <textarea
-          className="min-h-[220px] w-full resize-y border border-[#c6d3e6] bg-[#d9e5fb] px-4 py-3 text-sm leading-7 text-[#071b38] outline-none focus:border-[#8b5cf6] focus:ring-2 focus:ring-[#8b5cf6]/20"
-          placeholder="点击 AI答疑 生成草稿，审核修改后保存。保存后学生端默认 AI 答疑会优先使用这里的内容。"
-          value={answer}
-          onChange={(event) => setAnswer(event.target.value)}
+        <RichTextEditor
+          name="aiDoubtAnswer"
+          defaultValue={answer}
+          minHeightClassName="min-h-[220px]"
+          onChange={setAnswer}
         />
         <div className="mt-2 flex items-center justify-between gap-3 text-xs">
           <p className="font-medium text-[#64748b]">{message || "未保存时不会影响学生端；保存为空表示清空后台审核答疑。"}</p>
-          <span className="shrink-0 text-[#94a3b8]">{answer.trim().length} 字</span>
+          <span className="shrink-0 text-[#94a3b8]">{stripHtml(answer).trim().length} 字</span>
         </div>
       </div>
     </section>
@@ -1881,7 +1900,8 @@ export function QuestionBankDetailWorkbench({ ownerName, paperId, paperTitle, ow
               title: savedQuestion.stem,
               options: savedQuestion.options,
               answer: savedQuestion.answer,
-              analysis: savedQuestion.analysis
+              analysis: savedQuestion.analysis,
+              showAnalysis: savedQuestion.showAnalysis
             }
           : question
       )));

@@ -764,6 +764,7 @@ model Question {
   options            Json
   answer             Json
   analysis           String
+  showAnalysis       Boolean                    @default(false)
   aiDoubtAnswer      String?
   source             String                     @default("人工录入")
   sourceType         QuestionSourceType         @default(manual)

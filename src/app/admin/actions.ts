@@ -1737,6 +1737,7 @@ async function getQuestionBankCopyPlan(
               options: true,
               answer: true,
               analysis: true,
+              showAnalysis: true,
               aiDoubtAnswer: true,
               source: true,
               sourceType: true,
@@ -2030,6 +2031,7 @@ export async function copyQuestionBankPaper(
             options: question.options as Prisma.InputJsonValue,
             answer: question.answer as Prisma.InputJsonValue,
             analysis: question.analysis,
+            showAnalysis: question.showAnalysis,
             aiDoubtAnswer: question.aiDoubtAnswer,
             source: question.source,
             sourceType: question.sourceType,
@@ -2737,6 +2739,7 @@ async function createQuestionBankQuestion(formData: FormData, type: QuestionBank
       options,
       answer: answers,
       analysis: String(formData.get("analysis") || "").trim(),
+      showAnalysis: formData.get("showAnalysis") === "on",
       source: paper.title,
       sourceType: "manual",
       sourceYear: paper.year,
@@ -2808,6 +2811,8 @@ export async function updateQuestionBankQuestion(formData: FormData) {
 
   const { stem, options, answers } = getQuestionBankQuestionPayload(formData, type);
   validateQuestionBankQuestion({ stem, options, answers, type });
+  const analysis = String(formData.get("analysis") || "").trim();
+  const showAnalysis = formData.get("showAnalysis") === "on";
 
   const paperQuestion = await prisma.examPaperQuestion.findFirstOrThrow({
     where: {
@@ -2827,7 +2832,8 @@ export async function updateQuestionBankQuestion(formData: FormData) {
       stem,
       options,
       answer: answers,
-      analysis: String(formData.get("analysis") || "").trim()
+      analysis,
+      showAnalysis
     }
   });
   await touchQuestionBankPaper(paperQuestion.paperId);
@@ -2839,7 +2845,8 @@ export async function updateQuestionBankQuestion(formData: FormData) {
     stem,
     options,
     answer: answers,
-    analysis: String(formData.get("analysis") || "").trim()
+    analysis,
+    showAnalysis
   };
 }
 

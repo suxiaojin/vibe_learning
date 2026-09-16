@@ -9,6 +9,7 @@ export type MockTestQuestion = {
   options: unknown;
   answer: unknown;
   analysis: string;
+  showAnalysis: boolean;
   difficulty: string;
   source: string;
   sourceYear: number | null;
@@ -102,6 +103,7 @@ export async function getAiGeneratedQuestionsBySection(group: SyllabusPathGroup,
           options: true,
           answer: true,
           analysis: true,
+          showAnalysis: true,
           difficulty: true,
           source: true,
           sourceYear: true,
@@ -152,6 +154,7 @@ export async function getAiGeneratedQuestionsBySection(group: SyllabusPathGroup,
       options: tag.question.options,
       answer: tag.question.answer,
       analysis: tag.question.analysis,
+      showAnalysis: tag.question.showAnalysis,
       difficulty: tag.question.difficulty,
       source: tag.question.source,
       sourceYear: tag.question.sourceYear,
