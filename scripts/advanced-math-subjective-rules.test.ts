@@ -60,9 +60,10 @@ assert.match(learnPageSource, /isQuestionBankAutoGradedForOwner\(question\.type,
 assert.match(learnPageSource, /ownerName=\{access\.group\.name\}[\s\S]*ownerType=\{access\.group\.key\}/);
 assert.match(quizRunnerSource, /const isSubjectiveQuestion = Boolean\(current && !isQuestionBankAutoGradedForOwner\(current\.type, ownerType, ownerName\)\)/);
 assert.match(quizRunnerSource, /\{isSubjectiveQuestion \? text\.submitAnswer : text\.check\}/);
-assert.match(resultSource, /!ungraded && !hideAiExplanation/);
+assert.match(resultSource, /attempt\.question\.showAiExplanation \? \(/);
+assert.doesNotMatch(resultSource, /hideAiExplanation/);
 assert.match(specialPageSource, /ownerName=\{context\.group\.name\}/);
 assert.match(specialRunnerSource, /!hideAiDoubt \? \(/);
 assert.match(specialRunnerSource, /!isQuestionBankAutoGradedForOwner\(question\.type, courseKey, ownerName\)/);
 
-console.log(`advanced math subjective rules: ${gradingCases.length + 22} checks passed`);
+console.log(`advanced math subjective rules: ${gradingCases.length + 23} checks passed`);
