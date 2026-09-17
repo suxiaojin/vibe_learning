@@ -73,7 +73,7 @@ SECTION_PATTERNS = (
     ("true_false", ("判断题",)),
     ("fill_blank", ("填空题",)),
     ("mixed", ("阅读理解",)),
-    ("comprehensive", ("名词解释题", "简答题", "论述题", "计算分析题", "计算题", "证明题", "综合分析题", "综合题", "古诗词鉴赏", "作文")),
+    ("comprehensive", ("名词解释题", "简答题", "论述题", "材料分析题", "案例分析题", "计算分析题", "计算题", "证明题", "综合分析题", "综合题", "古诗词鉴赏", "作文")),
     ("single_choice", ("单项选择题", "单选题")),
 )
 
@@ -82,7 +82,7 @@ SECTION_HEADING_ALIASES = (
     ("true_false", ("判断",)),
     ("fill_blank", ("填空",)),
     ("mixed", ("阅读理解",)),
-    ("comprehensive", ("名词解释", "简答", "论述", "分析计算", "计算分析", "计算", "证明", "综合分析", "综合", "古诗词鉴赏", "作文")),
+    ("comprehensive", ("名词解释", "简答", "论述", "材料分析", "案例分析", "分析计算", "计算分析", "计算", "证明", "综合分析", "综合", "古诗词鉴赏", "作文")),
     ("single_choice", ("单项选择", "单选", "选择")),
 )
 
@@ -497,21 +497,24 @@ def question_range_label(start: int, end: int) -> str:
 
 def detect_section(row: str) -> str | None:
     compact = re.sub(r"\s+", "", normalize_text(row))
-    short_heading = re.sub(r"^[一二三四五六七八九十]+(?:[、.．])?", "", compact)
+    numbered_heading = bool(re.match(r"^[一二三四五六七八九十]+(?:[、.．])?", compact))
+    heading_body = re.sub(r"^[一二三四五六七八九十]+(?:[、.．])?", "", compact)
+    short_heading = heading_body
     short_heading = re.sub(r"[（(].*$", "", short_heading)
     short_heading = re.sub(r"题?[。．]$", "", short_heading)
     for section, aliases in SECTION_HEADING_ALIASES:
         if short_heading in aliases:
             return section
-    for section, tokens in SECTION_PATTERNS:
-        if any(token in compact for token in tokens):
-            return section
+    if numbered_heading:
+        for section, tokens in SECTION_PATTERNS:
+            if any(heading_body.startswith(token) for token in tokens):
+                return section
     return None
 
 
 def expected_count_from_heading(row: str) -> int | None:
     compact = re.sub(r"\s+", "", normalize_text(row))
-    match = re.search(r"本(?:大)?题共(\d{1,3})(?:小题|题)", compact)
+    match = re.search(r"(?:本(?:大)?题)?共(\d{1,3})(?:小题|道题|题)", compact)
     if match:
         return int(match.group(1))
     return 1 if re.search(r"本题\d+(?:\.\d+)?分", compact) else None
@@ -546,6 +549,7 @@ def parse_questions_from_rows(pages: list[list[str]]) -> tuple[list[dict[str, An
     counted_headings: set[str] = set()
     seen_section_headings: set[str] = set()
     section_index = -1
+    section_start_expected: int | None = None
 
     def finish_current() -> None:
         nonlocal current
@@ -593,14 +597,13 @@ def parse_questions_from_rows(pages: list[list[str]]) -> tuple[list[dict[str, An
             if any(token in row for token in ("答案：", "解题关键词")):
                 continue
 
-            heading_count = expected_count_from_heading(row)
             heading_key = re.sub(r"\s+", "", row)
-            if heading_count and heading_key not in counted_headings:
-                expected_total += heading_count
-                counted_headings.add(heading_key)
-
             detected_section = detect_section(row)
             if detected_section:
+                heading_count = expected_count_from_heading(row)
+                if heading_count and heading_key not in counted_headings:
+                    expected_total += heading_count
+                    counted_headings.add(heading_key)
                 if heading_key in seen_section_headings:
                     continue
                 seen_section_headings.add(heading_key)
@@ -608,13 +611,22 @@ def parse_questions_from_rows(pages: list[list[str]]) -> tuple[list[dict[str, An
                 started = True
                 section = detected_section
                 section_index += 1
-                expected = 1
+                section_start_expected = expected
                 skipping_out_of_sequence = False
-                row = normalize_question_row(raw_row, expected)
-                expected_token = re.search(rf"(?<!\d){expected}\s*[\.．、,，。:：\)）]", row)
-                if not expected_token:
+                row = normalize_question_row(raw_row, section_start_expected)
+                embedded_question_tokens = [
+                    match
+                    for candidate in dict.fromkeys((1, section_start_expected))
+                    if (
+                        match := re.search(
+                            rf"(?<!\d){candidate}\s*[\.．、,，。:：\)）]",
+                            row,
+                        )
+                    )
+                ]
+                if not embedded_question_tokens:
                     continue
-                row = row[expected_token.start() :]
+                row = row[min(embedded_question_tokens, key=lambda match: match.start()).start() :]
 
             start_match = QUESTION_START.match(row)
             if not started and start_match and looks_like_exam_instruction(row):
@@ -633,6 +645,9 @@ def parse_questions_from_rows(pages: list[list[str]]) -> tuple[list[dict[str, An
             match = QUESTION_START.match(row)
             if match:
                 number = int(match.group(1))
+                if section_start_expected is not None:
+                    expected = 1 if number < section_start_expected else section_start_expected
+                    section_start_expected = None
                 if number != expected:
                     if number < expected:
                         skipping_out_of_sequence = False
