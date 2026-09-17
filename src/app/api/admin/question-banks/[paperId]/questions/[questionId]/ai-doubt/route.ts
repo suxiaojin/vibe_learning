@@ -92,16 +92,18 @@ export async function PUT(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "题目不存在或不属于当前题库。" }, { status: 404 });
   }
 
-  const body = (await request.json().catch(() => null)) as { answer?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as { answer?: unknown; showAiExplanation?: unknown } | null;
   const answer = String(body?.answer || "").trim();
+  const showAiExplanation = body?.showAiExplanation !== false;
 
   await prisma.question.update({
     where: { id: questionId },
-    data: { aiDoubtAnswer: answer || null }
+    data: { aiDoubtAnswer: answer || null, showAiExplanation }
   });
 
   revalidatePath(`/admin/question-banks/${paperId}`);
-  return NextResponse.json({ answer });
+  revalidatePath("/learn/[id]/result", "page");
+  return NextResponse.json({ answer, showAiExplanation });
 }
 
 function buildAiDoubtMessages(record: NonNullable<Awaited<ReturnType<typeof getQuestionForAdmin>>>): ChatMessage[] {

@@ -261,6 +261,7 @@ export default async function QuestionBankDetailPage({
           analysis: item.question.analysis,
           showAnalysis: item.question.showAnalysis,
           aiDoubtAnswer: item.question.aiDoubtAnswer || "",
+          showAiExplanation: item.question.showAiExplanation,
           knowledgePointTitle: item.question.knowledgePoint?.title || "未打标",
           chapterTitle: item.question.knowledgePoint?.chapter.title || "未归类",
           knowledgeTagIds,

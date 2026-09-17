@@ -11,7 +11,6 @@ import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import { requireUser } from "@/lib/auth";
 import { getLearningPathThemeStyle } from "@/lib/learning-path-theme";
 import { prisma } from "@/lib/prisma";
-import { isAdvancedMathPublicSubject } from "@/lib/question-bank-types";
 import { getSystemSettings } from "@/lib/system-settings";
 import { getSyllabusSectionForStudent } from "@/lib/syllabus-learning";
 import { cn } from "@/lib/utils";
@@ -60,7 +59,8 @@ const sessionDetailSelect = {
           options: true,
           answer: true,
           analysis: true,
-          showAnalysis: true
+          showAnalysis: true,
+          showAiExplanation: true
         }
       }
     },
@@ -363,7 +363,6 @@ export default async function QuizResultPage({
   const selectedUngradedAttempts = detailedSession?.attempts.filter(
     (attempt) => attempt.gradingStatus === "ungraded"
   ) ?? [];
-  const hideAiExplanation = isAdvancedMathPublicSubject(access.group.key, access.group.name);
   const nextHistoryLimit = Math.min(MAX_HISTORY_LIMIT, historyLimit + HISTORY_PAGE_SIZE, historyCount);
   const moreHistoryHref = buildHistoryHref({
     sectionId: id,
@@ -502,10 +501,10 @@ export default async function QuizResultPage({
             </div>
           </div>
 
-          <AttemptGroup attempts={selectedCorrectAttempts} hideAiExplanation={hideAiExplanation} title="做对的题" tone="correct" />
-          <AttemptGroup attempts={selectedWrongAttempts} hideAiExplanation={hideAiExplanation} title="做错的题" tone="wrong" />
+          <AttemptGroup attempts={selectedCorrectAttempts} title="做对的题" tone="correct" />
+          <AttemptGroup attempts={selectedWrongAttempts} title="做错的题" tone="wrong" />
           {selectedUngradedAttempts.length > 0 ? (
-            <AttemptGroup attempts={selectedUngradedAttempts} hideAiExplanation={hideAiExplanation} title="主观题（不计分）" tone="ungraded" />
+            <AttemptGroup attempts={selectedUngradedAttempts} title="主观题（不计分）" tone="ungraded" />
           ) : null}
         </section>
       ) : null}
@@ -613,12 +612,10 @@ function HistorySessionCard({
 
 function AttemptGroup({
   attempts,
-  hideAiExplanation,
   title,
   tone
 }: {
   attempts: AttemptWithQuestion[];
-  hideAiExplanation: boolean;
   title: string;
   tone: "correct" | "wrong" | "ungraded";
 }) {
@@ -633,7 +630,7 @@ function AttemptGroup({
       ) : (
         <div className="mt-3 space-y-4">
           {attempts.map((attempt) => (
-            <AttemptCard key={attempt.id} attempt={attempt} hideAiExplanation={hideAiExplanation} tone={tone} />
+            <AttemptCard key={attempt.id} attempt={attempt} tone={tone} />
           ))}
         </div>
       )}
@@ -643,11 +640,9 @@ function AttemptGroup({
 
 function AttemptCard({
   attempt,
-  hideAiExplanation,
   tone
 }: {
   attempt: AttemptWithQuestion;
-  hideAiExplanation: boolean;
   tone: "correct" | "wrong" | "ungraded";
 }) {
   const options = coerceOptions(attempt.question.options);
@@ -680,7 +675,7 @@ function AttemptCard({
           <RichTextContent className="mt-2 block text-sm leading-6 text-slate-700" value={attempt.question.analysis} />
         </div>
       ) : null}
-      {!ungraded && !hideAiExplanation ? (
+      {attempt.question.showAiExplanation ? (
         <WrongQuestionAi
           buttonClassName={themedAiButtonClass}
           followUpButtonClassName={themedPrimaryButtonClass}

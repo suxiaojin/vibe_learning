@@ -766,6 +766,7 @@ model Question {
   analysis           String
   showAnalysis       Boolean                    @default(false)
   aiDoubtAnswer      String?
+  showAiExplanation  Boolean                    @default(true)
   source             String                     @default("人工录入")
   sourceType         QuestionSourceType         @default(manual)
   sourceYear         Int?

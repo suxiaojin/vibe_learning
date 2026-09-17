@@ -71,6 +71,7 @@ type QuestionRow = {
   analysis: string;
   showAnalysis: boolean;
   aiDoubtAnswer: string;
+  showAiExplanation: boolean;
   knowledgePointTitle: string;
   chapterTitle: string;
   knowledgeTagIds: string[];
@@ -1473,6 +1474,7 @@ function ReadonlyQuestionPreview({ paperId, question }: { paperId: string; quest
 function AiDoubtReviewPanel({ paperId, question }: { paperId: string; question: QuestionRow }) {
   const router = useRouter();
   const [answer, setAnswer] = useState(question.aiDoubtAnswer || "");
+  const [showAiExplanation, setShowAiExplanation] = useState(question.showAiExplanation);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -1480,8 +1482,9 @@ function AiDoubtReviewPanel({ paperId, question }: { paperId: string; question: 
 
   useEffect(() => {
     setAnswer(question.aiDoubtAnswer || "");
+    setShowAiExplanation(question.showAiExplanation);
     setMessage("");
-  }, [question.aiDoubtAnswer, question.questionId]);
+  }, [question.aiDoubtAnswer, question.questionId, question.showAiExplanation]);
 
   async function generateAiDoubt() {
     if (generating || saving) {
@@ -1529,16 +1532,23 @@ function AiDoubtReviewPanel({ paperId, question }: { paperId: string; question: 
       const response = await fetch(endpoint, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answer })
+        body: JSON.stringify({ answer, showAiExplanation })
       });
-      const payload = (await response.json().catch(() => null)) as { answer?: string; error?: string } | null;
+      const payload = (await response.json().catch(() => null)) as { answer?: string; error?: string; showAiExplanation?: boolean } | null;
 
       if (!response.ok) {
         throw new Error(payload?.error || "AI 答疑保存失败。");
       }
 
       setAnswer(payload?.answer || "");
-      setMessage(payload?.answer ? "AI 答疑已保存，学生端将优先使用该内容。" : "AI 答疑已清空，学生端会实时生成兜底。");
+      setShowAiExplanation(payload?.showAiExplanation ?? showAiExplanation);
+      setMessage(
+        payload?.showAiExplanation === false
+          ? "AI 答疑已保存，学生端已隐藏“AI解释”按钮。"
+          : payload?.answer
+            ? "AI 答疑已保存，学生端将显示“AI解释”按钮并优先使用该内容。"
+            : "AI 答疑已清空，学生端仍显示“AI解释”按钮并实时生成兜底。"
+      );
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "AI 答疑保存失败。");
@@ -1552,6 +1562,16 @@ function AiDoubtReviewPanel({ paperId, question }: { paperId: string; question: 
       <div className="flex h-10 items-center justify-between border-b border-[#d4dae4] bg-[#eef3f9] px-3">
         <h2 className="text-sm font-black text-[#111827]">AI答疑</h2>
         <div className="flex items-center gap-2">
+          <label className="flex h-7 cursor-pointer items-center gap-2 rounded border border-[#cbd5e1] bg-[#f8fafc] px-2.5 text-xs font-semibold text-[#475467]" title="开启后，学生答题结果页显示该题的AI解释按钮">
+            <span>前端显示</span>
+            <input
+              checked={showAiExplanation}
+              className="peer sr-only"
+              type="checkbox"
+              onChange={(event) => setShowAiExplanation(event.target.checked)}
+            />
+            <span className="relative h-5 w-9 rounded-full bg-[#cbd5e1] transition peer-checked:bg-[#1d4ed8] peer-focus-visible:ring-2 peer-focus-visible:ring-[#93c5fd] peer-focus-visible:ring-offset-1 after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:after:translate-x-4" aria-hidden="true" />
+          </label>
           <button
             className="inline-flex h-7 items-center gap-1 rounded border border-[#c4b5fd] bg-[#f5f3ff] px-2.5 text-xs font-bold text-[#6d28d9] hover:border-[#8b5cf6] disabled:cursor-wait disabled:opacity-60"
             disabled={generating || saving}

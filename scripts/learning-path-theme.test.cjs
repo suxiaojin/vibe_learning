@@ -312,15 +312,16 @@ test('quiz runner themes neutral controls while preserving answer-state colors',
   assert.ok(!source.includes('border-success-strong bg-success px-5'));
 });
 
-test('result actions theme objective AI controls and hide them for ungraded or advanced math attempts', () => {
+test('result actions theme AI controls and respect the per-question visibility switch', () => {
   const resultPage = fs.readFileSync(path.join(root, 'src/app/learn/[id]/result/page.tsx'), 'utf8');
   const ai = fs.readFileSync(path.join(root, 'src/components/wrong-question-ai.tsx'), 'utf8');
   assert.ok(resultPage.includes('themedPrimaryButtonClass'));
   assert.ok(resultPage.includes('themedSecondaryButtonClass'));
   assert.ok(resultPage.includes('themedAiButtonClass'));
   assert.ok(resultPage.includes('const ungraded = tone === "ungraded";'));
-  assert.ok(resultPage.includes('const hideAiExplanation = isAdvancedMathPublicSubject(access.group.key, access.group.name);'));
-  assert.ok(resultPage.includes('{!ungraded && !hideAiExplanation ? (\n        <WrongQuestionAi'));
+  assert.ok(resultPage.includes('showAiExplanation: true'));
+  assert.ok(resultPage.includes('{attempt.question.showAiExplanation ? (\n        <WrongQuestionAi'));
+  assert.ok(!resultPage.includes('hideAiExplanation'));
   assert.ok(resultPage.includes('followUpButtonClassName={themedPrimaryButtonClass}'));
   assert.ok(resultPage.includes('passed ? "bg-success p-6 text-white" : "bg-coral p-6 text-white"'));
   assert.ok(resultPage.includes('passed ? "bg-success" : "bg-coral"'));
