@@ -1,6 +1,7 @@
 import { Prisma, type LearningCourseType } from "@prisma/client";
 import { prisma } from "./prisma";
 import type { QuestionBankOwnerType } from "./question-bank-catalog";
+import { hasMeaningfulRichText } from "./rich-text-plain";
 
 import type { QuestionBankEditableQuestionType } from "./question-bank-types";
 
@@ -424,7 +425,7 @@ export async function importQuestionPaperPayload(
           options: question.options,
           answer: question.answer,
           analysis: question.analysis,
-          aiDoubtAnswer: question.analysis.trim() || null,
+          aiDoubtAnswer: hasMeaningfulRichText(question.analysis) ? question.analysis.trim() : null,
           source: question.source || payload.title,
           sourceType: question.sourceType || options.defaultSourceType || "import",
           sourceYear: question.sourceYear || payload.year,

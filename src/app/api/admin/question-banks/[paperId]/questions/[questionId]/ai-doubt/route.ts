@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { getCurrentAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { askQwen, type ChatMessage } from "@/lib/qwen";
-import { richTextToAiText as stripHtml, richTextValueToAiText } from "@/lib/rich-text-plain";
+import { hasMeaningfulRichText, richTextToAiText as stripHtml, richTextValueToAiText } from "@/lib/rich-text-plain";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -93,7 +93,8 @@ export async function PUT(request: Request, context: RouteContext) {
   }
 
   const body = (await request.json().catch(() => null)) as { answer?: unknown; showAiExplanation?: unknown } | null;
-  const answer = String(body?.answer || "").trim();
+  const submittedAnswer = String(body?.answer || "").trim();
+  const answer = hasMeaningfulRichText(submittedAnswer) ? submittedAnswer : "";
   const showAiExplanation = body?.showAiExplanation !== false;
 
   await prisma.question.update({
@@ -133,7 +134,7 @@ function buildAiDoubtMessages(record: NonNullable<Awaited<ReturnType<typeof getQ
         `选项：${JSON.stringify(richTextValueToAiText(question.options))}`,
         `正确答案：${JSON.stringify(richTextValueToAiText(question.answer))}`,
         `原解析：${stripHtml(question.analysis)}`,
-        question.aiDoubtAnswer ? `当前已保存 AI 答疑：${question.aiDoubtAnswer}` : ""
+        hasMeaningfulRichText(question.aiDoubtAnswer) ? `当前已保存 AI 答疑：${question.aiDoubtAnswer}` : ""
       ]
         .filter(Boolean)
         .join("\n\n")

@@ -4,6 +4,7 @@ const blockBreakPattern = /<\/?(?:address|article|aside|blockquote|div|h[1-6]|li
 const lineBreakPattern = /<br\b[^>]*\/?\s*>/gi;
 const htmlTagPattern = /<[^>]*>/g;
 const htmlEntityPattern = /&(?:amp|lt|gt|quot|apos|nbsp|#39|#x[0-9a-f]+|#\d+);/gi;
+const richTextMediaPattern = /<(?:img|table)\b/i;
 
 function decodeHtmlEntity(entity: string) {
   const normalized = entity.toLowerCase();
@@ -67,6 +68,17 @@ export function richTextToPlainText(value: string) {
 
 export function richTextToAiText(value: string) {
   return richTextToText(value, true);
+}
+
+export function hasMeaningfulRichText(value: unknown) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) {
+    return false;
+  }
+  if (richTextMediaPattern.test(normalized)) {
+    return true;
+  }
+  return richTextToPlainText(normalized).length > 0;
 }
 
 export function richTextValueToAiText(value: unknown): unknown {

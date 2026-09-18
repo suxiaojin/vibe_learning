@@ -47,7 +47,7 @@ import {
 } from "@/lib/question-bank-types";
 import { RichTextContent } from "@/components/rich-text-content";
 import { cn } from "@/lib/utils";
-import { richTextToPlainText as stripHtml } from "@/lib/rich-text-plain";
+import { hasMeaningfulRichText, richTextToPlainText as stripHtml } from "@/lib/rich-text-plain";
 
 type QuestionOption = {
   key: string;
@@ -1490,7 +1490,7 @@ function AiDoubtReviewPanel({ paperId, question }: { paperId: string; question: 
     if (generating || saving) {
       return;
     }
-    if (answer.trim()) {
+    if (hasMeaningfulRichText(answer)) {
       const confirmed = window.confirm("重新生成会覆盖当前文本框内容，但不会自动保存到数据库。是否继续？");
       if (!confirmed) {
         return;

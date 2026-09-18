@@ -8,6 +8,7 @@ import { type ChatMessage, streamQwen } from "@/lib/qwen";
 import { consumeDiamondsByRule, InsufficientDiamondBalanceError } from "@/lib/rewards";
 import { diamondInsufficientMessage } from "@/lib/diamond-insufficient";
 import { getStudentLearningPath } from "@/lib/syllabus-learning";
+import { hasMeaningfulRichText } from "@/lib/rich-text-plain";
 
 export const runtime = "nodejs";
 
@@ -59,10 +60,12 @@ export async function GET(request: Request) {
     getFollowUpHistory(user.id, question.id)
   ]);
 
-  const answer = readConversationMessage(defaultConversation?.messages, "assistant");
+  const savedAnswer = readConversationMessage(defaultConversation?.messages, "assistant");
+  const answer = hasMeaningfulRichText(savedAnswer) ? savedAnswer : "";
+  const questionCachedAnswer = question.aiDoubtAnswer?.trim() || "";
   return NextResponse.json({
     answer,
-    answerFormat: answer && answer === question.aiDoubtAnswer?.trim() ? "rich_html" : "markdown",
+    answerFormat: answer && answer === questionCachedAnswer ? "rich_html" : "markdown",
     followUps
   });
 }
@@ -110,7 +113,13 @@ export async function POST(request: Request) {
       }),
       getFollowUpHistory(user.id, question.id)
     ]);
-    const defaultAnswer = readConversationMessage(defaultConversation?.messages, "assistant") || question.aiDoubtAnswer?.trim() || "";
+    const savedDefaultAnswer = readConversationMessage(defaultConversation?.messages, "assistant");
+    const submittedCachedAnswer = question.aiDoubtAnswer?.trim() || "";
+    const defaultAnswer = hasMeaningfulRichText(savedDefaultAnswer)
+      ? savedDefaultAnswer
+      : hasMeaningfulRichText(submittedCachedAnswer)
+        ? submittedCachedAnswer
+        : "";
     const reservationError = await reserveAiConversationOrError({
       answer: "",
       answerSource: "pending",
@@ -137,7 +146,8 @@ export async function POST(request: Request) {
     return streamFollowUpAnswer(question, prompt, defaultAnswer, followUps, conversationId, request.signal);
   }
 
-  const cachedAnswer = question.aiDoubtAnswer?.trim();
+  const submittedCachedAnswer = question.aiDoubtAnswer?.trim() || "";
+  const cachedAnswer = hasMeaningfulRichText(submittedCachedAnswer) ? submittedCachedAnswer : "";
   const [priorExplanation, savedConversation] = await Promise.all([
     prisma.aiConversation.findFirst({
       where: {
@@ -158,7 +168,7 @@ export async function POST(request: Request) {
     })
   ]);
   const priorAnswer = readConversationMessage(savedConversation?.messages, "assistant");
-  if (priorAnswer) {
+  if (hasMeaningfulRichText(priorAnswer)) {
     return streamCachedAnswer({
       answer: priorAnswer,
       source: priorAnswer === cachedAnswer ? "question_cache" : "conversation_cache"
@@ -370,7 +380,7 @@ async function getFollowUpHistory(userId: string, questionId: string) {
   return conversations.reverse().flatMap((conversation) => {
     const followUpQuestion = readConversationMessage(conversation.messages, "user");
     const answer = readConversationMessage(conversation.messages, "assistant");
-    return followUpQuestion && answer
+    return followUpQuestion && hasMeaningfulRichText(answer)
       ? [{ id: conversation.id, question: followUpQuestion, answer }]
       : [];
   });
@@ -543,7 +553,7 @@ async function getAiConversationReplayResponse({
   }
 
   const answer = readConversationMessage(conversation.messages, "assistant");
-  if (conversation.purpose === purpose && answer) {
+  if (conversation.purpose === purpose && hasMeaningfulRichText(answer)) {
     return streamCachedAnswer({ answer, source: "conversation_cache" });
   }
   if (conversation.purpose === pendingPurpose) {

@@ -15,7 +15,7 @@ import { streamQwen } from "@/lib/qwen";
 import { prisma } from "@/lib/prisma";
 import { consumeDiamondsByRule, InsufficientDiamondBalanceError } from "@/lib/rewards";
 import { diamondInsufficientMessage } from "@/lib/diamond-insufficient";
-import { richTextToAiText } from "@/lib/rich-text-plain";
+import { hasMeaningfulRichText, richTextToAiText } from "@/lib/rich-text-plain";
 
 export const runtime = "nodejs";
 
@@ -124,7 +124,8 @@ export async function POST(request: Request) {
   }
   const promptVersion = promptContext.promptVersion;
 
-  const cachedAnswer = question.aiDoubtAnswer?.trim();
+  const submittedCachedAnswer = question.aiDoubtAnswer?.trim() || "";
+  const cachedAnswer = hasMeaningfulRichText(submittedCachedAnswer) ? submittedCachedAnswer : "";
   if (!prompt && cachedAnswer) {
     const [priorExplanation, viewed] = await Promise.all([
       prisma.aiConversation.findFirst({
@@ -206,7 +207,7 @@ export async function POST(request: Request) {
       select: { messages: true }
     });
     const savedAnswer = readConversationMessage(savedConversation?.messages, "assistant");
-    if (savedAnswer) {
+    if (hasMeaningfulRichText(savedAnswer)) {
       return streamCachedAnswer({ answer: savedAnswer, source: "conversation_cache" });
     }
   }
