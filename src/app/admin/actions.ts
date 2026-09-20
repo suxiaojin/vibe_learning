@@ -1733,6 +1733,7 @@ async function getQuestionBankCopyPlan(
               answer: true,
               analysis: true,
               showAnalysis: true,
+              fillBlankScored: true,
               aiDoubtAnswer: true,
               showAiExplanation: true,
               source: true,
@@ -2028,6 +2029,7 @@ export async function copyQuestionBankPaper(
             answer: question.answer as Prisma.InputJsonValue,
             analysis: question.analysis,
             showAnalysis: question.showAnalysis,
+            fillBlankScored: question.fillBlankScored,
             aiDoubtAnswer: question.aiDoubtAnswer,
             showAiExplanation: question.showAiExplanation,
             source: question.source,
@@ -2737,6 +2739,7 @@ async function createQuestionBankQuestion(formData: FormData, type: QuestionBank
       answer: answers,
       analysis: String(formData.get("analysis") || "").trim(),
       showAnalysis: formData.get("showAnalysis") === "on",
+      fillBlankScored: type === "fill_blank" && formData.get("fillBlankScored") === "on",
       source: paper.title,
       sourceType: "manual",
       sourceYear: paper.year,
@@ -2810,6 +2813,7 @@ export async function updateQuestionBankQuestion(formData: FormData) {
   validateQuestionBankQuestion({ stem, options, answers, type });
   const analysis = String(formData.get("analysis") || "").trim();
   const showAnalysis = formData.get("showAnalysis") === "on";
+  const fillBlankScored = type === "fill_blank" && formData.get("fillBlankScored") === "on";
 
   const paperQuestion = await prisma.examPaperQuestion.findFirstOrThrow({
     where: {
@@ -2830,7 +2834,8 @@ export async function updateQuestionBankQuestion(formData: FormData) {
       options,
       answer: answers,
       analysis,
-      showAnalysis
+      showAnalysis,
+      fillBlankScored
     }
   });
   await touchQuestionBankPaper(paperQuestion.paperId);
@@ -2843,7 +2848,8 @@ export async function updateQuestionBankQuestion(formData: FormData) {
     options,
     answer: answers,
     analysis,
-    showAnalysis
+    showAnalysis,
+    fillBlankScored
   };
 }
 
@@ -2870,7 +2876,7 @@ export async function updateQuestionBankQuestionType(formData: FormData) {
 
   await prisma.question.update({
     where: { id: paperQuestion.questionId },
-    data: { type }
+    data: { type, fillBlankScored: false }
   });
 
   revalidatePath(`/admin/question-banks/${paperQuestion.paperId}`);

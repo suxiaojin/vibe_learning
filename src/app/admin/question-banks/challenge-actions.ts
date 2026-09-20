@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { matchChallengeQuestions } from "@/lib/challenge-copy";
 import { prisma } from "@/lib/prisma";
-import { isQuestionBankAutoGradedQuestionType } from "@/lib/question-bank-types";
+import { isQuestionBankAutoGradedForOwner } from "@/lib/question-bank-types";
 
 const statisticsPath = "/admin/question-banks/statistics";
 type ChallengeScopeType = "chapter" | "course";
@@ -63,7 +63,14 @@ async function getChallengeScope(scopeType: ChallengeScopeType, scopeId: string,
   if (scopeType === "course") {
     const course = await prisma.learningCourse.findUniqueOrThrow({
       where: { id: scopeId },
-      select: { id: true, status: true, challengeMode: true }
+      select: {
+        id: true,
+        status: true,
+        challengeMode: true,
+        courseType: true,
+        major: { select: { name: true } },
+        publicSubject: { select: { name: true } }
+      }
     });
     const checkpoint = createCheckpoint
       ? await ensureCourseCheckpoint(course.id)
@@ -82,6 +89,8 @@ async function getChallengeScope(scopeType: ChallengeScopeType, scopeId: string,
       courseId: course.id,
       courseStatus: course.status,
       challengeMode: course.challengeMode,
+      ownerType: course.courseType,
+      ownerName: course.major?.name || course.publicSubject?.name || "",
       syllabusItemIds: syllabusItems.map((item) => item.id)
     };
   }
@@ -91,7 +100,15 @@ async function getChallengeScope(scopeType: ChallengeScopeType, scopeId: string,
     select: {
       id: true,
       courseId: true,
-      course: { select: { status: true, challengeMode: true } }
+      course: {
+        select: {
+          status: true,
+          challengeMode: true,
+          courseType: true,
+          major: { select: { name: true } },
+          publicSubject: { select: { name: true } }
+        }
+      }
     }
   });
   const items = await prisma.syllabusItem.findMany({
@@ -124,6 +141,8 @@ async function getChallengeScope(scopeType: ChallengeScopeType, scopeId: string,
     courseId: chapter.courseId,
     courseStatus: chapter.course.status,
     challengeMode: chapter.course.challengeMode,
+    ownerType: chapter.course.courseType,
+    ownerName: chapter.course.major?.name || chapter.course.publicSubject?.name || "",
     syllabusItemIds
   };
 }
@@ -758,9 +777,14 @@ export async function removeQuestionFromChapterChallenge(formData: FormData) {
             .map((item) => item.questionId)
         }
       },
-      select: { type: true }
+      select: { type: true, fillBlankScored: true }
     });
-    if (!remainingQuestions.some((question) => isQuestionBankAutoGradedQuestionType(question.type))) {
+    if (!remainingQuestions.some((question) => isQuestionBankAutoGradedForOwner(
+      question.type,
+      scope.ownerType,
+      scope.ownerName,
+      question.fillBlankScored
+    ))) {
       throw new Error("Published course challenge requires at least one auto-graded question");
     }
   }
@@ -1022,7 +1046,7 @@ export async function saveChapterChallenge(formData: FormData) {
       knowledgeTags: { some: { syllabusItemId: { in: scope.syllabusItemIds } } },
       paperQuestions: { some: { paper: { status: "published" } } }
     },
-    select: { type: true }
+    select: { type: true, fillBlankScored: true }
   });
   if (validQuestions.length !== draft.questions.length || scope.courseStatus !== "published") {
     throw new Error("Challenge contains unavailable questions or the course is not published");
@@ -1033,7 +1057,12 @@ export async function saveChapterChallenge(formData: FormData) {
   if (
     scopeType === "course"
     && draft.purpose === "challenge"
-    && !validQuestions.some((question) => isQuestionBankAutoGradedQuestionType(question.type))
+    && !validQuestions.some((question) => isQuestionBankAutoGradedForOwner(
+      question.type,
+      scope.ownerType,
+      scope.ownerName,
+      question.fillBlankScored
+    ))
   ) {
     throw new Error("Course challenge requires at least one auto-graded question");
   }

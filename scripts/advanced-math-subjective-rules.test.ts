@@ -6,24 +6,27 @@ import {
   isQuestionBankAutoGradedForOwner
 } from "../src/lib/question-bank-types";
 
-const gradingCases: Array<[string, string, string, boolean]> = [
-  ["single_choice", "public_subject", "高等数学", true],
-  ["multiple_choice", "public_subject", "高等数学", true],
-  ["fill_blank", "public_subject", "高等数学", false],
-  ["true_false", "public_subject", "高等数学", false],
-  ["calculation", "public_subject", "高等数学", false],
-  ["proof", "public_subject", "高等数学", false],
-  ["comprehensive", "public_subject", "高等数学", false],
-  ["fill_blank", "public_subject", "大学语文", true],
-  ["fill_blank", "major", "高等数学", true],
-  ["short_answer", "major", "管理类", false]
+const gradingCases: Array<[string, string, string, boolean, boolean]> = [
+  ["single_choice", "public_subject", "高等数学", false, true],
+  ["multiple_choice", "public_subject", "高等数学", false, true],
+  ["fill_blank", "public_subject", "高等数学", false, false],
+  ["fill_blank", "public_subject", "高等数学", true, false],
+  ["true_false", "public_subject", "高等数学", false, false],
+  ["calculation", "public_subject", "高等数学", false, false],
+  ["proof", "public_subject", "高等数学", false, false],
+  ["comprehensive", "public_subject", "高等数学", false, false],
+  ["fill_blank", "public_subject", "大学语文", false, false],
+  ["fill_blank", "public_subject", "大学语文", true, true],
+  ["fill_blank", "major", "高等数学", false, false],
+  ["fill_blank", "major", "高等数学", true, true],
+  ["short_answer", "major", "管理类", true, false]
 ];
 
-for (const [type, ownerType, ownerName, expected] of gradingCases) {
+for (const [type, ownerType, ownerName, fillBlankScored, expected] of gradingCases) {
   assert.equal(
-    isQuestionBankAutoGradedForOwner(type, ownerType, ownerName),
+    isQuestionBankAutoGradedForOwner(type, ownerType, ownerName, fillBlankScored),
     expected,
-    `${ownerType}/${ownerName}/${type}`
+    `${ownerType}/${ownerName}/${type}/${fillBlankScored}`
   );
 }
 
@@ -43,9 +46,15 @@ const resultSource = readSource("src/app/learn/[id]/result/page.tsx");
 const quizRunnerSource = readSource("src/components/quiz-runner.tsx");
 const specialPageSource = readSource("src/app/mock-tests/special/[sectionId]/page.tsx");
 const specialRunnerSource = readSource("src/app/mock-tests/special/[sectionId]/special-practice-runner.tsx");
+const schemaSource = readSource("prisma/schema.prisma");
+const adminActionsSource = readSource("src/app/admin/actions.ts");
+const questionBankPageSource = readSource("src/app/admin/question-banks/[paperId]/page.tsx");
+const migrationSource = readSource("prisma/migrations/20260920210000_add_fill_blank_scoring/migration.sql");
 
 assert.match(editorSource, /onPaste=\{pasteImage\}/);
 assert.match(fillBlankFormSource, /<RichTextEditor[\s\S]*?name="answer"/);
+assert.match(fillBlankFormSource, /fillBlankScoring=\{allowScoring \? \{ defaultChecked: question\?\.fillBlankScored \|\| false \} : undefined\}/);
+assert.match(editorSource, /<span>是否计分<\/span>[\s\S]*?name="fillBlankScored"/);
 assert.doesNotMatch(fillBlankFormSource, /<textarea/);
 assert.doesNotMatch(editorSource, /renderMath|MathRichText|hasLatexMath|renderLatexInHtml|公式预览/);
 assert.doesNotMatch(editorSource, /label="插入公式"/);
@@ -54,16 +63,20 @@ assert.match(editorSource, /editor\.innerHTML = initialHtml;[\s\S]*?setFormHtml\
 assert.match(editorSource, /<input type="hidden" name=\{name\} value=\{formHtml\} readOnly \/>/);
 assert.doesNotMatch(editorSource, /inputRef/);
 assert.doesNotMatch(editorSource, /contentEditable\s+dangerouslySetInnerHTML/);
-assert.match(progressSource, /isQuestionBankAutoGradedForOwner\(question\.type, result\.group\.key, result\.group\.name\)/);
-assert.match(checkSource, /isQuestionBankAutoGradedForOwner\(question\.type, result\.group\.key, result\.group\.name\)/);
-assert.match(learnPageSource, /isQuestionBankAutoGradedForOwner\(question\.type, access\.group\.key, access\.group\.name\)/);
+assert.match(progressSource, /isQuestionBankAutoGradedForOwner\([\s\S]*?question\.type,[\s\S]*?result\.group\.key,[\s\S]*?result\.group\.name,[\s\S]*?question\.fillBlankScored[\s\S]*?\)/);
+assert.match(checkSource, /isQuestionBankAutoGradedForOwner\([\s\S]*?question\.type,[\s\S]*?result\.group\.key,[\s\S]*?result\.group\.name,[\s\S]*?question\.fillBlankScored[\s\S]*?\)/);
+assert.match(learnPageSource, /isQuestionBankAutoGradedForOwner\([\s\S]*?question\.type,[\s\S]*?access\.group\.key,[\s\S]*?access\.group\.name,[\s\S]*?question\.fillBlankScored[\s\S]*?\)/);
 assert.match(learnPageSource, /ownerName=\{access\.group\.name\}[\s\S]*ownerType=\{access\.group\.key\}/);
-assert.match(quizRunnerSource, /const isSubjectiveQuestion = Boolean\(current && !isQuestionBankAutoGradedForOwner\(current\.type, ownerType, ownerName\)\)/);
+assert.match(quizRunnerSource, /const isSubjectiveQuestion = Boolean\(current && !isQuestionBankAutoGradedForOwner\([\s\S]*?current\.fillBlankScored[\s\S]*?\)\)/);
 assert.match(quizRunnerSource, /\{isSubjectiveQuestion \? text\.submitAnswer : text\.check\}/);
 assert.match(resultSource, /attempt\.question\.showAiExplanation \? \(/);
 assert.doesNotMatch(resultSource, /hideAiExplanation/);
 assert.match(specialPageSource, /ownerName=\{context\.group\.name\}/);
 assert.match(specialRunnerSource, /!hideAiDoubt \? \(/);
-assert.match(specialRunnerSource, /!isQuestionBankAutoGradedForOwner\(question\.type, courseKey, ownerName\)/);
+assert.match(specialRunnerSource, /!isQuestionBankAutoGradedForOwner\([\s\S]*?question\.fillBlankScored[\s\S]*?\)/);
+assert.match(schemaSource, /fillBlankScored\s+Boolean\s+@default\(false\)/);
+assert.match(adminActionsSource, /fillBlankScored: type === "fill_blank" && formData\.get\("fillBlankScored"\) === "on"/);
+assert.match(questionBankPageSource, /allowFillBlankScoring=\{!isAdvancedMathPublicSubject\(/);
+assert.match(migrationSource, /ADD COLUMN "fillBlankScored" BOOLEAN NOT NULL DEFAULT false/);
 
-console.log(`advanced math subjective rules: ${gradingCases.length + 23} checks passed`);
+console.log(`advanced math and fill-blank scoring rules: ${gradingCases.length + 29} checks passed`);

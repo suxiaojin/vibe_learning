@@ -30,7 +30,12 @@ export async function POST(
     return apiError("Question is unavailable.", 404, "SYLLABUS_SECTION_QUESTION_NOT_FOUND");
   }
 
-  const gradingStatus = isQuestionBankAutoGradedForOwner(question.type, result.group.key, result.group.name)
+  const gradingStatus = isQuestionBankAutoGradedForOwner(
+    question.type,
+    result.group.key,
+    result.group.name,
+    question.fillBlankScored
+  )
     ? "auto_graded"
     : "ungraded";
   const correct = gradingStatus === "auto_graded" ? answersEqual(toStoredAnswer(body.answer), question.answer) : null;

@@ -253,10 +253,14 @@ export function isAdvancedMathPublicSubject(ownerType?: string | null, ownerName
 export function isQuestionBankAutoGradedForOwner(
   type: string | undefined,
   ownerType?: string | null,
-  ownerName?: string | null
+  ownerName?: string | null,
+  fillBlankScored = false
 ) {
   if (isAdvancedMathPublicSubject(ownerType, ownerName)) {
     return isQuestionBankChoiceQuestionType(type);
+  }
+  if (type === "fill_blank") {
+    return fillBlankScored;
   }
   return isQuestionBankAutoGradedQuestionType(type);
 }

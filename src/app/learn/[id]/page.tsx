@@ -138,7 +138,12 @@ export default async function SectionQuizPage({
   const initialCorrectCount = attempts.filter((attempt) => attempt.gradingStatus === "auto_graded" && attempt.isCorrect).length;
   const contextualAutoGradedQuestionIds = new Set(
     questions
-      .filter((question) => isQuestionBankAutoGradedForOwner(question.type, access.group.key, access.group.name))
+      .filter((question) => isQuestionBankAutoGradedForOwner(
+        question.type,
+        access.group.key,
+        access.group.name,
+        question.fillBlankScored
+      ))
       .map((question) => question.id)
   );
   for (const attempt of attempts) {

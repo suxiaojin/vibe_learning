@@ -10,6 +10,7 @@ export type MockTestQuestion = {
   answer: unknown;
   analysis: string;
   showAnalysis: boolean;
+  fillBlankScored: boolean;
   difficulty: string;
   source: string;
   sourceYear: number | null;
@@ -108,6 +109,7 @@ export async function getMockTestContext(userId: string, courseKey: LearningOwne
                       answer: true,
                       analysis: true,
                       showAnalysis: true,
+                      fillBlankScored: true,
                       difficulty: true,
                       source: true,
                       sourceYear: true,
@@ -169,6 +171,7 @@ export async function getMockTestContext(userId: string, courseKey: LearningOwne
               answer: question.answer,
               analysis: question.analysis,
               showAnalysis: question.showAnalysis,
+              fillBlankScored: question.fillBlankScored,
               difficulty: question.difficulty,
               source: question.source,
               sourceYear: question.sourceYear,

@@ -22,7 +22,7 @@ import { requireAdmin } from "@/lib/auth";
 import { ensureDefaultQuestionBankCatalog, type QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 import { prisma } from "@/lib/prisma";
 import { isAiGeneratedQuestionBankTitle, isRealQuestionBankTitle } from "@/lib/question-bank-source";
-import { isQuestionBankAutoGradedQuestionType, questionBankTypeDefaultLabels } from "@/lib/question-bank-types";
+import { isQuestionBankAutoGradedForOwner, questionBankTypeDefaultLabels } from "@/lib/question-bank-types";
 import { cn } from "@/lib/utils";
 
 type SearchParams = {
@@ -935,6 +935,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                 select: {
                   stem: true,
                   type: true,
+                  fillBlankScored: true,
                   difficulty: true,
                   source: true,
                   paperQuestions: {
@@ -1059,7 +1060,12 @@ export default async function QuestionBankKnowledgeStatisticsPage({
     selectedCourse && challengeScope && selectedCourse.challengeMode === challengeScope.type
   );
   const challengeHasAutoGradedQuestion = Boolean(
-    challengeVersion?.questions.some((item) => isQuestionBankAutoGradedQuestionType(item.question.type))
+    challengeVersion?.questions.some((item) => isQuestionBankAutoGradedForOwner(
+      item.question.type,
+      selectedOwner.type,
+      selectedOwner.name,
+      item.question.fillBlankScored
+    ))
   );
   const chapterChallengePanel = challengeScope ? (
     <aside className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-[#d8e0ec] bg-white shadow-sm">

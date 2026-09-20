@@ -25,6 +25,7 @@ type PracticeQuestion = {
   answer: unknown;
   analysis: string;
   showAnalysis: boolean;
+  fillBlankScored: boolean;
   source?: string;
   questionBank?: {
     id: string;
@@ -103,7 +104,12 @@ export function SpecialPracticeRunner({
   const aiLoading = aiLoadingQuestionId === question.id;
   const options = useMemo(() => normalizeOptions(question.options), [question.options]);
   const hasTextAnswer = question.type === "fill_blank" || isQuestionBankRichAnswerQuestionType(question.type);
-  const isSubjectiveQuestion = !isQuestionBankAutoGradedForOwner(question.type, courseKey, ownerName);
+  const isSubjectiveQuestion = !isQuestionBankAutoGradedForOwner(
+    question.type,
+    courseKey,
+    ownerName,
+    question.fillBlankScored
+  );
   const hideAiDoubt = isAdvancedMathPublicSubject(courseKey, ownerName);
   const correctAnswer = normalizeAnswer(question.answer);
   const previousEnabled = currentIndex > 0;
@@ -134,7 +140,12 @@ export function SpecialPracticeRunner({
       if (stored) {
         const restoredAnswerStates = { ...stored.answerStates };
         for (const storedQuestion of questions) {
-          if (!isQuestionBankAutoGradedForOwner(storedQuestion.type, courseKey, ownerName) && restoredAnswerStates[storedQuestion.id]) {
+          if (!isQuestionBankAutoGradedForOwner(
+            storedQuestion.type,
+            courseKey,
+            ownerName,
+            storedQuestion.fillBlankScored
+          ) && restoredAnswerStates[storedQuestion.id]) {
             if ((stored.answers[storedQuestion.id]?.length || 0) > 0) {
               restoredAnswerStates[storedQuestion.id] = "submitted";
             } else {

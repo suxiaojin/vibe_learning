@@ -785,6 +785,7 @@ model Question {
   answer             Json
   analysis           String
   showAnalysis       Boolean                    @default(false)
+  fillBlankScored    Boolean                    @default(false)
   aiDoubtAnswer      String?
   showAiExplanation  Boolean                    @default(true)
   source             String                     @default("人工录入")

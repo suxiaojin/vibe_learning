@@ -674,6 +674,7 @@ export async function getSyllabusSectionQuestionsForStudent(
             select: {
               id: true,
               type: true,
+              fillBlankScored: true,
               stem: true,
               options: true,
               answer: true,
@@ -765,7 +766,12 @@ export async function checkSyllabusSectionQuestionAnswer(
     return null;
   }
 
-  const autoGraded = isQuestionBankAutoGradedForOwner(question.type, result.group.key, result.group.name);
+  const autoGraded = isQuestionBankAutoGradedForOwner(
+    question.type,
+    result.group.key,
+    result.group.name,
+    question.fillBlankScored
+  );
 
   return {
     questionId: question.id,

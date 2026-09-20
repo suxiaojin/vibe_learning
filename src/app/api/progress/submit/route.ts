@@ -52,7 +52,12 @@ export async function POST(request: Request) {
     }
 
     const selected = body.answers[question.id] || [];
-    const gradingStatus = isQuestionBankAutoGradedForOwner(question.type, result.group.key, result.group.name)
+    const gradingStatus = isQuestionBankAutoGradedForOwner(
+      question.type,
+      result.group.key,
+      result.group.name,
+      question.fillBlankScored
+    )
       ? "auto_graded"
       : "ungraded";
     const isCorrect = gradingStatus === "auto_graded" && answersEqual(selected, question.answer);

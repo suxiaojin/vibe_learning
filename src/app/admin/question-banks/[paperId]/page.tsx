@@ -1,7 +1,7 @@
 import { QuestionBankDetailWorkbench, type KnowledgeTreeCourse } from "@/components/question-bank-detail-workbench";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { parseQuestionBankQuestionTypeConfig, resolveQuestionBankQuestionTypes } from "@/lib/question-bank-types";
+import { isAdvancedMathPublicSubject, parseQuestionBankQuestionTypeConfig, resolveQuestionBankQuestionTypes } from "@/lib/question-bank-types";
 
 function toQuestionOptions(value: unknown) {
   if (!Array.isArray(value)) {
@@ -228,6 +228,10 @@ export default async function QuestionBankDetailPage({
 
   return (
     <QuestionBankDetailWorkbench
+      allowFillBlankScoring={!isAdvancedMathPublicSubject(
+        paper.ownerType,
+        paper.publicSubject?.name || paper.major?.name
+      )}
       ownerName={paper.major?.name || paper.publicSubject?.name || "题库"}
       paperId={paper.id}
       paperTitle={paper.title}
@@ -260,6 +264,7 @@ export default async function QuestionBankDetailPage({
           answer: toAnswerList(item.question.answer),
           analysis: item.question.analysis,
           showAnalysis: item.question.showAnalysis,
+          fillBlankScored: item.question.fillBlankScored,
           aiDoubtAnswer: item.question.aiDoubtAnswer || "",
           showAiExplanation: item.question.showAiExplanation,
           knowledgePointTitle: item.question.knowledgePoint?.title || "未打标",

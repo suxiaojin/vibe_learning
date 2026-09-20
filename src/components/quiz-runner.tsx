@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 type Question = {
   id: string;
   type: QuestionBankEditableQuestionType;
+  fillBlankScored: boolean;
   stem: string;
   options: unknown;
   source: string;
@@ -218,7 +219,12 @@ export function QuizRunner({
   }, [currentIndex, initialTotal, sectionId, sessionId]);
 
   const isRichAnswerQuestion = Boolean(current && isQuestionBankRichAnswerQuestionType(current.type));
-  const isSubjectiveQuestion = Boolean(current && !isQuestionBankAutoGradedForOwner(current.type, ownerType, ownerName));
+  const isSubjectiveQuestion = Boolean(current && !isQuestionBankAutoGradedForOwner(
+    current.type,
+    ownerType,
+    ownerName,
+    current.fillBlankScored
+  ));
 
   useEffect(() => {
     if (!pendingRichAnswerScrollQuestionId || pendingRichAnswerScrollQuestionId !== current?.id || checkState === "idle") {

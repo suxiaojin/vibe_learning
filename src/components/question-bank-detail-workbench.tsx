@@ -70,6 +70,7 @@ type QuestionRow = {
   answer: string[];
   analysis: string;
   showAnalysis: boolean;
+  fillBlankScored: boolean;
   aiDoubtAnswer: string;
   showAiExplanation: boolean;
   knowledgePointTitle: string;
@@ -99,6 +100,7 @@ export type KnowledgeTreeCourse = {
 };
 
 type QuestionBankDetailWorkbenchProps = {
+  allowFillBlankScoring: boolean;
   ownerName: string;
   paperId: string;
   paperTitle: string;
@@ -419,13 +421,17 @@ function EditorShell({
   children,
   questionTypeControl,
   onInsertImage,
-  analysisVisibility
+  analysisVisibility,
+  fillBlankScoring
 }: {
   title: string;
   children: ReactNode;
   questionTypeControl?: QuestionTypeControl;
   onInsertImage?: () => void;
   analysisVisibility?: {
+    defaultChecked: boolean;
+  };
+  fillBlankScoring?: {
     defaultChecked: boolean;
   };
 }) {
@@ -441,27 +447,41 @@ function EditorShell({
             <ToolbarButton icon={Eye} label="识别" />
             <ToolbarButton icon={Image} label="插入图表" onClick={onInsertImage} />
           </div>
-          {questionTypeControl ? (
-            <QuestionTypeSelect {...questionTypeControl} />
-          ) : (
-            <div className="flex h-8 items-center">
-              {analysisVisibility ? (
-                <label className="flex h-8 cursor-pointer items-center gap-2 border-l border-[#d4dae4] bg-[#f8fafc] px-3 text-xs font-semibold text-[#475467]" title="开启后，学生端显示该题的解答详情">
-                  <span>前端显示</span>
-                  <input
-                    className="peer sr-only"
-                    defaultChecked={analysisVisibility.defaultChecked}
-                    name="showAnalysis"
-                    type="checkbox"
-                  />
-                  <span className="relative h-5 w-9 rounded-full bg-[#cbd5e1] transition peer-checked:bg-[#1d4ed8] peer-focus-visible:ring-2 peer-focus-visible:ring-[#93c5fd] peer-focus-visible:ring-offset-1 after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:after:translate-x-4" aria-hidden="true" />
-                </label>
-              ) : null}
-              <button className="grid h-8 w-9 place-items-center bg-[#ef3e46] text-white" type="button" aria-label="删除内容">
-                <Trash2 size={14} />
-              </button>
-            </div>
-          )}
+          <div className="flex h-8 items-center">
+            {fillBlankScoring ? (
+              <label className="flex h-8 cursor-pointer items-center gap-2 border-l border-[#d4dae4] bg-[#f8fafc] px-3 text-xs font-semibold text-[#475467]" title="开启后，该填空题按客观题自动判分并计入成绩">
+                <span>是否计分</span>
+                <input
+                  className="peer sr-only"
+                  defaultChecked={fillBlankScoring.defaultChecked}
+                  name="fillBlankScored"
+                  type="checkbox"
+                />
+                <span className="relative h-5 w-9 rounded-full bg-[#cbd5e1] transition peer-checked:bg-[#1d4ed8] peer-focus-visible:ring-2 peer-focus-visible:ring-[#93c5fd] peer-focus-visible:ring-offset-1 after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:after:translate-x-4" aria-hidden="true" />
+              </label>
+            ) : null}
+            {questionTypeControl ? (
+              <QuestionTypeSelect {...questionTypeControl} />
+            ) : (
+              <>
+                {analysisVisibility ? (
+                  <label className="flex h-8 cursor-pointer items-center gap-2 border-l border-[#d4dae4] bg-[#f8fafc] px-3 text-xs font-semibold text-[#475467]" title="开启后，学生端显示该题的解答详情">
+                    <span>前端显示</span>
+                    <input
+                      className="peer sr-only"
+                      defaultChecked={analysisVisibility.defaultChecked}
+                      name="showAnalysis"
+                      type="checkbox"
+                    />
+                    <span className="relative h-5 w-9 rounded-full bg-[#cbd5e1] transition peer-checked:bg-[#1d4ed8] peer-focus-visible:ring-2 peer-focus-visible:ring-[#93c5fd] peer-focus-visible:ring-offset-1 after:absolute after:left-0.5 after:top-0.5 after:size-4 after:rounded-full after:bg-white after:shadow-sm after:transition-transform peer-checked:after:translate-x-4" aria-hidden="true" />
+                  </label>
+                ) : null}
+                <button className="grid h-8 w-9 place-items-center bg-[#ef3e46] text-white" type="button" aria-label="删除内容">
+                  <Trash2 size={14} />
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
       {children}
@@ -1075,10 +1095,14 @@ function RichTextDisplay({ value }: { value: string }) {
 
 function QuestionStemEditor({
   defaultValue = "",
-  questionTypeControl
+  questionTypeControl,
+  fillBlankScoring
 }: {
   defaultValue?: string;
   questionTypeControl?: QuestionTypeControl;
+  fillBlankScoring?: {
+    defaultChecked: boolean;
+  };
 }) {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -1086,6 +1110,7 @@ function QuestionStemEditor({
     <EditorShell
       title="题干"
       questionTypeControl={questionTypeControl}
+      fillBlankScoring={fillBlankScoring}
       onInsertImage={() => imageInputRef.current?.click()}
     >
       <RichTextEditor
@@ -1342,11 +1367,13 @@ function TrueFalseQuestionForm({
 }
 
 function FillBlankQuestionForm({
+  allowScoring,
   paperId,
   question,
   questionTypeControl,
   onUpdate
 }: {
+  allowScoring: boolean;
   paperId: string;
   question?: QuestionRow;
   questionTypeControl?: QuestionTypeControl;
@@ -1368,7 +1395,11 @@ function FillBlankQuestionForm({
       <input type="hidden" name="paperId" value={paperId} />
       <input type="hidden" name="questionType" value="fill_blank" />
       {question ? <input type="hidden" name="paperQuestionId" value={question.id} /> : null}
-      <QuestionStemEditor defaultValue={question?.title || ""} questionTypeControl={questionTypeControl} />
+      <QuestionStemEditor
+        defaultValue={question?.title || ""}
+        questionTypeControl={questionTypeControl}
+        fillBlankScoring={allowScoring ? { defaultChecked: question?.fillBlankScored || false } : undefined}
+      />
       <section>
         <div className="flex h-10 items-center border-b border-[#d4dae4] bg-[#eef3f9] px-3">
           <h2 className="text-sm font-black text-[#111827]">答案</h2>
@@ -1817,7 +1848,7 @@ function QuestionTypeConfigDialog({
   );
 }
 
-export function QuestionBankDetailWorkbench({ ownerName, paperId, paperTitle, ownerHref, questionTypes, knowledgeTree, questions }: QuestionBankDetailWorkbenchProps) {
+export function QuestionBankDetailWorkbench({ allowFillBlankScoring, ownerName, paperId, paperTitle, ownerHref, questionTypes, knowledgeTree, questions }: QuestionBankDetailWorkbenchProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const focusedQuestionId = searchParams.get("question");
@@ -1921,7 +1952,8 @@ export function QuestionBankDetailWorkbench({ ownerName, paperId, paperTitle, ow
               options: savedQuestion.options,
               answer: savedQuestion.answer,
               analysis: savedQuestion.analysis,
-              showAnalysis: savedQuestion.showAnalysis
+              showAnalysis: savedQuestion.showAnalysis,
+              fillBlankScored: savedQuestion.fillBlankScored
             }
           : question
       )));
@@ -2276,7 +2308,7 @@ export function QuestionBankDetailWorkbench({ ownerName, paperId, paperTitle, ow
           ) : activeEditorType === "true_false" ? (
             <TrueFalseQuestionForm key="create-true_false" paperId={paperId} questionTypeControl={editorQuestionTypeControl} />
           ) : activeEditorType === "fill_blank" ? (
-            <FillBlankQuestionForm key="create-fill_blank" paperId={paperId} questionTypeControl={editorQuestionTypeControl} />
+            <FillBlankQuestionForm allowScoring={allowFillBlankScoring} key="create-fill_blank" paperId={paperId} questionTypeControl={editorQuestionTypeControl} />
           ) : activeEditorType && isRichAnswerQuestionType(activeEditorType) ? (
             <RichAnswerQuestionForm key={`create-${activeEditorType}`} paperId={paperId} type={activeEditorType} questionTypeControl={editorQuestionTypeControl} />
           ) : selectedQuestion && selectedChoiceType ? (
@@ -2298,6 +2330,7 @@ export function QuestionBankDetailWorkbench({ ownerName, paperId, paperTitle, ow
             />
           ) : selectedQuestion && selectedEditableType === "fill_blank" ? (
             <FillBlankQuestionForm
+              allowScoring={allowFillBlankScoring}
               key={`edit-${selectedQuestion.id}-fill_blank`}
               paperId={paperId}
               question={selectedQuestion}
