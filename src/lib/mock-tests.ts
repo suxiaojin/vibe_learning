@@ -1,6 +1,6 @@
+import { getStudentFoundationProfile } from "@/lib/foundation";
 import { prisma } from "@/lib/prisma";
-import { isAiGeneratedQuestionBankTitle } from "@/lib/question-bank-source";
-import { getStudentLearningPath, type LearningOwnerType, type SyllabusPathGroup, type SyllabusPathSection } from "@/lib/syllabus-learning";
+import type { LearningOwnerType } from "@/lib/syllabus-learning";
 
 export type MockTestQuestion = {
   id: string;
@@ -22,20 +22,19 @@ export type MockTestQuestion = {
   };
 };
 
-type OrderedMockTestQuestion = MockTestQuestion & {
-  createdAt: Date;
-  sortOrder: number;
-};
-
-export type MockTestSection = SyllabusPathSection & {
-  chapterTitle: string;
+export type MockTestSection = {
+  id: string;
+  title: string;
   courseTitle: string;
+  scopeType: "chapter" | "course";
+  sortOrder: number;
+  questions: MockTestQuestion[];
 };
 
 export type MockTestContext = {
-  group: SyllabusPathGroup | null;
+  group: { key: LearningOwnerType; name: string } | null;
   courseKey: LearningOwnerType;
-  passedSections: MockTestSection[];
+  practiceSections: MockTestSection[];
 };
 
 export function normalizeMockTestCourseKey(value?: string | null): LearningOwnerType {
@@ -43,166 +42,165 @@ export function normalizeMockTestCourseKey(value?: string | null): LearningOwner
 }
 
 export async function getMockTestContext(userId: string, courseKey: LearningOwnerType): Promise<MockTestContext> {
-  const learningPath = await getStudentLearningPath(userId, courseKey);
-  const group = learningPath.groups.find((item) => item.key === courseKey) || null;
-  const passedSections = group
-    ? group.courses.flatMap((course) =>
-        course.chapters.flatMap((chapter) =>
-          chapter.sections
-            .filter((section) => section.status === "passed")
-            .map((section) => ({
-              ...section,
-              chapterTitle: chapter.title,
-              courseTitle: course.title
-            }))
-        )
-      )
-    : [];
+  const profile = await getStudentFoundationProfile(userId);
+  const ownerId = courseKey === "major" ? profile?.majorId : profile?.publicSubjectId;
+  const ownerName = courseKey === "major" ? profile?.major?.name : profile?.publicSubject?.name;
 
-  return {
-    group,
-    courseKey,
-    passedSections
-  };
-}
-
-export async function getAiGeneratedQuestionsBySection(group: SyllabusPathGroup, sections: MockTestSection[]) {
-  const questionsBySectionId = new Map<string, MockTestQuestion[]>(sections.map((section) => [section.id, []]));
-  const syllabusItemIds = uniqueValues(sections.flatMap((section) => section.questionSyllabusItemIds));
-
-  if (group.courses.length === 0 || syllabusItemIds.length === 0) {
-    return questionsBySectionId;
+  if (!profile?.regionId || !ownerId || !ownerName) {
+    return { group: null, courseKey, practiceSections: [] };
   }
 
-  const sectionIdsBySyllabusItemId = new Map<string, Set<string>>();
-  for (const section of sections) {
-    for (const syllabusItemId of section.questionSyllabusItemIds) {
-      const sectionIds = sectionIdsBySyllabusItemId.get(syllabusItemId) || new Set<string>();
-      sectionIds.add(section.id);
-      sectionIdsBySyllabusItemId.set(syllabusItemId, sectionIds);
-    }
-  }
-
-  const tags = await prisma.questionKnowledgeTag.findMany({
+  const courses = await prisma.learningCourse.findMany({
     where: {
-      syllabusItemId: { in: syllabusItemIds },
-      question: { status: "published" }
+      regionId: profile.regionId,
+      status: "published",
+      courseType: courseKey,
+      ...(courseKey === "major" ? { majorId: ownerId } : { publicSubjectId: ownerId })
     },
     select: {
-      syllabusItemId: true,
-      syllabusItem: {
-        select: {
-          title: true
-        }
-      },
-      question: {
+      id: true,
+      name: true,
+      sortOrder: true,
+      syllabusItems: {
+        where: {
+          status: "published",
+          OR: [
+            { checkpointScope: "course" },
+            { parentId: null, checkpointScope: null }
+          ],
+          challengeVersions: {
+            some: {
+              purpose: "special_practice",
+              status: "published",
+              questions: { some: {} }
+            }
+          }
+        },
         select: {
           id: true,
-          type: true,
-          stem: true,
-          options: true,
-          answer: true,
-          analysis: true,
-          showAnalysis: true,
-          difficulty: true,
-          source: true,
-          sourceYear: true,
-          createdAt: true,
-          paperQuestions: {
+          title: true,
+          sortOrder: true,
+          checkpointScope: true,
+          challengeVersions: {
             where: {
-              paper: {
-                status: "published"
-              }
+              purpose: "special_practice",
+              status: "published",
+              questions: { some: {} }
             },
+            orderBy: { version: "asc" },
             select: {
-              sortOrder: true,
-              paper: {
+              version: true,
+              questions: {
+                where: {
+                  question: {
+                    status: "published",
+                    paperQuestions: { some: { paper: { status: "published" } } }
+                  }
+                },
+                orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
                 select: {
-                  id: true,
-                  title: true,
-                  year: true,
-                  paperType: true,
-                  sortOrder: true
+                  question: {
+                    select: {
+                      id: true,
+                      type: true,
+                      stem: true,
+                      options: true,
+                      answer: true,
+                      analysis: true,
+                      showAnalysis: true,
+                      difficulty: true,
+                      source: true,
+                      sourceYear: true,
+                      knowledgeTags: {
+                        select: { syllabusItem: { select: { title: true } } },
+                        orderBy: { createdAt: "asc" }
+                      },
+                      paperQuestions: {
+                        where: { paper: { status: "published" } },
+                        select: {
+                          sortOrder: true,
+                          paper: {
+                            select: {
+                              id: true,
+                              title: true,
+                              year: true,
+                              paperType: true,
+                              sortOrder: true
+                            }
+                          }
+                        },
+                        orderBy: [{ paper: { sortOrder: "asc" } }, { sortOrder: "asc" }]
+                      }
+                    }
+                  }
                 }
               }
-            },
-            orderBy: { sortOrder: "asc" }
+            }
           }
-        }
+        },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
       }
-    }
+    },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
   });
 
-  const orderedQuestionsBySectionId = new Map<string, Map<string, OrderedMockTestQuestion>>(
-    sections.map((section) => [section.id, new Map<string, OrderedMockTestQuestion>()])
-  );
+  const practiceSections = courses.flatMap((course) => {
+    return [...course.syllabusItems]
+      .sort((left, right) => {
+        const leftRank = left.checkpointScope === "course" ? 0 : 1;
+        const rightRank = right.checkpointScope === "course" ? 0 : 1;
+        return leftRank - rightRank || left.sortOrder - right.sortOrder;
+      })
+      .flatMap((item) => {
+        const questions = new Map<string, MockTestQuestion>();
 
-  for (const tag of tags) {
-    const aiPaperQuestions = tag.question.paperQuestions
-      .filter((paperQuestion) => isAiGeneratedQuestionBankTitle(paperQuestion.paper.title))
-      .sort((left, right) => left.paper.sortOrder - right.paper.sortOrder || left.sortOrder - right.sortOrder);
-    const firstPaperQuestion = aiPaperQuestions[0];
+        for (const version of item.challengeVersions) {
+          for (const challengeQuestion of version.questions) {
+            const question = challengeQuestion.question;
+            const paperQuestion = question.paperQuestions[0];
+            if (!paperQuestion || questions.has(question.id)) {
+              continue;
+            }
+            questions.set(question.id, {
+              id: question.id,
+              type: question.type,
+              stem: question.stem,
+              options: question.options,
+              answer: question.answer,
+              analysis: question.analysis,
+              showAnalysis: question.showAnalysis,
+              difficulty: question.difficulty,
+              source: question.source,
+              sourceYear: question.sourceYear,
+              knowledgePointTitle: question.knowledgeTags[0]?.syllabusItem.title || item.title,
+              questionBank: {
+                id: paperQuestion.paper.id,
+                title: paperQuestion.paper.title,
+                year: paperQuestion.paper.year,
+                paperType: paperQuestion.paper.paperType
+              }
+            });
+          }
+        }
 
-    if (!firstPaperQuestion) {
-      continue;
-    }
+        return questions.size > 0
+          ? [{
+              id: item.id,
+              title: item.checkpointScope === "course" ? course.name : item.title,
+              courseTitle: course.name,
+              scopeType: item.checkpointScope === "course" ? "course" as const : "chapter" as const,
+              sortOrder: item.sortOrder,
+              questions: [...questions.values()]
+            }]
+          : [];
+      });
+  });
 
-    const question: OrderedMockTestQuestion = {
-      id: tag.question.id,
-      type: tag.question.type,
-      stem: tag.question.stem,
-      options: tag.question.options,
-      answer: tag.question.answer,
-      analysis: tag.question.analysis,
-      showAnalysis: tag.question.showAnalysis,
-      difficulty: tag.question.difficulty,
-      source: tag.question.source,
-      sourceYear: tag.question.sourceYear,
-      knowledgePointTitle: tag.syllabusItem.title,
-      createdAt: tag.question.createdAt,
-      sortOrder: firstPaperQuestion.sortOrder,
-      questionBank: {
-        id: firstPaperQuestion.paper.id,
-        title: firstPaperQuestion.paper.title,
-        year: firstPaperQuestion.paper.year,
-        paperType: firstPaperQuestion.paper.paperType
-      }
-    };
-
-    for (const sectionId of sectionIdsBySyllabusItemId.get(tag.syllabusItemId) || []) {
-      const byQuestionId = orderedQuestionsBySectionId.get(sectionId);
-      if (byQuestionId && !byQuestionId.has(question.id)) {
-        byQuestionId.set(question.id, question);
-      }
-    }
-  }
-
-  for (const section of sections) {
-    const orderedQuestions = Array.from(orderedQuestionsBySectionId.get(section.id)?.values() || []);
-    questionsBySectionId.set(
-      section.id,
-      orderedQuestions
-        .sort((left, right) => left.sortOrder - right.sortOrder || left.createdAt.getTime() - right.createdAt.getTime())
-        .map(({ createdAt: _createdAt, sortOrder: _sortOrder, ...question }) => question)
-    );
-  }
-
-  return questionsBySectionId;
-}
-
-export async function getAiGeneratedQuestionsForSections(group: SyllabusPathGroup, sections: MockTestSection[]) {
-  const questionsBySectionId = await getAiGeneratedQuestionsBySection(group, sections);
-  const uniqueQuestions = new Map<string, MockTestQuestion>();
-
-  for (const section of sections) {
-    for (const question of questionsBySectionId.get(section.id) || []) {
-      if (!uniqueQuestions.has(question.id)) {
-        uniqueQuestions.set(question.id, question);
-      }
-    }
-  }
-
-  return Array.from(uniqueQuestions.values());
+  return {
+    group: { key: courseKey, name: ownerName },
+    courseKey,
+    practiceSections
+  };
 }
 
 export function pickRandomMockQuestions(questions: MockTestQuestion[], limit = 10) {
@@ -220,7 +218,7 @@ export function normalizeQuestionOptions(options: unknown) {
 
   return options
     .map((option) => {
-      if (!option || typeof option !== "object") {
+      if (!option || typeof option !== "object" || Array.isArray(option)) {
         return null;
       }
       const value = option as { key?: unknown; text?: unknown };
@@ -230,8 +228,4 @@ export function normalizeQuestionOptions(options: unknown) {
       };
     })
     .filter((option): option is { key: string; text: string } => Boolean(option?.key || option?.text));
-}
-
-function uniqueValues(values: string[]) {
-  return Array.from(new Set(values.filter(Boolean)));
 }

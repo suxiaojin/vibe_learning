@@ -1,5 +1,6 @@
 "use server";
 
+import type { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
@@ -9,6 +10,15 @@ import { isQuestionBankAutoGradedQuestionType } from "@/lib/question-bank-types"
 
 const statisticsPath = "/admin/question-banks/statistics";
 type ChallengeScopeType = "chapter" | "course";
+type ChallengePurpose = "challenge" | "special_practice";
+
+function normalizeChallengePurpose(value: unknown): ChallengePurpose {
+  return value === "special_practice" ? "special_practice" : "challenge";
+}
+
+function oppositeChallengePurpose(purpose: ChallengePurpose): ChallengePurpose {
+  return purpose === "challenge" ? "special_practice" : "challenge";
+}
 
 class ChallengeCopyError extends Error {}
 
@@ -53,7 +63,7 @@ async function getChallengeScope(scopeType: ChallengeScopeType, scopeId: string,
   if (scopeType === "course") {
     const course = await prisma.learningCourse.findUniqueOrThrow({
       where: { id: scopeId },
-      select: { id: true, status: true }
+      select: { id: true, status: true, challengeMode: true }
     });
     const checkpoint = createCheckpoint
       ? await ensureCourseCheckpoint(course.id)
@@ -71,6 +81,7 @@ async function getChallengeScope(scopeType: ChallengeScopeType, scopeId: string,
       checkpointId: checkpoint.id,
       courseId: course.id,
       courseStatus: course.status,
+      challengeMode: course.challengeMode,
       syllabusItemIds: syllabusItems.map((item) => item.id)
     };
   }
@@ -80,7 +91,7 @@ async function getChallengeScope(scopeType: ChallengeScopeType, scopeId: string,
     select: {
       id: true,
       courseId: true,
-      course: { select: { status: true } }
+      course: { select: { status: true, challengeMode: true } }
     }
   });
   const items = await prisma.syllabusItem.findMany({
@@ -112,6 +123,7 @@ async function getChallengeScope(scopeType: ChallengeScopeType, scopeId: string,
     checkpointId: chapter.id,
     courseId: chapter.courseId,
     courseStatus: chapter.course.status,
+    challengeMode: chapter.course.challengeMode,
     syllabusItemIds
   };
 }
@@ -146,6 +158,7 @@ async function getCrossRegionChallengeCopyPlan(
     },
     select: {
       id: true,
+      purpose: true,
       targetQuestionCount: true,
       chapter: {
         select: {
@@ -232,7 +245,7 @@ async function getCrossRegionChallengeCopyPlan(
   if (!targetCourse) {
     throw new ChallengeCopyError("目标区域没有当前专业或公共课下的同名课程。");
   }
-  if (targetCourse.challengeMode !== scopeType) {
+  if (sourceChallenge.purpose === "challenge" && targetCourse.challengeMode !== scopeType) {
     throw new ChallengeCopyError("目标课程的闯关组织方式与来源课程不一致。");
   }
 
@@ -272,7 +285,11 @@ async function getCrossRegionChallengeCopyPlan(
 
   const existingDraft = targetCheckpointId
     ? await prisma.chapterChallengeVersion.findFirst({
-        where: { chapterId: targetCheckpointId, status: "draft" },
+        where: {
+          chapterId: targetCheckpointId,
+          purpose: sourceChallenge.purpose,
+          status: "draft"
+        },
         select: { id: true, _count: { select: { questions: true } } },
         orderBy: { version: "desc" }
       })
@@ -286,9 +303,15 @@ async function getCrossRegionChallengeCopyPlan(
         (await prisma.chapterChallengeQuestion.findMany({
           where: {
             challengeVersion: {
-              chapterId: targetCheckpointId,
               status: { in: ["draft", "published"] },
-              ...(existingDraft ? { id: { not: existingDraft.id } } : {})
+              ...(existingDraft ? { id: { not: existingDraft.id } } : {}),
+              OR: [
+                { chapterId: targetCheckpointId },
+                {
+                  purpose: oppositeChallengePurpose(sourceChallenge.purpose),
+                  chapter: { courseId: targetCourse.id }
+                }
+              ]
             }
           },
           select: { questionId: true }
@@ -345,9 +368,9 @@ async function getCrossRegionChallengeCopyPlan(
   };
 }
 
-async function ensureDraft(chapterId: string) {
+async function ensureDraft(chapterId: string, purpose: ChallengePurpose = "challenge") {
   const existing = await prisma.chapterChallengeVersion.findFirst({
-    where: { chapterId, status: "draft" },
+    where: { chapterId, purpose, status: "draft" },
     include: { questions: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] } },
     orderBy: { version: "desc" }
   });
@@ -356,13 +379,14 @@ async function ensureDraft(chapterId: string) {
   }
 
   const latest = await prisma.chapterChallengeVersion.findFirst({
-    where: { chapterId, status: { in: ["draft", "published"] } },
+    where: { chapterId, purpose, status: { in: ["draft", "published"] } },
     include: { questions: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] } },
     orderBy: { version: "desc" }
   });
   return prisma.chapterChallengeVersion.create({
     data: {
       chapterId,
+      purpose,
       version: (latest?.version || 0) + 1,
       targetQuestionCount: latest?.targetQuestionCount || 10
     },
@@ -372,7 +396,7 @@ async function ensureDraft(chapterId: string) {
 
 async function getEditableDraft(chapterId: string, challengeVersionId: string) {
   if (!challengeVersionId) {
-    return ensureDraft(chapterId);
+    return ensureDraft(chapterId, "challenge");
   }
   return prisma.chapterChallengeVersion.findFirstOrThrow({
     where: { id: challengeVersionId, chapterId, status: "draft" },
@@ -390,11 +414,13 @@ async function getExistingChallenge(chapterId: string, challengeVersionId: strin
 async function getActiveChallenge(chapterId: string, challengeVersionId: string) {
   return challengeVersionId
     ? getExistingChallenge(chapterId, challengeVersionId)
-    : ensureDraft(chapterId);
+    : ensureDraft(chapterId, "challenge");
 }
 
-async function assertQuestionCanEnterChallenge(scopeType: ChallengeScopeType, scopeId: string, questionId: string) {
-  const scope = await getChallengeScope(scopeType, scopeId, scopeType === "course");
+async function assertQuestionCanEnterChallenge(
+  scope: Awaited<ReturnType<typeof getChallengeScope>>,
+  questionId: string
+) {
   await prisma.question.findFirstOrThrow({
     where: {
       id: questionId,
@@ -410,7 +436,6 @@ async function assertQuestionCanEnterChallenge(scopeType: ChallengeScopeType, sc
     },
     select: { id: true }
   });
-  return scope;
 }
 
 async function assertQuestionIsUnusedByOtherChallenge(checkpointId: string, challengeVersionId: string, questionId: string) {
@@ -427,11 +452,69 @@ async function assertQuestionIsUnusedByOtherChallenge(checkpointId: string, chal
   }
 }
 
+async function assertQuestionIsUnusedByOppositePurpose(
+  courseId: string,
+  challengeVersionId: string,
+  purpose: ChallengePurpose,
+  questionId: string
+) {
+  const existing = await prisma.chapterChallengeQuestion.findFirst({
+    where: {
+      questionId,
+      challengeVersionId: { not: challengeVersionId },
+      challengeVersion: {
+        purpose: oppositeChallengePurpose(purpose),
+        status: { in: ["draft", "published"] },
+        chapter: { courseId }
+      }
+    },
+    select: { id: true }
+  });
+  if (existing) {
+    throw new Error("Question is already used by the other challenge purpose in this course");
+  }
+}
+
+async function renumberActiveChallenges(
+  transaction: Prisma.TransactionClient,
+  chapterId: string,
+  purpose: ChallengePurpose
+) {
+  const challenges = await transaction.chapterChallengeVersion.findMany({
+    where: { chapterId, purpose, status: { in: ["draft", "published"] } },
+    select: { id: true },
+    orderBy: { version: "asc" }
+  });
+  if (challenges.length === 0) {
+    return;
+  }
+  const minimum = await transaction.chapterChallengeVersion.findFirst({
+    where: { chapterId, purpose },
+    select: { version: true },
+    orderBy: { version: "asc" }
+  });
+  const temporaryBase = (minimum?.version || 0) - challenges.length - 1;
+  for (const [index, challenge] of challenges.entries()) {
+    await transaction.chapterChallengeVersion.update({
+      where: { id: challenge.id },
+      data: { version: temporaryBase - index }
+    });
+  }
+  for (const [index, challenge] of challenges.entries()) {
+    await transaction.chapterChallengeVersion.update({
+      where: { id: challenge.id },
+      data: { version: index + 1 }
+    });
+  }
+}
+
 function refreshChallengePages(checkpointId: string) {
   revalidatePath(statisticsPath);
   revalidatePath("/learn");
   revalidatePath("/course-center");
+  revalidatePath("/mock-tests/special");
   revalidatePath(`/learn/${checkpointId}`);
+  revalidatePath(`/mock-tests/special/${checkpointId}`);
 }
 
 export async function previewCrossRegionChallengeCopy(
@@ -530,7 +613,11 @@ export async function copyChallengeAcrossRegion(
       }
 
       const currentDraft = await tx.chapterChallengeVersion.findFirst({
-        where: { chapterId: checkpointId, status: "draft" },
+        where: {
+          chapterId: checkpointId,
+          purpose: plan.sourceChallenge.purpose,
+          status: "draft"
+        },
         include: { questions: { select: { id: true } } },
         orderBy: { version: "desc" }
       });
@@ -542,6 +629,7 @@ export async function copyChallengeAcrossRegion(
         ? await tx.chapterChallengeVersion.update({
             where: { id: currentDraft.id },
             data: {
+              purpose: plan.sourceChallenge.purpose,
               targetQuestionCount: plan.sourceChallenge.targetQuestionCount,
               publishedAt: null
             },
@@ -550,8 +638,13 @@ export async function copyChallengeAcrossRegion(
         : await tx.chapterChallengeVersion.create({
             data: {
               chapterId: checkpointId,
+              purpose: plan.sourceChallenge.purpose,
               version: ((await tx.chapterChallengeVersion.findFirst({
-                where: { chapterId: checkpointId, status: { in: ["draft", "published"] } },
+                where: {
+                  chapterId: checkpointId,
+                  purpose: plan.sourceChallenge.purpose,
+                  status: { in: ["draft", "published"] }
+                },
                 orderBy: { version: "desc" },
                 select: { version: true }
               }))?.version || 0) + 1,
@@ -567,8 +660,14 @@ export async function copyChallengeAcrossRegion(
             questionId: { in: copiedQuestions.map((item) => item.targetQuestionId) },
             challengeVersionId: { not: challenge.id },
             challengeVersion: {
-              chapterId: checkpointId,
-              status: { in: ["draft", "published"] }
+              status: { in: ["draft", "published"] },
+              OR: [
+                { chapterId: checkpointId },
+                {
+                  purpose: oppositeChallengePurpose(plan.sourceChallenge.purpose),
+                  chapter: { courseId: plan.targetCourse.id }
+                }
+              ]
             }
           },
           select: { id: true }
@@ -621,8 +720,9 @@ export async function addQuestionToChapterChallenge(formData: FormData) {
   const { scopeType, scopeId } = getChallengeScopeInput(formData);
   const challengeVersionId = String(formData.get("challengeVersionId") || "");
   const questionId = String(formData.get("questionId") || "");
-  const scope = await assertQuestionCanEnterChallenge(scopeType, scopeId, questionId);
+  const scope = await getChallengeScope(scopeType, scopeId, scopeType === "course");
   const challenge = await getActiveChallenge(scope.checkpointId, challengeVersionId);
+  await assertQuestionCanEnterChallenge(scope, questionId);
   if (challenge.questions.some((item) => item.questionId === questionId)) {
     refreshChallengePages(scope.checkpointId);
     return;
@@ -631,6 +731,7 @@ export async function addQuestionToChapterChallenge(formData: FormData) {
     throw new Error("Challenge already has the configured number of questions");
   }
   await assertQuestionIsUnusedByOtherChallenge(scope.checkpointId, challenge.id, questionId);
+  await assertQuestionIsUnusedByOppositePurpose(scope.courseId, challenge.id, challenge.purpose, questionId);
   await prisma.chapterChallengeQuestion.create({
     data: {
       challengeVersionId: challenge.id,
@@ -648,7 +749,7 @@ export async function removeQuestionFromChapterChallenge(formData: FormData) {
   const questionId = String(formData.get("questionId") || "");
   const scope = await getChallengeScope(scopeType, scopeId, scopeType === "course");
   const draft = await getExistingChallenge(scope.checkpointId, challengeVersionId);
-  if (scopeType === "course" && draft.status === "published") {
+  if (scopeType === "course" && draft.purpose === "challenge" && draft.status === "published") {
     const remainingQuestions = await prisma.question.findMany({
       where: {
         id: {
@@ -741,6 +842,91 @@ export async function updateChapterChallengeDifficulty(formData: FormData) {
   refreshChallengePages(scope.checkpointId);
 }
 
+export async function updateChapterChallengePurpose(formData: FormData) {
+  await requireAdmin();
+  const { scopeType, scopeId } = getChallengeScopeInput(formData);
+  const challengeVersionId = String(formData.get("challengeVersionId") || "");
+  const nextPurpose = normalizeChallengePurpose(formData.get("purpose"));
+  const scope = await getChallengeScope(scopeType, scopeId, scopeType === "course");
+  const challenge = await prisma.chapterChallengeVersion.findFirstOrThrow({
+    where: {
+      id: challengeVersionId,
+      chapterId: scope.checkpointId,
+      status: { in: ["draft", "published"] }
+    },
+    select: {
+      id: true,
+      purpose: true,
+      status: true,
+      questions: { select: { questionId: true } }
+    }
+  });
+  if (challenge.purpose === nextPurpose) {
+    refreshChallengePages(scope.checkpointId);
+    return;
+  }
+  if (nextPurpose === "challenge" && scope.challengeMode !== scopeType) {
+    throw new Error("Challenge purpose must use the course's configured challenge scope");
+  }
+
+  if (challenge.status === "draft") {
+    const targetDraft = await prisma.chapterChallengeVersion.findFirst({
+      where: {
+        chapterId: scope.checkpointId,
+        purpose: nextPurpose,
+        status: "draft",
+        id: { not: challenge.id }
+      },
+      select: { id: true }
+    });
+    if (targetDraft) {
+      throw new Error("The selected challenge purpose already has an editable draft");
+    }
+  }
+
+  const questionIds = challenge.questions.map((item) => item.questionId);
+  if (questionIds.length > 0) {
+    const conflict = await prisma.chapterChallengeQuestion.findFirst({
+      where: {
+        questionId: { in: questionIds },
+        challengeVersionId: { not: challenge.id },
+        challengeVersion: {
+          purpose: challenge.purpose,
+          status: { in: ["draft", "published"] },
+          chapter: { courseId: scope.courseId }
+        }
+      },
+      select: { id: true }
+    });
+    if (conflict) {
+      throw new Error("A question in this challenge is already used by the other challenge purpose in this course");
+    }
+  }
+
+  const previousPurpose = challenge.purpose;
+  await prisma.$transaction(async (transaction) => {
+    const minimumTargetVersion = await transaction.chapterChallengeVersion.findFirst({
+      where: { chapterId: scope.checkpointId, purpose: nextPurpose },
+      select: { version: true },
+      orderBy: { version: "asc" }
+    });
+    await transaction.chapterChallengeVersion.update({
+      where: { id: challenge.id },
+      data: {
+        purpose: nextPurpose,
+        version: (minimumTargetVersion?.version || 0) - 1
+      }
+    });
+    await renumberActiveChallenges(transaction, scope.checkpointId, previousPurpose);
+    await renumberActiveChallenges(transaction, scope.checkpointId, nextPurpose);
+  });
+
+  if (previousPurpose === "challenge") {
+    await ensureDraft(scope.checkpointId, "challenge");
+  }
+  refreshChallengePages(scope.checkpointId);
+}
+
 export async function deleteChapterChallenge(formData: FormData) {
   await requireAdmin();
   const { scopeType, scopeId } = getChallengeScopeInput(formData);
@@ -755,10 +941,10 @@ export async function deleteChapterChallenge(formData: FormData) {
         chapterId: checkpointId,
         status: { in: ["draft", "published"] }
       },
-      select: { id: true, status: true }
+      select: { id: true, status: true, purpose: true }
     });
     const versions = await transaction.chapterChallengeVersion.findMany({
-      where: { chapterId: checkpointId },
+      where: { chapterId: checkpointId, purpose: challenge.purpose },
       select: { version: true }
     });
     const minimumVersion = versions.reduce((minimum, item) => Math.min(minimum, item.version), 0);
@@ -773,7 +959,7 @@ export async function deleteChapterChallenge(formData: FormData) {
     }
 
     const archivedChallenges = await transaction.chapterChallengeVersion.findMany({
-      where: { chapterId: checkpointId, status: "archived" },
+      where: { chapterId: checkpointId, purpose: challenge.purpose, status: "archived" },
       select: { id: true },
       orderBy: { version: "asc" }
     });
@@ -786,7 +972,11 @@ export async function deleteChapterChallenge(formData: FormData) {
     }
 
     const activeChallenges = await transaction.chapterChallengeVersion.findMany({
-      where: { chapterId: checkpointId, status: { in: ["draft", "published"] } },
+      where: {
+        chapterId: checkpointId,
+        purpose: challenge.purpose,
+        status: { in: ["draft", "published"] }
+      },
       select: { id: true },
       orderBy: { version: "asc" }
     });
@@ -806,7 +996,13 @@ export async function deleteChapterChallenge(formData: FormData) {
     }
   });
 
-  await ensureDraft(checkpointId);
+  const remainingChallengeDraft = await prisma.chapterChallengeVersion.findFirst({
+    where: { chapterId: checkpointId, purpose: "challenge", status: "draft" },
+    select: { id: true }
+  });
+  if (!remainingChallengeDraft) {
+    await ensureDraft(checkpointId, "challenge");
+  }
   refreshChallengePages(checkpointId);
 }
 
@@ -831,11 +1027,37 @@ export async function saveChapterChallenge(formData: FormData) {
   if (validQuestions.length !== draft.questions.length || scope.courseStatus !== "published") {
     throw new Error("Challenge contains unavailable questions or the course is not published");
   }
-  if (scopeType === "course" && !validQuestions.some((question) => isQuestionBankAutoGradedQuestionType(question.type))) {
+  if (draft.purpose === "challenge" && scope.challengeMode !== scopeType) {
+    throw new Error("Challenge purpose must use the course's configured challenge scope");
+  }
+  if (
+    scopeType === "course"
+    && draft.purpose === "challenge"
+    && !validQuestions.some((question) => isQuestionBankAutoGradedQuestionType(question.type))
+  ) {
     throw new Error("Course challenge requires at least one auto-graded question");
   }
+  const oppositePurposeConflict = await prisma.chapterChallengeQuestion.findFirst({
+    where: {
+      questionId: { in: draft.questions.map((item) => item.questionId) },
+      challengeVersionId: { not: draft.id },
+      challengeVersion: {
+        purpose: oppositeChallengePurpose(draft.purpose),
+        status: { in: ["draft", "published"] },
+        chapter: { courseId: scope.courseId }
+      }
+    },
+    select: { id: true }
+  });
+  if (oppositePurposeConflict) {
+    throw new Error("Challenge contains a question used by the other challenge purpose in this course");
+  }
   const latest = await prisma.chapterChallengeVersion.findFirst({
-    where: { chapterId: scope.checkpointId, status: { in: ["draft", "published"] } },
+    where: {
+      chapterId: scope.checkpointId,
+      purpose: draft.purpose,
+      status: { in: ["draft", "published"] }
+    },
     select: { version: true },
     orderBy: { version: "desc" }
   });
@@ -847,6 +1069,7 @@ export async function saveChapterChallenge(formData: FormData) {
     prisma.chapterChallengeVersion.create({
       data: {
         chapterId: scope.checkpointId,
+        purpose: draft.purpose,
         version: (latest?.version || draft.version) + 1,
         targetQuestionCount: draft.targetQuestionCount
       }
@@ -872,6 +1095,7 @@ export async function updateCourseChallengeMode(formData: FormData) {
     const activeChallenges = await prisma.chapterChallengeVersion.findMany({
       where: {
         chapterId: { in: chapterRoots.map((chapter) => chapter.id) },
+        purpose: "challenge",
         status: "published",
         version: 1,
         questions: { some: {} }

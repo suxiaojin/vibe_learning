@@ -237,7 +237,7 @@ async function getPublishedChallengesByChapter(shape: SyllabusShape) {
   const chapterIds = (shape.childrenByParentId.get(null) || []).map((item) => item.id);
   const versions = chapterIds.length
     ? await prisma.chapterChallengeVersion.findMany({
-        where: { chapterId: { in: chapterIds }, status: "published", version: 1 },
+        where: { chapterId: { in: chapterIds }, purpose: "challenge", status: "published", version: 1 },
         select: {
           id: true,
           chapterId: true,
@@ -266,6 +266,7 @@ export async function getNextChapterChallengeVersion(chapterId: string, currentC
   const versions = await prisma.chapterChallengeVersion.findMany({
     where: {
       chapterId,
+      purpose: "challenge",
       status: "published",
       questions: { some: {} }
     },
@@ -661,7 +662,8 @@ export async function getSyllabusSectionQuestionsForStudent(
   const challengeVersion = await prisma.chapterChallengeVersion.findFirst({
     where: {
       id: challengeVersionId,
-      chapterId: sectionId
+      chapterId: sectionId,
+      purpose: "challenge"
     },
     select: {
       id: true,

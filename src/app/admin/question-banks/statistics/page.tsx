@@ -11,7 +11,7 @@ import {
 } from "@/app/admin/question-banks/challenge-actions";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { CopyChallengeDialog } from "@/components/copy-challenge-dialog";
-import { ChallengeDifficultyRating } from "@/components/challenge-difficulty-rating";
+import { ChallengeDifficultyRating, ChallengePurposeSelect } from "@/components/challenge-difficulty-rating";
 import {
   QuestionBankStatisticsTree,
   QuestionBankStatisticsUiProvider,
@@ -895,11 +895,9 @@ export default async function QuestionBankKnowledgeStatisticsPage({
         course.id === selectedScope.id || course.syllabusItems.some((item) => item.id === selectedScope.id)
       ) || null
     : null;
-  const challengeScopeType = selectedCourse?.challengeMode === "course" && selectedScope?.type === "course"
-    ? "course" as const
-    : selectedCourse?.challengeMode === "chapter" && selectedScope?.type === "chapter"
-      ? "chapter" as const
-      : null;
+  const challengeScopeType = selectedCourse && (selectedScope?.type === "course" || selectedScope?.type === "chapter")
+    ? selectedScope.type
+    : null;
   const courseCheckpoint = challengeScopeType === "course"
     ? await prisma.syllabusItem.findFirst({
         where: { courseId: selectedCourse!.id, checkpointScope: "course" },
@@ -921,6 +919,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
         },
         select: {
           id: true,
+          purpose: true,
           version: true,
           targetQuestionCount: true,
           difficultyRating: true,
@@ -947,7 +946,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
             }
           }
         },
-        orderBy: { version: "desc" }
+        orderBy: [{ purpose: "asc" }, { version: "desc" }]
       })
     : [];
   const challengeVersion = challengeVersions.find((version) => version.id === params?.challengeId)
@@ -974,8 +973,10 @@ export default async function QuestionBankKnowledgeStatisticsPage({
       })).map((course) => ({
         id: course.id,
         regionName: course.region.name,
-        disabled: course.challengeMode !== challengeScope.type,
-        disabledReason: course.challengeMode !== challengeScope.type ? "闯关方式不一致" : null
+        disabled: challengeVersion.purpose === "challenge" && course.challengeMode !== challengeScope.type,
+        disabledReason: challengeVersion.purpose === "challenge" && course.challengeMode !== challengeScope.type
+          ? "闯关方式不一致"
+          : null
       }))
     : [];
   const copiedMappedCount = Math.max(0, Number.parseInt(params?.mapped || "0", 10) || 0);
@@ -984,7 +985,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
   const challengeQuestionLimitReached = Boolean(
     challengeVersion && challengeVersion.questions.length >= challengeVersion.targetQuestionCount
   );
-  const otherChallengeByQuestionId = new Map<string, number>();
+  const otherChallengeByQuestionId = new Map<string, string>();
   [...challengeVersions]
     .sort((left, right) => left.version - right.version)
     .forEach((version) => {
@@ -993,10 +994,27 @@ export default async function QuestionBankKnowledgeStatisticsPage({
       }
       version.questions.forEach((item) => {
         if (!otherChallengeByQuestionId.has(item.questionId)) {
-          otherChallengeByQuestionId.set(item.questionId, version.version);
+          otherChallengeByQuestionId.set(
+            item.questionId,
+            `${version.purpose === "special_practice" ? "专项练习" : "闯关"}关卡${version.version}`
+          );
         }
       });
     });
+  const oppositePurposeQuestionIds = selectedCourse && challengeVersion
+    ? new Set(
+        (await prisma.chapterChallengeQuestion.findMany({
+          where: {
+            challengeVersion: {
+              purpose: challengeVersion.purpose === "challenge" ? "special_practice" : "challenge",
+              status: { in: ["draft", "published"] },
+              chapter: { courseId: selectedCourse.id }
+            }
+          },
+          select: { questionId: true }
+        })).map((item) => item.questionId)
+      )
+    : new Set<string>();
   const selectedScopeRows = selectedScope ? rowsForSectionIds(rowsBySection, selectedScope.sectionIds) : [];
   const selectedStats = statsFromRows(selectedScopeRows);
   const sourceFilteredRows = selectedScopeRows.filter((row) => sourceFilter === "all" || row.source === sourceFilter);
@@ -1037,6 +1055,9 @@ export default async function QuestionBankKnowledgeStatisticsPage({
         })
     : [];
   const selectedStatus = challengeStatus(selectedStats.total);
+  const challengeScopeMatchesCourseMode = Boolean(
+    selectedCourse && challengeScope && selectedCourse.challengeMode === challengeScope.type
+  );
   const challengeHasAutoGradedQuestion = Boolean(
     challengeVersion?.questions.some((item) => isQuestionBankAutoGradedQuestionType(item.question.type))
   );
@@ -1136,7 +1157,9 @@ export default async function QuestionBankKnowledgeStatisticsPage({
       <div className="border-t border-[#e2e8f0] bg-[#f8fafc] p-4">
         <p className="mb-3 text-xs leading-5 text-[#64748b]">
           {challengeVersion?.status === "draft"
-            ? challengeScope.type === "course"
+            ? challengeVersion.purpose === "challenge" && !challengeScopeMatchesCourseMode
+              ? "当前范围不属于课程设定的闯关方式；如需在这里组题，请将关卡归属改为专项练习关卡。"
+              : challengeVersion.purpose === "challenge" && challengeScope.type === "course"
               ? "保存要求题数完全一致，并至少包含一道可自动判分题。"
               : "保存要求已选题数与本关题数完全一致。"
             : "已保存关卡可继续增删题目、调整顺序或修改本关题数，修改立即生效。"}
@@ -1173,6 +1196,12 @@ export default async function QuestionBankKnowledgeStatisticsPage({
               scopeId={challengeScope.id}
               scopeType={challengeScope.type}
             />
+            <ChallengePurposeSelect
+              challengeVersionId={challengeVersion.id}
+              purpose={challengeVersion.purpose}
+              scopeId={challengeScope.id}
+              scopeType={challengeScope.type}
+            />
             {challengeVersion.status === "draft" ? (
               <form action={saveChapterChallenge} className="min-w-[120px] flex-1">
                 <input name="scopeType" type="hidden" value={challengeScope.type} />
@@ -1182,7 +1211,12 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                   className="h-10 w-full rounded bg-[#16a34a] px-4 text-xs font-black text-white hover:bg-[#15803d] disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
                   disabled={
                     challengeVersion.questions.length !== challengeVersion.targetQuestionCount
-                    || (challengeScope.type === "course" && !challengeHasAutoGradedQuestion)
+                    || (challengeVersion.purpose === "challenge" && !challengeScopeMatchesCourseMode)
+                    || (
+                      challengeVersion.purpose === "challenge"
+                      && challengeScope.type === "course"
+                      && !challengeHasAutoGradedQuestion
+                    )
                   }
                   type="submit"
                 >
@@ -1336,7 +1370,10 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                   href={selectedScope ? statisticsHref({ province: selectedProvince, examType: selectedExamType, owner: selectedOwner, scopeType: selectedScope.type, scopeId: selectedScope.id, source: "manual", bankSource: bankSourceFilter, challengeId: challengeVersion?.id }) : undefined}
                 />
                 {challengeScope
-                  ? [...challengeVersions].sort((left, right) => left.version - right.version).map((version) => {
+                  ? [...challengeVersions].sort((left, right) => {
+                      const purposeOrder = Number(left.purpose === "special_practice") - Number(right.purpose === "special_practice");
+                      return purposeOrder || left.version - right.version;
+                    }).map((version) => {
                       const active = challengeVersion?.id === version.id;
                       return (
                         <Link
@@ -1358,10 +1395,12 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                             challengeId: version.id
                           })}
                           key={version.id}
-                          title={`查看关卡${version.version}`}
+                          title={`查看${version.purpose === "special_practice" ? "专项练习" : "闯关"}关卡${version.version}`}
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <span className="text-[11px] font-bold">关卡题库</span>
+                            <span className="text-[11px] font-bold">
+                              {version.purpose === "special_practice" ? "专项练习" : "闯关关卡"}
+                            </span>
                             {version.status === "draft" ? <span className="rounded bg-[#fffbeb] px-1.5 py-0.5 text-[10px] font-black text-[#b45309]">编辑中</span> : null}
                           </div>
                           <p className="mt-2 text-2xl font-black leading-none">关卡{version.version}</p>
@@ -1492,10 +1531,19 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                                 <button
                                   className="inline-flex cursor-not-allowed items-center gap-1 text-xs font-black text-[#94a3b8]"
                                   disabled
-                                  title={`已加入关卡${otherChallengeByQuestionId.get(row.questionId)}`}
+                                  title={`已加入${otherChallengeByQuestionId.get(row.questionId)}`}
                                   type="button"
                                 >
-                                  <Plus size={13} />已加入关卡{otherChallengeByQuestionId.get(row.questionId)}
+                                  <Plus size={13} />已加入{otherChallengeByQuestionId.get(row.questionId)}
+                                </button>
+                              ) : oppositePurposeQuestionIds.has(row.questionId) ? (
+                                <button
+                                  className="inline-flex cursor-not-allowed items-center gap-1 text-xs font-black text-[#94a3b8]"
+                                  disabled
+                                  title={`已用于${challengeVersion?.purpose === "challenge" ? "专项练习" : "闯关关卡"}`}
+                                  type="button"
+                                >
+                                  <Plus size={13} />已用于另一类关卡
                                 </button>
                               ) : challengeQuestionLimitReached ? (
                                 <button

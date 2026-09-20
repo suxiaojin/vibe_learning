@@ -5,7 +5,6 @@ import { EmptyMockTestState, MockTestPageFrame } from "@/app/mock-tests/mock-tes
 import { SpecialPracticeProgress } from "@/app/mock-tests/special/special-practice-progress";
 import { requireUser } from "@/lib/auth";
 import {
-  getAiGeneratedQuestionsBySection,
   getMockTestContext,
   normalizeMockTestCourseKey,
   type MockTestQuestion,
@@ -22,14 +21,14 @@ export default async function SpecialPracticePage({
   const [user, query] = await Promise.all([requireUser(), searchParams]);
   const courseKey = normalizeMockTestCourseKey(query?.course);
   const context = await getMockTestContext(user.id, courseKey);
-  const totalSections = context.passedSections.length;
+  const totalSections = context.practiceSections.length;
   const totalPages = Math.max(1, Math.ceil(totalSections / PAGE_SIZE));
   const currentPage = normalizePage(query?.page, totalPages);
   const offset = (currentPage - 1) * PAGE_SIZE;
-  const visibleSections = context.passedSections.slice(offset, offset + PAGE_SIZE);
-  const questionsBySectionId = context.group
-    ? await getAiGeneratedQuestionsBySection(context.group, visibleSections)
-    : new Map<string, MockTestQuestion[]>();
+  const visibleSections = context.practiceSections.slice(offset, offset + PAGE_SIZE);
+  const questionsBySectionId = new Map<string, MockTestQuestion[]>(
+    visibleSections.map((section) => [section.id, section.questions])
+  );
 
   return (
     <MockTestPageFrame>
@@ -40,7 +39,7 @@ export default async function SpecialPracticePage({
       {!context.group ? (
         <EmptyMockTestState description="请先回到课程中心保存公共课和专业课，系统会按你的课程生成练习入口。" title="还没有可用课程" />
       ) : totalSections === 0 ? (
-        <EmptyMockTestState description="专项练习只展示已闯关通过的知识点。先通过一个知识点，再回来练习。" title="还没有已通过知识点" />
+        <EmptyMockTestState description="管理员还没有为当前课程发布专项练习关卡。" title="还没有专项练习" />
       ) : (
         <SpecialPracticeTable
           courseKey={courseKey}
@@ -75,7 +74,7 @@ function SpecialPracticeTable({
       <div className="overflow-x-auto">
         <div className="min-w-[760px]">
           <div className="grid min-h-[64px] grid-cols-[minmax(300px,1fr)_260px_124px] items-center bg-slate-50/90 px-5 text-sm font-semibold text-slate-500">
-            <div>知识点</div>
+            <div>专项练习</div>
             <div className="text-center">进度</div>
             <div className="text-right">操作</div>
           </div>
@@ -95,7 +94,7 @@ function SpecialPracticeTable({
       </div>
 
       <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-4 text-sm font-medium text-slate-500">
-        <span>共 {totalSections} 个已通过知识点</span>
+        <span>共 {totalSections} 个专项练习</span>
         {totalPages > 1 ? (
           <nav className="flex items-center gap-2" aria-label="专项练习分页">
             <PageLink courseKey={courseKey} disabled={currentPage <= 1} page={currentPage - 1}>
@@ -129,7 +128,12 @@ function SpecialPracticeRow({
     <div className="grid min-h-[68px] grid-cols-[minmax(300px,1fr)_260px_124px] items-center border-t border-slate-100 px-5 text-[15px] text-slate-600 transition hover:bg-teal/5">
       <div className="flex min-w-0 items-center gap-2 pr-4">
         <CircleMinus className="shrink-0 text-teal" size={22} strokeWidth={2.5} />
-        <span className="truncate font-semibold text-ink">{section.title}</span>
+        <div className="min-w-0">
+          <span className="block truncate font-semibold text-ink">{section.title}</span>
+          {section.scopeType === "chapter" ? (
+            <span className="mt-0.5 block truncate text-xs font-medium text-slate-400">{section.courseTitle}</span>
+          ) : null}
+        </div>
       </div>
       <SpecialPracticeProgress questionIds={questionIds} sectionId={section.id} toneIndex={toneIndex} />
       <div className="text-right">

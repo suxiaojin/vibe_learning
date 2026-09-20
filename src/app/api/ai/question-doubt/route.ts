@@ -2,12 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
+import { getStudentFoundationProfile } from "@/lib/foundation";
 import { prisma } from "@/lib/prisma";
-import { isAiGeneratedQuestionBankTitle } from "@/lib/question-bank-source";
 import { type ChatMessage, streamQwen } from "@/lib/qwen";
 import { consumeDiamondsByRule, InsufficientDiamondBalanceError } from "@/lib/rewards";
 import { diamondInsufficientMessage } from "@/lib/diamond-insufficient";
-import { getStudentLearningPath } from "@/lib/syllabus-learning";
 import { hasMeaningfulRichText } from "@/lib/rich-text-plain";
 
 export const runtime = "nodejs";
@@ -238,72 +237,61 @@ export async function POST(request: Request) {
 }
 
 async function getAccessibleSpecialPracticeQuestion(userId: string, questionId: string) {
-  const [learningPath, question] = await Promise.all([
-    getStudentLearningPath(userId),
-    prisma.question.findUnique({
-      where: { id: questionId },
-      select: {
-        id: true,
-        type: true,
-        stem: true,
-        options: true,
-        answer: true,
-        analysis: true,
-        aiDoubtAnswer: true,
-        status: true,
-        knowledgePoint: {
-          select: {
-            title: true,
-            summary: true,
-            content: true
-          }
-        },
-        knowledgeTags: {
-          select: {
-            syllabusItemId: true
-          }
-        },
-        paperQuestions: {
-          where: {
-            paper: { status: "published" }
-          },
-          select: {
-            paper: {
-              select: {
-                title: true
+  const profile = await getStudentFoundationProfile(userId);
+  if (!profile?.regionId || !profile.publicSubjectId || !profile.majorId) {
+    return null;
+  }
+
+  return prisma.question.findFirst({
+    where: {
+      id: questionId,
+      status: "published",
+      paperQuestions: { some: { paper: { status: "published" } } },
+      challengeQuestions: {
+        some: {
+          challengeVersion: {
+            purpose: "special_practice",
+            status: "published",
+            chapter: {
+              status: "published",
+              course: {
+                regionId: profile.regionId,
+                status: "published",
+                OR: [
+                  { courseType: "public_subject", publicSubjectId: profile.publicSubjectId },
+                  { courseType: "major", majorId: profile.majorId }
+                ]
               }
             }
           }
         }
       }
-    })
-  ]);
-
-  if (!question || question.status !== "published") {
-    return null;
-  }
-
-  const hasAiGeneratedQuestionBank = question.paperQuestions.some((paperQuestion) =>
-    isAiGeneratedQuestionBankTitle(paperQuestion.paper.title)
-  );
-  if (!hasAiGeneratedQuestionBank) {
-    return null;
-  }
-
-  const passedQuestionSyllabusItemIds = new Set(
-    learningPath.groups.flatMap((group) =>
-      group.courses.flatMap((course) =>
-        course.chapters.flatMap((chapter) =>
-          chapter.sections
-            .filter((section) => section.status === "passed")
-            .flatMap((section) => section.questionSyllabusItemIds)
-        )
-      )
-    )
-  );
-
-  const hasPassedScope = question.knowledgeTags.some((tag) => passedQuestionSyllabusItemIds.has(tag.syllabusItemId));
-  return hasPassedScope ? question : null;
+    },
+    select: {
+      id: true,
+      type: true,
+      stem: true,
+      options: true,
+      answer: true,
+      analysis: true,
+      aiDoubtAnswer: true,
+      status: true,
+      knowledgePoint: {
+        select: {
+          title: true,
+          summary: true,
+          content: true
+        }
+      },
+      knowledgeTags: {
+        select: { syllabusItemId: true }
+      },
+      paperQuestions: {
+        where: { paper: { status: "published" } },
+        select: { paper: { select: { title: true } } }
+      }
+    }
+  });
 }
 
 function streamGeneratedDefaultAnswer(

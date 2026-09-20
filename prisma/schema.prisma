@@ -213,6 +213,11 @@ enum LearningChallengeMode {
   course
 }
 
+enum LearningChallengePurpose {
+  challenge
+  special_practice
+}
+
 enum LearningCheckpointScope {
   course
 }
@@ -931,6 +936,7 @@ model QuizSession {
 model ChapterChallengeVersion {
   id                  String                     @id @default(cuid())
   chapterId           String
+  purpose             LearningChallengePurpose   @default(challenge)
   version             Int
   targetQuestionCount Int                        @default(10)
   difficultyRating    Decimal?                   @db.Decimal(2, 1)
@@ -942,8 +948,8 @@ model ChapterChallengeVersion {
   createdAt           DateTime                   @default(now())
   updatedAt           DateTime                   @updatedAt
 
-  @@unique([chapterId, version])
-  @@index([chapterId, status, version])
+  @@unique([chapterId, purpose, version])
+  @@index([chapterId, purpose, status, version])
   @@map("chapter_challenge_versions")
 }
 

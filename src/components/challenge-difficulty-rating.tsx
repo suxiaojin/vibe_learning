@@ -1,8 +1,12 @@
 "use client";
 
 import { Star } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { updateChapterChallengeDifficulty } from "@/app/admin/question-banks/challenge-actions";
+import {
+  updateChapterChallengeDifficulty,
+  updateChapterChallengePurpose
+} from "@/app/admin/question-banks/challenge-actions";
 
 function formatChallengeDifficulty(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
@@ -93,6 +97,62 @@ export function ChallengeDifficultyRating({
       <input name="scopeId" type="hidden" value={scopeId} />
       <input name="challengeVersionId" type="hidden" value={challengeVersionId} />
       <DifficultyRatingControls difficultyRating={difficultyRating} />
+    </form>
+  );
+}
+
+function ChallengePurposeControls({ purpose }: { purpose: "challenge" | "special_practice" }) {
+  const { pending } = useFormStatus();
+  const [value, setValue] = useState(purpose);
+
+  useEffect(() => {
+    setValue(purpose);
+  }, [purpose]);
+
+  return (
+    <fieldset disabled={pending}>
+      <label className="grid gap-1 text-[10px] font-bold text-[#475569]">
+        <span className="flex items-center justify-between gap-2">
+          关卡属于
+          <span aria-live="polite" className="text-[#64748b]">{pending ? "分配中" : ""}</span>
+        </span>
+        <select
+          className="h-8 rounded border border-[#cfd8e6] bg-white px-2 text-xs font-bold text-[#071b38] outline-none focus:border-[#3562ff] focus:ring-2 focus:ring-[#bfdbfe] disabled:cursor-wait disabled:opacity-60"
+          name="purpose"
+          value={value}
+          onChange={(event) => {
+            setValue(event.target.value as "challenge" | "special_practice");
+            event.currentTarget.form?.requestSubmit();
+          }}
+        >
+          <option value="challenge">闯关关卡</option>
+          <option value="special_practice">专项练习关卡</option>
+        </select>
+      </label>
+    </fieldset>
+  );
+}
+
+export function ChallengePurposeSelect({
+  scopeType,
+  scopeId,
+  challengeVersionId,
+  purpose
+}: {
+  scopeType: "chapter" | "course";
+  scopeId: string;
+  challengeVersionId: string;
+  purpose: "challenge" | "special_practice";
+}) {
+  return (
+    <form
+      action={updateChapterChallengePurpose}
+      className="min-w-[164px] shrink-0 rounded-md border border-[#cfd8e6] bg-white px-2 py-1.5"
+    >
+      <input name="scopeType" type="hidden" value={scopeType} />
+      <input name="scopeId" type="hidden" value={scopeId} />
+      <input name="challengeVersionId" type="hidden" value={challengeVersionId} />
+      <ChallengePurposeControls purpose={purpose} />
     </form>
   );
 }

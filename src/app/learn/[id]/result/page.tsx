@@ -265,6 +265,7 @@ export default async function QuizResultPage({
     prisma.chapterChallengeVersion.count({
       where: {
         chapterId: id,
+        purpose: "challenge",
         status: "published",
         questions: { some: {} }
       }
