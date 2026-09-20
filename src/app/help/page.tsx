@@ -1,3 +1,5 @@
+import { HelpChangelog } from "@/components/help-changelog";
+import { listPublishedChangelogs } from "@/lib/changelog-queries";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { MarkdownContent } from "@/components/agreement-content-page";
@@ -18,11 +20,11 @@ const tabs = [
 export default async function HelpPage({ searchParams }: { searchParams?: Promise<{ tab?: string }> }) {
   await requireUser();
   const [settings, params] = await Promise.all([
-    getSystemSettings(["faqContent", "changelogContent", "customerServiceEmail"]),
+    getSystemSettings(["faqContent", "customerServiceEmail"]),
     searchParams
   ]);
   const activeTab = params?.tab === "changelog" ? tabs[1] : tabs[0];
-  const content = activeTab.key === "changelog" ? settings.changelogContent : settings.faqContent;
+  const changelogs = activeTab.key === "changelog" ? await listPublishedChangelogs() : null;
 
   return (
     <StudentPageShell active="help" contentClassName="pr-24 lg:pr-28 xl:pr-28" maxWidthClassName="max-w-6xl">
@@ -49,9 +51,7 @@ export default async function HelpPage({ searchParams }: { searchParams?: Promis
         </nav>
         <section aria-labelledby="help-content-heading" className="min-h-[480px] min-w-0 rounded-md bg-white px-5 py-5 sm:px-8">
           <h1 id="help-content-heading" className="mb-4 border-b border-slate-100 pb-4 text-sm font-medium text-slate-700">{activeTab.label}</h1>
-          <article>
-            {content.trim() ? <MarkdownContent content={content} variant="help" /> : null}
-          </article>
+          {changelogs ? <HelpChangelog initial={changelogs} /> : settings.faqContent.trim() ? <article><MarkdownContent content={settings.faqContent} variant="help" /></article> : null}
         </section>
       </div>
       <HelpContactSidebar email={settings.customerServiceEmail} wechatQrCodeUrl="/help-center-wechat-qr.png" />

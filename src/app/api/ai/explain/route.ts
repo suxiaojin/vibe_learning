@@ -15,6 +15,7 @@ import { streamQwen } from "@/lib/qwen";
 import { prisma } from "@/lib/prisma";
 import { consumeDiamondsByRule, InsufficientDiamondBalanceError } from "@/lib/rewards";
 import { diamondInsufficientMessage } from "@/lib/diamond-insufficient";
+import { liveAiFormulaInstruction } from "@/lib/ai-formula-format";
 import { hasMeaningfulRichText, richTextToAiText } from "@/lib/rich-text-plain";
 
 export const runtime = "nodejs";
@@ -284,7 +285,11 @@ export async function POST(request: Request) {
     return reservationError;
   }
 
-  const system = promptVersion?.systemPrompt || defaultAiExplainSystemPrompt;
+  const system = [
+    promptVersion?.systemPrompt || defaultAiExplainSystemPrompt,
+    "输入材料中的 _(...) 表示下标，^(...) 表示上标。",
+    liveAiFormulaInstruction
+  ].join("\n");
   const context = renderAiExplainPromptTemplate(
     promptVersion?.userPromptTemplate || defaultAiExplainUserPromptTemplate,
     {

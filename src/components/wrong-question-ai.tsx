@@ -2,9 +2,9 @@
 
 import { useRef, useState } from "react";
 import { ChevronRight, HelpCircle, Loader2 } from "lucide-react";
-import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
+import type { Components } from "react-markdown";
 import { DiamondInsufficientMessage } from "@/components/diamond-insufficient-message";
+import { MathMarkdownText } from "@/components/math-markdown-text";
 import { RichTextContent } from "@/components/rich-text-content";
 import { isDiamondInsufficientMessage } from "@/lib/diamond-insufficient";
 
@@ -326,9 +326,9 @@ function MarkdownText({ content }: { content: string }) {
 
   return (
     <div className="space-y-3 text-sm leading-7 text-slate-700">
-      <ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm]} skipHtml>
+      <MathMarkdownText components={markdownComponents}>
         {content}
-      </ReactMarkdown>
+      </MathMarkdownText>
     </div>
   );
 }

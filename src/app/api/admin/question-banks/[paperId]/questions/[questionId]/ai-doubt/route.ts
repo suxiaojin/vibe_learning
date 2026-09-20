@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { getCurrentAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { askQwen, type ChatMessage } from "@/lib/qwen";
+import { adminAiFormulaInstruction, sanitizeAdminAiDoubtHtml } from "@/lib/ai-formula-format";
 import { hasMeaningfulRichText, richTextToAiText as stripHtml, richTextValueToAiText } from "@/lib/rich-text-plain";
 
 export const runtime = "nodejs";
@@ -68,11 +69,12 @@ export async function POST(_request: Request, context: RouteContext) {
   }
 
   try {
-    const answer = await askQwen(buildAiDoubtMessages(record), {
+    const generatedAnswer = await askQwen(buildAiDoubtMessages(record), {
       moduleKey: "question_bank_ai_doubt_draft",
       temperature: 0.2,
       timeoutMs: 60_000
     });
+    const answer = sanitizeAdminAiDoubtHtml(generatedAnswer);
 
     return NextResponse.json({ answer });
   } catch (error) {
@@ -116,9 +118,10 @@ function buildAiDoubtMessages(record: NonNullable<Awaited<ReturnType<typeof getQ
       content: [
         "你是一个面向江苏专转本学生的学习助教。",
         "请为后台管理员生成这道题的学生端 AI 答疑草稿，管理员会审核后再发布给学生。",
-        "必须输出纯文本，不要使用 Markdown 标记，不要使用 **、#、代码块、表格语法。",
         "结构固定为：解析：、解题步骤：、答案：。",
-        "表达要准确、简洁、适合学生理解。"
+        "表达要准确、简洁、适合学生理解。",
+        "输入材料中的 _(...) 表示下标，^(...) 表示上标，输出时必须转换成对应的 sub、sup 标签。",
+        adminAiFormulaInstruction
       ].join("\n")
     },
     {

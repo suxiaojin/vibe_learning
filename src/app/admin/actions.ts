@@ -483,11 +483,6 @@ export async function updateSystemSettings(formData: FormData) {
     loginMarketingTitle: getRequiredSettingText(formData, "loginMarketingTitle"),
     loginMarketingDescription: getRequiredSettingText(formData, "loginMarketingDescription"),
     loginWelcomeTitle: getRequiredSettingText(formData, "loginWelcomeTitle"),
-    userAgreementContent: getRequiredSettingText(formData, "userAgreementContent"),
-    privacyPolicyContent: getRequiredSettingText(formData, "privacyPolicyContent"),
-    platformAgreementContent: getRequiredSettingText(formData, "platformAgreementContent"),
-    faqContent: getRequiredSettingText(formData, "faqContent"),
-    ...(formData.has("changelogContent") ? { changelogContent: String(formData.get("changelogContent") || "").trim() } : {}),
     customerServiceEmail: getRequiredSettingText(formData, "customerServiceEmail")
   };
 

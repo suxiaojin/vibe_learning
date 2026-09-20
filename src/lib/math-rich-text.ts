@@ -18,7 +18,7 @@ function decodeFormulaHtml(value: string) {
   return value.replace(/&(amp|lt|gt|quot|#039|#39|nbsp);/g, (entity) => htmlEntityMap[entity] || entity);
 }
 
-function renderMathTextSegment(value: string) {
+function renderMathTextSegment(value: string, invalidFormulaFallback: "notice" | "source" = "notice") {
   return value.replace(
     mathDelimiterPattern,
     (source, blockDollar: string | undefined, blockBracket: string | undefined, inlineBracket: string | undefined, inlineDollar: string | undefined) => {
@@ -36,7 +36,7 @@ function renderMathTextSegment(value: string) {
           trust: false
         });
       } catch {
-        return invalidFormulaPreview;
+        return invalidFormulaFallback === "source" ? source : invalidFormulaPreview;
       }
     }
   );
@@ -57,12 +57,15 @@ export function renderLatexInHtml(value: string) {
     .join("");
 }
 
-export function renderMathPlainText(value: string) {
+export function renderMathPlainText(
+  value: string,
+  options: { invalidFormulaFallback?: "notice" | "source" } = {}
+) {
   const escaped = (value || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-  return renderLatexInHtml(escaped).replace(/\r?\n/g, "<br />");
+  return renderMathTextSegment(escaped, options.invalidFormulaFallback).replace(/\r?\n/g, "<br />");
 }

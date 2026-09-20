@@ -15,6 +15,7 @@ import {
   updateAdminPassword,
   updateSystemSettings
 } from "@/app/admin/actions";
+import { AdminAgreementSettings } from "@/components/admin-agreement-settings";
 import { AdminDiamondRuleSettings } from "@/components/admin-diamond-rule-settings";
 import { AdminLearningPathThemeSettings } from "@/components/admin-learning-path-theme-settings";
 import { AdminProfileBackgroundUploadForm } from "@/components/admin-profile-background-upload-form";
@@ -133,6 +134,9 @@ export default async function AdminSettingsPage({
     redirect(`/admin/prompt-settings${query.size ? `?${query.toString()}` : ""}`);
   }
   const activeTab = resolveTab(params?.tab);
+  const changelogs = activeTab === "agreements" ? await prisma.changelogEntry.findMany({
+    orderBy: [{ releaseDate: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }, { id: "desc" }]
+  }) : [];
   const activeShareContext = resolveShareCopyContext(params?.context);
   const shareCopyStyles = activeTab === "share-copy"
     ? await prisma.shareCopyStyle.findMany({
@@ -181,8 +185,8 @@ export default async function AdminSettingsPage({
       {notice ? <div className="rounded border border-teal/20 bg-teal/10 p-3 text-sm font-semibold text-teal">{notice}</div> : null}
       {error ? <div className="rounded border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</div> : null}
 
-      <form action={updateSystemSettings} className="space-y-4">
-        <input name="returnTab" type="hidden" value={activeTab === "agreements" ? "agreements" : "login"} />
+      {activeTab === "login" ? <form action={updateSystemSettings} className="space-y-4">
+        <input name="returnTab" type="hidden" value="login" />
         <section className={cn(activeTab === "login" ? "grid gap-4 xl:grid-cols-[360px_1fr]" : "hidden")}>
           <aside className="border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-lg font-black text-ink">当前登录图片</h2>
@@ -289,63 +293,17 @@ export default async function AdminSettingsPage({
           </section>
         </section>
 
-        <section className={cn(activeTab === "agreements" ? "border border-slate-200 bg-white p-5 shadow-sm" : "hidden")}>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
-            <div>
-              <h2 className="text-lg font-black text-ink">协议内容</h2>
-              <p className="mt-1 text-sm font-semibold text-slate-500">协议页和前端帮助中心读取这里的内容，支持 Markdown 标题、列表、表格、加粗和链接。</p>
-            </div>
-            <button className="primary-button rounded-none" type="submit">
-              <Save size={16} />
-              保存设置
-            </button>
-          </div>
+      </form> : null}
 
-          <div className="mt-5 grid gap-5 xl:grid-cols-2">
-            <FieldBlock description="前端不额外添加标题，Markdown 正文需自带完整标题。" label="用户协议内容">
-              <textarea
-                className="input min-h-72 rounded-none"
-                name="userAgreementContent"
-                defaultValue={settings.userAgreementContent}
-                required
-              />
-            </FieldBlock>
-            <FieldBlock description="前端不额外添加标题，Markdown 正文需自带完整标题。" label="隐私政策内容">
-              <textarea
-                className="input min-h-72 rounded-none"
-                name="privacyPolicyContent"
-                defaultValue={settings.privacyPolicyContent}
-                required
-              />
-            </FieldBlock>
-            <FieldBlock description="前端不额外添加标题，Markdown 正文需自带完整标题。" label="平台使用协议内容">
-              <textarea
-                className="input min-h-72 rounded-none"
-                name="platformAgreementContent"
-                defaultValue={settings.platformAgreementContent}
-                required
-              />
-            </FieldBlock>
-            <FieldBlock description="学生端“更多—帮助中心—常见问题”显示此内容，保留 Markdown 正文中的完整标题。" label="常见问题内容">
-              <textarea
-                className="input min-h-72 rounded-none"
-                name="faqContent"
-                defaultValue={settings.faqContent}
-                required
-              />
-            </FieldBlock>
-            <FieldBlock description="学生端“更多—帮助中心—更新日志”显示此内容；支持 Markdown，可留空，清空保存后前端正文也会留空。" label="更新日志">
-              <textarea
-                aria-label="更新日志"
-                className="input min-h-72 rounded-none"
-                name="changelogContent"
-                defaultValue={settings.changelogContent}
-              />
-            </FieldBlock>
-          </div>
-        </section>
-
-      </form>
+      {activeTab === "agreements" ? <AdminAgreementSettings contents={{
+        userAgreementContent: settings.userAgreementContent,
+        privacyPolicyContent: settings.privacyPolicyContent,
+        platformAgreementContent: settings.platformAgreementContent,
+        faqContent: settings.faqContent
+      }} entries={changelogs.map((entry) => ({
+        id: entry.id, title: entry.title, badgeText: entry.badgeText, summary: entry.summary, content: entry.content,
+        releaseDate: entry.releaseDate?.toISOString().slice(0, 10) ?? null, isPublished: entry.isPublished
+      }))} /> : null}
 
       {activeTab === "admin" ? (
         <div className="grid gap-4">

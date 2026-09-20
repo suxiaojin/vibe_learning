@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Bot, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Loader2, Send, X } from "lucide-react";
-import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
+import type { Components } from "react-markdown";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
 import { DiamondInsufficientMessage } from "@/components/diamond-insufficient-message";
+import { MathMarkdownText } from "@/components/math-markdown-text";
 import { RichTextContent } from "@/components/rich-text-content";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import { isDiamondInsufficientMessage } from "@/lib/diamond-insufficient";
@@ -804,9 +804,9 @@ function AiAnswerText({ content, format = "markdown" }: { content: string; forma
 
   return (
     <div className="space-y-4">
-      <ReactMarkdown components={aiAnswerMarkdownComponents} remarkPlugins={[remarkGfm]} skipHtml>
+      <MathMarkdownText components={aiAnswerMarkdownComponents}>
         {content}
-      </ReactMarkdown>
+      </MathMarkdownText>
     </div>
   );
 }

@@ -433,6 +433,21 @@ model AdminModule {
   @@map("admin_modules")
 }
 
+model ChangelogEntry {
+  id          String    @id @default(cuid())
+  title       String
+  badgeText   String    @default("")
+  summary     String    @default("")
+  content     String
+  releaseDate DateTime? @db.Date
+  isPublished Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([isPublished, releaseDate, createdAt, id])
+  @@map("changelog_entries")
+}
+
 model SystemSetting {
   id                        String   @id @default("default")
   loginHeroImageUrl         String   @default("/login-hero-vibelearning.png")
