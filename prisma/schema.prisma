@@ -395,6 +395,7 @@ model User {
   aiStudyProgress                    AiStudyProgress[]
   aiStudyChatMessages                AiStudyChatMessage[]
   officialStudyMaterialsCreated      OfficialStudyMaterial[]         @relation("OfficialStudyMaterialCreator")
+  officialStudyMaterialReadProgresses OfficialStudyMaterialReadProgress[]
 
   @@index([role, status, createdAt])
   @@index([role, status, lastActiveAt])
@@ -1594,6 +1595,7 @@ model OfficialStudyMaterial {
   major            Major?                          @relation(fields: [majorId], references: [id], onDelete: SetNull)
   publicSubject    PublicSubject?                  @relation(fields: [publicSubjectId], references: [id], onDelete: SetNull)
   purchases        StudyProjectPurchase[]
+  readProgress     OfficialStudyMaterialReadProgress[]
 
   @@index([visibility, fileStatus, sortOrder, publishedAt])
   @@index([createdById, deletedAt, createdAt])
@@ -1602,6 +1604,19 @@ model OfficialStudyMaterial {
   @@index([publicSubjectId])
   @@index([storageBucket, storageKey])
   @@map("official_study_materials")
+}
+
+model OfficialStudyMaterialReadProgress {
+  id         String                @id @default(cuid())
+  userId     String
+  materialId String
+  pageNumber Int                   @default(1)
+  updatedAt  DateTime              @updatedAt
+  user       User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  material   OfficialStudyMaterial @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, materialId])
+  @@map("official_study_material_read_progress")
 }
 
 model StudyProjectPurchase {

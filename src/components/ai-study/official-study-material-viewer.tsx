@@ -19,12 +19,14 @@ export function OfficialStudyMaterialViewer({
   material,
   backHref,
   backTitle,
-  fileUrl
+  fileUrl,
+  readingProgressEndpoint
 }: {
   material: OfficialStudyMaterialViewerData;
   backHref: string;
   backTitle: string;
   fileUrl: string;
+  readingProgressEndpoint?: string;
 }) {
   return (
     <div className="mx-auto w-full max-w-[1504px]">
@@ -51,7 +53,7 @@ export function OfficialStudyMaterialViewer({
 
       <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-[#eef1f5] shadow-[0_12px_38px_rgba(15,23,42,0.08)]">
         {material.fileType === "pdf" ? (
-          <PdfFullscreenViewer src={fileUrl} title={`${material.title} PDF 在线阅读`} />
+          <PdfFullscreenViewer src={fileUrl} title={material.title + " PDF 在线阅读"} progressEndpoint={readingProgressEndpoint} />
         ) : (
           <div className="max-h-[calc(100dvh-250px)] min-h-[680px] overflow-auto px-4 py-8 sm:px-8">
             <article className="mx-auto min-h-[900px] max-w-[900px] rounded-sm bg-white px-8 py-10 shadow-[0_4px_24px_rgba(15,23,42,0.12)] sm:px-14">

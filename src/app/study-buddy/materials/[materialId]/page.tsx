@@ -29,7 +29,8 @@ export default async function OfficialStudyMaterialPage({
           <OfficialStudyMaterialViewer
             backHref="/study-buddy"
             backTitle="返回学习搭子"
-            fileUrl={`/api/study-materials/${material.id}/file`}
+            fileUrl={"/api/study-materials/" + material.id + "/file"}
+            readingProgressEndpoint={"/api/study-materials/" + material.id + "/reading-progress"}
             material={material}
           />
         </section>
