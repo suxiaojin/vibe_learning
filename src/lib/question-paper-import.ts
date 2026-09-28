@@ -1,4 +1,4 @@
-import { Prisma, type LearningCourseType } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import type { QuestionBankOwnerType } from "./question-bank-catalog";
 import { hasMeaningfulRichText } from "./rich-text-plain";
@@ -45,7 +45,7 @@ export type ImportQuestionPaperTarget = {
 
 export type ImportQuestionPaperResult = {
   paperId: string;
-  courseId: string;
+  courseId: string | null;
   importedQuestions: number;
 };
 
@@ -57,7 +57,7 @@ export type ImportQuestionPaperOptions = {
 type ImportOwner = {
   id: string;
   name: string;
-  courseType: LearningCourseType;
+  courseType: QuestionBankOwnerType;
 };
 
 export function assertImportQuestionPaperPayload(value: unknown): asserts value is ImportQuestionPaperPayload {
@@ -123,18 +123,9 @@ async function nextPublicSubjectSortOrder(tx: Prisma.TransactionClient) {
   return (latest?.sortOrder ?? 0) + 1;
 }
 
-async function nextCourseSortOrder(tx: Prisma.TransactionClient, courseType: LearningCourseType, regionId: string, ownerId: string) {
-  const latest = await tx.learningCourse.findFirst({
-    where: courseType === "public_subject" ? { regionId, publicSubjectId: ownerId, courseType } : { regionId, majorId: ownerId, courseType },
-    orderBy: { sortOrder: "desc" },
-    select: { sortOrder: true }
-  });
-  return (latest?.sortOrder ?? 0) + 1;
-}
-
-async function nextCourseChapterSortOrder(tx: Prisma.TransactionClient, courseId: string) {
+async function nextUnscopedChapterSortOrder(tx: Prisma.TransactionClient, subjectId: string) {
   const latest = await tx.chapter.findFirst({
-    where: { courseId },
+    where: { subjectId, courseId: null },
     orderBy: { sortOrder: "desc" },
     select: { sortOrder: true }
   });
@@ -265,35 +256,6 @@ async function ensureOwnerRegionLink(tx: Prisma.TransactionClient, regionId: str
   });
 }
 
-async function ensureLearningCourse(tx: Prisma.TransactionClient, regionId: string, owner: ImportOwner, payload: ImportQuestionPaperPayload) {
-  const where =
-    owner.courseType === "public_subject"
-      ? { regionId, publicSubjectId: owner.id, courseType: owner.courseType, name: payload.courseName }
-      : { regionId, majorId: owner.id, courseType: owner.courseType, name: payload.courseName };
-
-  const existing = await tx.learningCourse.findFirst({
-    where,
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-    select: { id: true }
-  });
-  if (existing) {
-    return existing;
-  }
-
-  return tx.learningCourse.create({
-    data: {
-      regionId,
-      publicSubjectId: owner.courseType === "public_subject" ? owner.id : null,
-      majorId: owner.courseType === "major" ? owner.id : null,
-      name: payload.courseName || owner.name,
-      courseType: owner.courseType,
-      status: "published",
-      sortOrder: await nextCourseSortOrder(tx, owner.courseType, regionId, owner.id)
-    },
-    select: { id: true }
-  });
-}
-
 export async function importQuestionPaperPayload(
   payload: ImportQuestionPaperPayload,
   target: ImportQuestionPaperTarget = {},
@@ -305,7 +267,6 @@ export async function importQuestionPaperPayload(
     const region = await ensureRegion(tx, payload, target);
     const owner = await ensureImportOwner(tx, payload, target);
     await ensureOwnerRegionLink(tx, region.id, owner);
-    const course = await ensureLearningCourse(tx, region.id, owner, payload);
 
     const subjectName = payload.subjectName || ownerNameToSubjectName(owner.name);
     const subject = await tx.subject.upsert({
@@ -326,17 +287,20 @@ export async function importQuestionPaperPayload(
       select: { id: true }
     });
 
+    // Question banks are owned directly by a major or public subject. Keep the
+    // legacy chapter classification unscoped so an import can never create or
+    // modify a student-facing LearningCourse.
     let chapter = await tx.chapter.findFirst({
-      where: { courseId: course.id, title: payload.chapterTitle },
+      where: { subjectId: subject.id, courseId: null, title: payload.chapterTitle },
       select: { id: true }
     });
     if (!chapter) {
       chapter = await tx.chapter.create({
         data: {
           subjectId: subject.id,
-          courseId: course.id,
+          courseId: null,
           title: payload.chapterTitle,
-          sortOrder: await nextCourseChapterSortOrder(tx, course.id),
+          sortOrder: await nextUnscopedChapterSortOrder(tx, subject.id),
           status: "published"
         },
         select: { id: true }
@@ -463,7 +427,7 @@ export async function importQuestionPaperPayload(
 
     return {
       paperId: paper.id,
-      courseId: course.id,
+      courseId: null,
       importedQuestions: payload.questions.length
     };
   });

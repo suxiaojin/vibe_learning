@@ -18,13 +18,14 @@ export function AdminAiModuleServerSelector({
   servers: AiServerOption[];
   initialServerIds: string[];
 }) {
+  const activeServers = servers.filter((server) => server.enabled);
   const [selectedServerIds, setSelectedServerIds] = useState(() => {
-    const availableIds = new Set(servers.map((server) => server.id));
+    const availableIds = new Set(activeServers.map((server) => server.id));
     return initialServerIds.filter(
       (serverId, index, values) => availableIds.has(serverId) && values.indexOf(serverId) === index
     );
   });
-  const serversById = new Map(servers.map((server) => [server.id, server]));
+  const serversById = new Map(activeServers.map((server) => [server.id, server]));
   const orderedServers = selectedServerIds.flatMap((serverId) => {
     const server = serversById.get(serverId);
     return server ? [server] : [];
@@ -45,23 +46,28 @@ export function AdminAiModuleServerSelector({
         <input key={serverId} name={`route_${moduleKey}`} type="hidden" value={serverId} />
       ))}
 
-      <div className="mt-2 grid gap-2 sm:grid-cols-2">
-        {servers.map((server) => {
+      <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+        {activeServers.map((server) => {
           const checked = selectedServerIds.includes(server.id);
           return (
-            <label className={server.enabled ? "flex items-center gap-2 bg-white px-3 py-2 text-sm font-semibold text-slate-700" : "flex items-center gap-2 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-400"} key={server.id}>
+            <label className="flex min-h-9 items-center gap-2 bg-white px-2.5 py-1.5 text-sm font-semibold text-slate-700" key={server.id}>
               <input
                 checked={checked}
                 className="h-4 w-4 accent-teal"
-                disabled={!server.enabled && !checked}
                 onChange={(event) => updateSelection(server.id, event.target.checked)}
                 type="checkbox"
               />
-              <span>{server.name}{server.enabled ? "" : "（已停用）"}</span>
+              <span>{server.name}</span>
             </label>
           );
         })}
       </div>
+
+      {activeServers.length === 0 ? (
+        <p className="mt-2 border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">暂无启用服务器，请先在上方服务器列表中启用一台。</p>
+      ) : selectedServerIds.length === 0 ? (
+        <p className="mt-2 text-xs font-semibold text-amber-700">至少选择一台启用服务器。</p>
+      ) : null}
 
       {orderedServers.length > 1 ? (
         <div className="mt-3 border-t border-slate-200 pt-3 text-xs font-bold text-slate-500">
@@ -76,7 +82,7 @@ export function AdminAiModuleServerSelector({
               </span>
             ))}
           </div>
-          <p className="mt-2 font-semibold text-slate-400">勾选先后即轮询顺序；取消后重新勾选，会把该服务器移到最后。</p>
+          <p className="mt-2 font-semibold text-slate-400">按勾选顺序轮询；取消后重选会移到最后。</p>
         </div>
       ) : null}
     </div>
