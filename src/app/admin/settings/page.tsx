@@ -13,13 +13,20 @@ import {
   updateStudyBuddyHeroImageSettings,
   updateStudyBuddyHeroTitleSettings,
   updateAdminPassword,
-  updateSystemSettings
+  updateSystemSettings,
+  updateBrowserTabSettings,
+  updateStudentNavIcons,
+  updateStudentLearningTypographySettings
 } from "@/app/admin/actions";
 import { AdminAgreementSettings } from "@/components/admin-agreement-settings";
+import { AdminSettingsSectionLayout } from "@/components/admin-settings-section-layout";
 import { AdminDiamondRuleSettings } from "@/components/admin-diamond-rule-settings";
 import { AdminLearningPathThemeSettings } from "@/components/admin-learning-path-theme-settings";
 import { AdminProfileBackgroundUploadForm } from "@/components/admin-profile-background-upload-form";
 import { AdminRechargeQrUploadForm } from "@/components/admin-recharge-qr-upload-form";
+import { AdminStudentNavIcons } from "@/components/admin-student-nav-icons";
+import { AdminMajorCourseIcons } from "@/components/admin-major-course-icons";
+import { AdminStudentLearningTypography } from "@/components/admin-student-learning-typography";
 import { requireAdmin } from "@/lib/auth";
 import { listDiamondRuleSettings } from "@/lib/diamond-rules";
 import { prisma } from "@/lib/prisma";
@@ -42,6 +49,12 @@ const tabs: Array<{ key: SettingsTab; label: string }> = [
 const noticeText: Record<string, string> = {
   saved: "系统设置已保存。",
   "admin-password-saved": "管理员 admin 登录密码已更新。",
+  "browser-tab-settings-saved": "浏览器标签页文字和图标已保存。",
+  "student-nav-icons-saved": "学生端导航图标已保存。",
+  "student-nav-icons-unchanged": "没有选择新的导航图标，也没有勾选恢复默认。",
+  "course-center-major-icon-saved": "课程中心专业图标已保存。",
+  "course-center-major-icon-unchanged": "未选择新图标，也没有勾选恢复默认。",
+  "student-learning-typography-saved": "学生端字体和字号设置已保存。",
   "diamond-recharge-qr-saved": "钻石充值客服二维码已保存。",
   "profile-homepage-background-saved": "个人主页背景图已保存，并已覆盖当前用户的背景显示。",
   "study-buddy-hero-image-saved": "顶部动画已保存。",
@@ -59,6 +72,18 @@ const errorText: Record<string, string> = {
   "admin-current-password-invalid": "当前密码不正确。",
   "admin-password-unchanged": "新密码不能与当前密码相同。",
   "admin-account-not-found": "未找到可修改的管理员 admin 账号。",
+  "browser-tab-title-required": "请填写浏览器标签页文字。",
+  "browser-tab-title-too-long": "浏览器标签页文字不能超过 60 个字符。",
+  "invalid-browser-tab-icon-type": "请上传有效的 PNG 或 ICO 图标。",
+  "browser-tab-icon-too-large": "浏览器标签页图标不能超过 512KB。",
+  "invalid-student-nav-icon-type": "学生端导航图标仅支持 PNG 或 WebP。",
+  "student-nav-icon-too-large": "单个学生端导航图标不能超过 512KB。",
+  "invalid-student-nav-icon-image": "图片无法读取，请更换有效的 PNG 或 WebP 文件。",
+  "course-center-major-icon-not-found": "该专业不存在或已被删除，请刷新后重试。",
+  "invalid-course-center-major-icon-type": "专业图标仅支持 PNG 或 WebP。",
+  "course-center-major-icon-too-large": "专业图标不能超过 512KB。",
+  "invalid-course-center-major-icon-image": "图片无法读取，请更换有效的 PNG 或 WebP 文件。",
+  "invalid-student-learning-typography": "字体或字号选项无效，请重新选择。",
   "image-too-large": "图片不能超过 5MB。",
   "invalid-image-type": "请上传 PNG、JPG、WEBP 或 GIF 图片。",
   "diamond-recharge-qr-required": "请选择要上传的钻石充值客服二维码。",
@@ -83,6 +108,19 @@ const marketingIconOptions = [
 
 function resolveTab(value?: string): SettingsTab {
   return tabs.some((tab) => tab.key === value) ? (value as SettingsTab) : "login";
+}
+
+function resolveAdminSettingsSection(notice?: string, error?: string) {
+  const result = notice || error || "";
+  if (result.startsWith("admin-password-") || result.startsWith("admin-current-password-") || result === "admin-account-not-found") return "admin-account";
+  if (result.startsWith("browser-tab-") || result === "invalid-browser-tab-icon-type") return "browser-tab";
+  if (result.startsWith("student-nav-icons-") || result.startsWith("invalid-student-nav-icon-")) return "student-nav";
+  if (result.startsWith("course-center-major-icon-") || result.startsWith("invalid-course-center-major-icon-")) return "course-major-icons";
+  if (result.startsWith("student-learning-typography-") || result === "invalid-student-learning-typography") return "learning-typography";
+  if (result.startsWith("diamond-recharge-qr-")) return "diamond-recharge";
+  if (result.startsWith("profile-homepage-background-") || result === "invalid-profile-homepage-background-type" || result === "image-too-large" || result === "invalid-image-type") return "profile-page";
+  if (result === "saved") return "learning-page";
+  return "admin-account";
 }
 
 function resolveShareCopyContext(value?: string): ShareCopyContext {
@@ -150,6 +188,10 @@ export default async function AdminSettingsPage({
       })
     : [];
   const diamondRules = activeTab === "diamonds" ? await listDiamondRuleSettings() : [];
+  const majors = activeTab === "admin" ? await prisma.major.findMany({
+    select: { id: true, name: true, status: true, courseCenterIconKey: true },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
+  }) : [];
   const notice = params?.notice ? noticeText[params.notice] : null;
   const error = params?.error ? errorText[params.error] : null;
 
@@ -306,7 +348,16 @@ export default async function AdminSettingsPage({
       }))} /> : null}
 
       {activeTab === "admin" ? (
-        <div className="grid gap-4">
+        <AdminSettingsSectionLayout sections={[
+          { key: "admin-account", label: "管理员账号" },
+          { key: "browser-tab", label: "浏览器标签页" },
+          { key: "student-nav", label: "学生端导航" },
+          { key: "course-major-icons", label: "课程专业图标" },
+          { key: "learning-page", label: "学习页面" },
+          { key: "learning-typography", label: "字体字号" },
+          { key: "diamond-recharge", label: "钻石充值" },
+          { key: "profile-page", label: "个人主页" }
+        ]} initialSection={resolveAdminSettingsSection(params?.notice, params?.error)}>
           <form action={updateAdminPassword} className="border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
               <div>
@@ -356,10 +407,96 @@ export default async function AdminSettingsPage({
               </FieldBlock>
             </div>
           </form>
+          <form action={updateBrowserTabSettings} className="border border-slate-200 bg-white p-5 shadow-sm" encType="multipart/form-data">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <h2 className="text-lg font-black text-ink">浏览器标签页</h2>
+                <p className="mt-1 text-sm font-semibold text-slate-500">自定义浏览器标签上的网站名称和图标，保存后全站生效。</p>
+              </div>
+              <button className="primary-button rounded-none" type="submit">
+                <Save size={16} />
+                保存标签页设置
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_220px]">
+              <div className="grid content-start gap-5">
+                <FieldBlock label="标签页文字" description="建议使用简短的网站名称；最多 60 个字符。">
+                  <input
+                    aria-label="标签页文字"
+                    className="input rounded-none"
+                    defaultValue={settings.browserTabTitle}
+                    maxLength={60}
+                    name="browserTabTitle"
+                    required
+                  />
+                </FieldBlock>
+
+                <FieldBlock label="上传标签页图标" description="支持 PNG 或 ICO，建议使用正方形图标（32 × 32 或 48 × 48），文件不超过 512KB。">
+                  <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center text-sm font-bold text-slate-600 transition hover:border-teal hover:bg-teal/5">
+                    <ImageUp className="mb-2 text-teal" size={24} />
+                    <span>选择 PNG 或 ICO 图标</span>
+                    <input
+                      accept=".png,.ico,image/png,image/x-icon,image/vnd.microsoft.icon"
+                      aria-label="上传标签页图标"
+                      className="sr-only"
+                      name="browserTabIconFile"
+                      type="file"
+                    />
+                  </label>
+                </FieldBlock>
+
+                <label className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+                  <input className="size-4 accent-teal" name="resetBrowserTabIcon" type="checkbox" value="true" />
+                  恢复默认图标（没有选择新图标时生效）
+                </label>
+              </div>
+
+              <FieldBlock label="标签页预览" description="当前图标会显示在浏览器标签页中。">
+                <div className="flex min-h-36 items-center gap-3 border border-slate-200 bg-slate-50 p-4">
+                  <img
+                    alt="当前标签页图标预览"
+                    className="size-8 shrink-0 object-contain"
+                    height={32}
+                    src={`/api/site-icon?v=${settings.browserTabIconUpdatedAt?.getTime() ?? "default"}`}
+                    width={32}
+                  />
+                  <span className="min-w-0 truncate rounded-t-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 shadow-sm">
+                    {settings.browserTabTitle}
+                  </span>
+                </div>
+              </FieldBlock>
+            </div>
+          </form>
+          <AdminStudentNavIcons
+            iconUrls={{
+              learn: settings.studentNavIconLearnKey ? `/api/student-nav-icons/learn?v=${encodeURIComponent(settings.studentNavIconLearnKey)}` : null,
+              "course-center": settings.studentNavIconCourseCenterKey ? `/api/student-nav-icons/course-center?v=${encodeURIComponent(settings.studentNavIconCourseCenterKey)}` : null,
+              "study-buddy": settings.studentNavIconStudyBuddyKey ? `/api/student-nav-icons/study-buddy?v=${encodeURIComponent(settings.studentNavIconStudyBuddyKey)}` : null,
+              "buddy-circle": settings.studentNavIconBuddyCircleKey ? `/api/student-nav-icons/buddy-circle?v=${encodeURIComponent(settings.studentNavIconBuddyCircleKey)}` : null,
+              profile: settings.studentNavIconProfileKey ? `/api/student-nav-icons/profile?v=${encodeURIComponent(settings.studentNavIconProfileKey)}` : null,
+              more: settings.studentNavIconMoreKey ? `/api/student-nav-icons/more?v=${encodeURIComponent(settings.studentNavIconMoreKey)}` : null
+            }}
+          />
+          <AdminMajorCourseIcons
+            majors={majors.map((major) => ({
+              id: major.id,
+              name: major.name,
+              status: major.status,
+              iconUrl: major.courseCenterIconKey
+                ? `/api/course-center/major-icons/${encodeURIComponent(major.id)}?v=${encodeURIComponent(major.courseCenterIconKey)}`
+                : null
+            }))}
+          />
           <AdminLearningPathThemeSettings currentThemeKey={settings.learningPathTheme} />
+          <AdminStudentLearningTypography
+            currentFontFamily={settings.studentLearningFontFamily}
+            currentFontSize={settings.studentLearningFontSize}
+            action={updateStudentLearningTypographySettings}
+          />
           <AdminRechargeQrUploadForm currentQrCodeUrl={settings.diamondRechargeQrCodeUrl} />
           <AdminProfileBackgroundUploadForm currentBackgroundImageUrl={settings.profileHomepageBackgroundImageUrl} />
-        </div>
+        </AdminSettingsSectionLayout>
       ) : null}
 
       {activeTab === "study-buddy" ? (

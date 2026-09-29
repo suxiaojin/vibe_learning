@@ -21,7 +21,10 @@ import { getDiamondRuleDefinition, maxDiamondRuleAmount } from "@/lib/diamond-ru
 import { prisma } from "@/lib/prisma";
 import { buildQuestionBankKnowledgeCopyMapping } from "@/lib/question-bank-copy";
 import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
+import { deleteAiStudyObject } from "@/lib/ai-study-storage";
 import { getBeijingDate } from "@/lib/rewards";
+import { storeCourseCenterMajorIcon, storeStudentNavIcon, StudentNavIconUploadError } from "@/lib/student-nav-icon-storage";
+import { studentNavIconSlots, type StudentNavIconKey } from "@/lib/student-nav-icons";
 import {
   isQuestionBankChoiceQuestionType,
   isQuestionBankEditableQuestionType,
@@ -31,7 +34,8 @@ import {
 } from "@/lib/question-bank-types";
 import { isShareCopyContext } from "@/lib/share-copy";
 import { normalizeStudyBuddyHeroEffect } from "@/lib/study-buddy-title-effects";
-import { systemSettingsDefaults, systemSettingsId } from "@/lib/system-settings";
+import { isStudentLearningFontFamily, isStudentLearningFontSize } from "@/lib/student-learning-typography";
+import { getSystemSettings, systemSettingsDefaults, systemSettingsId } from "@/lib/system-settings";
 
 type QuestionOption = {
   key: string;
@@ -42,6 +46,7 @@ const optionKeys = ["A", "B", "C", "D"] as const;
 const alphabetOptionKeys = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 const loginHeroUploadDir = "uploads/system-settings";
 const maxLoginHeroImageSize = 5 * 1024 * 1024;
+const maxBrowserTabIconSize = 512 * 1024;
 const maxStudyBuddyHeroImageSize = 5 * 1024 * 1024;
 const maxDiamondRechargeQrCodeSize = 2 * 1024 * 1024;
 const maxProfileHomepageBackgroundImageSize = 2 * 1024 * 1024;
@@ -337,6 +342,23 @@ async function saveProfileHomepageBackgroundImage(file: File) {
   return `data:${file.type};base64,${buffer.toString("base64")}`;
 }
 
+async function saveBrowserTabIcon(file: File) {
+  if (file.size > maxBrowserTabIconSize) {
+    redirect(adminConfigurationSettingsPath("error", "browser-tab-icon-too-large"));
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const isPng = buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  const isIco = buffer.length >= 6 && buffer[0] === 0 && buffer[1] === 0 && buffer[2] === 1 && buffer[3] === 0;
+
+  if (!isPng && !isIco) {
+    redirect(adminConfigurationSettingsPath("error", "invalid-browser-tab-icon-type"));
+  }
+
+  const contentType = isPng ? "image/png" : "image/x-icon";
+  return `data:${contentType};base64,${buffer.toString("base64")}`;
+}
+
 async function updateSystemSettingsPatch(data: Partial<typeof systemSettingsDefaults>) {
   await prisma.systemSetting.upsert({
     where: { id: systemSettingsId },
@@ -347,6 +369,24 @@ async function updateSystemSettingsPatch(data: Partial<typeof systemSettingsDefa
       id: systemSettingsId
     }
   });
+}
+
+export async function updateStudentLearningTypographySettings(formData: FormData) {
+  await requireAdmin();
+  const fontFamily = String(formData.get("studentLearningFontFamily") || "");
+  const fontSize = String(formData.get("studentLearningFontSize") || "");
+
+  if (!isStudentLearningFontFamily(fontFamily) || !isStudentLearningFontSize(fontSize)) {
+    redirect(adminConfigurationSettingsPath("error", "invalid-student-learning-typography"));
+  }
+
+  await updateSystemSettingsPatch({
+    studentLearningFontFamily: fontFamily,
+    studentLearningFontSize: fontSize
+  });
+  revalidatePath("/admin/settings");
+  revalidatePath("/", "layout");
+  redirect(adminConfigurationSettingsPath("notice", "student-learning-typography-saved"));
 }
 
 async function getCurrentStudyBuddyHeroImageUrl() {
@@ -675,6 +715,146 @@ export async function updateStudyBuddyHeroTitleSettings(formData: FormData) {
   revalidatePath("/admin/settings");
   revalidatePath("/study-buddy");
   redirect("/admin/settings?tab=study-buddy&notice=study-buddy-hero-title-saved");
+}
+
+export async function updateBrowserTabSettings(formData: FormData) {
+  await requireAdmin();
+  const title = String(formData.get("browserTabTitle") || "").trim();
+
+  if (!title) {
+    redirect(adminConfigurationSettingsPath("error", "browser-tab-title-required"));
+  }
+  if (title.length > 60) {
+    redirect(adminConfigurationSettingsPath("error", "browser-tab-title-too-long"));
+  }
+
+  const iconFile = formData.get("browserTabIconFile");
+  const resetIcon = formData.get("resetBrowserTabIcon") === "true";
+  const patch: Partial<typeof systemSettingsDefaults> = { browserTabTitle: title };
+
+  if (iconFile instanceof File && iconFile.size > 0) {
+    patch.browserTabIconData = await saveBrowserTabIcon(iconFile);
+    patch.browserTabIconUpdatedAt = new Date();
+  } else if (resetIcon) {
+    patch.browserTabIconData = "";
+    patch.browserTabIconUpdatedAt = new Date();
+  }
+
+  await updateSystemSettingsPatch(patch);
+  revalidatePath("/admin/settings");
+  revalidatePath("/", "layout");
+  redirect(adminConfigurationSettingsPath("notice", "browser-tab-settings-saved"));
+}
+
+export async function updateStudentNavIcons(formData: FormData) {
+  await requireAdmin();
+  const settingKeys = studentNavIconSlots.map((slot) => slot.settingKey) as [
+    "studentNavIconLearnKey",
+    "studentNavIconCourseCenterKey",
+    "studentNavIconStudyBuddyKey",
+    "studentNavIconBuddyCircleKey",
+    "studentNavIconProfileKey",
+    "studentNavIconMoreKey"
+  ];
+  const currentSettings = await getSystemSettings(settingKeys);
+  const patch: Partial<typeof systemSettingsDefaults> = {};
+  const replacedKeys: string[] = [];
+
+  for (const slot of studentNavIconSlots) {
+    const file = formData.get(`studentNavIcon_${slot.key}_file`);
+    const shouldReset = formData.get(`studentNavIcon_${slot.key}_reset`) === "true";
+    const currentKey = currentSettings[slot.settingKey];
+
+    if (file instanceof File && file.size > 0) {
+      try {
+        patch[slot.settingKey] = await storeStudentNavIcon(slot.key as StudentNavIconKey, file);
+        if (currentKey) replacedKeys.push(currentKey);
+      } catch (error) {
+        if (error instanceof StudentNavIconUploadError) {
+          const errorKey = error.code === "too_large"
+            ? "student-nav-icon-too-large"
+            : error.code === "invalid_type"
+              ? "invalid-student-nav-icon-type"
+              : "invalid-student-nav-icon-image";
+          redirect(adminConfigurationSettingsPath("error", errorKey));
+        }
+        throw error;
+      }
+    } else if (shouldReset && currentKey) {
+      patch[slot.settingKey] = "";
+      replacedKeys.push(currentKey);
+    }
+  }
+
+  if (Object.keys(patch).length === 0) {
+    redirect(adminConfigurationSettingsPath("notice", "student-nav-icons-unchanged"));
+  }
+
+  await updateSystemSettingsPatch(patch);
+  await Promise.all(replacedKeys.map((key) => deleteAiStudyObject(key).catch((error) => {
+    console.error("Failed to delete replaced student navigation icon", error);
+  })));
+
+  revalidatePath("/admin/settings");
+  for (const path of ["/learn", "/course-center", "/study-buddy", "/buddy-circle", "/me", "/notifications", "/settings", "/help"]) {
+    revalidatePath(path);
+  }
+  redirect(adminConfigurationSettingsPath("notice", "student-nav-icons-saved"));
+}
+
+export async function updateMajorCourseCenterIcon(formData: FormData) {
+  await requireAdmin();
+  const majorId = String(formData.get("majorId") || "").trim();
+  if (!majorId || !/^[A-Za-z0-9_-]{1,128}$/.test(majorId)) {
+    redirect(adminConfigurationSettingsPath("error", "course-center-major-icon-not-found"));
+  }
+
+  const major = await prisma.major.findUnique({
+    where: { id: majorId },
+    select: { courseCenterIconKey: true }
+  });
+  if (!major) {
+    redirect(adminConfigurationSettingsPath("error", "course-center-major-icon-not-found"));
+  }
+
+  const file = formData.get("majorCourseCenterIconFile");
+  const reset = formData.get("resetMajorCourseCenterIcon") === "true";
+  let nextKey = major.courseCenterIconKey;
+
+  if (file instanceof File && file.size > 0) {
+    try {
+      nextKey = await storeCourseCenterMajorIcon(file);
+    } catch (error) {
+      if (error instanceof StudentNavIconUploadError) {
+        const errorKey = error.code === "too_large"
+          ? "course-center-major-icon-too-large"
+          : error.code === "invalid_type"
+            ? "invalid-course-center-major-icon-type"
+            : "invalid-course-center-major-icon-image";
+        redirect(adminConfigurationSettingsPath("error", errorKey));
+      }
+      throw error;
+    }
+  } else if (reset) {
+    nextKey = "";
+  } else {
+    redirect(adminConfigurationSettingsPath("notice", "course-center-major-icon-unchanged"));
+  }
+
+  if (nextKey === major.courseCenterIconKey) {
+    redirect(adminConfigurationSettingsPath("notice", "course-center-major-icon-unchanged"));
+  }
+
+  await prisma.major.update({ where: { id: majorId }, data: { courseCenterIconKey: nextKey } });
+  if (major.courseCenterIconKey) {
+    await deleteAiStudyObject(major.courseCenterIconKey).catch((error) => {
+      console.error("Failed to delete replaced course center major icon", error);
+    });
+  }
+
+  revalidatePath("/admin/settings");
+  revalidatePath("/course-center");
+  redirect(adminConfigurationSettingsPath("notice", "course-center-major-icon-saved"));
 }
 
 export async function updateStudyBuddyHeroEffectSettings(formData: FormData) {

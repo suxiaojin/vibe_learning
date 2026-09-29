@@ -7,6 +7,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ensureDiamondAccount } from "@/lib/rewards";
 import { getNotificationBellData } from "@/lib/user-event-notifications";
+import { getSystemSettings } from "@/lib/system-settings";
 import { cn } from "@/lib/utils";
 
 type StudentNavKey = "learn" | "course-center" | "study-buddy" | "buddy-circle" | "me" | "notifications" | "settings" | "help";
@@ -27,7 +28,17 @@ const text = {
 };
 
 export async function StudentSidebar({ active }: { active: StudentNavKey }) {
-  const footer = await getStudentSidebarAccount();
+  const [footer, navIcons] = await Promise.all([
+    getStudentSidebarAccount(),
+    getSystemSettings([
+      "studentNavIconLearnKey",
+      "studentNavIconCourseCenterKey",
+      "studentNavIconStudyBuddyKey",
+      "studentNavIconBuddyCircleKey",
+      "studentNavIconProfileKey",
+      "studentNavIconMoreKey"
+    ])
+  ]);
 
   return (
     <aside className="hidden border-r border-slate-200/80 bg-white lg:block">
@@ -36,16 +47,39 @@ export async function StudentSidebar({ active }: { active: StudentNavKey }) {
           <p className="text-[28px] font-bold leading-tight text-teal">Vibe Learning</p>
         </div>
         <nav className="space-y-2.5">
-          <StudentNavItem active={active === "learn"} href="/learn" icon={<GraduationCap size={22} />} label={text.learn} />
-          <StudentNavItem active={active === "course-center"} href="/course-center" icon={<BookMarked size={22} />} label={text.courseCenter} />
-          <StudentNavItem active={active === "study-buddy"} href="/study-buddy" icon={<Sparkles size={22} />} label={text.studyBuddy} />
-          <StudentNavItem active={active === "buddy-circle"} href="/buddy-circle" icon={<UsersRound size={22} />} label={text.buddyCircle} />
-          <StudentNavItem active={active === "me"} href="/me" icon={<UserRound size={22} />} label={text.profile} />
-          <MoreMenu active={active === "notifications" || active === "settings" || active === "help"} />
+          <StudentNavItem active={active === "learn"} href="/learn" icon={<StudentNavIcon fallback={<GraduationCap size={22} />} iconKey="learn" storageKey={navIcons.studentNavIconLearnKey} />} label={text.learn} />
+          <StudentNavItem active={active === "course-center"} href="/course-center" icon={<StudentNavIcon fallback={<BookMarked size={22} />} iconKey="course-center" storageKey={navIcons.studentNavIconCourseCenterKey} />} label={text.courseCenter} />
+          <StudentNavItem active={active === "study-buddy"} href="/study-buddy" icon={<StudentNavIcon fallback={<Sparkles size={22} />} iconKey="study-buddy" storageKey={navIcons.studentNavIconStudyBuddyKey} />} label={text.studyBuddy} />
+          <StudentNavItem active={active === "buddy-circle"} href="/buddy-circle" icon={<StudentNavIcon fallback={<UsersRound size={22} />} iconKey="buddy-circle" storageKey={navIcons.studentNavIconBuddyCircleKey} />} label={text.buddyCircle} />
+          <StudentNavItem active={active === "me"} href="/me" icon={<StudentNavIcon fallback={<UserRound size={22} />} iconKey="profile" storageKey={navIcons.studentNavIconProfileKey} />} label={text.profile} />
+          <MoreMenu active={active === "notifications" || active === "settings" || active === "help"} icon={<StudentNavIcon fallback={<MoreHorizontal size={20} />} iconKey="more" storageKey={navIcons.studentNavIconMoreKey} />} />
         </nav>
         <div className="mt-auto px-1 pt-6">{footer}</div>
       </div>
     </aside>
+  );
+}
+
+function StudentNavIcon({
+  fallback,
+  iconKey,
+  storageKey
+}: {
+  fallback: ReactNode;
+  iconKey: string;
+  storageKey: string;
+}) {
+  if (!storageKey) return fallback;
+
+  return (
+    <img
+      alt=""
+      aria-hidden="true"
+      className="size-6 object-contain"
+      height={24}
+      src={`/api/student-nav-icons/${iconKey}?v=${encodeURIComponent(storageKey)}`}
+      width={24}
+    />
   );
 }
 
@@ -115,7 +149,7 @@ function StudentNavItem({
   );
 }
 
-function MoreMenu({ active }: { active: boolean }) {
+function MoreMenu({ active, icon }: { active: boolean; icon: ReactNode }) {
   return (
     <div className="group relative">
       <button
@@ -126,7 +160,7 @@ function MoreMenu({ active }: { active: boolean }) {
         type="button"
       >
         <span className="grid size-7 place-items-center">
-          <MoreHorizontal size={20} />
+          {icon}
         </span>
         {text.more}
       </button>

@@ -99,11 +99,13 @@ export function CourseCenterForm({
   initialOptions,
   currentProfile,
   overview,
+  majorIconUrl,
   initialDrawerOpen
 }: {
   initialOptions: FoundationOptions;
   currentProfile: CurrentProfile;
   overview: CourseCenterOverview;
+  majorIconUrl: string | null;
   initialDrawerOpen: boolean;
 }) {
   const router = useRouter();
@@ -279,7 +281,7 @@ export function CourseCenterForm({
       {overview.courses.length > 0 ? (
         <section className="mt-6 grid gap-5 xl:grid-cols-2">
           {overview.courses.map((course) => (
-            <CourseCard key={course.key} course={course} />
+            <CourseCard key={course.key} course={course} majorIconUrl={course.key === "major" ? majorIconUrl : null} />
           ))}
         </section>
       ) : (
@@ -408,7 +410,7 @@ export function CourseCenterForm({
   );
 }
 
-function CourseCard({ course }: { course: CourseCenterOverview["courses"][number] }) {
+function CourseCard({ course, majorIconUrl }: { course: CourseCenterOverview["courses"][number]; majorIconUrl: string | null }) {
   const isMajor = course.key === "major";
   const href = course.currentSection?.href || `/learn?course=${course.key}`;
 
@@ -423,7 +425,9 @@ function CourseCard({ course }: { course: CourseCenterOverview["courses"][number
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 items-center gap-4">
           <span className={cn("grid size-16 shrink-0 place-items-center rounded-2xl border", isMajor ? "border-teal/25 bg-teal/10 text-teal" : "border-info/15 bg-info-muted text-info")}>
-            {isMajor ? <Monitor size={32} /> : <Sigma size={32} />}
+            {isMajor && majorIconUrl ? (
+              <img alt="" aria-hidden="true" className="size-10 object-contain" height={40} src={majorIconUrl} width={40} />
+            ) : isMajor ? <Monitor size={32} /> : <Sigma size={32} />}
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">

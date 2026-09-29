@@ -3,6 +3,7 @@ import { StudentPageShell } from "@/components/student-page-shell";
 import { requireUser } from "@/lib/auth";
 import { getFoundationOptions } from "@/lib/foundation";
 import { getStudentLearningPath, type SyllabusPathGroup } from "@/lib/syllabus-learning";
+import { prisma } from "@/lib/prisma";
 
 export default async function CourseCenterPage() {
   const user = await requireUser();
@@ -13,6 +14,13 @@ export default async function CourseCenterPage() {
   if (!options) {
     options = await getFoundationOptions();
   }
+
+  const majorIcon = profile?.majorId
+    ? await prisma.major.findUnique({ where: { id: profile.majorId }, select: { courseCenterIconKey: true } })
+    : null;
+  const majorIconUrl = profile?.majorId && majorIcon?.courseCenterIconKey
+    ? `/api/course-center/major-icons/${encodeURIComponent(profile.majorId)}?v=${encodeURIComponent(majorIcon.courseCenterIconKey)}`
+    : null;
 
   const currentProfile = profile
     ? {
@@ -34,6 +42,7 @@ export default async function CourseCenterPage() {
         initialOptions={options}
         currentProfile={currentProfile}
         overview={overview}
+        majorIconUrl={majorIconUrl}
         initialDrawerOpen={!learningPath.completed}
       />
     </StudentPageShell>

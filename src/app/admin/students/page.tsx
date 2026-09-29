@@ -76,9 +76,13 @@ export default async function StudentsPage({
         lastLoginAt: true,
         _count: {
           select: {
-            progress: { where: { status: "passed" } },
-            attempts: true,
-            wrongQuestions: { where: { status: "active" } }
+            attempts: true
+          }
+        },
+        studentProfile: {
+          select: {
+            region: { select: { province: true, studySystem: true } },
+            major: { select: { name: true } }
           }
         }
       }
@@ -179,20 +183,30 @@ export default async function StudentsPage({
               <th className="border-b border-slate-200 py-3 pr-4 font-semibold">状态</th>
               <th className="border-b border-slate-200 py-3 pr-4 font-semibold">注册时间</th>
               <th className="border-b border-slate-200 py-3 pr-4 font-semibold">最后登录</th>
-              <th className="border-b border-slate-200 py-3 pr-4 font-semibold">已通过</th>
               <th className="border-b border-slate-200 py-3 pr-4 font-semibold">答题数</th>
-              <th className="border-b border-slate-200 py-3 pr-4 font-semibold">错题数</th>
               <th className="border-b border-slate-200 py-3 pr-4 font-semibold">累计学习</th>
+              <th className="border-b border-slate-200 py-3 pr-4 font-semibold">专业</th>
               <th className="border-b border-slate-200 py-3 font-semibold">操作</th>
             </tr>
           </thead>
           <tbody>
             {students.length === 0 ? (
               <tr>
-                <td className="py-8 text-center text-slate-500" colSpan={9}>没有找到符合条件的学生。</td>
+                <td className="py-8 text-center text-slate-500" colSpan={8}>没有找到符合条件的学生。</td>
               </tr>
             ) : students.map((student) => {
               const totalSeconds = studySecondsByUserId.get(student.id) || 0;
+              const majorName = student.studentProfile?.major?.name;
+              const profileParts = [
+                student.studentProfile?.region?.province,
+                student.studentProfile?.region?.studySystem,
+                majorName ? (majorName.endsWith("专业") ? majorName : `${majorName}专业`) : null
+              ].filter((value): value is string => Boolean(value));
+              const majorLabel = profileParts.length === 3
+                ? profileParts.join("-")
+                : profileParts.length
+                  ? `${profileParts.join("-")}（资料未完善）`
+                  : "资料未完善";
               return (
                 <tr key={student.id} className="align-top text-slate-700">
                   <td className="border-b border-slate-100 py-4 pr-4 font-semibold text-ink">
@@ -207,10 +221,9 @@ export default async function StudentsPage({
                   <td className="border-b border-slate-100 py-4 pr-4">
                     {student.lastLoginAt ? formatDate(student.lastLoginAt) : "暂无"}
                   </td>
-                  <td className="border-b border-slate-100 py-4 pr-4">{student._count.progress} 关</td>
                   <td className="border-b border-slate-100 py-4 pr-4">{student._count.attempts}</td>
-                  <td className="border-b border-slate-100 py-4 pr-4">{student._count.wrongQuestions}</td>
                   <td className="border-b border-slate-100 py-4 pr-4">{formatSeconds(totalSeconds)}</td>
+                  <td className="border-b border-slate-100 py-4 pr-4">{majorLabel}</td>
                   <td className="border-b border-slate-100 py-4">
                     <div className="flex min-w-[360px] flex-wrap gap-2">
                       <Link className="secondary-button px-3 py-2 text-xs" href={`/admin/students/${student.id}`}>查看详情</Link>

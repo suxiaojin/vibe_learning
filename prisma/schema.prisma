@@ -456,6 +456,15 @@ model SystemSetting {
   loginMarketingTitle       String   @default("新注册用户限时赠送学习加速包")
   loginMarketingDescription String   @default("完成注册即可开启江苏专转本计算机闯关学习")
   loginWelcomeTitle         String   @default("Welcome to VibeLearning")
+  browserTabTitle           String   @default("Vibe Learning")
+  browserTabIconData        String   @default("")
+  browserTabIconUpdatedAt   DateTime?
+  studentNavIconLearnKey    String   @default("")
+  studentNavIconCourseCenterKey String @default("")
+  studentNavIconStudyBuddyKey String @default("")
+  studentNavIconBuddyCircleKey String @default("")
+  studentNavIconProfileKey  String   @default("")
+  studentNavIconMoreKey     String   @default("")
   userAgreementContent      String   @default("test")
   privacyPolicyContent      String   @default("test")
   platformAgreementContent  String   @default("test")
@@ -466,6 +475,8 @@ model SystemSetting {
   profileHomepageBackgroundImageUrl String @default("")
   profileHomepageBackgroundUpdatedAt DateTime?
   learningPathTheme          String   @default("default")
+  studentLearningFontFamily String   @default("system")
+  studentLearningFontSize   String   @default("normal")
   studyBuddyHeroImageUrl    String   @default("/ai-study/study-buddy-hero.webp")
   studyBuddyHeroTitle       String   @default("好好学习，早日上岸")
   studyBuddyHeroEffect      String   @default("typewriter")
@@ -563,6 +574,7 @@ model Major {
   id                     String                  @id @default(cuid())
   name                   String                  @unique
   description            String?
+  courseCenterIconKey    String                  @default("")
   status                 ContentStatus           @default(draft)
   sortOrder              Int                     @default(0)
   regions                RegionMajor[]
