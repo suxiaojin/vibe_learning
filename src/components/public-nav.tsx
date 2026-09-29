@@ -15,7 +15,7 @@ const hiddenNavPrefixes = [
 
 export function PublicNav() {
   const pathname = usePathname();
-  const hidden = hiddenNavPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  const hidden = pathname === "/" || hiddenNavPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 
   if (hidden) {
     return null;

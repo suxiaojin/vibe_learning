@@ -451,6 +451,7 @@ model ChangelogEntry {
 
 model SystemSetting {
   id                        String   @id @default("default")
+  homepageContent           Json     @default("{}")
   loginHeroImageUrl         String   @default("/login-hero-vibelearning.png")
   loginMarketingIcon        String   @default("gift")
   loginMarketingTitle       String   @default("新注册用户限时赠送学习加速包")
@@ -485,6 +486,15 @@ model SystemSetting {
   updatedAt                 DateTime @updatedAt
 
   @@map("system_settings")
+}
+
+model HomepageImage {
+  slot        String   @id
+  body        Bytes
+  contentType String   @default("image/webp")
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  @@map("homepage_images")
 }
 
 model AiServerSetting {

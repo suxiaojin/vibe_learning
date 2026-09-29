@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Bell, BookMarked, Gem, GraduationCap, HelpCircle, LogOut, MoreHorizontal, Settings, Sparkles, UserRound, UsersRound } from "lucide-react";
+import { Bell, BookMarked, Gem, GraduationCap, HelpCircle, Home, LogOut, MoreHorizontal, Settings, Sparkles, UserRound, UsersRound } from "lucide-react";
 import { NotificationBell } from "@/components/notification-bell";
 import { StudentSidebarAvatar } from "@/components/student-sidebar-avatar";
 import { requireUser } from "@/lib/auth";
@@ -182,6 +182,10 @@ function MoreMenu({ active, icon }: { active: boolean; icon: ReactNode }) {
           <Link className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-semibold text-slate-500 hover:bg-slate-50" href="/help">
             <HelpCircle size={18} />
             {text.help}
+          </Link>
+          <Link className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-semibold text-slate-500 hover:bg-slate-50" href="/?intro=1" prefetch={false}>
+            <Home size={18} />
+            官网首页
           </Link>
           <form action="/api/auth/logout" method="post">
             <button className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-semibold text-slate-500 hover:bg-slate-50" type="submit">

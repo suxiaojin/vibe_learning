@@ -19,6 +19,7 @@ import {
   updateStudentLearningTypographySettings
 } from "@/app/admin/actions";
 import { AdminAgreementSettings } from "@/components/admin-agreement-settings";
+import { AdminHomepageSettings } from "@/components/admin-homepage-settings";
 import { AdminSettingsSectionLayout } from "@/components/admin-settings-section-layout";
 import { AdminDiamondRuleSettings } from "@/components/admin-diamond-rule-settings";
 import { AdminLearningPathThemeSettings } from "@/components/admin-learning-path-theme-settings";
@@ -33,12 +34,14 @@ import { prisma } from "@/lib/prisma";
 import { isShareCopyContext, shareCopyContextLabels } from "@/lib/share-copy";
 import { studyBuddyHeroEffectOptions } from "@/lib/study-buddy-title-effects";
 import { getSystemSettings } from "@/lib/system-settings";
+import { getHomepageImageUrls, getHomepageText } from "@/lib/homepage-settings";
 import { cn } from "@/lib/utils";
 
-type SettingsTab = "login" | "admin" | "agreements" | "study-buddy" | "share-copy" | "diamonds";
+type SettingsTab = "login" | "homepage" | "admin" | "agreements" | "study-buddy" | "share-copy" | "diamonds";
 
 const tabs: Array<{ key: SettingsTab; label: string }> = [
   { key: "login", label: "登录页配置" },
+  { key: "homepage", label: "首页配置" },
   { key: "admin", label: "管理员配置" },
   { key: "agreements", label: "协议内容" },
   { key: "study-buddy", label: "学习搭子" },
@@ -48,6 +51,9 @@ const tabs: Array<{ key: SettingsTab; label: string }> = [
 
 const noticeText: Record<string, string> = {
   saved: "系统设置已保存。",
+  "homepage-text-saved": "首页文字已保存。",
+  "homepage-image-saved": "首页图片已保存。",
+  "homepage-image-restored": "已恢复默认图片。",
   "admin-password-saved": "管理员 admin 登录密码已更新。",
   "browser-tab-settings-saved": "浏览器标签页文字和图标已保存。",
   "student-nav-icons-saved": "学生端导航图标已保存。",
@@ -65,6 +71,10 @@ const noticeText: Record<string, string> = {
 };
 
 const errorText: Record<string, string> = {
+  "homepage-text-invalid": "请检查首页文字：每项均需填写，普通文字最多 80 字，说明文字最多 240 字。",
+  "homepage-image-required": "请选择要上传的首页图片。",
+  "homepage-image-invalid": "请上传有效的 PNG、JPG 或 WebP 图片。",
+  "homepage-image-too-large": "首页图片上传不超过 5MB，处理后不超过 1MB。",
   "admin-password-required": "请完整填写当前密码、新密码和确认密码。",
   "admin-password-too-short": "管理员新密码至少需要 8 位。",
   "admin-password-too-long": "管理员新密码不能超过 72 个 UTF-8 字节。",
@@ -172,6 +182,9 @@ export default async function AdminSettingsPage({
     redirect(`/admin/prompt-settings${query.size ? `?${query.toString()}` : ""}`);
   }
   const activeTab = resolveTab(params?.tab);
+  const [homepageText, homepageImages] = activeTab === "homepage"
+    ? await Promise.all([getHomepageText(), getHomepageImageUrls()])
+    : [null, null];
   const changelogs = activeTab === "agreements" ? await prisma.changelogEntry.findMany({
     orderBy: [{ releaseDate: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }, { id: "desc" }]
   }) : [];
@@ -336,6 +349,10 @@ export default async function AdminSettingsPage({
         </section>
 
       </form> : null}
+
+      {activeTab === "homepage" && homepageText && homepageImages ? (
+        <AdminHomepageSettings content={homepageText} imageUrls={homepageImages} />
+      ) : null}
 
       {activeTab === "agreements" ? <AdminAgreementSettings contents={{
         userAgreementContent: settings.userAgreementContent,
