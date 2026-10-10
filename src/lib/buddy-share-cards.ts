@@ -1,3 +1,5 @@
+import { sanitizeNotificationHtml } from "@/lib/notifications";
+
 export type BuddyShareType = "question_card" | "quiz_result_card" | "active_learning_card";
 
 export type BuddyQuestionShareCard = {
@@ -63,10 +65,10 @@ export function normalizeBuddyShareInput(input: unknown): BuddyShareCard | null 
     }
     return {
       type: "question_card",
-      correctAnswer: cleanText(input.correctAnswer, 60) || "未记录",
+      correctAnswer: cleanRichText(input.correctAnswer) || "未记录",
       indexLabel: cleanText(input.indexLabel, 30) || "题目",
       questionTypeLabel: cleanText(input.questionTypeLabel, 30) || "练习题",
-      selectedAnswer: cleanText(input.selectedAnswer, 60) || "未选择",
+      selectedAnswer: cleanRichText(input.selectedAnswer) || "未选择",
       sourceTitle: cleanText(input.sourceTitle, 60) || undefined,
       title,
       wasCorrect: Boolean(input.wasCorrect)
@@ -121,6 +123,16 @@ function cleanText(value: unknown, maxLength = maxTextLength) {
     ? String(value).replace(/\s+/g, " ").trim()
     : "";
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function cleanRichText(value: unknown) {
+  const text = typeof value === "string" || typeof value === "number"
+    ? String(value).replace(/\u0000/g, "").trim()
+    : "";
+  if (!text) {
+    return "";
+  }
+  return /<\/?[a-z][\s\S]*>/i.test(text) ? sanitizeNotificationHtml(text) : text;
 }
 
 function normalizeWeeks(value: unknown) {

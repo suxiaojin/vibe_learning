@@ -227,9 +227,10 @@ export function QuizRunner({
   const options = useMemo(() => coerceOptions(current?.options), [current]);
   const questionTypeLabel = current ? questionTypeText(current.type) : "";
   const sourceTitle = current?.questionBank?.title || current?.source || "";
-  const questionShareCard = current && (checkState === "correct" || checkState === "wrong")
+  const shareShowsAnswer = checkState !== "idle";
+  const questionShareCard = current
     ? buildQuestionShareCard({
-        correctAnswer,
+        correctAnswer: shareShowsAnswer ? correctAnswer : ["\u7b54\u9898\u540e\u663e\u793a"],
         currentIndex,
         options,
         questionTypeLabel,
@@ -570,12 +571,12 @@ export function QuizRunner({
           )}
 
           <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
-            {checkState === "correct" || checkState === "wrong" ? (
+            {checkState !== "idle" ? (
               <ShareToBuddyButton
                 buttonClassName="min-h-12 rounded-xl border-surface bg-surface px-4 shadow-sm hover:border-surface"
                 buttonLabel="分享"
                 contentSuggestions={questionShareSuggestions}
-                copyContext={checkState === "correct" ? "question_correct" : "question_wrong"}
+                copyContext={checkState === "correct" ? "question_correct" : checkState === "wrong" ? "question_wrong" : undefined}
                 defaultContent={questionShareContent}
                 shareCard={questionShareCard}
                 sourceLabel={`题 ${currentIndex + 1} / ${totalQuestions}`}

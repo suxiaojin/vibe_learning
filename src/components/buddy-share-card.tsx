@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { CheckCircle2, Flame, Gem, Star, Trophy, XCircle } from "lucide-react";
 import { ChallengeDifficultyStars } from "@/components/challenge-difficulty-stars";
+import { RichTextContent } from "@/components/rich-text-content";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import { cn } from "@/lib/utils";
 
@@ -201,7 +202,9 @@ function AnswerBox({ label, tone, value }: { label: string; tone: "danger" | "su
   return (
     <div className={cn("rounded-2xl p-3", toneClass)}>
       <p className="text-xs font-semibold opacity-80">{label}</p>
-      <p className="mt-1 break-words text-sm font-black">{value}</p>
+      <div className="mt-1 max-h-64 overflow-auto text-sm font-black leading-6">
+        <RichTextContent className="[&_img]:max-h-56 [&_img]:object-contain" value={value} />
+      </div>
     </div>
   );
 }

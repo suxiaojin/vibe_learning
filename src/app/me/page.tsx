@@ -387,13 +387,7 @@ function ProfilePanel({
           <span className="label">学校</span>
           <div className="relative">
             <School className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input className="input pl-10" name="school" defaultValue={school} list="school-options" maxLength={80} placeholder="填写或选择学校名称" />
-            <input name="schoolId" type="hidden" value={schoolId} />
-            <datalist id="school-options">
-              {schools.map((item) => (
-                <option key={item.id} value={item.name}>{item.province}</option>
-              ))}
-            </datalist>
+            <input className="input pl-10" name="school" defaultValue={school} maxLength={80} placeholder="填写学校名称" />
           </div>
         </label>
 
@@ -752,8 +746,8 @@ function MedalTrack({
   totalAttempts: number;
   username: string;
 }) {
-  const expertTarget = medalRules.find((rule) => rule.level === "expert")?.minAttempts || 400;
-  const scholarTarget = medalRules.find((rule) => rule.level === "scholar")?.minAttempts || 600;
+  const expertTarget = medalRules.find((rule) => rule.level === "expert")?.minAttempts || 200;
+  const scholarTarget = medalRules.find((rule) => rule.level === "scholar")?.minAttempts || 300;
   const nextRule = medalRules.find((rule) => rule.minAttempts > totalAttempts);
   const remaining = nextRule ? Math.max(0, nextRule.minAttempts - totalAttempts) : 0;
   const progress =

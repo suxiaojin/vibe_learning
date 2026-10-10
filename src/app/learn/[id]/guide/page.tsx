@@ -2,9 +2,10 @@ import Link from "next/link";
 import { ArrowLeft, BookOpenCheck, Play } from "lucide-react";
 import { redirect } from "next/navigation";
 import { StudentPageShell } from "@/components/student-page-shell";
+import { CourseKnowledgeMap } from "@/components/course-knowledge-map";
 import { requireUser } from "@/lib/auth";
 import { getLearningPathThemeStyle } from "@/lib/learning-path-theme";
-import { getSyllabusSectionForStudent } from "@/lib/syllabus-learning";
+import { getStudentCourseSyllabusOutline, getSyllabusSectionForStudent } from "@/lib/syllabus-learning";
 import { getSystemSettings } from "@/lib/system-settings";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +31,10 @@ export default async function GuidePage({
   }
 
   const guideContent = access.chapter.description ?? "";
+  const showCourseKnowledgeMap = access.course.courseType === "major" && access.course.challengeMode === "course";
+  const courseSyllabusOutline = showCourseKnowledgeMap
+    ? await getStudentCourseSyllabusOutline(user.id, access.course.id)
+    : null;
   const settings = await getSystemSettings(["learningPathTheme"]);
 
   return (
@@ -54,7 +59,17 @@ export default async function GuidePage({
 
           <div className="mt-8 border-t border-border-soft pt-7">
             <p className="text-sm font-semibold text-[var(--challenge-accent)]">{text.important}</p>
-            <div className="mt-4 whitespace-pre-wrap text-base font-medium leading-8 text-slate-700">{guideContent}</div>
+            {showCourseKnowledgeMap && courseSyllabusOutline?.items.length ? (
+              <div className="mt-4">
+                <CourseKnowledgeMap
+                  selectedGroup={access.group}
+                  focusedCourseId={access.course.id}
+                  focusedCourseOutline={courseSyllabusOutline.items}
+                />
+              </div>
+            ) : (
+              <div className="mt-4 whitespace-pre-wrap text-base font-medium leading-8 text-slate-700">{guideContent}</div>
+            )}
           </div>
 
           <div className="mt-8">

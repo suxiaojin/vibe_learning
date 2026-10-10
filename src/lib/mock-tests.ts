@@ -30,6 +30,7 @@ export type MockTestSection = {
   courseTitle: string;
   scopeType: "chapter" | "course";
   sortOrder: number;
+  difficultyRating: number | null;
   questions: MockTestQuestion[];
 };
 
@@ -92,6 +93,7 @@ export async function getMockTestContext(userId: string, courseKey: LearningOwne
             orderBy: { version: "asc" },
             select: {
               version: true,
+              difficultyRating: true,
               questions: {
                 where: {
                   question: {
@@ -157,6 +159,7 @@ export async function getMockTestContext(userId: string, courseKey: LearningOwne
       })
       .flatMap((item) => {
         const questions = new Map<string, MockTestQuestion>();
+        const latestPracticeVersion = [...item.challengeVersions].reverse().find((version) => version.questions.length > 0);
 
         for (const version of item.challengeVersions) {
           for (const challengeQuestion of version.questions) {
@@ -196,6 +199,9 @@ export async function getMockTestContext(userId: string, courseKey: LearningOwne
               courseTitle: course.name,
               scopeType: item.checkpointScope === "course" ? "course" as const : "chapter" as const,
               sortOrder: item.sortOrder,
+              difficultyRating: latestPracticeVersion?.difficultyRating == null
+                ? null
+                : Number(latestPracticeVersion.difficultyRating),
               questions: [...questions.values()]
             }]
           : [];

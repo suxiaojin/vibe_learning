@@ -63,6 +63,7 @@ export type SyllabusPathCourse = {
   id: string;
   title: string;
   courseType: LearningOwnerType;
+  challengeMode: "chapter" | "course";
   description: string | null;
   sortOrder: number;
   chapters: SyllabusPathChapter[];
@@ -74,6 +75,18 @@ export type SyllabusPathGroup = {
   ownerId: string | null;
   courses: SyllabusPathCourse[];
   sectionIds: string[];
+};
+
+export type SyllabusCourseOutlineNode = {
+  id: string;
+  title: string;
+  children: SyllabusCourseOutlineNode[];
+};
+
+export type SyllabusCourseOutline = {
+  courseId: string;
+  courseTitle: string;
+  items: SyllabusCourseOutlineNode[];
 };
 
 type SyllabusShape = {
@@ -388,6 +401,7 @@ function buildGroups(
         id: course.id,
         title: course.name,
         courseType: course.courseType,
+        challengeMode: course.challengeMode,
         description: course.description,
         sortOrder: course.sortOrder,
         chapters
@@ -501,6 +515,45 @@ async function loadStudentLearningPath(userId: string, requestedCourseType?: str
 
 export async function getStudentLearningPath(userId: string, requestedCourseType?: string | null) {
   return (await loadStudentLearningPath(userId, requestedCourseType)).path;
+}
+
+export async function getStudentCourseSyllabusOutline(userId: string, courseId: string): Promise<SyllabusCourseOutline | null> {
+  const profile = await getStudentFoundationProfile(userId);
+  if (!profile?.regionId || !profile.publicSubjectId || !profile.majorId) {
+    return null;
+  }
+
+  const courses = await getPublishedStudentCourses({
+    regionId: profile.regionId,
+    publicSubjectId: profile.publicSubjectId,
+    majorId: profile.majorId
+  });
+  const course = courses.find((item) => item.id === courseId && item.courseType === "major");
+  if (!course) {
+    return null;
+  }
+
+  const syllabusItems = course.syllabusItems.filter((item) => item.checkpointScope === null);
+  const childrenByParentId = new Map<string | null, SyllabusItemRecord[]>();
+  for (const item of syllabusItems) {
+    const siblings = childrenByParentId.get(item.parentId) || [];
+    siblings.push(item);
+    childrenByParentId.set(item.parentId, siblings);
+  }
+
+  function buildOutlineNode(item: SyllabusItemRecord): SyllabusCourseOutlineNode {
+    return {
+      id: item.id,
+      title: item.title,
+      children: (childrenByParentId.get(item.id) || []).map(buildOutlineNode)
+    };
+  }
+
+  return {
+    courseId: course.id,
+    courseTitle: course.name,
+    items: (childrenByParentId.get(null) || []).map(buildOutlineNode)
+  };
 }
 
 function buildKnowledgeMapGroups(

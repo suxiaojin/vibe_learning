@@ -527,13 +527,13 @@ export function SpecialPracticeRunner({
                   AI答疑
                 </button>
               ) : null}
-              {!isSubjectiveQuestion ? (
+              {!isSubjectiveQuestion || shareShowsAnswer ? (
                 <ShareToBuddyButton
                   buttonClassName="!min-h-10 !rounded-lg !border-0 !bg-transparent !px-1 !py-0 !font-medium !text-slate-500 hover:!border-transparent hover:!bg-transparent hover:!text-teal disabled:!border-0"
                   buttonIconSize={24}
                   buttonLabel="分享"
                   contentSuggestions={questionShareSuggestions}
-                  copyContext={shareWasCorrect ? "question_correct" : "question_wrong"}
+                  copyContext={shareShowsAnswer ? (shareWasCorrect ? "question_correct" : "question_wrong") : undefined}
                   defaultContent={questionShareContent}
                   shareCard={questionShareCard}
                   sourceLabel={`题 ${currentIndex + 1} / ${questions.length}`}

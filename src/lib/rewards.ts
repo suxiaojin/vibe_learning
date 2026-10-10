@@ -34,8 +34,8 @@ export const medalRules: Array<{
   dailyActiveRuleKey: DiamondRuleKey;
 }> = [
   { level: "novice", label: "小白", minAttempts: 0, dailyActiveRuleKey: "daily_active_novice" },
-  { level: "expert", label: "达人", minAttempts: 400, dailyActiveRuleKey: "daily_active_expert" },
-  { level: "scholar", label: "学霸", minAttempts: 600, dailyActiveRuleKey: "daily_active_scholar" }
+  { level: "expert", label: "达人", minAttempts: 200, dailyActiveRuleKey: "daily_active_expert" },
+  { level: "scholar", label: "学霸", minAttempts: 300, dailyActiveRuleKey: "daily_active_scholar" }
 ];
 
 type RewardTransactionClient = Prisma.TransactionClient;
@@ -61,10 +61,10 @@ export function getBeijingDate(date = new Date()) {
 }
 
 export function getMedalLevel(totalAttempts: number): MedalLevel {
-  if (totalAttempts >= 600) {
+  if (totalAttempts >= getMedalRule("scholar").minAttempts) {
     return "scholar";
   }
-  if (totalAttempts >= 400) {
+  if (totalAttempts >= getMedalRule("expert").minAttempts) {
     return "expert";
   }
   return "novice";

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { ArrowLeft, CircleMinus } from "lucide-react";
 import { EmptyMockTestState, MockTestPageFrame } from "@/app/mock-tests/mock-test-components";
 import { SpecialPracticeProgress } from "@/app/mock-tests/special/special-practice-progress";
+import { ChallengeDifficultyStars } from "@/components/challenge-difficulty-stars";
 import { requireUser } from "@/lib/auth";
 import {
   getMockTestContext,
@@ -72,9 +73,10 @@ function SpecialPracticeTable({
   return (
     <section className="overflow-hidden rounded-[22px] border border-slate-200/80 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
       <div className="overflow-x-auto">
-        <div className="min-w-[760px]">
-          <div className="grid min-h-[64px] grid-cols-[minmax(300px,1fr)_260px_124px] items-center bg-slate-50/90 px-5 text-sm font-semibold text-slate-500">
+        <div className="min-w-[920px]">
+          <div className="grid min-h-[64px] grid-cols-[minmax(300px,1fr)_180px_260px_124px] items-center bg-slate-50/90 px-5 text-sm font-semibold text-slate-500">
             <div>专项练习</div>
+            <div className="text-center">难度</div>
             <div className="text-center">进度</div>
             <div className="text-right">操作</div>
           </div>
@@ -125,7 +127,7 @@ function SpecialPracticeRow({
   toneIndex: number;
 }) {
   return (
-    <div className="grid min-h-[68px] grid-cols-[minmax(300px,1fr)_260px_124px] items-center border-t border-slate-100 px-5 text-[15px] text-slate-600 transition hover:bg-teal/5">
+    <div className="grid min-h-[68px] grid-cols-[minmax(300px,1fr)_180px_260px_124px] items-center border-t border-slate-100 px-5 text-[15px] text-slate-600 transition hover:bg-teal/5">
       <div className="flex min-w-0 items-center gap-2 pr-4">
         <CircleMinus className="shrink-0 text-teal" size={22} strokeWidth={2.5} />
         <div className="min-w-0">
@@ -134,6 +136,16 @@ function SpecialPracticeRow({
             <span className="mt-0.5 block truncate text-xs font-medium text-slate-400">{section.courseTitle}</span>
           ) : null}
         </div>
+      </div>
+      <div className="flex items-center justify-center gap-2">
+        {section.difficultyRating == null ? (
+          <span className="text-xs font-medium text-slate-400">未设置</span>
+        ) : (
+          <>
+            <span className="shrink-0 text-xs font-semibold text-amber-700">{formatDifficultyRating(section.difficultyRating)} 星</span>
+            <ChallengeDifficultyStars compact value={section.difficultyRating} />
+          </>
+        )}
       </div>
       <SpecialPracticeProgress questionIds={questionIds} sectionId={section.id} toneIndex={toneIndex} />
       <div className="text-right">
@@ -146,6 +158,10 @@ function SpecialPracticeRow({
       </div>
     </div>
   );
+}
+
+function formatDifficultyRating(value: number) {
+  return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1);
 }
 
 function buildPracticeHref(courseKey: "public_subject" | "major", sectionId: string) {

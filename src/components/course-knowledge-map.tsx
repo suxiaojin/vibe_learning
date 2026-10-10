@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { ArrowLeft, ChevronDown, ChevronRight, ChevronUp, Maximize2, Minimize2, ZoomIn, ZoomOut } from "lucide-react";
-import type { SyllabusPathGroup, SyllabusPathStatus } from "@/lib/syllabus-learning";
+import type { SyllabusCourseOutlineNode, SyllabusPathGroup, SyllabusPathStatus } from "@/lib/syllabus-learning";
 import { cn } from "@/lib/utils";
 
 type MapNodeKind = "root" | "course" | "chapter" | "section";
@@ -19,6 +19,8 @@ type MapNode = {
 
 type CourseKnowledgeMapProps = {
   selectedGroup: SyllabusPathGroup | null;
+  focusedCourseId?: string;
+  focusedCourseOutline?: SyllabusCourseOutlineNode[];
 };
 
 const branchColors = [
@@ -34,7 +36,33 @@ function clampZoom(value: number) {
   return Math.min(1.25, Math.max(0.55, Number(value.toFixed(2))));
 }
 
-function buildMapRoot(group: SyllabusPathGroup): MapNode {
+function buildMapRoot(
+  group: SyllabusPathGroup,
+  focusedCourseId?: string,
+  focusedCourseOutline?: SyllabusCourseOutlineNode[]
+): MapNode {
+  const focusedCourse = focusedCourseId
+    ? group.courses.find((course) => course.id === focusedCourseId)
+    : null;
+  if (focusedCourse) {
+    function toMapNode(item: SyllabusCourseOutlineNode): MapNode {
+      return {
+        id: item.id,
+        title: item.title,
+        kind: "chapter",
+        children: item.children.map(toMapNode)
+      };
+    }
+    const children = (focusedCourseOutline || []).map(toMapNode);
+    return {
+      id: focusedCourse.id,
+      title: focusedCourse.title,
+      subtitle: `${children.length} 个`,
+      kind: "course",
+      children
+    };
+  }
+
   return {
     id: `group-${group.key}`,
     title: group.name,
@@ -150,7 +178,7 @@ function MindNode({
 }) {
   const palette = branchColors[colorIndex % branchColors.length];
   const childCount = node.children.length;
-  const collapsible = (node.kind === "course" || node.kind === "chapter") && childCount > 0;
+  const collapsible = node.kind !== "root" && childCount > 0;
   const collapsed = collapsible && collapsedIds.has(node.id);
   const visibleChildren = collapsed ? [] : node.children;
 
@@ -176,7 +204,7 @@ function MindNode({
   );
 }
 
-export function CourseKnowledgeMap({ selectedGroup }: CourseKnowledgeMapProps) {
+export function CourseKnowledgeMap({ selectedGroup, focusedCourseId, focusedCourseOutline }: CourseKnowledgeMapProps) {
   const mapShellRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const panRef = useRef({ active: false, pointerId: 0, startX: 0, startY: 0, scrollLeft: 0, scrollTop: 0 });
@@ -184,8 +212,18 @@ export function CourseKnowledgeMap({ selectedGroup }: CourseKnowledgeMapProps) {
   const [isPanning, setIsPanning] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set());
-  const root = useMemo(() => (selectedGroup ? buildMapRoot(selectedGroup) : null), [selectedGroup]);
-  const courseNodeIds = useMemo(() => root?.children.filter((node) => node.kind === "course").map((node) => node.id) || [], [root]);
+  const root = useMemo(
+    () => (selectedGroup ? buildMapRoot(selectedGroup, focusedCourseId, focusedCourseOutline) : null),
+    [focusedCourseId, focusedCourseOutline, selectedGroup]
+  );
+  const courseNodeIds = useMemo(() => {
+    if (!root) {
+      return [];
+    }
+    return root.kind === "course"
+      ? [root.id]
+      : root.children.filter((node) => node.kind === "course").map((node) => node.id);
+  }, [root]);
   const collapsedToCourseLevel = courseNodeIds.length > 0 && courseNodeIds.every((nodeId) => collapsedIds.has(nodeId));
 
   useEffect(() => {
@@ -289,18 +327,19 @@ export function CourseKnowledgeMap({ selectedGroup }: CourseKnowledgeMapProps) {
 
   return (
     <section className="min-w-0">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <Link className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-teal" href="/course-center">
-            <ArrowLeft size={20} />
-            返回课程中心
-          </Link>
-          <h1 className="mt-3 text-3xl font-black tracking-tight text-ink">知识点导图</h1>
-        </div>
+      {!focusedCourseId ? (
+        <header className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <Link className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-teal" href="/course-center">
+              <ArrowLeft size={20} />
+              返回课程中心
+            </Link>
+            <h1 className="mt-3 text-3xl font-black tracking-tight text-ink">知识点导图</h1>
+          </div>
+        </header>
+      ) : null}
 
-      </header>
-
-      <div ref={mapShellRef} className={cn("mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-[#dfe5ea] shadow-sm", isFullscreen && "mt-0 h-dvh rounded-none border-0")}>
+      <div ref={mapShellRef} className={cn("overflow-hidden rounded-2xl border border-slate-200 bg-[#dfe5ea] shadow-sm", !focusedCourseId && "mt-5", isFullscreen && "mt-0 h-dvh rounded-none border-0")}>
         <div className="flex flex-wrap items-center justify-end gap-3 border-b border-slate-200 bg-white/90 px-4 py-3">
           <div className="flex items-center gap-2">
             <button className="icon-button size-9" type="button" aria-label="缩小" onClick={() => zoomBy(-0.08)}>
