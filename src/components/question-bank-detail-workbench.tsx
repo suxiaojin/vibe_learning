@@ -1593,7 +1593,7 @@ function AiDoubtReviewPanel({ paperId, question }: { paperId: string; question: 
       <div className="flex h-10 items-center justify-between border-b border-[#d4dae4] bg-[#eef3f9] px-3">
         <h2 className="text-sm font-black text-[#111827]">AI答疑</h2>
         <div className="flex items-center gap-2">
-          <label className="flex h-7 cursor-pointer items-center gap-2 rounded border border-[#cbd5e1] bg-[#f8fafc] px-2.5 text-xs font-semibold text-[#475467]" title="开启后，学生答题结果页显示该题的AI解释按钮">
+          <label className="flex h-7 cursor-pointer items-center gap-2 rounded border border-[#cbd5e1] bg-[#f8fafc] px-2.5 text-xs font-semibold text-[#475467]" title="开启后，学生答题结果页和专项练习页显示该题的AI解释/答疑入口">
             <span>前端显示</span>
             <input
               checked={showAiExplanation}

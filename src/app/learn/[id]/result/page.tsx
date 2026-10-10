@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { BookOpenCheck, CheckCircle2, ChevronRight, Circle, Flame, RotateCcw, Star, Trophy, XCircle } from "lucide-react";
 import { redirect } from "next/navigation";
 import { ChallengeDifficultyStars } from "@/components/challenge-difficulty-stars";
+import { RichTextContent } from "@/components/rich-text-content";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
 import { StudentPageShell } from "@/components/student-page-shell";
 import { WrongQuestionAi } from "@/components/wrong-question-ai";
@@ -107,7 +108,6 @@ function answerText(answer: Prisma.JsonValue) {
   return Array.isArray(answer) ? answer.map(String).join("、") : String(answer || "");
 }
 
-const richTextHtmlPattern = /<\/?[a-z][\s\S]*>/i;
 const richTextMediaPattern = /<(?:img|table)\b/i;
 const richTextWhitespaceEntityPattern = /(?:&nbsp;|&#160;|&#x0*a0;)/gi;
 
@@ -123,21 +123,6 @@ function hasMeaningfulRichText(value: string) {
     .replace(richTextWhitespaceEntityPattern, "")
     .trim()
     .length > 0;
-}
-
-function RichTextContent({ className, value }: { className?: string; value: string }) {
-  if (!richTextHtmlPattern.test(value)) {
-    return <span className={cn("whitespace-pre-wrap", className)}>{value}</span>;
-  }
-  return (
-    <div
-      className={cn(
-        "overflow-x-auto break-words [&_img]:my-2 [&_img]:h-auto [&_img]:max-w-full [&_li]:my-0.5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1 [&_table]:my-2 [&_table]:max-w-full [&_table]:border-collapse [&_td]:border [&_td]:border-current [&_td]:p-2 [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-5",
-        className
-      )}
-      dangerouslySetInnerHTML={{ __html: value }}
-    />
-  );
 }
 
 function formatDateTime(date: Date) {
@@ -651,13 +636,13 @@ function AttemptCard({
   return (
     <article className="rounded-panel border border-border-soft bg-surface p-4">
       <div role="heading" aria-level={3} className="text-lg font-bold leading-relaxed">
-        <RichTextContent className="whitespace-pre-wrap" value={attempt.question.stem} />
+        <RichTextContent className="whitespace-pre-wrap" value={attempt.question.stem} zoomable />
       </div>
       <div className="mt-4 grid gap-2">
         {options.map((option) => (
           <div key={option.key} className="rounded-xl border border-border-soft bg-surface px-4 py-3 text-sm leading-6">
             <span className="font-semibold">{option.key}.</span>
-            <RichTextContent className="inline" value={option.text} />
+            <RichTextContent className="inline" value={option.text} zoomable />
           </div>
         ))}
       </div>
@@ -667,13 +652,13 @@ function AttemptCard({
         </p>
         <div className="rounded-xl bg-[var(--challenge-muted)] p-4 text-[var(--challenge-accent)]">
           <span className="font-semibold">{ungraded ? "参考答案：" : "正确答案："}</span>
-          <RichTextContent className="leading-6" value={answerText(attempt.question.answer)} />
+          <RichTextContent className="leading-6" value={answerText(attempt.question.answer)} zoomable />
         </div>
       </div>
       {attempt.question.showAnalysis && hasMeaningfulRichText(attempt.question.analysis) ? (
         <div className="mt-3 rounded-xl bg-mist p-4">
           <p className="text-xs font-semibold text-slate-500">解析</p>
-          <RichTextContent className="mt-2 block text-sm leading-6 text-slate-700" value={attempt.question.analysis} />
+          <RichTextContent className="mt-2 block text-sm leading-6 text-slate-700" value={attempt.question.analysis} zoomable />
         </div>
       ) : null}
       {attempt.question.showAiExplanation ? (

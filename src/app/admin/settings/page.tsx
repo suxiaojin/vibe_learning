@@ -163,6 +163,8 @@ export default async function AdminSettingsPage({
     notice?: string;
     error?: string;
     tab?: string;
+    openGroup?: string;
+    openImage?: string;
     promptProfileId?: string;
     promptVersionId?: string;
     promptQuery?: string;
@@ -351,7 +353,7 @@ export default async function AdminSettingsPage({
       </form> : null}
 
       {activeTab === "homepage" && homepageText && homepageImages ? (
-        <AdminHomepageSettings content={homepageText} imageUrls={homepageImages} />
+        <AdminHomepageSettings content={homepageText} imageUrls={homepageImages} openGroup={params?.openGroup} openImage={params?.openImage} />
       ) : null}
 
       {activeTab === "agreements" ? <AdminAgreementSettings contents={{

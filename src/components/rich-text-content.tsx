@@ -1,3 +1,4 @@
+import { ZoomableRichTextContent } from "@/components/zoomable-rich-text-content";
 import { cn } from "@/lib/utils";
 
 const richTextHtmlPattern = /<\/?[a-z][\s\S]*>/i;
@@ -7,7 +8,11 @@ function containsRichTextMarkup(value: string) {
   return richTextHtmlPattern.test(value) || richTextWhitespaceEntityPattern.test(value);
 }
 
-export function RichTextContent({ className, inline = false, value }: { className?: string; inline?: boolean; value: string }) {
+export function RichTextContent({ className, inline = false, value, zoomable = false }: { className?: string; inline?: boolean; value: string; zoomable?: boolean }) {
+  if (zoomable) {
+    return <ZoomableRichTextContent className={className} inline={inline} value={value} />;
+  }
+
   if (!containsRichTextMarkup(value)) {
     if (inline) {
       return <span className={cn("whitespace-pre-wrap break-words", className)}>{value}</span>;

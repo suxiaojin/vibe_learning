@@ -217,7 +217,7 @@ export function WrongQuestionAi({
               <p className="text-xs font-bold text-slate-500">{text.explanation}</p>
               <div className="mt-2">
                 {answerFormat === "rich_html" ? (
-                  <RichTextContent className="text-sm leading-7 text-slate-700" value={answer} />
+                  <RichTextContent className="text-sm leading-7 text-slate-700" value={answer} zoomable />
                 ) : (
                   <MarkdownText content={answer} />
                 )}

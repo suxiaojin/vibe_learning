@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import type { HomepageImageSlot, HomepageText } from "@/lib/homepage-settings";
+import { homepageImageAlts, type HomepageImageSlot, type HomepageText } from "@/lib/homepage-settings";
 import styles from "./marketing-homepage.module.css";
 
 type MarketingHomepageProps = {
@@ -30,7 +30,7 @@ export function MarketingHomepage({ signedIn, content, images }: MarketingHomepa
       emphasis: content.pathTitleAccent,
       lines: [content.pathDescriptionLead, content.pathDescriptionMore],
       image: "learning-path",
-      alt: content.pathAlt,
+      alt: homepageImageAlts["learning-path"],
       width: 1000,
       height: 850
     },
@@ -41,7 +41,7 @@ export function MarketingHomepage({ signedIn, content, images }: MarketingHomepa
       emphasis: content.aiTitleAccent,
       lines: [content.aiDescriptionLead, content.aiDescriptionMore],
       image: "ai-explanation",
-      alt: content.aiAlt,
+      alt: homepageImageAlts["ai-explanation"],
       width: 1000,
       height: 850
     },
@@ -52,7 +52,7 @@ export function MarketingHomepage({ signedIn, content, images }: MarketingHomepa
       emphasis: content.buddyTitleAccent,
       lines: [content.buddyDescriptionLead, content.buddyDescriptionMore],
       image: "study-buddy",
-      alt: content.buddyAlt,
+      alt: homepageImageAlts["study-buddy"],
       width: 1000,
       height: 900
     },
@@ -63,7 +63,7 @@ export function MarketingHomepage({ signedIn, content, images }: MarketingHomepa
       emphasis: content.reviewTitleAccent,
       lines: [content.reviewDescriptionLead, content.reviewDescriptionMore],
       image: "review",
-      alt: content.reviewAlt,
+      alt: homepageImageAlts.review,
       width: 1000,
       height: 850
     }
@@ -90,7 +90,7 @@ export function MarketingHomepage({ signedIn, content, images }: MarketingHomepa
         <section className={`${styles.container} ${styles.hero}`} aria-labelledby="hero-title">
           <div className={styles.heroArtwork}>
             <Image
-              alt={content.heroAlt}
+              alt={homepageImageAlts.hero}
               className={styles.artwork}
               src={images.hero}
               width={1000}
@@ -165,7 +165,7 @@ export function MarketingHomepage({ signedIn, content, images }: MarketingHomepa
               <Link className={styles.primaryButton} href={startHref} prefetch={false}>{startText}</Link>
             </div>
             <Image
-              alt={content.startAlt}
+              alt={homepageImageAlts.start}
               className={styles.closingArtwork}
               src={images.start}
               width={800}

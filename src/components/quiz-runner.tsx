@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Heart, Loader2, X, XCircle } from "lucide-react";
+import { RichTextContent } from "@/components/rich-text-content";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import {
@@ -98,29 +99,6 @@ function normalizeAnswer(value: unknown) {
 
 function answerText(answer: unknown) {
   return normalizeAnswer(answer).join("\u3001");
-}
-
-const richTextHtmlPattern = /<\/?[a-z][\s\S]*>/i;
-
-function RichTextContent({ className, inline = false, value }: { className?: string; inline?: boolean; value: string }) {
-  if (!richTextHtmlPattern.test(value)) {
-    if (inline) {
-      return <span className={cn("whitespace-pre-wrap", className)}>{value}</span>;
-    }
-    return <p className={cn("whitespace-pre-wrap", className)}>{value}</p>;
-  }
-  if (inline) {
-    return <span className={cn("break-words [&_img]:inline-block [&_img]:h-auto [&_img]:max-w-full", className)} dangerouslySetInnerHTML={{ __html: value }} />;
-  }
-  return (
-    <div
-      className={cn(
-        "overflow-x-auto break-words [&_div]:my-1 [&_img]:my-2 [&_img]:h-auto [&_img]:max-w-full [&_li]:my-0.5 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1 [&_table]:my-2 [&_table]:max-w-full [&_table]:border-collapse [&_td]:border [&_td]:border-current [&_td]:p-2 [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-5",
-        className
-      )}
-      dangerouslySetInnerHTML={{ __html: value }}
-    />
-  );
 }
 
 export function QuizRunner({
@@ -432,7 +410,7 @@ export function QuizRunner({
           ) : null}
         </p>
         <div role="heading" aria-level={3} className="mt-3 text-xl font-semibold leading-snug text-ink">
-          <RichTextContent className="whitespace-pre-wrap" value={current.stem} />
+          <RichTextContent className="whitespace-pre-wrap" value={current.stem} zoomable />
         </div>
 
         {isSubjectiveQuestion && checkState !== "idle" ? (
@@ -459,7 +437,7 @@ export function QuizRunner({
                 {text.referenceAnswer}
               </h4>
               <div className="mt-3 min-h-36 rounded-xl border border-[var(--challenge-ring)] bg-[var(--challenge-muted)] px-5 py-4 text-ink">
-                <RichTextContent className="text-base leading-8" value={answerText(correctAnswer) || "\u6682\u65e0\u53c2\u8003\u7b54\u6848"} />
+                <RichTextContent className="text-base leading-8" value={answerText(correctAnswer) || "\u6682\u65e0\u53c2\u8003\u7b54\u6848"} zoomable />
               </div>
             </section>
           </div>
@@ -525,7 +503,7 @@ export function QuizRunner({
                   onClick={() => toggleAnswer(current, option.key)}
                 >
                   <span className="mr-2 text-slate-400">{option.key}.</span>
-                  <RichTextContent className="inline" inline value={option.text} />
+                  <RichTextContent className="inline" inline value={option.text} zoomable />
                 </button>
               );
             })}
@@ -576,7 +554,14 @@ export function QuizRunner({
                   </p>
                   {checkState === "wrong" ? (
                     <p className={cn("text-sm font-semibold", !isRichAnswerQuestion && "truncate")}>
-                      {isRichAnswerQuestion ? text.viewReferenceAnswer : `${text.rightAnswer}${answerText(correctAnswer)}`}
+                      {isRichAnswerQuestion ? (
+                        text.viewReferenceAnswer
+                      ) : (
+                        <>
+                          <span>{text.rightAnswer}</span>
+                          <RichTextContent className="inline" inline value={answerText(correctAnswer)} zoomable />
+                        </>
+                      )}
                     </p>
                   ) : checkState === "ungraded" ? <p className="text-sm font-semibold">{text.ungradedHint}</p> : null}
                 </div>

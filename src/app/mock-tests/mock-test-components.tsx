@@ -69,7 +69,7 @@ function QuestionCard({ question, index }: { question: MockTestQuestion; index: 
         <span className="min-w-0 truncate">知识点：{question.knowledgePointTitle}</span>
       </div>
       <div className="mt-3 text-base font-semibold leading-7 text-ink" role="heading" aria-level={3}>
-        <RichTextContent value={question.stem} />
+        <RichTextContent value={question.stem} zoomable />
       </div>
       {options.length > 0 ? (
         <div className="mt-4 grid gap-2">
@@ -77,7 +77,7 @@ function QuestionCard({ question, index }: { question: MockTestQuestion; index: 
             <label key={`${question.id}-${option.key || option.text}`} className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-teal/30 hover:bg-teal/5">
               <input className="mt-1 accent-teal" name={`question-${question.id}`} type={question.type === "multiple_choice" ? "checkbox" : "radio"} />
               <span className="font-semibold text-slate-500">{option.key}</span>
-              <RichTextContent className="min-w-0 flex-1" inline value={option.text} />
+              <RichTextContent className="min-w-0 flex-1" inline value={option.text} zoomable />
             </label>
           ))}
         </div>

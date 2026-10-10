@@ -19,28 +19,40 @@ function imageSlot(value: FormDataEntryValue | null): HomepageImageSlot | null {
 
 export async function saveHomepageText(formData: FormData) {
   await requireAdmin();
-  const content = {} as HomepageText;
-  for (const field of homepageTextGroups.flatMap((group) => group.fields)) {
+  const group = homepageTextGroups.find((item) => item.id === formData.get("group"));
+  if (!group) redirect(`${settingsPath}&error=homepage-text-invalid`);
+
+  const content: Partial<HomepageText> = {};
+  for (const field of group.fields) {
     const raw = formData.get(field.key);
     if (typeof raw !== "string") {
-      redirect(`${settingsPath}&error=homepage-text-invalid`);
+      redirect(`${settingsPath}&error=homepage-text-invalid&openGroup=${group.id}`);
     }
     const value = raw.trim();
     const maxLength = field.maxLength ?? (field.multiline ? 240 : 80);
     if (!value || value.length > maxLength) {
-      redirect(`${settingsPath}&error=homepage-text-invalid`);
+      redirect(`${settingsPath}&error=homepage-text-invalid&openGroup=${group.id}`);
     }
     content[field.key] = value;
   }
 
-  await prisma.systemSetting.upsert({
-    where: { id: "default" },
-    update: { homepageContent: content },
-    create: { id: "default", homepageContent: content }
+  const patch = JSON.stringify(content);
+  await prisma.$transaction(async (tx) => {
+    await tx.systemSetting.upsert({
+      where: { id: "default" },
+      update: { updatedAt: new Date() },
+      create: { id: "default" }
+    });
+    await tx.$executeRaw`
+      UPDATE "system_settings"
+      SET "homepageContent" = "homepageContent" || CAST(${patch} AS jsonb),
+          "updatedAt" = CURRENT_TIMESTAMP
+      WHERE "id" = 'default'
+    `;
   });
   revalidatePath("/");
   revalidatePath("/admin/settings");
-  redirect(`${settingsPath}&notice=homepage-text-saved`);
+  redirect(`${settingsPath}&notice=homepage-text-saved&openGroup=${group.id}`);
 }
 
 export async function uploadHomepageImage(formData: FormData) {
@@ -83,7 +95,7 @@ export async function uploadHomepageImage(formData: FormData) {
   });
   revalidatePath("/");
   revalidatePath("/admin/settings");
-  redirect(`${settingsPath}&notice=homepage-image-saved`);
+  redirect(`${settingsPath}&notice=homepage-image-saved&openImage=${slot}`);
 }
 
 export async function restoreHomepageImage(formData: FormData) {
@@ -93,5 +105,5 @@ export async function restoreHomepageImage(formData: FormData) {
   await prisma.homepageImage.deleteMany({ where: { slot } });
   revalidatePath("/");
   revalidatePath("/admin/settings");
-  redirect(`${settingsPath}&notice=homepage-image-restored`);
+  redirect(`${settingsPath}&notice=homepage-image-restored&openImage=${slot}`);
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Bot, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Loader2, Send, X } from "lucide-react";
 import type { Components } from "react-markdown";
@@ -12,7 +12,6 @@ import type { BuddyShareCard } from "@/lib/buddy-share-cards";
 import { isDiamondInsufficientMessage } from "@/lib/diamond-insufficient";
 import {
   getQuestionBankTypeLabel,
-  isAdvancedMathPublicSubject,
   isQuestionBankAutoGradedForOwner,
   isQuestionBankRichAnswerQuestionType
 } from "@/lib/question-bank-types";
@@ -25,6 +24,7 @@ type PracticeQuestion = {
   answer: unknown;
   analysis: string;
   showAnalysis: boolean;
+  showAiExplanation: boolean;
   fillBlankScored: boolean;
   source?: string;
   questionBank?: {
@@ -62,6 +62,7 @@ type StoredPracticeState = {
   answers?: unknown;
   answerStates?: unknown;
   revealedQuestionIds?: unknown;
+  practiceRunId?: unknown;
 };
 
 type HydratedPracticeState = {
@@ -69,6 +70,7 @@ type HydratedPracticeState = {
   answers: Record<string, string[]>;
   answerStates: Record<string, AnswerState>;
   revealedQuestionIds: Record<string, boolean>;
+  practiceRunId: string;
 };
 
 export function SpecialPracticeRunner({
@@ -90,6 +92,7 @@ export function SpecialPracticeRunner({
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [answerStates, setAnswerStates] = useState<Record<string, AnswerState>>({});
   const [revealedQuestionIds, setRevealedQuestionIds] = useState<Record<string, boolean>>({});
+  const [practiceRunId, setPracticeRunId] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
   const [aiMessagesByQuestionId, setAiMessagesByQuestionId] = useState<Record<string, AiMessage[]>>({});
@@ -110,7 +113,7 @@ export function SpecialPracticeRunner({
     ownerName,
     question.fillBlankScored
   );
-  const hideAiDoubt = isAdvancedMathPublicSubject(courseKey, ownerName);
+  const hideAiDoubt = !question.showAiExplanation;
   const correctAnswer = normalizeAnswer(question.answer);
   const previousEnabled = currentIndex > 0;
   const isLastQuestion = currentIndex === questions.length - 1;
@@ -133,6 +136,18 @@ export function SpecialPracticeRunner({
   });
   const questionShareContent = shareWasCorrect ? "这道题我做对了，考点挺典型。" : "这道题我想听听大家怎么理解。";
   const questionShareSuggestions = getQuestionShareSuggestions(shareWasCorrect);
+  const recordSpecialPracticeAttempt = useCallback((questionId: string, answer: string[]) => {
+    if (!practiceRunId || answer.length === 0) {
+      return;
+    }
+
+    void fetch(`/api/mock-tests/special/${encodeURIComponent(sectionId)}/attempts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answer, courseKey, practiceRunId, questionId }),
+      keepalive: true
+    }).catch(() => undefined);
+  }, [courseKey, practiceRunId, sectionId]);
 
   useEffect(() => {
     try {
@@ -156,8 +171,10 @@ export function SpecialPracticeRunner({
         setAnswers(stored.answers);
         setAnswerStates(restoredAnswerStates);
         setRevealedQuestionIds(stored.revealedQuestionIds);
+        setPracticeRunId(stored.practiceRunId);
         setCurrentIndex(stored.currentIndex);
       } else {
+        setPracticeRunId(createPracticeRunId());
         setCurrentIndex(initialIndex);
       }
     } finally {
@@ -166,7 +183,7 @@ export function SpecialPracticeRunner({
   }, [courseKey, initialIndex, ownerName, questionIds, questionIdsSignature, storageKey]);
 
   useEffect(() => {
-    if (!hydrated) {
+    if (!hydrated || !practiceRunId) {
       return;
     }
 
@@ -178,13 +195,14 @@ export function SpecialPracticeRunner({
           currentIndex,
           answers,
           answerStates,
-          revealedQuestionIds
+          revealedQuestionIds,
+          practiceRunId
         })
       );
     } catch {
       // Local practice progress is a convenience cache; blocked storage should not break answering.
     }
-  }, [answerStates, answers, currentIndex, hydrated, questionIdsSignature, revealedQuestionIds, storageKey]);
+  }, [answerStates, answers, currentIndex, hydrated, practiceRunId, questionIdsSignature, revealedQuestionIds, storageKey]);
 
   function selectOption(optionKey: string) {
     if (revealed || judgedState) {
@@ -222,6 +240,10 @@ export function SpecialPracticeRunner({
     }
     if (selected.length === 0 && !markUnansweredWrong) {
       return;
+    }
+
+    if (selected.length > 0) {
+      recordSpecialPracticeAttempt(question.id, selected);
     }
 
     if (isSubjectiveQuestion) {
@@ -441,7 +463,7 @@ export function SpecialPracticeRunner({
               {questionTypeLabel}
             </span>
             <div aria-level={2} className="mt-6 max-w-4xl text-lg font-semibold leading-8 text-ink" role="heading">
-              <RichTextContent value={`${currentIndex + 1}、${question.stem}`} />
+              <RichTextContent value={`${currentIndex + 1}、${question.stem}`} zoomable />
             </div>
 
             {hasTextAnswer ? (
@@ -486,7 +508,7 @@ export function SpecialPracticeRunner({
                       onClick={() => selectOption(option.key)}
                     >
                       <span className={optionBadgeClassName({ correctOption, selectedOption, wrongOption })}>{option.key}</span>
-                      <RichTextContent className="min-w-0 flex-1" value={option.text} />
+                      <RichTextContent className="min-w-0 flex-1" value={option.text} zoomable />
                     </button>
                   );
                 })}
@@ -526,12 +548,12 @@ export function SpecialPracticeRunner({
                 ) : null}
                 <div>
                   <span className="font-semibold">参考答案：</span>
-                  <RichTextContent className="mt-2 text-slate-700" value={answerText(correctAnswer) || "暂无"} />
+                  <RichTextContent className="mt-2 text-slate-700" value={answerText(correctAnswer) || "暂无"} zoomable />
                 </div>
                 {question.showAnalysis ? (
                   <div className="mt-3">
                     <span className="font-semibold">文字解析：</span>
-                    <RichTextContent className="mt-2 text-slate-600" value={question.analysis || "暂无解析。"} />
+                    <RichTextContent className="mt-2 text-slate-600" value={question.analysis || "暂无解析。"} zoomable />
                   </div>
                 ) : null}
               </section>
@@ -810,7 +832,7 @@ function AiAnswerText({ content, format = "markdown" }: { content: string; forma
   }
 
   if (format === "rich_html") {
-    return <RichTextContent className="text-base leading-8 text-ink" value={content} />;
+    return <RichTextContent className="text-base leading-8 text-ink" value={content} zoomable />;
   }
 
   return (
@@ -858,6 +880,12 @@ const aiAnswerMarkdownComponents: Components = {
   )
 };
 
+function createPracticeRunId() {
+  const bytes = new Uint8Array(16);
+  window.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 function readStoredPracticeState(
   storageKey: string,
   questionIds: string[],
@@ -889,7 +917,10 @@ function readStoredPracticeState(
       }),
       answers,
       answerStates,
-      revealedQuestionIds
+      revealedQuestionIds,
+      practiceRunId: typeof stored.practiceRunId === "string" && /^[a-f0-9]{32}$/i.test(stored.practiceRunId)
+        ? stored.practiceRunId
+        : createPracticeRunId()
     };
   } catch {
     return null;
