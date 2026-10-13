@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Bot, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Loader2, Send, X } from "lucide-react";
 import type { Components } from "react-markdown";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
+import { QuestionTypeBadge } from "@/components/question-type-badge";
 import { DiamondInsufficientMessage } from "@/components/diamond-insufficient-message";
 import { MathMarkdownText } from "@/components/math-markdown-text";
 import { RichTextContent } from "@/components/rich-text-content";
@@ -459,9 +460,7 @@ export function SpecialPracticeRunner({
           </header>
 
           <article className="min-h-0 flex-1 overflow-y-auto bg-white px-7 py-8">
-            <span className="inline-flex rounded-lg bg-teal/10 px-2.5 py-1.5 text-sm font-semibold text-teal">
-              {questionTypeLabel}
-            </span>
+            <QuestionTypeBadge type={question.type} label={questionTypeLabel} />
             <div aria-level={2} className="mt-6 max-w-4xl text-lg font-semibold leading-8 text-ink" role="heading">
               <RichTextContent value={`${currentIndex + 1}、${question.stem}`} zoomable />
             </div>
@@ -1101,7 +1100,7 @@ function buildQuestionShareCard({
     questionTypeLabel,
     selectedAnswer: selected.length > 0 ? answerDetailText(selected, options) : "未答",
     sourceTitle: sourceTitle ? clipShareText(sourceTitle, 42) : undefined,
-    title: clipShareText(stem, 92),
+    title: stem,
     wasCorrect
   };
 }

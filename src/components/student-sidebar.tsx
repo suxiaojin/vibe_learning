@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Bell, BookMarked, Gem, GraduationCap, HelpCircle, Home, LogOut, MoreHorizontal, Settings, Sparkles, UserRound, UsersRound } from "lucide-react";
+import { Bell, BookMarked, Gem, GraduationCap, HelpCircle, LogOut, MoreHorizontal, Settings, Sparkles, UserRound, UsersRound } from "lucide-react";
 import { NotificationBell } from "@/components/notification-bell";
 import { StudentSidebarAvatar } from "@/components/student-sidebar-avatar";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ensureDiamondAccount } from "@/lib/rewards";
+import { hasUnreadDiscoveryFeedPosts } from "@/lib/buddy-posts";
 import { getNotificationBellData } from "@/lib/user-event-notifications";
 import { getSystemSettings } from "@/lib/system-settings";
 import { cn } from "@/lib/utils";
@@ -27,9 +28,16 @@ const text = {
   logout: "\u9000\u51fa\u767b\u5f55"
 };
 
-export async function StudentSidebar({ active }: { active: StudentNavKey }) {
-  const [footer, navIcons] = await Promise.all([
-    getStudentSidebarAccount(),
+export async function StudentSidebar({
+  active,
+  hideBuddyCircleUnread = false
+}: {
+  active: StudentNavKey;
+  hideBuddyCircleUnread?: boolean;
+}) {
+  const user = await requireUser();
+  const [footer, navIcons, hasUnreadDiscoveryPosts] = await Promise.all([
+    getStudentSidebarAccount(user),
     getSystemSettings([
       "studentNavIconLearnKey",
       "studentNavIconCourseCenterKey",
@@ -37,7 +45,8 @@ export async function StudentSidebar({ active }: { active: StudentNavKey }) {
       "studentNavIconBuddyCircleKey",
       "studentNavIconProfileKey",
       "studentNavIconMoreKey"
-    ])
+    ]),
+    user.role === "student" && !hideBuddyCircleUnread ? hasUnreadDiscoveryFeedPosts(user.id) : Promise.resolve(false)
   ]);
 
   return (
@@ -50,7 +59,7 @@ export async function StudentSidebar({ active }: { active: StudentNavKey }) {
           <StudentNavItem active={active === "learn"} href="/learn" icon={<StudentNavIcon fallback={<GraduationCap size={22} />} iconKey="learn" storageKey={navIcons.studentNavIconLearnKey} />} label={text.learn} />
           <StudentNavItem active={active === "course-center"} href="/course-center" icon={<StudentNavIcon fallback={<BookMarked size={22} />} iconKey="course-center" storageKey={navIcons.studentNavIconCourseCenterKey} />} label={text.courseCenter} />
           <StudentNavItem active={active === "study-buddy"} href="/study-buddy" icon={<StudentNavIcon fallback={<Sparkles size={22} />} iconKey="study-buddy" storageKey={navIcons.studentNavIconStudyBuddyKey} />} label={text.studyBuddy} />
-          <StudentNavItem active={active === "buddy-circle"} href="/buddy-circle" icon={<StudentNavIcon fallback={<UsersRound size={22} />} iconKey="buddy-circle" storageKey={navIcons.studentNavIconBuddyCircleKey} />} label={text.buddyCircle} />
+          <StudentNavItem active={active === "buddy-circle"} href="/buddy-circle" icon={<StudentNavIcon fallback={<UsersRound size={22} />} iconKey="buddy-circle" storageKey={navIcons.studentNavIconBuddyCircleKey} />} label={text.buddyCircle} unread={hasUnreadDiscoveryPosts && !hideBuddyCircleUnread} />
           <StudentNavItem active={active === "me"} href="/me" icon={<StudentNavIcon fallback={<UserRound size={22} />} iconKey="profile" storageKey={navIcons.studentNavIconProfileKey} />} label={text.profile} />
           <MoreMenu active={active === "notifications" || active === "settings" || active === "help"} icon={<StudentNavIcon fallback={<MoreHorizontal size={20} />} iconKey="more" storageKey={navIcons.studentNavIconMoreKey} />} />
         </nav>
@@ -83,8 +92,7 @@ function StudentNavIcon({
   );
 }
 
-async function getStudentSidebarAccount() {
-  const user = await requireUser();
+async function getStudentSidebarAccount(user: Awaited<ReturnType<typeof requireUser>>) {
   const [diamondAccount, fullUser, notificationBellData] = await Promise.all([
     ensureDiamondAccount(user.id),
     prisma.user.findUnique({
@@ -128,22 +136,28 @@ function StudentNavItem({
   href,
   icon,
   label,
-  active = false
+  active = false,
+  unread = false
 }: {
   href: string;
   icon: ReactNode;
   label: string;
   active?: boolean;
+  unread?: boolean;
 }) {
   return (
     <Link
       href={href}
+      aria-label={unread ? `${label}，发现有未读帖子` : undefined}
       className={cn(
         "flex min-h-[52px] items-center gap-3 rounded-2xl border px-4 text-base font-semibold transition",
         active ? "border-teal/30 bg-teal/10 text-teal shadow-[0_10px_26px_rgba(31,157,138,0.10)]" : "border-transparent text-slate-600 hover:bg-slate-100 hover:text-ink"
       )}
     >
-      <span className="grid size-7 place-items-center">{icon}</span>
+      <span className="relative grid size-7 place-items-center">
+        {icon}
+        {unread ? <span aria-hidden="true" className="absolute right-0 top-0 size-2 rounded-full bg-coral ring-2 ring-white" /> : null}
+      </span>
       {label}
     </Link>
   );
@@ -182,10 +196,6 @@ function MoreMenu({ active, icon }: { active: boolean; icon: ReactNode }) {
           <Link className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-semibold text-slate-500 hover:bg-slate-50" href="/help">
             <HelpCircle size={18} />
             {text.help}
-          </Link>
-          <Link className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-semibold text-slate-500 hover:bg-slate-50" href="/?intro=1" prefetch={false}>
-            <Home size={18} />
-            官网首页
           </Link>
           <form action="/api/auth/logout" method="post">
             <button className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-semibold text-slate-500 hover:bg-slate-50" type="submit">

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { CheckCircle2, Flame, Gem, Star, Trophy, XCircle } from "lucide-react";
 import { ChallengeDifficultyStars } from "@/components/challenge-difficulty-stars";
 import { RichTextContent } from "@/components/rich-text-content";
-import type { BuddyShareCard } from "@/lib/buddy-share-cards";
+import { normalizeBuddyShareInput, type BuddyShareCard } from "@/lib/buddy-share-cards";
 import { cn } from "@/lib/utils";
 
 const heatmapLevelClasses = [
@@ -22,7 +22,10 @@ export function BuddyShareCardView({ card, compact = false }: { card?: BuddyShar
   }
 
   if (card.type === "question_card") {
-    return <QuestionShareCard card={card} compact={compact} />;
+    const normalizedCard = normalizeBuddyShareInput(card);
+    return normalizedCard?.type === "question_card"
+      ? <QuestionShareCard card={normalizedCard} compact={compact} />
+      : null;
   }
 
   if (card.type === "quiz_result_card") {
@@ -42,7 +45,13 @@ function QuestionShareCard({ card, compact }: { card: Extract<BuddyShareCard, { 
             {card.wasCorrect ? "已掌握" : "求助讨论"}
           </span>
         </div>
-        <h4 className={cn("mt-3 font-black leading-relaxed text-ink", compact ? "text-base" : "text-lg")}>{card.title}</h4>
+        <div
+          className={cn("mt-3 font-black leading-relaxed text-ink [&_img]:my-2 [&_img]:h-auto [&_img]:max-h-56 [&_img]:max-w-full [&_img]:object-contain", compact ? "text-base" : "text-lg")}
+          role="heading"
+          aria-level={4}
+        >
+          <RichTextContent value={card.title} />
+        </div>
         {card.sourceTitle ? <p className="mt-2 truncate text-xs font-semibold text-slate-500">题库：{card.sourceTitle}</p> : null}
       </div>
       <div className="grid gap-3 p-4 sm:grid-cols-2">

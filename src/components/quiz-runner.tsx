@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Heart, Loader2, X, XCircle } from "lucide-react";
+import { QuestionTypeBadge } from "@/components/question-type-badge";
 import { RichTextContent } from "@/components/rich-text-content";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
@@ -402,8 +403,9 @@ export function QuizRunner({
           isSubjectiveQuestion && checkState !== "idle" ? "max-w-5xl justify-start" : "max-w-3xl justify-center"
         )}
       >
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-semibold text-[var(--challenge-accent)]">
-          <span>{text.question} {currentIndex + 1} / {totalQuestions} · {questionTypeLabel}</span>
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-semibold">
+          <span className="text-slate-500">{text.question} {currentIndex + 1} / {totalQuestions}</span>
+          <QuestionTypeBadge type={current.type} label={questionTypeLabel} />
           {sourceTitle ? (
             <span className="max-w-full truncate rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500" title={sourceTitle}>
               {text.source}{sourceTitle}
@@ -644,7 +646,7 @@ function buildQuestionShareCard({
     questionTypeLabel,
     selectedAnswer: selectedText,
     sourceTitle: sourceTitle ? clipShareText(sourceTitle, 42) : undefined,
-    title: clipShareText(stem, 92),
+    title: stem,
     wasCorrect
   };
 }

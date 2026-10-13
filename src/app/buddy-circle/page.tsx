@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { BuddyErrorNotice } from "@/components/buddy-error-notice";
 import { BuddyFeedLoadMore } from "@/components/buddy-feed-load-more";
 import { BuddyPostComposer } from "@/components/buddy-post-composer";
+import { DiscoveryFeedReadMarker } from "@/components/discovery-feed-read-marker";
 import { FollowingFeedReadMarker } from "@/components/following-feed-read-marker";
 import { SocialAvatar } from "@/components/social-post-card";
 import { StudentPageShell } from "@/components/student-page-shell";
@@ -11,6 +12,7 @@ import { SurfaceCard } from "@/components/student-ui";
 import {
   getFollowingFeedUnreadCount,
   listBuddyFeed,
+  markDiscoveryFeedRead,
   markFollowingFeedRead,
   type BuddyFeedScope,
   type BuddyFeedSort
@@ -60,6 +62,7 @@ export default async function BuddyCirclePage({
   const params = await searchParams;
   const scope = getScope(params?.tab);
   const sort = getSort(params?.sort);
+  const discoveryReadThroughAt = new Date();
   const followingReadThroughAt = new Date();
   const [regions, majors, feed, recommendedFollows, followingUnreadCount] = await Promise.all([
     prisma.region.findMany({
@@ -84,7 +87,10 @@ export default async function BuddyCirclePage({
   const returnTo = buildCircleHref(params);
 
   return (
-    <StudentPageShell active="buddy-circle" maxWidthClassName="max-w-[1520px]">
+    <StudentPageShell active="buddy-circle" hideBuddyCircleUnread={scope === "discover"} maxWidthClassName="max-w-[1520px]">
+      {scope === "discover" ? (
+        <DiscoveryFeedReadMarker action={markDiscoveryFeedAsRead} readThroughAt={discoveryReadThroughAt.toISOString()} />
+      ) : null}
       {scope === "following" ? (
         <FollowingFeedReadMarker action={markFollowingFeedAsRead} readThroughAt={followingReadThroughAt.toISOString()} />
       ) : null}
@@ -322,6 +328,19 @@ async function markFollowingFeedAsRead(readThroughAt: string) {
     return;
   }
   await markFollowingFeedRead(user.id, parsedReadThroughAt);
+}
+
+async function markDiscoveryFeedAsRead(readThroughAt: string) {
+  "use server";
+  const user = await requireUser();
+  if (user.role !== "student") {
+    return;
+  }
+  const parsedReadThroughAt = new Date(readThroughAt);
+  if (!Number.isFinite(parsedReadThroughAt.getTime())) {
+    return;
+  }
+  await markDiscoveryFeedRead(user.id, parsedReadThroughAt);
 }
 
 async function followFromCircle(formData: FormData) {

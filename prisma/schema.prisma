@@ -1470,6 +1470,7 @@ model SocialFollow {
 model BuddyFeedReadState {
   userId          String   @id
   followingReadAt DateTime @default(now())
+  discoveryReadAt DateTime
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

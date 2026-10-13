@@ -366,7 +366,7 @@ export async function getFollowingFeedUnreadCount(userId: string) {
     const initializedAt = new Date();
     await prisma.buddyFeedReadState.upsert({
       where: { userId },
-      create: { userId, followingReadAt: initializedAt },
+      create: { userId, followingReadAt: initializedAt, discoveryReadAt: initializedAt },
       update: {}
     });
     return 0;
@@ -421,6 +421,43 @@ export async function getFollowingFeedUnreadCount(userId: string) {
   return unreadPosts.length;
 }
 
+export async function hasUnreadDiscoveryFeedPosts(userId: string) {
+  const existingReadState = await prisma.buddyFeedReadState.findUnique({
+    where: { userId },
+    select: { discoveryReadAt: true }
+  });
+  if (!existingReadState) {
+    const initializedAt = new Date();
+    await prisma.buddyFeedReadState.upsert({
+      where: { userId },
+      create: { userId, discoveryReadAt: initializedAt },
+      update: {}
+    });
+    return false;
+  }
+
+  const [followingIds, blockedIds] = await Promise.all([
+    getFollowingIds(userId),
+    getBlockedUserIds(userId)
+  ]);
+  const excludedAuthorIds = Array.from(new Set([...followingIds, ...blockedIds, userId]));
+  const unreadPost = await prisma.buddyPost.findFirst({
+    where: {
+      createdAt: { gt: existingReadState.discoveryReadAt },
+      deletedAt: null,
+      authorId: { notIn: excludedAuthorIds },
+      author: {
+        role: "student",
+        status: "active",
+        blockedUsers: { none: { blockedId: userId } }
+      }
+    },
+    select: { id: true }
+  });
+
+  return Boolean(unreadPost);
+}
+
 export async function markFollowingFeedRead(userId: string, readThroughAt: Date) {
   if (!Number.isFinite(readThroughAt.getTime())) {
     return;
@@ -448,7 +485,45 @@ export async function markFollowingFeedRead(userId: string, readThroughAt: Date)
 
   try {
     await prisma.buddyFeedReadState.create({
-      data: { userId, followingReadAt: safeReadThroughAt }
+      data: { userId, followingReadAt: safeReadThroughAt, discoveryReadAt: safeReadThroughAt }
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      await updateReadState();
+      return;
+    }
+    throw error;
+  }
+}
+
+export async function markDiscoveryFeedRead(userId: string, readThroughAt: Date) {
+  if (!Number.isFinite(readThroughAt.getTime())) {
+    return;
+  }
+  const safeReadThroughAt = new Date(Math.min(readThroughAt.getTime(), Date.now()));
+  const updateReadState = () => prisma.buddyFeedReadState.updateMany({
+    where: {
+      userId,
+      discoveryReadAt: { lt: safeReadThroughAt }
+    },
+    data: { discoveryReadAt: safeReadThroughAt }
+  });
+
+  const updated = await updateReadState();
+  if (updated.count > 0) {
+    return;
+  }
+  const existing = await prisma.buddyFeedReadState.findUnique({
+    where: { userId },
+    select: { userId: true }
+  });
+  if (existing) {
+    return;
+  }
+
+  try {
+    await prisma.buddyFeedReadState.create({
+      data: { userId, discoveryReadAt: safeReadThroughAt }
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {

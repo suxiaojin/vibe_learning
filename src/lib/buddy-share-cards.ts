@@ -59,7 +59,7 @@ export function normalizeBuddyShareInput(input: unknown): BuddyShareCard | null 
   }
 
   if (input.type === "question_card") {
-    const title = cleanText(input.title, 120);
+    const title = cleanQuestionTitle(input.title);
     if (!title) {
       return null;
     }
@@ -133,6 +133,19 @@ function cleanRichText(value: unknown) {
     return "";
   }
   return /<\/?[a-z][\s\S]*>/i.test(text) ? sanitizeNotificationHtml(text) : text;
+}
+
+function cleanQuestionTitle(value: unknown) {
+  const text = typeof value === "string" || typeof value === "number"
+    ? String(value).replace(/\u0000/g, "").trim()
+    : "";
+  if (!text) {
+    return "";
+  }
+  if (/<\/?[a-z][\s\S]*>/i.test(text)) {
+    return sanitizeNotificationHtml(text);
+  }
+  return text.length > 92 ? `${text.slice(0, 92)}...` : text;
 }
 
 function normalizeWeeks(value: unknown) {

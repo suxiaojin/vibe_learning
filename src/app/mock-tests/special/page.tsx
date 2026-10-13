@@ -141,10 +141,7 @@ function SpecialPracticeRow({
         {section.difficultyRating == null ? (
           <span className="text-xs font-medium text-slate-400">未设置</span>
         ) : (
-          <>
-            <span className="shrink-0 text-xs font-semibold text-amber-700">{formatDifficultyRating(section.difficultyRating)} 星</span>
-            <ChallengeDifficultyStars compact value={section.difficultyRating} />
-          </>
+          <ChallengeDifficultyStars compact value={section.difficultyRating} />
         )}
       </div>
       <SpecialPracticeProgress questionIds={questionIds} sectionId={section.id} toneIndex={toneIndex} />
@@ -158,10 +155,6 @@ function SpecialPracticeRow({
       </div>
     </div>
   );
-}
-
-function formatDifficultyRating(value: number) {
-  return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1);
 }
 
 function buildPracticeHref(courseKey: "public_subject" | "major", sectionId: string) {
