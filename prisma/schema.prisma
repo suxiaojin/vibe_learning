@@ -387,6 +387,7 @@ model User {
   following                          SocialFollow[]                  @relation("SocialFollowFollower")
   followers                          SocialFollow[]                  @relation("SocialFollowFollowing")
   buddyFeedReadState                 BuddyFeedReadState?
+  changelogReadState                 ChangelogReadState?
   blockedUsers                       SocialBlock[]                   @relation("SocialBlockBlocker")
   blockedBy                          SocialBlock[]                   @relation("SocialBlockBlocked")
   userEventNotificationsReceived     UserEventNotification[]         @relation("UserEventNotificationRecipient")
@@ -449,9 +450,20 @@ model ChangelogEntry {
   @@map("changelog_entries")
 }
 
+model ChangelogReadState {
+  userId    String   @id
+  readAt    DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("changelog_read_states")
+}
+
 model SystemSetting {
   id                        String   @id @default("default")
   homepageContent           Json     @default("{}")
+  buddyFollowRecommendations Json     @default("[]")
   loginHeroImageUrl         String   @default("/login-hero-vibelearning.png")
   loginMarketingIcon        String   @default("gift")
   loginMarketingTitle       String   @default("新注册用户限时赠送学习加速包")

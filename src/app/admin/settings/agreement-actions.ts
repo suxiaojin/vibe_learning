@@ -31,12 +31,13 @@ export async function saveChangelog(form: FormData) {
   await requireAdmin();
   const parsed = parseChangelog(form);
   if (parsed.error) return { error: parsed.error };
+  const data = { ...parsed.data, updatedAt: new Date() };
   const id = String(form.get("id") || "");
   if (id) {
-    const result = await prisma.changelogEntry.updateMany({ where: { id }, data: parsed.data });
+    const result = await prisma.changelogEntry.updateMany({ where: { id }, data });
     if (!result.count) return { error: "这条更新日志已不存在，请刷新后重试。" };
   } else {
-    await prisma.changelogEntry.create({ data: parsed.data });
+    await prisma.changelogEntry.create({ data });
   }
   refreshContent();
   return { success: true };

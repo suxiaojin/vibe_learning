@@ -1,5 +1,8 @@
 import { HelpChangelog } from "@/components/help-changelog";
+import { ChangelogReadMarker } from "@/components/changelog-read-marker";
 import { listPublishedChangelogs } from "@/lib/changelog-queries";
+import { hasUnreadChangelogs } from "@/lib/changelog-read-state";
+import { markChangelogsRead } from "@/app/help/actions";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { MarkdownContent } from "@/components/agreement-content-page";
@@ -18,16 +21,28 @@ const tabs = [
 ] as const;
 
 export default async function HelpPage({ searchParams }: { searchParams?: Promise<{ tab?: string }> }) {
-  await requireUser();
-  const [settings, params] = await Promise.all([
+  const [user, settings, params] = await Promise.all([
+    requireUser(),
     getSystemSettings(["faqContent", "customerServiceEmail"]),
     searchParams
   ]);
   const activeTab = params?.tab === "changelog" ? tabs[1] : tabs[0];
   const changelogs = activeTab.key === "changelog" ? await listPublishedChangelogs() : null;
+  const hasUnreadChangelogEntries = activeTab.key !== "changelog" && user.role === "student"
+    ? await hasUnreadChangelogs(user.id)
+    : false;
+  const readThroughAt = new Date().toISOString();
 
   return (
-    <StudentPageShell active="help" contentClassName="pr-24 lg:pr-28 xl:pr-28" maxWidthClassName="max-w-6xl">
+    <StudentPageShell
+      active="help"
+      hideChangelogUnread={activeTab.key === "changelog"}
+      contentClassName="pr-24 lg:pr-28 xl:pr-28"
+      maxWidthClassName="max-w-6xl"
+    >
+      {activeTab.key === "changelog" ? (
+        <ChangelogReadMarker action={markChangelogsRead} readThroughAt={readThroughAt} />
+      ) : null}
       <nav aria-label="面包屑" className="mb-5 flex items-center gap-2 text-sm text-slate-600">
         <Link className="hover:text-ink" href="/learn">首页</Link>
         <ChevronRight aria-hidden="true" size={14} />
@@ -45,7 +60,12 @@ export default async function HelpPage({ searchParams }: { searchParams?: Promis
               )}
               href={`/help?tab=${tab.key}`}
             >
-              {tab.label}
+              <span className="inline-flex items-center justify-center gap-2">
+                {tab.label}
+                {tab.key === "changelog" && hasUnreadChangelogEntries ? (
+                  <span aria-label="有未读更新日志" className="size-2 rounded-full bg-coral" />
+                ) : null}
+              </span>
             </Link>
           ))}
         </nav>

@@ -3,6 +3,7 @@
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { listPublishedChangelogs } from "@/lib/changelog-queries";
+import { markChangelogsRead as markChangelogReadState } from "@/lib/changelog-read-state";
 
 export async function loadChangelogs(offset: number) {
   await requireUser();
@@ -17,4 +18,12 @@ export async function readChangelog(id: string) {
     select: { title: true, releaseDate: true, content: true }
   });
   return entry ? { ...entry, releaseDate: entry.releaseDate?.toISOString().slice(0, 10) ?? null } : null;
+}
+
+export async function markChangelogsRead(readThroughAt: string) {
+  const user = await requireUser();
+  if (user.role !== "student") return;
+  const parsedReadThroughAt = new Date(readThroughAt);
+  if (!Number.isFinite(parsedReadThroughAt.getTime())) return;
+  await markChangelogReadState(user.id, parsedReadThroughAt);
 }

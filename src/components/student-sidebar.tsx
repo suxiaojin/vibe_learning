@@ -9,6 +9,7 @@ import { ensureDiamondAccount } from "@/lib/rewards";
 import { hasUnreadDiscoveryFeedPosts } from "@/lib/buddy-posts";
 import { getNotificationBellData } from "@/lib/user-event-notifications";
 import { getSystemSettings } from "@/lib/system-settings";
+import { hasUnreadChangelogs } from "@/lib/changelog-read-state";
 import { cn } from "@/lib/utils";
 
 type StudentNavKey = "learn" | "course-center" | "study-buddy" | "buddy-circle" | "me" | "notifications" | "settings" | "help";
@@ -30,13 +31,15 @@ const text = {
 
 export async function StudentSidebar({
   active,
-  hideBuddyCircleUnread = false
+  hideBuddyCircleUnread = false,
+  hideChangelogUnread = false
 }: {
   active: StudentNavKey;
   hideBuddyCircleUnread?: boolean;
+  hideChangelogUnread?: boolean;
 }) {
   const user = await requireUser();
-  const [footer, navIcons, hasUnreadDiscoveryPosts] = await Promise.all([
+  const [footer, navIcons, hasUnreadDiscoveryPosts, hasUnreadChangelogEntries] = await Promise.all([
     getStudentSidebarAccount(user),
     getSystemSettings([
       "studentNavIconLearnKey",
@@ -46,7 +49,8 @@ export async function StudentSidebar({
       "studentNavIconProfileKey",
       "studentNavIconMoreKey"
     ]),
-    user.role === "student" && !hideBuddyCircleUnread ? hasUnreadDiscoveryFeedPosts(user.id) : Promise.resolve(false)
+    user.role === "student" && !hideBuddyCircleUnread ? hasUnreadDiscoveryFeedPosts(user.id) : Promise.resolve(false),
+    user.role === "student" && !hideChangelogUnread ? hasUnreadChangelogs(user.id) : Promise.resolve(false)
   ]);
 
   return (
@@ -61,7 +65,11 @@ export async function StudentSidebar({
           <StudentNavItem active={active === "study-buddy"} href="/study-buddy" icon={<StudentNavIcon fallback={<Sparkles size={22} />} iconKey="study-buddy" storageKey={navIcons.studentNavIconStudyBuddyKey} />} label={text.studyBuddy} />
           <StudentNavItem active={active === "buddy-circle"} href="/buddy-circle" icon={<StudentNavIcon fallback={<UsersRound size={22} />} iconKey="buddy-circle" storageKey={navIcons.studentNavIconBuddyCircleKey} />} label={text.buddyCircle} unread={hasUnreadDiscoveryPosts && !hideBuddyCircleUnread} />
           <StudentNavItem active={active === "me"} href="/me" icon={<StudentNavIcon fallback={<UserRound size={22} />} iconKey="profile" storageKey={navIcons.studentNavIconProfileKey} />} label={text.profile} />
-          <MoreMenu active={active === "notifications" || active === "settings" || active === "help"} icon={<StudentNavIcon fallback={<MoreHorizontal size={20} />} iconKey="more" storageKey={navIcons.studentNavIconMoreKey} />} />
+          <MoreMenu
+            active={active === "notifications" || active === "settings" || active === "help"}
+            icon={<StudentNavIcon fallback={<MoreHorizontal size={20} />} iconKey="more" storageKey={navIcons.studentNavIconMoreKey} />}
+            unreadChangelog={hasUnreadChangelogEntries && !hideChangelogUnread}
+          />
         </nav>
         <div className="mt-auto px-1 pt-6">{footer}</div>
       </div>
@@ -163,18 +171,20 @@ function StudentNavItem({
   );
 }
 
-function MoreMenu({ active, icon }: { active: boolean; icon: ReactNode }) {
+function MoreMenu({ active, icon, unreadChangelog }: { active: boolean; icon: ReactNode; unreadChangelog: boolean }) {
   return (
     <div className="group relative">
       <button
+        aria-label={unreadChangelog ? "更多，有未读更新日志" : undefined}
         className={cn(
           "flex min-h-[52px] w-full items-center gap-3 rounded-2xl border px-4 text-left text-base font-semibold transition group-hover:bg-slate-100",
           active ? "border-teal/30 bg-teal/10 text-teal shadow-[0_10px_26px_rgba(31,157,138,0.10)]" : "border-transparent text-slate-600 hover:bg-slate-100 hover:text-ink"
         )}
         type="button"
       >
-        <span className="grid size-7 place-items-center">
+        <span className="relative grid size-7 place-items-center">
           {icon}
+          {unreadChangelog ? <span aria-hidden="true" className="absolute right-0 top-0 size-2 rounded-full bg-coral ring-2 ring-white" /> : null}
         </span>
         {text.more}
       </button>
@@ -193,9 +203,9 @@ function MoreMenu({ active, icon }: { active: boolean; icon: ReactNode }) {
             <Settings size={18} />
             {text.settings}
           </Link>
-          <Link className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-semibold text-slate-500 hover:bg-slate-50" href="/help">
-            <HelpCircle size={18} />
-            {text.help}
+          <Link className="flex w-full items-center justify-between px-5 py-3 text-left text-sm font-semibold text-slate-500 hover:bg-slate-50" href="/help">
+            <span className="flex items-center gap-3"><HelpCircle size={18} />{text.help}</span>
+            {unreadChangelog ? <span aria-label="有未读更新日志" className="size-2 shrink-0 rounded-full bg-coral" /> : null}
           </Link>
           <form action="/api/auth/logout" method="post">
             <button className="flex w-full items-center gap-3 px-5 py-3 text-left text-sm font-semibold text-slate-500 hover:bg-slate-50" type="submit">

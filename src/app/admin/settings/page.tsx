@@ -28,6 +28,7 @@ import { AdminRechargeQrUploadForm } from "@/components/admin-recharge-qr-upload
 import { AdminStudentNavIcons } from "@/components/admin-student-nav-icons";
 import { AdminMajorCourseIcons } from "@/components/admin-major-course-icons";
 import { AdminStudentLearningTypography } from "@/components/admin-student-learning-typography";
+import { AdminSocialFollowRecommendations } from "@/components/admin-social-follow-recommendations";
 import { requireAdmin } from "@/lib/auth";
 import { listDiamondRuleSettings } from "@/lib/diamond-rules";
 import { prisma } from "@/lib/prisma";
@@ -35,6 +36,7 @@ import { isShareCopyContext, shareCopyContextLabels } from "@/lib/share-copy";
 import { studyBuddyHeroEffectOptions } from "@/lib/study-buddy-title-effects";
 import { getSystemSettings } from "@/lib/system-settings";
 import { getHomepageImageUrls, getHomepageText } from "@/lib/homepage-settings";
+import { parseSocialFollowRecommendationRules } from "@/lib/social-follow-recommendations";
 import { cn } from "@/lib/utils";
 
 type SettingsTab = "login" | "homepage" | "admin" | "agreements" | "study-buddy" | "share-copy" | "diamonds";
@@ -63,6 +65,7 @@ const noticeText: Record<string, string> = {
   "student-learning-typography-saved": "学生端字体和字号设置已保存。",
   "diamond-recharge-qr-saved": "钻石充值客服二维码已保存。",
   "profile-homepage-background-saved": "个人主页背景图已保存，并已覆盖当前用户的背景显示。",
+  "social-recommendations-saved": "推荐关注设置已保存。",
   "study-buddy-hero-image-saved": "顶部动画已保存。",
   "study-buddy-hero-title-saved": "顶部标题已保存。",
   "study-buddy-hero-effect-saved": "标题效果已保存。",
@@ -105,7 +108,8 @@ const errorText: Record<string, string> = {
   "invalid-study-buddy-hero-image-type": "请上传 WEBP 图片或动画。",
   "study-buddy-hero-image-too-large": "学习搭子顶部动画不能超过 5MB。",
   "invalid-diamond-rule": "钻石规则不存在或尚未接入代码。",
-  "invalid-diamond-rule-amount": "钻石数量必须是 1 到 1,000,000 之间的整数。"
+  "invalid-diamond-rule-amount": "钻石数量必须是 1 到 1,000,000 之间的整数。",
+  "social-recommendations-invalid": "推荐用户或适用范围无效，请检查后重试。"
 };
 
 const marketingIconOptions = [
@@ -129,6 +133,7 @@ function resolveAdminSettingsSection(notice?: string, error?: string) {
   if (result.startsWith("student-learning-typography-") || result === "invalid-student-learning-typography") return "learning-typography";
   if (result.startsWith("diamond-recharge-qr-")) return "diamond-recharge";
   if (result.startsWith("profile-homepage-background-") || result === "invalid-profile-homepage-background-type" || result === "image-too-large" || result === "invalid-image-type") return "profile-page";
+  if (result.startsWith("social-recommendations-")) return "social-recommendations";
   if (result === "saved") return "learning-page";
   return "admin-account";
 }
@@ -203,10 +208,27 @@ export default async function AdminSettingsPage({
       })
     : [];
   const diamondRules = activeTab === "diamonds" ? await listDiamondRuleSettings() : [];
-  const majors = activeTab === "admin" ? await prisma.major.findMany({
-    select: { id: true, name: true, status: true, courseCenterIconKey: true },
-    orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
-  }) : [];
+  const [majors, recommendationRegions, recommendationStudents, recommendationSetting] = activeTab === "admin"
+    ? await Promise.all([
+        prisma.major.findMany({
+          select: { id: true, name: true, status: true, courseCenterIconKey: true },
+          orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
+        }),
+        prisma.region.findMany({
+          select: { province: true, studySystem: true },
+          orderBy: [{ province: "asc" }, { studySystem: "asc" }]
+        }),
+        prisma.user.findMany({
+          where: { role: "student" },
+          orderBy: { username: "asc" },
+          select: { id: true, username: true, status: true, studentProfile: { select: { nickname: true } } }
+        }),
+        prisma.systemSetting.findUnique({
+          where: { id: "default" }, select: { buddyFollowRecommendations: true }
+        })
+      ])
+    : [[], [], [], null];
+  const socialRecommendationRules = parseSocialFollowRecommendationRules(recommendationSetting?.buddyFollowRecommendations);
   const notice = params?.notice ? noticeText[params.notice] : null;
   const error = params?.error ? errorText[params.error] : null;
 
@@ -375,7 +397,8 @@ export default async function AdminSettingsPage({
           { key: "learning-page", label: "学习页面" },
           { key: "learning-typography", label: "字体字号" },
           { key: "diamond-recharge", label: "钻石充值" },
-          { key: "profile-page", label: "个人主页" }
+          { key: "profile-page", label: "个人主页" },
+          { key: "social-recommendations", label: "推荐关注" }
         ]} initialSection={resolveAdminSettingsSection(params?.notice, params?.error)}>
           <form action={updateAdminPassword} className="border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
@@ -515,6 +538,22 @@ export default async function AdminSettingsPage({
           />
           <AdminRechargeQrUploadForm currentQrCodeUrl={settings.diamondRechargeQrCodeUrl} />
           <AdminProfileBackgroundUploadForm currentBackgroundImageUrl={settings.profileHomepageBackgroundImageUrl} />
+          <AdminSocialFollowRecommendations
+            majors={majors.map((major) => ({ id: major.id, name: major.name }))}
+            regions={recommendationRegions}
+            rules={socialRecommendationRules.map((rule) => ({
+              targetUserId: rule.targetUserId,
+              province: rule.province || "",
+              studySystem: rule.studySystem || "",
+              majorId: rule.majorId || ""
+            }))}
+            students={recommendationStudents.map((student) => ({
+              id: student.id,
+              username: student.username,
+              nickname: student.studentProfile?.nickname || student.username,
+              status: student.status
+            }))}
+          />
         </AdminSettingsSectionLayout>
       ) : null}
 

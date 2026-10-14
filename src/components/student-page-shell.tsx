@@ -9,17 +9,23 @@ export function StudentPageShell({
   children,
   contentClassName,
   hideBuddyCircleUnread = false,
+  hideChangelogUnread = false,
   maxWidthClassName = "max-w-6xl"
 }: {
   active: StudentNavKey;
   children: ReactNode;
   contentClassName?: string;
   hideBuddyCircleUnread?: boolean;
+  hideChangelogUnread?: boolean;
   maxWidthClassName?: string;
 }) {
   return (
     <main className="min-h-dvh bg-mist text-ink lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
-      <StudentSidebar active={active} hideBuddyCircleUnread={hideBuddyCircleUnread} />
+      <StudentSidebar
+        active={active}
+        hideBuddyCircleUnread={hideBuddyCircleUnread}
+        hideChangelogUnread={hideChangelogUnread}
+      />
 
       <section className={cn("min-w-0 px-5 py-8 lg:px-8 xl:px-10", contentClassName)}>
         <div className={cn("mx-auto w-full", maxWidthClassName)}>{children}</div>

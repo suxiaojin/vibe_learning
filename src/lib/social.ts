@@ -3,6 +3,7 @@ import { BuddyError } from "@/lib/buddies";
 import { prisma } from "@/lib/prisma";
 import { getMedalLevel, getMedalRule } from "@/lib/rewards";
 import { getSystemSettings } from "@/lib/system-settings";
+import { parseSocialFollowRecommendationRules } from "@/lib/social-follow-recommendations";
 import { createUserEventNotification } from "@/lib/user-event-notifications";
 
 const socialListProfileSelect = {
@@ -411,84 +412,92 @@ export async function searchUsersByNickname(viewerId: string, query: string, inp
 
 export async function listRecommendedFollows(viewerId: string, input?: { limit?: number }) {
   const limit = Math.max(1, Math.min(input?.limit || 5, 10));
-  const viewer = await prisma.user.findUnique({
-    where: { id: viewerId },
-    select: {
-      studentProfile: {
-        select: {
-          majorId: true,
-          region: { select: { province: true, studySystem: true } }
-        }
-      }
-    }
-  });
-  const profile = viewer?.studentProfile;
-  if (!profile?.majorId || !profile.region?.province || !profile.region.studySystem) {
-    return { items: [] };
-  }
-
-  const [followingIds, blockedIds] = await Promise.all([
+  const [viewer, followingIds, blockedIds, settings] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: viewerId },
+      select: { studentProfile: { select: { majorId: true, region: { select: { province: true, studySystem: true } } } } }
+    }),
     getFollowingIds(viewerId),
-    getBlockedUserIds(viewerId)
+    getBlockedUserIds(viewerId),
+    prisma.systemSetting.findUnique({
+      where: { id: "default" }, select: { buddyFollowRecommendations: true }
+    })
   ]);
+  const profile = viewer?.studentProfile;
+  const rules = parseSocialFollowRecommendationRules(settings?.buddyFollowRecommendations);
+  const eligibleRules = rules.filter((rule) =>
+    (!rule.province || rule.province === profile?.region?.province) &&
+    (!rule.studySystem || rule.studySystem === profile?.region?.studySystem) &&
+    (!rule.majorId || rule.majorId === profile?.majorId)
+  );
+  const excludedIds = new Set([viewerId, ...followingIds, ...blockedIds]);
+  const manualIds = Array.from(new Set(eligibleRules.map((rule) => rule.targetUserId).filter((id) => !excludedIds.has(id))));
 
-  const users = await prisma.user.findMany({
-    where: {
-      id: { notIn: [viewerId, ...followingIds, ...blockedIds] },
-      role: "student",
-      status: "active",
-      blockedUsers: { none: { blockedId: viewerId } },
-      studentProfile: {
-        is: {
-          majorId: profile.majorId,
-          region: {
+  const recommendationSelect = {
+    id: true,
+    username: true,
+    createdAt: true,
+    diamondAccount: { select: { balance: true } },
+    studentProfile: { select: socialListProfileSelect },
+    _count: { select: { followers: true, following: true } }
+  } satisfies Prisma.UserSelect;
+
+  const manualUsers = manualIds.length
+    ? await prisma.user.findMany({
+        where: {
+          id: { in: manualIds }, role: "student", status: "active",
+          blockedUsers: { none: { blockedId: viewerId } }
+        },
+        select: recommendationSelect
+      })
+    : [];
+  const manualById = new Map(manualUsers.map((user) => [user.id, user]));
+  const orderedManualUsers = manualIds.flatMap((id) => {
+    const user = manualById.get(id);
+    return user ? [user] : [];
+  });
+  const remaining = Math.max(0, limit - orderedManualUsers.length);
+  const hasCompleteProfile = Boolean(profile?.majorId && profile.region?.province && profile.region.studySystem);
+  const automaticUsers = remaining > 0 && hasCompleteProfile
+    ? await prisma.user.findMany({
+        where: {
+          id: { notIn: [viewerId, ...followingIds, ...blockedIds, ...orderedManualUsers.map((user) => user.id)] },
+          role: "student",
+          status: "active",
+          blockedUsers: { none: { blockedId: viewerId } },
+          studentProfile: {
             is: {
-              province: profile.region.province,
-              studySystem: profile.region.studySystem
+              majorId: profile!.majorId!,
+              region: { is: { province: profile!.region!.province, studySystem: profile!.region!.studySystem } }
             }
           }
-        }
-      }
-    },
-    select: {
-      id: true,
-      username: true,
-      createdAt: true,
-      diamondAccount: { select: { balance: true } },
-      studentProfile: { select: socialListProfileSelect },
-      _count: {
-        select: {
-          followers: true,
-          following: true
-        }
-      }
-    },
-    orderBy: { createdAt: "desc" },
-    take: 100
-  });
+        },
+        select: recommendationSelect,
+        orderBy: { createdAt: "desc" },
+        take: 100
+      })
+    : [];
+  const sortedAutomaticUsers = automaticUsers
+    .sort((left, right) => {
+      const balanceDelta = (right.diamondAccount?.balance || 0) - (left.diamondAccount?.balance || 0);
+      if (balanceDelta !== 0) return balanceDelta;
+      return right.createdAt.getTime() - left.createdAt.getTime();
+    })
+    .slice(0, remaining);
 
   return {
-    items: users
-      .sort((left, right) => {
-        const balanceDelta = (right.diamondAccount?.balance || 0) - (left.diamondAccount?.balance || 0);
-        if (balanceDelta !== 0) {
-          return balanceDelta;
-        }
-        return right.createdAt.getTime() - left.createdAt.getTime();
-      })
-      .slice(0, limit)
-      .map((user) => ({
-        id: user.id,
-        username: user.username,
-        nickname: user.studentProfile?.nickname || user.username,
-        avatarImage: user.studentProfile?.avatarImage || "",
-        avatarColor: user.studentProfile?.avatarColor || "green",
-        province: user.studentProfile?.region?.province || null,
-        studySystem: user.studentProfile?.region?.studySystem || null,
-        majorName: user.studentProfile?.major?.name || null,
-        diamondBalance: user.diamondAccount?.balance || 0,
-        followerCount: user._count.followers,
-        followingCount: user._count.following
-      }))
+    items: [...orderedManualUsers, ...sortedAutomaticUsers].slice(0, limit).map((user) => ({
+      id: user.id,
+      username: user.username,
+      nickname: user.studentProfile?.nickname || user.username,
+      avatarImage: user.studentProfile?.avatarImage || "",
+      avatarColor: user.studentProfile?.avatarColor || "green",
+      province: user.studentProfile?.region?.province || null,
+      studySystem: user.studentProfile?.region?.studySystem || null,
+      majorName: user.studentProfile?.major?.name || null,
+      diamondBalance: user.diamondAccount?.balance || 0,
+      followerCount: user._count.followers,
+      followingCount: user._count.following
+    }))
   };
 }
