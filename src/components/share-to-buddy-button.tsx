@@ -41,7 +41,7 @@ export type ShareCopySuggestion = {
 export function ShareToBuddyButton({
   buttonClassName,
   buttonIconSize = 17,
-  buttonLabel = "分享到搭子圈",
+  buttonLabel = "分享到一起上岸",
   contentSuggestions = [],
   copyContext,
   defaultContent,
@@ -178,7 +178,7 @@ export function ShareToBuddyButton({
                 <X size={22} />
               </button>
               <div className="min-w-0 flex-1 text-center">
-                <p className="truncate text-sm font-black text-ink">分享到搭子圈</p>
+                <p className="truncate text-sm font-black text-ink">分享到一起上岸</p>
                 <p className="mt-0.5 truncate text-xs font-semibold text-slate-400">{sourceLabel}</p>
               </div>
               <button

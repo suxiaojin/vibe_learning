@@ -45,7 +45,7 @@ export default async function StudentProfilePage({
       <div className="space-y-5">
         <a className="inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-teal" href="/buddy-circle">
           <ArrowLeft size={17} />
-          返回搭子圈
+          返回一起上岸
         </a>
 
         {query?.error ? (

@@ -18,7 +18,7 @@ const text = {
   learn: "\u5b66\u4e60",
   courseCenter: "\u8bfe\u7a0b\u4e2d\u5fc3",
   studyBuddy: "学习搭子",
-  buddyCircle: "搭子圈",
+  buddyCircle: "一起上岸",
   profile: "\u4e2a\u4eba\u6863\u6848",
   more: "\u66f4\u591a",
   moreTitle: "\u66f4\u591a\u529f\u80fd",

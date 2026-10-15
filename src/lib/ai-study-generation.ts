@@ -30,11 +30,17 @@ import {
   nestedOutlineSchema,
   outlineTreeLimits,
   outlineCandidateListSchema,
-  type NestedCandidateOutline,
+  validateNestedCandidateOutline,
   type NestedOutline,
   type OutlineCandidate,
   type OutlineCandidateWithId
 } from "@/lib/ai-study-outline-contract";
+import {
+  buildCandidateOutlineRepairMessages,
+  buildCandidateOutlineCoverageRepair,
+  buildCandidateOutlineTransportInstruction,
+  type StructuredJsonFailure
+} from "@/lib/ai-study-outline-merge";
 import { getAiStudyPromptConfig, type AiStudyPromptConfig } from "@/lib/ai-study-prompts";
 import { parsePdfWithMineru, type MineruContentBlock, type MineruParseResult } from "@/lib/ai-study-mineru";
 import {
@@ -1013,7 +1019,12 @@ type StructuredJsonRequest<T> = {
   task: AiStudyGenerationTask;
   stage: string;
   messages: ChatMessage[];
-  retryMessages?: ChatMessage[];
+  retryMessages?: ChatMessage[] | ((failure: StructuredJsonFailure) => ChatMessage[]);
+  prepareRetry?: (failure: StructuredJsonFailure) => {
+    messages: ChatMessage[];
+    jsonSchema: QwenJsonSchema;
+    parseResponse: (content: string) => T;
+  } | null;
   schema: z.ZodType<T>;
   jsonSchema: QwenJsonSchema;
   relaxedJsonRetry?: boolean;
@@ -1037,6 +1048,7 @@ type OutlineCheckpoint = {
 
 async function requestValidatedJsonWithRetry<T>(request: StructuredJsonRequest<T>): Promise<T> {
   let lastError: Error | null = null;
+  let previousFailure: StructuredJsonFailure | null = null;
 
   for (let attempt = 1; attempt <= structuredJsonMaxAttempts; attempt += 1) {
     const attemptStage = attempt === 1 ? request.stage : `${request.stage}_retry_${attempt - 1}`;
@@ -1052,13 +1064,19 @@ async function requestValidatedJsonWithRetry<T>(request: StructuredJsonRequest<T
     let response: Awaited<ReturnType<typeof askQwenDetailed>> | null = null;
     try {
       const useRelaxedJsonMode = request.relaxedJsonRetry === true && attempt > 1;
+      const preparedRetry = attempt > 1 && previousFailure ? request.prepareRetry?.(previousFailure) : null;
+      const retryMessages = attempt > 1 && previousFailure && request.retryMessages
+        ? typeof request.retryMessages === "function"
+          ? request.retryMessages(previousFailure)
+          : request.retryMessages
+        : request.messages;
       response = await askQwenDetailed(
-        attempt > 1 && request.retryMessages ? request.retryMessages : request.messages,
+        preparedRetry?.messages ?? retryMessages,
         {
           moduleKey: "ai_study_generation",
           temperature: request.temperature,
           timeoutMs: request.timeoutMs,
-          jsonSchema: useRelaxedJsonMode ? undefined : request.jsonSchema,
+          jsonSchema: useRelaxedJsonMode ? undefined : preparedRetry?.jsonSchema ?? request.jsonSchema,
           jsonMode: useRelaxedJsonMode,
           maxCompletionTokens: request.maxCompletionTokens,
           enableThinking: false
@@ -1068,8 +1086,9 @@ async function requestValidatedJsonWithRetry<T>(request: StructuredJsonRequest<T
         throw new Error(`模型输出达到 ${request.maxCompletionTokens} token 上限，内容被截断。`);
       }
 
-      const parsed = request.parseResponse
-        ? request.parseResponse(response.content)
+      const parseResponse = preparedRetry?.parseResponse ?? request.parseResponse;
+      const parsed = parseResponse
+        ? parseResponse(response.content)
         : parseJsonWithSchema(response.content, request.schema, request.invalidMessage);
       request.validate?.(parsed);
       await appendAiStudyTaskDiagnostic(request.task.id, {
@@ -1085,6 +1104,7 @@ async function requestValidatedJsonWithRetry<T>(request: StructuredJsonRequest<T
       return parsed;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(request.invalidMessage);
+      previousFailure = { error: lastError, responseContent: response?.content ?? null };
       await appendAiStudyTaskDiagnostic(request.task.id, {
         stage: request.stage,
         attempt,
@@ -1194,48 +1214,6 @@ function validateNestedOutline(outline: NestedOutline, chunks: AiStudySourceChun
   validateOutlineSourceReferences(nodes, chunks);
 }
 
-function validateNestedCandidateOutline(
-  outline: NestedCandidateOutline,
-  candidates: OutlineCandidateWithId[]
-) {
-  const nodes = flattenNestedCandidateOutline(outline, candidates);
-  if (nodes.length > maxNodesPerProject) {
-    throw new Error(`知识节点实际生成 ${nodes.length} 个，超过上限 ${maxNodesPerProject}。`);
-  }
-  const validCandidateIds = new Set(candidates.map((candidate) => candidate.candidateId));
-  const referencedCandidateIds = new Set<string>();
-  for (const module of outline.root.modules) {
-    for (const candidateId of module.candidateIds) {
-      if (!validCandidateIds.has(candidateId)) {
-        throw new Error(`知识框架引用了不存在的候选：${candidateId}`);
-      }
-      referencedCandidateIds.add(candidateId);
-    }
-    for (const group of module.groups) {
-      for (const candidateId of group.candidateIds) {
-        if (!validCandidateIds.has(candidateId)) {
-          throw new Error(`知识框架引用了不存在的候选：${candidateId}`);
-        }
-        referencedCandidateIds.add(candidateId);
-      }
-      for (const point of group.points) {
-        for (const candidateId of point.candidateIds) {
-          if (!validCandidateIds.has(candidateId)) {
-            throw new Error(`知识框架引用了不存在的候选：${candidateId}`);
-          }
-          referencedCandidateIds.add(candidateId);
-        }
-      }
-    }
-  }
-  const missingCandidateIds = candidates
-    .map((candidate) => candidate.candidateId)
-    .filter((candidateId) => !referencedCandidateIds.has(candidateId));
-  if (missingCandidateIds.length > 0) {
-    throw new Error(`知识框架遗漏了 ${missingCandidateIds.length} 个候选：${missingCandidateIds.slice(0, 8).join("、")}`);
-  }
-}
-
 function validateOutlineSourceReferences(
   nodes: Array<{ title: string; sourceChunkIds: string[] }>,
   chunks: AiStudySourceChunkWithContent[]
@@ -1268,20 +1246,6 @@ function buildNestedOutlineTransportInstruction(maxNodes: number) {
     `按上述结构总节点最多 ${guaranteedMaxNodes} 个，且不得超过业务上限 ${maxNodes}。`,
     "sourceChunkIds 只需为每个节点选择 1-3 个最具代表性的真实片段 ID，不要为了逐个搬运全部来源而增加节点；程序会在结构通过后补齐完整来源绑定。",
     "不要输出 clientId、parentClientId、nodes、Markdown 或解释文字。"
-  ].join("\n");
-}
-
-function buildCandidateOutlineTransportInstruction(maxNodes: number) {
-  const guaranteedMaxNodes = Math.min(maxNodes, maximumStructuredOutlineNodes);
-  return [
-    "【长文档固定输出协议，优先级高于上方可配置提示词中的格式和来源字段描述】",
-    "输入 candidates 中每项只有 candidateId、title、summary；candidateId 代表程序已经保存的完整来源集合。",
-    "只输出 JSON 对象，结构必须严格为 root -> modules -> groups -> points 四层。",
-    "root 只包含 title、summary、modules；每个 module、group、point 都包含 title、summary、candidateIds，并分别包含下一级数组。",
-    `modules 必须有 ${outlineTreeLimits.modules.min}-${outlineTreeLimits.modules.max} 个；每个 module 必须有 ${outlineTreeLimits.groupsPerModule.min}-${outlineTreeLimits.groupsPerModule.max} 个 groups；每个 group 必须有 ${outlineTreeLimits.pointsPerGroup.min}-${outlineTreeLimits.pointsPerGroup.max} 个 points。`,
-    `按上述结构总节点最多 ${guaranteedMaxNodes} 个，且不得超过业务上限 ${maxNodes}。`,
-    "每一个输入 candidateId 都必须至少出现在一个非根节点的 candidateIds 中，只能使用输入里真实存在的 candidateId。",
-    "本阶段不要输出 sourceChunkIds、clientId、parentClientId、nodes、Markdown 或解释文字；完整 sourceChunkIds 由程序根据 candidateIds 恢复。"
   ].join("\n");
 }
 
@@ -1467,7 +1431,8 @@ async function generateCompleteOutline(
     task,
     stage: "merging_outline",
     messages: mergeMessages,
-    retryMessages: buildOutlineRetryMessages(mergeMessages, maxNodesPerProject),
+    retryMessages: (failure) => buildCandidateOutlineRepairMessages(mergeMessages, failure, maxNodesPerProject),
+    prepareRetry: (failure) => buildCandidateOutlineCoverageRepair(mergeMessages, failure, maxNodesPerProject),
     schema: nestedCandidateOutlineSchema,
     jsonSchema: {
       name: "ai_study_candidate_four_level_outline",
@@ -1476,8 +1441,8 @@ async function generateCompleteOutline(
     maxCompletionTokens: outlineMergeMaxTokens,
     timeoutMs: outlineTimeoutMs,
     temperature: 0.1,
-    invalidMessage: "合并后的知识框架 JSON 格式不合法。",
-    validate: (value) => validateNestedCandidateOutline(value, partialCandidates)
+    invalidMessage: "合并后的知识框架未通过校验。",
+    validate: (value) => validateNestedCandidateOutline(value, partialCandidates, maxNodesPerProject)
   });
   return { nodes: flattenNestedCandidateOutline(nestedOutline, partialCandidates) };
 }

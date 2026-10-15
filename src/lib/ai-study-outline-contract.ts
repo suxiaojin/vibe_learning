@@ -104,6 +104,37 @@ export type NestedOutline = z.infer<typeof nestedOutlineSchema>;
 export type NestedCandidateOutline = z.infer<typeof nestedCandidateOutlineSchema>;
 export type OutlineCandidateWithId = OutlineCandidate & { candidateId: string };
 
+export class OutlineCandidateCoverageError extends Error {
+  constructor(public readonly missingCandidateIds: string[]) {
+    super(`知识框架遗漏了 ${missingCandidateIds.length} 个候选：${missingCandidateIds.slice(0, 8).join("、")}`);
+    this.name = "OutlineCandidateCoverageError";
+  }
+}
+
+export function validateNestedCandidateOutline(
+  outline: NestedCandidateOutline,
+  candidates: OutlineCandidateWithId[],
+  maxNodes: number
+) {
+  const nodes = flattenNestedCandidateOutline(outline, candidates);
+  if (nodes.length > maxNodes) {
+    throw new Error(`知识节点实际生成 ${nodes.length} 个，超过上限 ${maxNodes}。`);
+  }
+  const referencedIds = new Set(outline.root.modules.flatMap((module) => [
+    ...module.candidateIds,
+    ...module.groups.flatMap((group) => [
+      ...group.candidateIds,
+      ...group.points.flatMap((point) => point.candidateIds)
+    ])
+  ]));
+  // flattenNestedCandidateOutline also rejects every unknown candidate ID.
+  const missingIds = candidates.map((candidate) => candidate.candidateId)
+    .filter((id) => !referencedIds.has(id));
+  if (missingIds.length > 0) {
+    throw new OutlineCandidateCoverageError(missingIds);
+  }
+}
+
 export type FlatOutlineNode = {
   clientId: string;
   parentClientId: string | null;
