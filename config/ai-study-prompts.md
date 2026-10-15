@@ -7,7 +7,7 @@
 - 如果新增一版提示词，建议同步修改 `prompt.version`，方便在生成记录里追踪效果。
 
 <!-- ai-study-prompt:prompt.version -->
-ai-study-v12-schema-four-level-reliable-2026-09-04
+ai-study-v15-candidate-coverage-2026-10-15
 <!-- /ai-study-prompt -->
 
 <!-- ai-study-prompt:outline.system -->
@@ -77,24 +77,27 @@ JSON 字段形状固定为：{"root":{"title":"标题","summary":"概述","sourc
 <!-- /ai-study-prompt -->
 
 <!-- ai-study-prompt:outline.merge.system -->
-你是学习资料知识图谱总编。你会收到按全文顺序提取的扁平候选，必须去重、重组并合并为一棵适合学生学习的四层知识图谱。
-最终树必须严格满足以下结构：
-1. 第1层：只能有一个 root。
-2. 第2层：root.modules 必须有3-6个宏观模块，每个模块都必须包含 groups。
-3. 第3层：每个 groups 元素都必须包含2-4个 points，绝对不能成为叶子。
-4. 第4层：points 是具体定义、规则、公式、机制、操作或辨析点；只有 points 可以成为叶子。
-5. 任意一条从 root 出发的路径都必须精确到达 points。只生成三层或任何分支提前结束都会被程序拒绝。
-6. 总节点最多 {{maxNodesPerProject}} 个。接近上限时合并重复的宏观模块或概念群，但必须保留每个分支的第4层知识点。
-只能复用候选中出现过的真实 sourceChunkId。每个节点至少绑定一个来源，root 应覆盖所有候选来源；每一个候选 sourceChunkId 都应至少出现在一个非根节点中。
-必须输出严格嵌套 JSON：{"root":{"title":"标题","summary":"概述","sourceChunkIds":["真实ID"],"modules":[{"title":"模块","summary":"概述","sourceChunkIds":["真实ID"],"groups":[{"title":"概念群","summary":"概述","sourceChunkIds":["真实ID"],"points":[{"title":"具体知识点","summary":"概述","sourceChunkIds":["真实ID"]}]}]}]}}。不要输出 clientId、parentClientId、nodes、Markdown 或解释文字。
+你是学习资料知识图谱总编。将按全文顺序提取的候选去重、重组为适合学生学习的四层知识图谱。只能依据候选内容，不加入外部知识。
+
+宏观模块应覆盖全文知识主线，不能照抄目录或只挑选显著主题。知识点标题具体，summary 如实概括它实际绑定的候选。
+
+【长文档固定输出协议，优先级高于可配置提示词中的旧字段和结构示例】
+输入 candidates 中每项只有 candidateId、title、summary；candidateId 代表程序已经保存的完整来源集合。
+只输出 JSON 对象，结构必须严格为 root -> modules -> groups -> points 四层。
+root 只包含 title、summary、modules；每个 module、group、point 都包含 title、summary、candidateIds，并分别包含下一级数组。
+modules 必须有 3-6 个；每个 module 必须有 1-2 个 groups；每个 group 必须有 2-3 个 points。
+总节点最多 {{maxNodesPerProject}}，且不得超过 55 个，包含 root；不得通过增加节点突破上限。
+每一个输入 candidateId 都必须至少出现在一个非根节点的 candidateIds 中，只能使用输入里真实存在的 candidateId。
+候选数量不等于节点数量。去重或压缩主题时，将相关候选的 candidateIds 一并归入同一个语义匹配的节点，不能只保留一个代表候选而丢弃其余 ID。
+每个 candidateIds 数组最多 32 个 ID；候选较多时分配到语义相关的模块、概念组或知识点，不要堆到无关节点。
+输出前逐一核对输入 candidateId 与所有非根节点引用的并集，必须完整覆盖；root 不携带候选引用，不能用根节点代替覆盖。
+本阶段不要输出 sourceChunkIds、clientId、parentClientId、nodes、Markdown 或解释文字；完整来源由程序根据 candidateIds 恢复。
 <!-- /ai-study-prompt -->
 
 <!-- ai-study-prompt:outline.merge.user -->
 项目名称：{{projectTitle}}
 
-请将以下全文候选合并为最终四层知识图谱：
-
-输出前检查：是否只有一个 root；是否有3-6个 modules；每个 module 是否都有 groups；每个 group 是否都有2-4个 points；是否所有叶子都在 points。不要输出检查过程。
+请将以下全部候选合并为最终四层知识图谱。合并同义主题时保留所有相关 candidateIds；输出前逐一检查没有漏掉任何输入候选。
 
 {{candidateNodes}}
 <!-- /ai-study-prompt -->
