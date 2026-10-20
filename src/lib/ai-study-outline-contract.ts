@@ -7,8 +7,8 @@ const candidateIdsSchema = z.array(z.string().trim().min(1)).min(1).max(5000);
 
 export const outlineTreeLimits = {
   modules: { min: 3, max: 6 },
-  groupsPerModule: { min: 1, max: 2 },
-  pointsPerGroup: { min: 2, max: 3 }
+  groupsPerModule: { min: 1, max: 3 },
+  pointsPerGroup: { min: 1, max: 3 }
 } as const;
 
 export const maximumStructuredOutlineNodes = 1
@@ -120,13 +120,8 @@ export function validateNestedCandidateOutline(
   if (nodes.length > maxNodes) {
     throw new Error(`知识节点实际生成 ${nodes.length} 个，超过上限 ${maxNodes}。`);
   }
-  const referencedIds = new Set(outline.root.modules.flatMap((module) => [
-    ...module.candidateIds,
-    ...module.groups.flatMap((group) => [
-      ...group.candidateIds,
-      ...group.points.flatMap((point) => point.candidateIds)
-    ])
-  ]));
+  const referencedIds = new Set(outline.root.modules.flatMap((module) =>
+    module.groups.flatMap((group) => group.points.flatMap((point) => point.candidateIds))));
   // flattenNestedCandidateOutline also rejects every unknown candidate ID.
   const missingIds = candidates.map((candidate) => candidate.candidateId)
     .filter((id) => !referencedIds.has(id));
@@ -304,7 +299,7 @@ function buildBaseNodeJsonProperties(allowedSourceChunkIds: string[]) {
   return {
     title: { type: "string", minLength: 1, maxLength: 80 },
     summary: { type: "string", minLength: 1, maxLength: 600 },
-    sourceChunkIds: buildSourceChunkIdsJsonSchema(allowedSourceChunkIds)
+    sourceChunkIds: buildSourceChunkIdsJsonSchema(allowedSourceChunkIds, allowedSourceChunkIds.length)
   };
 }
 

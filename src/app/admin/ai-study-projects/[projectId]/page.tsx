@@ -144,7 +144,7 @@ export default async function AdminAiStudyProjectDetailPage({ params, searchPara
         ) : null}
 
         <div className="mt-6 grid gap-4 lg:grid-cols-4">
-          <InfoTile label="生成状态" value={<ProjectStatusBadge deleted={Boolean(project.deletedAt)} status={project.status} />} />
+          <InfoTile label="生成状态" value={!project.deletedAt && project.learningReadyAt && project.status !== "ready" ? "可学习 · 详解按需生成" : <ProjectStatusBadge deleted={Boolean(project.deletedAt)} status={project.status} />} />
           <InfoTile label="公开状态" value={<VisibilityBadge visibility={project.visibility} />} />
           <InfoTile label="资料 / 片段" value={`${project._count.sources} / ${project._count.sourceChunks}`} />
           <InfoTile label="节点 / 卡片" value={`${project._count.nodes} / ${project._count.cards}`} />
@@ -220,6 +220,10 @@ export default async function AdminAiStudyProjectDetailPage({ params, searchPara
 
       <section className="panel">
         <h2 className="text-lg font-black">生成任务</h2>
+        {project.cardJobs.length ? <div className="my-4 rounded-xl bg-slate-50 p-4 text-sm">
+          <p>独立详解任务：{project.cardJobs.filter(j=>j.status==="succeeded").length}/{project.cardJobs.length} 已完成；{project.cardJobs.filter(j=>j.status==="unrequested").length} 张待用户请求；{project.cardJobs.filter(j=>["pending","running"].includes(j.status)).length} 张生成中；{project.cardJobs.filter(j=>j.status==="failed").length} 失败；{project.cardJobs.filter(j=>j.status==="paused").length} 暂停。</p>
+          <details className="mt-2"><summary>失败原因与质量标记</summary>{project.cardJobs.filter(j=>["failed","paused"].includes(j.status)||(Array.isArray(j.qualityFlags)&&j.qualityFlags.length>0)).slice(0,100).map(j=><p key={j.id} className="my-2 break-words">{j.node.title} · {j.status} · 已尝试 {j.attempts} 次：{j.errorMessage||"字面相关性较低，建议人工抽查"}</p>)}</details>
+        </div>:null}
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[980px] border-separate border-spacing-0 text-left text-sm">
             <thead>

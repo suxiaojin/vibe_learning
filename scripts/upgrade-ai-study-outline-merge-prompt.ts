@@ -1,5 +1,5 @@
 import { Prisma, PrismaClient } from "@prisma/client";
-import { buildCandidateOutlineMergeTemplates } from "../src/lib/ai-study-outline-merge";
+import { readAiStudyPromptSeed, type AiStudyPromptTemplateKey } from "../src/lib/ai-study-prompts";
 import { normalizeAiStudyPromptTemplates, validateAiStudyPromptTemplates } from "../src/lib/ai-study-prompt-template";
 
 // Default is read-only. Publish only after inspecting the preview and confirming
@@ -18,14 +18,17 @@ async function main() {
   if (!profile || !active?.publishedAt) throw new Error("没有可复制的已发布学习搭子 Prompt。");
   if (expectedId && active.id !== expectedId) throw new Error("当前生效版本已变化，请重新预览。");
   const oldTemplates = normalizeAiStudyPromptTemplates(active.templates);
-  const templates = { ...oldTemplates, ...buildCandidateOutlineMergeTemplates() };
+  const seed = await readAiStudyPromptSeed();
+  const keys: AiStudyPromptTemplateKey[] = ["outline.partial.system", "outline.partial.user", "outline.merge.system", "outline.merge.user", "card.system", "card.user", "card.instruction.level4"];
+  const updates = Object.fromEntries(keys.map((key) => [key, seed.templates[key]]));
+  const templates = { ...oldTemplates, ...updates };
   const validationError = validateAiStudyPromptTemplates(templates);
   if (validationError) throw new Error(validationError);
   const changedKeys = Object.keys(templates).filter((key) => templates[key as keyof typeof templates] !== oldTemplates[key as keyof typeof oldTemplates]);
   console.log(JSON.stringify({ mode: apply ? "apply" : "preview", activeVersionId: active.id, activeVersion: active.version, changedKeys, existingProjectsUnchanged: true }, null, 2));
   if (changedKeys.length === 0) return;
   if (!apply) {
-    console.log(JSON.stringify(buildCandidateOutlineMergeTemplates(), null, 2));
+    console.log(JSON.stringify(updates, null, 2));
     return;
   }
   const published = await prisma.$transaction(async (tx) => {
@@ -36,9 +39,9 @@ async function main() {
     const next = await tx.aiStudyPromptVersion.create({ data: {
       profileId: profile.id,
       version,
-      sourceVersion: `ai-study-v${version}-candidate-coverage-2026-10-15`,
+      sourceVersion: `ai-study-v${version}-evidence-curriculum-2026-10-18`,
       templates: templates as Prisma.InputJsonValue,
-      changeNote: "统一长文档候选合并协议；保留其它提示词和所有历史版本",
+      changeNote: "逐段证据规划、完整学习目录及逐目标讲解；保留聊天模板、其它模板与历史版本",
       publishedAt: new Date(),
       createdByName: "系统修复"
     } });

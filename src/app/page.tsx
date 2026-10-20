@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { MarketingHomepage } from "@/components/marketing-homepage";
 import { getCurrentUser } from "@/lib/auth";
-import { getHomepageImageUrls, getHomepageText } from "@/lib/homepage-settings";
+import { getHomepageMedia, getHomepageText } from "@/lib/homepage-settings";
 
 export async function generateMetadata(): Promise<Metadata> {
   const content = await getHomepageText();
@@ -22,6 +22,6 @@ export default async function HomePage({
     redirect("/learn");
   }
 
-  const [content, images] = await Promise.all([getHomepageText(), getHomepageImageUrls()]);
-  return <MarketingHomepage signedIn={Boolean(user)} content={content} images={images} />;
+  const [content, media] = await Promise.all([getHomepageText(), getHomepageMedia()]);
+  return <MarketingHomepage signedIn={Boolean(user)} content={content} media={media} />;
 }

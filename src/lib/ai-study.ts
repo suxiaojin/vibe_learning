@@ -135,6 +135,18 @@ export async function listAiStudyProjects(ownerId: string, input: unknown = {}) 
       }
     }
   });
+  const groupCreatedAt = new Map<string, number>();
+  for (const project of projects) {
+    const group = project.partGroupId || project.id;
+    groupCreatedAt.set(group, Math.max(groupCreatedAt.get(group) ?? 0, project.createdAt.getTime()));
+  }
+  projects.sort((a, b) => {
+    const aGroup = a.partGroupId || a.id;
+    const bGroup = b.partGroupId || b.id;
+    return (groupCreatedAt.get(bGroup) ?? 0) - (groupCreatedAt.get(aGroup) ?? 0)
+      || aGroup.localeCompare(bGroup) * Number(aGroup !== bGroup)
+      || (a.partIndex ?? 1) - (b.partIndex ?? 1);
+  });
   return attachAiStudyGenerationProgress(projects, { loadTasksOnMiss: true });
 }
 
@@ -221,6 +233,9 @@ export async function getAiStudyProject(ownerId: string, projectId: string) {
           storageBucket: true,
           storageKey: true,
           storagePath: true,
+          originalStorageKey: true,
+          originalPageStart: true,
+          originalPageEnd: true,
           pageCount: true,
           status: true,
           createdAt: true
@@ -518,6 +533,38 @@ export async function startAiStudyProjectGeneration(ownerId: string, projectId: 
   return { task };
 }
 
+export async function retryAiStudyProjectGeneration(ownerId: string, projectId: string) {
+  const task = await prisma.$transaction(async (tx) => {
+    const project = await tx.aiStudyProject.findFirst({
+      where: { id: projectId, ownerId, deletedAt: null },
+      include: { tasks: { orderBy: [{ createdAt: "desc" }, { id: "desc" }] } }
+    });
+    if (!project) throw new AiStudyError("学习项目不存在。", 404, "AI_STUDY_PROJECT_NOT_FOUND");
+    if (project.status !== "failed") throw new AiStudyError("只有失败的项目可以重试。", 409, "AI_STUDY_RETRY_NOT_ALLOWED");
+    if (project.tasks.some((item) => item.status === "pending" || item.status === "running")) {
+      throw new AiStudyError("项目已有待处理任务。", 409, "AI_STUDY_TASK_ALREADY_RUNNING");
+    }
+    const failed = project.tasks.find((item) => item.status === "failed");
+    if (!failed) throw new AiStudyError("没有可重试的失败任务。", 409, "AI_STUDY_FAILED_TASK_NOT_FOUND");
+    const claimed = await tx.aiStudyProject.updateMany({
+      where: { id: project.id, status: "failed", deletedAt: null },
+      data: { status: "processing" }
+    });
+    if (claimed.count !== 1) throw new AiStudyError("项目状态已变化。", 409, "AI_STUDY_RETRY_CONFLICT");
+    if (failed.type === "parse_source" && failed.sourceId) {
+      await tx.aiStudySource.update({ where: { id: failed.sourceId }, data: { status: "uploaded" } });
+    }
+    return tx.aiStudyGenerationTask.update({
+      where: { id: failed.id },
+      data: { status: "pending", stage: "waiting_for_retry", errorMessage: null, startedAt: null, finishedAt: null, retryCount: { increment: 1 } }
+    });
+  });
+  await enqueueAiStudyTask(task);
+  await clearAiStudyProgressCache(projectId);
+  await writeAiStudyTaskProgressCache(task);
+  return { task };
+}
+
 export async function listAiStudyProjectTasks(ownerId: string, projectId: string) {
   await assertOwnedProject(ownerId, projectId);
   return prisma.aiStudyGenerationTask.findMany({
@@ -597,6 +644,7 @@ export async function getAiStudyNodeDetail(ownerId: string, nodeId: string) {
         select: {
           id: true,
           title: true,
+          ownerId: true,
           status: true,
           knowledgeCount: true,
           masteredCount: true
@@ -619,6 +667,7 @@ export async function getAiStudyNodeDetail(ownerId: string, nodeId: string) {
           updatedAt: true
         }
       },
+      cardJob: {select:{status:true,attempts:true,errorMessage:true,qualityFlags:true}},
       progress: {
         where: { userId: ownerId },
         take: 1,
@@ -653,6 +702,7 @@ export async function getAiStudyNodeDetail(ownerId: string, nodeId: string) {
   const { cards, progress, ...nodeDetail } = node;
   return {
     ...nodeDetail,
+    canRequestCard: node.project.ownerId === ownerId && node.depth === 3,
     card: cards[0] || null,
     progress: progress[0] || null,
     sourceChunks
@@ -1270,6 +1320,7 @@ async function assertProjectCreateLimit(ownerId: string) {
   const count = await prisma.aiStudyProject.count({
     where: {
       ownerId,
+      OR: [{ partIndex: null }, { partIndex: 1 }],
       createdAt: { gte: since }
     }
   });

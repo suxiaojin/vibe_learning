@@ -7,6 +7,8 @@ type ProgressTask = Pick<AiStudyGenerationTask, "id" | "projectId" | "sourceId" 
 type ProgressProject = {
   id: string;
   status: AiStudyProjectStatus;
+  learningReadyAt?: Date | string | null;
+  cardJobs?: {status:string}[];
   tasks?: ProgressTask[];
 };
 
@@ -29,9 +31,11 @@ export type AiStudyGenerationProgress = {
   errorMessage: string | null;
   steps: AiStudyGenerationProgressStep[];
   updatedAt: string;
+  learningAvailable?: boolean;
+  cards?: {total:number;completed:number;unrequested:number;failed:number;paused:number};
 };
 
-const progressCachePrefix = process.env.AI_STUDY_PROGRESS_CACHE_PREFIX || "ai-study:project-progress";
+const progressCachePrefix = `${process.env.AI_STUDY_PROGRESS_CACHE_PREFIX || "ai-study:project-progress"}:on-demand-v1`;
 const processingTtlSeconds = getNumberEnv("AI_STUDY_PROGRESS_CACHE_PROCESSING_TTL_SECONDS", 180);
 const finishedTtlSeconds = getNumberEnv("AI_STUDY_PROGRESS_CACHE_FINISHED_TTL_SECONDS", 600);
 
@@ -59,6 +63,8 @@ export async function attachAiStudyGenerationProgress<T extends ProgressProject>
   }
 
   const cacheMap = await readAiStudyProgressCacheMap(projects.map((project) => project.id));
+  // A cache miss must not discard per-card progress for an already usable book.
+  await Promise.all(projects.filter(p=>p.learningReadyAt&&!cacheMap.has(p.id)).map(async p=>{const value=await loadAiStudyProjectProgressFromPostgres(p.id);if(value)cacheMap.set(p.id,value);}));
   const missingProcessingIds = projects
     .filter((project) => project.status === "processing" && !cacheMap.get(project.id) && options.loadTasksOnMiss)
     .map((project) => project.id);
@@ -93,6 +99,8 @@ async function loadAiStudyProjectProgressFromPostgres(projectId: string) {
     select: {
       id: true,
       status: true,
+      learningReadyAt: true,
+      cardJobs: {select:{status:true}},
       tasks: {
         orderBy: { createdAt: "desc" },
         take: 5,
@@ -121,6 +129,8 @@ async function loadAiStudyProjectProgressFromPostgres(projectId: string) {
 }
 
 export async function writeAiStudyTaskProgressCache(task: ProgressTask) {
+  const project = await prisma.aiStudyProject.findUnique({where:{id:task.projectId},select:{learningReadyAt:true}});
+  if (project?.learningReadyAt) return refreshAiStudyProgressCache(task.projectId);
   const progress = buildAiStudyGenerationProgress({
     id: task.projectId,
     status: task.status === "failed" ? "failed" : "processing",
@@ -169,11 +179,21 @@ export function buildAiStudyGenerationProgress(project: ProgressProject): AiStud
   const outlineTask = findLatestTask(tasks, (task) => task.type === "generate_outline");
   const cardTask = findLatestTask(tasks, (task) => task.type === "generate_cards");
 
+  if (project.learningReadyAt) {
+    const jobs=project.cardJobs??[], completed=jobs.filter(j=>j.status==="succeeded").length;
+    const unrequested=jobs.filter(j=>j.status==="unrequested").length;
+    const failed=jobs.filter(j=>j.status==="failed").length, paused=jobs.filter(j=>j.status==="paused").length;
+    const active=jobs.some(j=>j.status==="pending"||j.status==="running");
+    const text=project.status==="ready"?"目录和详解已完成":jobs.length?`目录和原文可学习 · AI详解按需生成 ${completed}/${jobs.length}${active?"，已请求的详解生成中":""}${failed+paused?`，${failed+paused} 张待重试`:""}`:"目录和原文已可学习，正在登记详解入口";
+    return {...buildProgress(project.id,project.status,100,text,null,"learning_ready",null,steps),learningAvailable:true,cards:{total:jobs.length,completed,unrequested,failed,paused}};
+  }
+
   if (project.status === "ready") {
     return buildProgress(project.id, project.status, 100, "知识图谱已生成", null, "ready", null, steps);
   }
   if (project.status === "failed") {
-    return buildProgress(project.id, project.status, 100, "项目解析失败", latestFailedTask?.type || null, latestFailedTask?.stage || "failed", latestFailedTask?.errorMessage || null, steps);
+    const failureText = latestFailedTask?.type === "generate_outline" ? "知识框架生成失败" : latestFailedTask?.type === "generate_cards" ? "知识卡片生成失败" : "资料解析失败";
+    return buildProgress(project.id, project.status, 100, failureText, latestFailedTask?.type || null, latestFailedTask?.stage || "failed", latestFailedTask?.errorMessage || null, steps);
   }
   if (project.status !== "processing") {
     return buildProgress(project.id, project.status, 0, "等待创建", null, project.status, null, steps);
@@ -193,6 +213,9 @@ export function buildAiStudyGenerationProgress(project: ProgressProject): AiStud
     return buildProgress(project.id, project.status, 66, "等待生成知识卡片...", cardTask.type, cardTask.stage, null, steps);
   }
   if (outlineTask?.status === "running") {
+    const batch = String(outlineTask.stage || "").match(/planning_(?:evidence|chapter)_(\d+)_of_(\d+)/);
+    if (batch) return buildProgress(project.id, project.status, Math.min(55, 38 + Math.round(Number(batch[1]) / Number(batch[2]) * 17)), `正在提取知识点 ${batch[1]}/${batch[2]}`, outlineTask.type, outlineTask.stage, null, steps);
+    if (String(outlineTask.stage).startsWith("organizing_")) return buildProgress(project.id, project.status, 58, "正在组织完整知识目录...", outlineTask.type, outlineTask.stage, null, steps);
     return buildProgress(project.id, project.status, 46, "正在生成思维导图...", outlineTask.type, outlineTask.stage, null, steps);
   }
   if (outlineTask?.status === "pending") {
@@ -200,7 +223,8 @@ export function buildAiStudyGenerationProgress(project: ProgressProject): AiStud
   }
   if (parseTask?.status === "running") {
     const percent = parseTask.stage === "submitting_to_mineru" ? 20 : parseTask.stage === "mineru_result_persisted" ? 32 : 18;
-    return buildProgress(project.id, project.status, percent, "AI 正在解析资料...", parseTask.type, parseTask.stage, null, steps);
+    const text = parseTask.stage === "inspecting_pdf_parts" ? "正在检查并拆分大 PDF..." : "AI 正在解析资料...";
+    return buildProgress(project.id, project.status, percent, text, parseTask.type, parseTask.stage, null, steps);
   }
   if (parseTask?.status === "pending") {
     return buildProgress(project.id, project.status, 8, "等待解析资料...", parseTask.type, parseTask.stage, null, steps);
@@ -329,6 +353,8 @@ function parseProgressSnapshot(raw: string | null) {
       stage: parsed.stage || null,
       errorMessage: parsed.errorMessage || null,
       steps: Array.isArray(parsed.steps) ? parsed.steps : [],
+      learningAvailable: parsed.learningAvailable,
+      cards: parsed.cards,
       updatedAt: parsed.updatedAt || new Date().toISOString()
     } as AiStudyGenerationProgress;
   } catch {

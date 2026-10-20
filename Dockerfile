@@ -18,7 +18,7 @@ RUN npm run build
 
 FROM node:22-alpine AS runner
 RUN sed -i 's#https://dl-cdn.alpinelinux.org/alpine#https://mirrors.aliyun.com/alpine#g' /etc/apk/repositories \
-  && apk add --no-cache openssl
+  && apk add --no-cache openssl qpdf
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/public ./public

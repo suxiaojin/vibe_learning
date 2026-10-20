@@ -1,153 +1,124 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import {
-  flattenNestedCandidateOutline,
-  nestedCandidateOutlineSchema,
-  OutlineCandidateCoverageError,
-  validateNestedCandidateOutline,
-  type OutlineCandidateWithId
-} from "../src/lib/ai-study-outline-contract";
-import {
-  buildCandidateOutlineMergeTemplates,
-  buildCandidateOutlineCoverageRepair,
-  buildCandidateOutlineRepairMessages,
-  buildCandidateOutlineTransportInstruction
-} from "../src/lib/ai-study-outline-merge";
-import { normalizeAiStudyPromptTemplates, renderAiStudyPromptTemplate, validateAiStudyPromptTemplates } from "../src/lib/ai-study-prompt-template";
-import type { ChatMessage } from "../src/lib/qwen";
+import { flattenNestedCandidateOutline, OutlineCandidateCoverageError, validateNestedCandidateOutline, type OutlineCandidateWithId } from "../src/lib/ai-study-outline-contract";
+import { buildCandidateClusterJsonSchema, buildCandidateHierarchyJsonSchema, buildCandidateOutlineMergeTemplates, generateCandidateOutline, orderCandidateTitlesForPlanning, parseCandidateClusters, parseCandidateHierarchy } from "../src/lib/ai-study-outline-merge";
+import { normalizeAiStudyPromptTemplates, validateAiStudyPromptTemplates } from "../src/lib/ai-study-prompt-template";
+import { buildDepthScopedCardJsonSchema, normalizeAiStudyCardForDepth } from "../src/lib/ai-study-card-quality";
+import { parseOutlineCandidatePlan } from "../src/lib/ai-study-outline-candidates";
 
-const candidates: OutlineCandidateWithId[] = Array.from({ length: 112 }, (_, index) => ({
-  candidateId: `candidate_${Math.floor(index / 8) + 1}_${index % 8 + 1}`,
-  title: `知识候选${index + 1}`,
-  summary: `候选${index + 1}概述`,
-  sourceChunkIds: [`chunk-${index + 1}`]
-}));
-const complete = nestedCandidateOutlineSchema.parse({
-  root: {
-    title: "经济学知识图谱",
-    summary: "覆盖全部候选的四层知识图谱",
-    modules: Array.from({ length: 6 }, (_, moduleIndex) => ({
-      title: `模块${moduleIndex + 1}`,
-      summary: "模块概述",
-      candidateIds: candidates.filter((_, index) => index % 6 === moduleIndex).map((c) => c.candidateId),
-      groups: [{
-        title: `概念组${moduleIndex + 1}`,
-        summary: "概念组概述",
-        candidateIds: [candidates[moduleIndex].candidateId],
-        points: [0, 1].map((pointIndex) => ({
-          title: `知识点${moduleIndex + 1}-${pointIndex + 1}`,
-          summary: "知识点概述",
-          candidateIds: [candidates[moduleIndex + pointIndex * 6].candidateId]
-        }))
-      }]
-    }))
-  }
-});
-assert.doesNotThrow(() => validateNestedCandidateOutline(complete, candidates, 60));
-const completeNodes = flattenNestedCandidateOutline(complete, candidates);
-assert.equal(completeNodes.length, 25);
-assert.equal(new Set(completeNodes.slice(1).flatMap((node) => node.sourceChunkIds)).size, 112);
-assert.throws(() => validateNestedCandidateOutline(complete, candidates, 24), /超过上限/);
-
-// Reproduce a structurally valid merge that loses the last 53 candidates.
-const incomplete = structuredClone(complete);
-const omitted = new Set(candidates.slice(59).map((c) => c.candidateId));
-for (const module of incomplete.root.modules) {
-  module.candidateIds = module.candidateIds.filter((id) => !omitted.has(id));
-}
-let coverageError: OutlineCandidateCoverageError | undefined;
-try {
-  validateNestedCandidateOutline(incomplete, candidates, 60);
-} catch (error) {
-  assert.ok(error instanceof OutlineCandidateCoverageError);
-  coverageError = error;
-}
-assert.ok(coverageError);
-assert.equal(coverageError.missingCandidateIds.length, 53);
-assert.deepEqual(coverageError.missingCandidateIds, candidates.slice(59).map((c) => c.candidateId));
-// Root evidence is always complete; it must never bypass non-root coverage.
-assert.equal(flattenNestedCandidateOutline(incomplete, candidates)[0].sourceChunkIds.length, 112);
-assert.throws(() => validateNestedCandidateOutline(incomplete, candidates, 60), OutlineCandidateCoverageError);
-
-const unknown = structuredClone(complete);
-unknown.root.modules[0].groups[0].points[0].candidateIds = ["unknown-candidate"];
-assert.throws(() => validateNestedCandidateOutline(unknown, candidates, 60), /不存在的候选/);
-const badStructure = structuredClone(complete);
-badStructure.root.modules[0].groups[0].points = [];
-assert.equal(nestedCandidateOutlineSchema.safeParse(badStructure).success, false);
-
-const templates = buildCandidateOutlineMergeTemplates();
-assert.deepEqual(Object.keys(templates).sort(), ["outline.merge.system", "outline.merge.user"]);
-const original: ChatMessage[] = [
-  { role: "system", content: renderAiStudyPromptTemplate(templates["outline.merge.system"], { maxNodesPerProject: 60 }) },
-  { role: "user", content: renderAiStudyPromptTemplate(templates["outline.merge.user"], { projectTitle: "经济学", candidateNodes: JSON.stringify({ candidates }) }) }
-];
-const originalSnapshot = JSON.stringify(original);
-const fullResponse = JSON.stringify(incomplete);
-assert.ok(fullResponse.length > 1200);
-const repairedMessages = buildCandidateOutlineRepairMessages(original, { error: coverageError, responseContent: fullResponse }, 60);
-assert.equal(JSON.stringify(original), originalSnapshot);
-assert.equal(repairedMessages.length, 4);
-assert.deepEqual(repairedMessages.slice(0, 2), original);
-assert.deepEqual(repairedMessages[2], { role: "assistant", content: fullResponse });
-assert.ok(repairedMessages[3].content.includes(JSON.stringify(coverageError.missingCandidateIds)));
-assert.ok(repairedMessages[3].content.includes(candidates.at(-1)!.candidateId));
-assert.ok(repairedMessages[3].content.includes("保留上一份输出中已经正确的结构和候选引用"));
-assert.ok(repairedMessages[3].content.includes("总节点最多 55 个"));
-assert.ok(repairedMessages[3].content.includes("完整 JSON"));
-
-const coverageRepair = buildCandidateOutlineCoverageRepair(original, { error: coverageError, responseContent: fullResponse }, 60);
-assert.ok(coverageRepair);
-const repairShape = coverageRepair.jsonSchema.schema as {
-  properties: {
-    assignments: { required: string[]; properties: Record<string, { enum: string[] }> };
-    nodeUpdates: { required: string[] };
+async function main() {
+  const candidates: OutlineCandidateWithId[] = Array.from({ length: 112 }, (_, i) => ({ candidateId: `candidate_${i + 1}`, title: `候选${i + 1}`, summary: `来源摘句${i + 1}`, sourceChunkIds: [`chunk_${i + 1}`] }));
+  const ids = candidates.map((c) => c.candidateId);
+  const ordered = orderCandidateTitlesForPlanning(candidates);
+  assert.deepEqual(ordered.map((c) => c.candidateId).sort(), [...ids].sort());
+  const duplicates = Array.from({ length: 8 }, (_, i) => ({ ...candidates[i], title: "引力定律" }));
+  const diverse = orderCandidateTitlesForPlanning([...duplicates, { ...candidates[8], title: "神经可塑性" }]);
+  assert.equal(diverse[1].title, "神经可塑性");
+  const hierarchy = {
+    root: { title: "科学知识", summary: "科学主题" },
+    assignments: Object.fromEntries(ids.slice(0, 36).map((id, i) => [id, { moduleTitle: `模块${Math.floor(i / 6) + 1}`, groupTitle: `概念组${Math.floor(i / 3) + 1}` }]))
   };
-};
-assert.deepEqual(repairShape.properties.assignments.required, coverageError.missingCandidateIds);
-const leafIds = repairShape.properties.assignments.properties[coverageError.missingCandidateIds[0]].enum;
-assert.ok(leafIds.length > 0 && leafIds.every((id) => id.startsWith("point_")));
-const repairContext = JSON.parse(coverageRepair.messages.at(-1)!.content) as { nodes: Array<{ nodeId: string; title: string; summary: string }> };
-const repairPayload = {
-  assignments: Object.fromEntries(coverageError.missingCandidateIds.map((id, index) => [id, leafIds[index % leafIds.length]])),
-  nodeUpdates: Object.fromEntries(repairContext.nodes.map((node) => [node.nodeId, { title: node.title, summary: node.summary }]))
-};
-const repaired = coverageRepair.parseResponse(JSON.stringify(repairPayload));
-assert.doesNotThrow(() => validateNestedCandidateOutline(repaired, candidates, 60));
-assert.equal(flattenNestedCandidateOutline(repaired, candidates).length, completeNodes.length);
-assert.equal(new Set(flattenNestedCandidateOutline(repaired, candidates).slice(1).flatMap((node) => node.sourceChunkIds)).size, 112);
-assert.deepEqual(incomplete, JSON.parse(fullResponse));
-for (const [index, node] of flattenNestedCandidateOutline(incomplete, candidates).entries()) {
-  const fixed = flattenNestedCandidateOutline(repaired, candidates)[index];
-  assert.ok(node.sourceChunkIds.every((id) => fixed.sourceChunkIds.includes(id)));
+  const assignments = { assignments: Object.fromEntries(ids.map((id, i) => [id, ids[i % 36]])) };
+  const cluster = (value: unknown) => parseCandidateClusters(JSON.stringify(value), candidates, 60);
+  const topics = cluster(assignments);
+  const apply = (value: unknown) => parseCandidateHierarchy(JSON.stringify(value), topics, candidates, 60);
+  const outline = apply(hierarchy);
+  validateNestedCandidateOutline(outline, candidates, 60);
+  const flat = flattenNestedCandidateOutline(outline, candidates);
+  assert.equal(flat.length, 55);
+  assert.equal(new Set(flat.filter((n) => n.clientId.startsWith("point_")).flatMap((n) => n.sourceChunkIds)).size, 112);
+  assert.equal(outline.root.modules[0].groups[0].points[0].summary, candidates[0].summary);
+  assert.throws(() => parseCandidateHierarchy(JSON.stringify(hierarchy), topics, candidates, 54), /超过/);
+  const overloaded = structuredClone(hierarchy);
+  overloaded.assignments[ids[0]] = { moduleTitle: "模块1", groupTitle: "概念组2" };
+  assert.throws(() => apply(overloaded), /必须为1-3个/);
+  const missing = structuredClone(assignments);
+  for (const id of ids.slice(59)) delete missing.assignments[id];
+  assert.throws(() => cluster(missing), (error) => error instanceof OutlineCandidateCoverageError && error.missingCandidateIds.length === 53);
+  const noMatch = structuredClone(assignments);
+  noMatch.assignments[ids[0]] = "__UNMATCHED__";
+  assert.throws(() => cluster(noMatch), /不存在的代表/);
+  const unknown = structuredClone(assignments);
+  unknown.assignments.unknown = "知识点1";
+  assert.throws(() => cluster(unknown), /不存在的候选/);
+  const invalidTarget = structuredClone(assignments);
+  invalidTarget.assignments[ids[0]] = ids[1];
+  assert.throws(() => cluster(invalidTarget), /代表必须指向自身/);
+  const missingLeaf = structuredClone(hierarchy);
+  delete missingLeaf.assignments[ids[0]];
+  assert.throws(() => apply(missingLeaf), OutlineCandidateCoverageError);
+  const unknownPoint = structuredClone(hierarchy);
+  unknownPoint.assignments.unknown = { moduleTitle: "模块1", groupTitle: "概念组1" };
+  assert.throws(() => apply(unknownPoint), /不存在的知识点/);
+  const tooManyGroups = structuredClone(hierarchy);
+  tooManyGroups.assignments[ids[0]].groupTitle = "额外组1";
+  tooManyGroups.assignments[ids[1]].groupTitle = "额外组2";
+  assert.throws(() => apply(tooManyGroups), /必须包含1-3个/);
+  const tooManyModules = structuredClone(hierarchy);
+  tooManyModules.assignments[ids[0]].moduleTitle = "额外模块";
+  assert.throws(() => apply(tooManyModules), /必须为3-6个/);
+  const tooMany = { assignments: Object.fromEntries(ids.map((id) => [id, id])) };
+  assert.throws(() => cluster(tooMany), /实际112个/);
+  const ancestorOnly = structuredClone(outline);
+  ancestorOnly.root.modules[0].groups[0].points[0].candidateIds = [ids[0]];
+  assert.throws(() => validateNestedCandidateOutline(ancestorOnly, candidates, 60), OutlineCandidateCoverageError);
+  const shape = buildCandidateClusterJsonSchema(ids) as unknown as { properties: { assignments: { required: string[]; properties: Record<string, { enum: string[] }> } } };
+  assert.deepEqual(shape.properties.assignments.required, ids);
+  assert.deepEqual(shape.properties.assignments.properties[ids[0]].enum, ids);
+  const hierarchyShape = buildCandidateHierarchyJsonSchema(topics) as unknown as { properties: { assignments: { required: string[]; additionalProperties: boolean } } };
+  assert.deepEqual(hierarchyShape.properties.assignments.required, ids.slice(0, 36));
+  assert.equal(hierarchyShape.properties.assignments.additionalProperties, false);
+  const reorderedTopics = parseCandidateHierarchy(JSON.stringify(hierarchy), [...topics].reverse(), candidates, 60);
+  const firstGroup = reorderedTopics.root.modules.find((module) => module.title === "模块1")!.groups.find((group) => group.title === "概念组1")!;
+  assert.ok(firstGroup.points.some((point) => point.candidateIds.includes(ids[0])));
+  assert.deepEqual(new Set(flattenNestedCandidateOutline(reorderedTopics, candidates).filter((node) => node.clientId.startsWith("point_")).flatMap((node) => node.sourceChunkIds)), new Set(candidates.flatMap((candidate) => candidate.sourceChunkIds)));
+
+  // Retry only the failed directory step. Successful topics remain immutable.
+  let calls = 0, retries = 0;
+  const rebuilt = await generateCandidateOutline([{ role: "user", content: "候选输入" }], candidates, 60, async (call) => {
+    calls++;
+    const payload = calls === 1 ? assignments : calls === 2 ? missingLeaf : hierarchy;
+    if (calls === 3) {
+      assert.equal(call.stage, "merging_outline_hierarchy_retry_1");
+      assert.ok(call.messages.some((m) => m.content.includes(ids[0])));
+    }
+    const content = JSON.stringify(payload); call.validateContent(content); return content;
+  }, async () => { retries++; });
+  assert.equal(calls, 3); assert.equal(retries, 1);
+  assert.deepEqual(rebuilt, outline);
+  calls = 0; retries = 0;
+  await generateCandidateOutline([], candidates, 60, async (call) => {
+    const payload = [missing, assignments, missingLeaf, hierarchy][calls++];
+    const content = JSON.stringify(payload); call.validateContent(content); return content;
+  }, async () => { retries++; });
+  assert.equal(calls, 4); assert.equal(retries, 2);
+
+  const card = { overview: "概述", explanation: "误填的上层详解", keyPoints: ["要点"] };
+  for (const depth of [0, 1, 2]) {
+    assert.equal(normalizeAiStudyCardForDepth(card, depth).explanation, "");
+    const s = buildDepthScopedCardJsonSchema({ properties: { explanation: { type: "string" } } }, depth) as { properties: { explanation: { enum: string[] } } };
+    assert.deepEqual(s.properties.explanation.enum, [""]);
+  }
+  assert.equal(normalizeAiStudyCardForDepth(card, 3).explanation, card.explanation);
+  assert.throws(() => normalizeAiStudyCardForDepth({ explanation: " " }, 3), /非空 AI 详解/);
+  const partial = { candidates: [{ candidateId: "candidate_1", title: "潮汐", excerptIds: ["excerpt_1_1"] }, { candidateId: "candidate_2", title: "黑洞", excerptIds: ["excerpt_2_1"] }], assignments: { source_1: ["candidate_1"], source_2: ["candidate_2"] } };
+  const sources = [{ id: "source_1", content: "潮汐周期是24小时53分钟。" }, { id: "source_2", content: "黑洞具有事件视界。" }];
+  assert.equal(parseOutlineCandidatePlan(JSON.stringify(partial), 8, sources).candidates[0].summary, sources[0].content);
+  const inventedQuote = structuredClone(partial);
+  inventedQuote.candidates[0].excerptIds = ["潮汐周期是25小时53分钟。"];
+  assert.throws(() => parseOutlineCandidatePlan(JSON.stringify(inventedQuote), 8, sources), /摘句/);
+  const missingSource = structuredClone(partial);
+  delete (missingSource.assignments as Record<string, string[]>).source_2;
+  assert.throws(() => parseOutlineCandidatePlan(JSON.stringify(missingSource), 8, sources), /一一对应/);
+  const evidenceBinding = structuredClone(partial);
+  evidenceBinding.assignments.source_2 = ["candidate_1"];
+  assert.deepEqual(parseOutlineCandidatePlan(JSON.stringify(evidenceBinding), 8, sources).candidates[1].sourceChunkIds, ["source_2"]);
+  const templates = buildCandidateOutlineMergeTemplates();
+  const seed = readFileSync("config/ai-study-prompts.md", "utf8").replace(/\r\n/g, "\n");
+  const sections = Object.fromEntries(Array.from(seed.matchAll(/<!--\s*ai-study-prompt:([a-zA-Z0-9_.-]+)\s*-->\n?([\s\S]*?)\n?<!--\s*\/ai-study-prompt\s*-->/g), (m) => [m[1], m[2].trim()]));
+  assert.equal(sections["outline.merge.system"], templates["outline.merge.system"]);
+  assert.equal(sections["outline.merge.user"], templates["outline.merge.user"]);
+  assert.equal(validateAiStudyPromptTemplates(normalizeAiStudyPromptTemplates(sections)), null);
+  console.log("passed: 112 candidates, 53 omissions rejected, topic clustering, complete hierarchy, source excerpts, card depth rules");
 }
-const missingAssignment = structuredClone(repairPayload);
-delete missingAssignment.assignments[coverageError.missingCandidateIds.at(-1)!];
-assert.throws(() => coverageRepair.parseResponse(JSON.stringify(missingAssignment)), /全部遗漏候选/);
-const unknownAssignment = structuredClone(repairPayload);
-unknownAssignment.assignments[coverageError.missingCandidateIds[0]] = "module_1";
-assert.throws(() => coverageRepair.parseResponse(JSON.stringify(unknownAssignment)), /第4层知识点/);
-const overloaded = structuredClone(repairPayload);
-for (const id of Object.keys(overloaded.assignments)) overloaded.assignments[id] = leafIds[0];
-assert.throws(() => coverageRepair.parseResponse(JSON.stringify(overloaded)), /引用上限/);
-assert.equal(JSON.stringify(incomplete), fullResponse);
-assert.equal(buildCandidateOutlineCoverageRepair(original, { error: new Error("fetch failed"), responseContent: null }, 60), null);
-
-const disconnectedMessages = buildCandidateOutlineRepairMessages(original, { error: new Error("fetch failed"), responseContent: null }, 60);
-assert.equal(disconnectedMessages.length, 3);
-assert.equal(disconnectedMessages.some((m) => m.role === "assistant"), false);
-assert.ok(disconnectedMessages.at(-1)!.content.includes("fetch failed"));
-const malformedMessages = buildCandidateOutlineRepairMessages(original, { error: new Error("invalid JSON"), responseContent: '{"root":' }, 60);
-assert.equal(malformedMessages[2].content, '{"root":');
-assert.ok(malformedMessages[3].content.includes("invalid JSON"));
-assert.ok(buildCandidateOutlineTransportInstruction(40).includes("总节点最多 40 个"));
-assert.ok(original[0].content.includes("2-3 个 points"));
-assert.equal(original[0].content.includes('"sourceChunkIds":'), false);
-assert.equal(original[0].content.includes("2-4个"), false);
-const seed = readFileSync("config/ai-study-prompts.md", "utf8");
-const sections = Object.fromEntries(Array.from(seed.matchAll(/<!--\s*ai-study-prompt:([a-zA-Z0-9_.-]+)\s*-->\r?\n?([\s\S]*?)\r?\n?<!--\s*\/ai-study-prompt\s*-->/g), (m) => [m[1], m[2].trim()]));
-assert.equal(sections["outline.merge.system"], templates["outline.merge.system"]);
-assert.equal(sections["outline.merge.user"], templates["outline.merge.user"]);
-assert.equal(validateAiStudyPromptTemplates(normalizeAiStudyPromptTemplates(sections)), null);
-
-console.log("ai-study outline merge tests passed: 112 candidates, 53 required repair assignments, non-root coverage, preserved references and strict limits");
+main().catch((error) => { console.error(error); process.exitCode = 1; });

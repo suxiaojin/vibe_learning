@@ -1,52 +1,74 @@
-import { runAiStudyWorkerCycle } from "../src/lib/ai-study-generation";
-import { getAiStudyTaskQueueSettings } from "../src/lib/ai-study-task-queue";
+import { runCardJobCycle } from "../src/lib/ai-study-card-jobs";
+import { runAiStudyWorkerPoolCycle, type AiStudyWorkerPool } from "../src/lib/ai-study-worker-pools";
+import {
+  ackAiStudyQueuedTask,
+  claimStaleAiStudyQueuedTaskEntries,
+  getAiStudyTaskQueueSettings,
+  readAiStudyQueuedTaskEntries
+} from "../src/lib/ai-study-task-queue";
 import { prisma } from "../src/lib/prisma";
 import { disconnectRedis } from "../src/lib/redis";
 
-const pollIntervalMs = Number(process.env.AI_STUDY_WORKER_INTERVAL_MS || 5000);
-const batchSize = Number(process.env.AI_STUDY_WORKER_BATCH_SIZE || 1);
+const pollIntervalMs = Math.max(250, Number(process.env.AI_STUDY_WORKER_INTERVAL_MS || 1000));
 let stopping = false;
 
-async function main() {
-  const queueSettings = getAiStudyTaskQueueSettings();
-  console.log(
-    [
-      `AI study worker started. Poll interval: ${pollIntervalMs}ms, batch size: ${batchSize}`,
-      queueSettings.configured
-        ? `Redis Stream: ${queueSettings.streamKey}, group: ${queueSettings.groupName}, consumer: ${queueSettings.consumerName}, block: ${queueSettings.blockMs}ms, fallback scan: ${queueSettings.fallbackScanMs}ms`
-        : "Redis Stream: disabled, using PostgreSQL polling"
-    ].join("\n")
-  );
-
+async function poolLoop(pool: AiStudyWorkerPool, lane: number) {
   while (!stopping) {
     try {
-      const result = await runAiStudyWorkerCycle(batchSize);
-      if (result.processed > 0) {
-        console.log(`AI study worker processed tasks=${result.processed}`);
-      }
+      if (await runAiStudyWorkerPoolCycle(pool)) continue;
     } catch (error) {
-      console.error("AI study worker cycle failed", error);
+      console.error(`AI study ${pool} lane=${lane} failed`, error);
     }
     await sleep(pollIntervalMs);
   }
+}
+
+async function cardLoop() {
+  while (!stopping) {
+    try {
+      if (await runCardJobCycle()) continue;
+    } catch (error) {
+      console.error("AI study on-demand card pool failed", error);
+    }
+    await sleep(pollIntervalMs);
+  }
+}
+
+async function queueNotificationDrain() {
+  if (!getAiStudyTaskQueueSettings().configured) return;
+  // PostgreSQL is the durable work list and owns the per-pool capacity locks.
+  // Redis entries are wake-up hints; ACK them to avoid stranded consumers.
+  while (!stopping) {
+    const entries = await readAiStudyQueuedTaskEntries(64);
+    const stale = await claimStaleAiStudyQueuedTaskEntries(64);
+    for (const entry of [...entries, ...stale]) await ackAiStudyQueuedTask(entry.entryId);
+    if (!entries.length && !stale.length) await sleep(pollIntervalMs);
+  }
+}
+
+async function main() {
+  console.log("AI study worker started: MinerU parse=3, outline=3 (one per configured AI server), cards=on demand");
+  await Promise.all([
+    ...Array.from({ length: 3 }, (_, index) => poolLoop("parse_source", index + 1)),
+    ...Array.from({ length: 3 }, (_, index) => poolLoop("generate_outline", index + 1)),
+    poolLoop("generate_cards", 1),
+    cardLoop(),
+    queueNotificationDrain()
+  ]);
 }
 
 function sleep(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function shutdown(signal: string) {
-  if (stopping) {
-    return;
-  }
+function shutdown(signal: string) {
+  if (stopping) return;
   stopping = true;
-  console.log(`AI study worker received ${signal}, shutting down.`);
-  await prisma.$disconnect();
-  await disconnectRedis();
+  console.log(`AI study worker received ${signal}; waiting for active tasks to finish.`);
 }
 
-process.on("SIGINT", () => void shutdown("SIGINT"));
-process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
 
 main()
   .catch((error) => {

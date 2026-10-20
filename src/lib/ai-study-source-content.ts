@@ -4,12 +4,13 @@ import { prisma } from "@/lib/prisma";
 type SourceBlockContent = Pick<
   AiStudySourceBlock,
   "id" | "blockType" | "textContent" | "latexContent" | "assetKey" | "bbox"
->;
+> & { pageNumber?: number; readingOrder?: number };
 
 export type AiStudySourceChunkWithContent = AiStudySourceChunk & {
   content: string;
   pageNumber: number | null;
   bbox: Prisma.JsonValue | null;
+  evidenceBlocks: { id: string; content: string; pageNumber: number; blockType: string; readingOrder?: number }[];
 };
 
 export function formatAiStudySourceBlockContent(block: Pick<SourceBlockContent, "blockType" | "textContent" | "latexContent" | "assetKey">) {
@@ -40,6 +41,7 @@ export function hydrateAiStudySourceChunks(
     return {
       ...chunk,
       content,
+      evidenceBlocks: sourceBlocks.map((block) => ({ id: block.id, content: formatAiStudySourceBlockContent(block), pageNumber: block.pageNumber ?? chunk.pageStart, blockType: block.blockType, readingOrder: block.readingOrder })).filter((block) => Boolean(block.content)),
       pageNumber: chunk.pageStart === chunk.pageEnd ? chunk.pageStart : null,
       bbox: sourceBlocks.length === 1 ? sourceBlocks[0].bbox : null
     };
@@ -78,7 +80,9 @@ export async function loadAiStudySourceChunksWithContent(
       textContent: true,
       latexContent: true,
       assetKey: true,
-      bbox: true
+      bbox: true,
+      pageNumber: true,
+      readingOrder: true
     }
   });
   return hydrateAiStudySourceChunks(chunks, blocks);

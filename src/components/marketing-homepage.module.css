@@ -317,6 +317,15 @@
   mix-blend-mode: multiply;
 }
 
+.videoArtwork {
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  background: #12233e;
+  border-radius: 12px;
+  mix-blend-mode: normal;
+}
+
 .footer {
   display: flex;
   min-height: 130px;

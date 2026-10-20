@@ -1,14 +1,29 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { homepageImageAlts, type HomepageImageSlot, type HomepageText } from "@/lib/homepage-settings";
+import { homepageImageAlts, type HomepageMedia, type HomepageMediaMap, type HomepageText } from "@/lib/homepage-settings";
 import styles from "./marketing-homepage.module.css";
 
 type MarketingHomepageProps = {
   signedIn: boolean;
   content: HomepageText;
-  images: Record<HomepageImageSlot, string>;
+  media: HomepageMediaMap;
 };
+
+function HomepageArtwork({ media, alt, className, width, height, sizes, priority = false }: {
+  media: HomepageMedia;
+  alt: string;
+  className: string;
+  width: number;
+  height: number;
+  sizes: string;
+  priority?: boolean;
+}) {
+  if (media.type === "video") {
+    return <video aria-label={alt.replace(/配图$/, "介绍视频")} className={`${className} ${styles.videoArtwork}`} controls playsInline preload="none" src={media.url} />;
+  }
+  return <Image alt={alt} className={className} src={media.url} width={width} height={height} sizes={sizes} priority={priority} />;
+}
 
 function Brand({ text, footer = false }: { text: string; footer?: boolean }) {
   const breakAt = text.indexOf(" ");
@@ -19,7 +34,7 @@ function Brand({ text, footer = false }: { text: string; footer?: boolean }) {
   );
 }
 
-export function MarketingHomepage({ signedIn, content, images }: MarketingHomepageProps) {
+export function MarketingHomepage({ signedIn, content, media }: MarketingHomepageProps) {
   const startHref = signedIn ? "/learn" : "/register";
   const startText = signedIn ? content.actionContinue : content.actionStart;
   const features = [
@@ -89,10 +104,10 @@ export function MarketingHomepage({ signedIn, content, images }: MarketingHomepa
       <main id="main-content" tabIndex={-1}>
         <section className={`${styles.container} ${styles.hero}`} aria-labelledby="hero-title">
           <div className={styles.heroArtwork}>
-            <Image
+            <HomepageArtwork
               alt={homepageImageAlts.hero}
               className={styles.artwork}
-              src={images.hero}
+              media={media.hero}
               width={1000}
               height={900}
               sizes="(max-width: 767px) 88vw, (max-width: 1199px) 48vw, 580px"
@@ -144,10 +159,10 @@ export function MarketingHomepage({ signedIn, content, images }: MarketingHomepa
                 ) : null}
               </div>
               <div className={styles.featureArtwork}>
-                <Image
+                <HomepageArtwork
                   alt={feature.alt}
                   className={styles.artwork}
-                  src={images[feature.image]}
+                  media={media[feature.image]}
                   width={feature.width}
                   height={feature.height}
                   sizes="(max-width: 767px) 88vw, (max-width: 1199px) 44vw, 510px"
@@ -164,10 +179,10 @@ export function MarketingHomepage({ signedIn, content, images }: MarketingHomepa
               <p className={styles.description}>{content.closingDescription}</p>
               <Link className={styles.primaryButton} href={startHref} prefetch={false}>{startText}</Link>
             </div>
-            <Image
+            <HomepageArtwork
               alt={homepageImageAlts.start}
               className={styles.closingArtwork}
-              src={images.start}
+              media={media.start}
               width={800}
               height={650}
               sizes="(max-width: 767px) 180px, 280px"

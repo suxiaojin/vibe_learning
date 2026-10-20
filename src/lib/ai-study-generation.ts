@@ -1,133 +1,30 @@
 import { z } from "zod";
 import crypto from "crypto";
-import type { AiStudyGenerationTask, AiStudyNode, Prisma } from "@prisma/client";
-import { markAiStudyTaskFailed, markAiStudyTaskSucceeded } from "@/lib/ai-study";
-import {
-  ackAiStudyQueuedTask,
-  aiStudyQueueTaskTypes,
-  claimStaleAiStudyQueuedTaskEntries,
-  enqueueAiStudyTask,
-  isAiStudyTaskQueueConfigured,
-  isSupportedAiStudyTaskType,
-  readAiStudyQueuedTaskEntries,
-  type AiStudyQueuedTaskEntry
-} from "@/lib/ai-study-task-queue";
-import { askQwen, askQwenDetailed, type ChatMessage, type QwenJsonSchema } from "@/lib/qwen";
+import type { AiStudyGenerationTask, AiStudyProject, AiStudySource, Prisma } from "@prisma/client";
+import { markAiStudyTaskFailed } from "@/lib/ai-study";
+import { enqueueAiStudyTask } from "@/lib/ai-study-task-queue";
+import { askQwenDetailed, type ChatMessage, type QwenJsonSchema } from "@/lib/qwen";
+import type { ActiveAiServerConfig } from "@/lib/ai-server-settings";
 import { prisma } from "@/lib/prisma";
 import { downloadAiStudyObject, uploadAiStudyObject } from "@/lib/ai-study-storage";
 import { refreshAiStudyProgressCache, writeAiStudyTaskProgressCache } from "@/lib/ai-study-progress-cache";
 import { assertCompleteFourLevelOutline } from "@/lib/ai-study-outline-validation";
-import { getAiServerConfigForModule } from "@/lib/ai-server-settings";
-import {
-  buildNestedCandidateOutlineJsonSchema,
-  buildOutlineCandidateJsonSchema,
-  buildNestedOutlineJsonSchema,
-  ensureOutlineCandidateSourceCoverage,
-  flattenNestedCandidateOutline,
-  flattenNestedOutline,
-  maximumStructuredOutlineNodes,
-  nestedCandidateOutlineSchema,
-  nestedOutlineSchema,
-  outlineTreeLimits,
-  outlineCandidateListSchema,
-  validateNestedCandidateOutline,
-  type NestedOutline,
-  type OutlineCandidate,
-  type OutlineCandidateWithId
-} from "@/lib/ai-study-outline-contract";
-import {
-  buildCandidateOutlineRepairMessages,
-  buildCandidateOutlineCoverageRepair,
-  buildCandidateOutlineTransportInstruction,
-  type StructuredJsonFailure
-} from "@/lib/ai-study-outline-merge";
-import { getAiStudyPromptConfig, type AiStudyPromptConfig } from "@/lib/ai-study-prompts";
+import { chapterProtocol as curriculumProtocol, generateChapterCurriculum, type ChapterCheckpoint } from "@/lib/ai-study-chapter-curriculum";
+import { readCardManifest, refreshCardProject } from "@/lib/ai-study-card-jobs";
+import { buildDirectoryCard, AiStudyContentValidationError } from "@/lib/ai-study-grounded-card";
+import { getAiStudyPromptConfig } from "@/lib/ai-study-prompts";
 import { parsePdfWithMineru, type MineruContentBlock, type MineruParseResult } from "@/lib/ai-study-mineru";
+import { inspectAndSplitPdf } from "@/lib/ai-study-pdf-parts";
 import {
   formatAiStudySourceBlockContent,
-  loadAiStudySourceChunksWithContent,
-  type AiStudySourceChunkWithContent
+  loadAiStudySourceChunksWithContent
 } from "@/lib/ai-study-source-content";
 
 const outlineTimeoutMs = Number(process.env.AI_STUDY_OUTLINE_TIMEOUT_MS || 200_000);
-const cardTimeoutMs = Number(process.env.AI_STUDY_CARD_TIMEOUT_MS || 120_000);
-const maxNodesPerProject = Number(process.env.AI_STUDY_MAX_NODES_PER_PROJECT || 60);
+const curriculumSafetyMaxNodes = Number(process.env.AI_STUDY_CURRICULUM_MAX_NODES || 5000);
 const maxSourceChunks = Number(process.env.AI_STUDY_MAX_SOURCE_CHUNKS || 5_000);
-const modelBatchChars = Number(process.env.AI_STUDY_MODEL_BATCH_CHARS || 24_000);
-const outlinePartialMaxTokens = Number(process.env.AI_STUDY_OUTLINE_PARTIAL_MAX_TOKENS || 8_192);
-const outlineMergeMaxTokens = Number(process.env.AI_STUDY_OUTLINE_MERGE_MAX_TOKENS || 16_384);
-const cardMaxTokens = Number(process.env.AI_STUDY_CARD_MAX_TOKENS || 8_192);
 const structuredJsonMaxAttempts = Math.max(1, Number(process.env.AI_STUDY_JSON_MAX_ATTEMPTS || 2));
-const queueFallbackScanMs = Number(process.env.AI_STUDY_QUEUE_FALLBACK_SCAN_MS || 60_000);
-const promptItemSeparator = "\n\n---\n\n";
-let lastQueueFallbackScanAt = 0;
-
-const outlineNodeSchema = z.object({
-  clientId: z.string().trim().min(1).max(80),
-  parentClientId: z.string().trim().min(1).max(80).nullable().optional(),
-  title: z.string().trim().min(1).max(80),
-  summary: z.string().trim().min(1).max(600),
-  sourceChunkIds: z.array(z.string().trim().min(1)).min(1).max(5000)
-});
-
-const cardSchema = z.object({
-  overview: z.string().trim().min(1).max(1200),
-  explanation: z.string().trim().max(5000).default(""),
-  keyPoints: z.array(z.string().trim().min(1).max(240)).max(10).default([]),
-  pitfalls: z.array(z.string().trim().min(1).max(240)).max(6).default([]),
-  examples: z.array(z.string().trim().min(1).max(500)).max(5).default([]),
-  flashcards: z.array(z.object({
-    front: z.string().trim().min(1).max(200),
-    back: z.string().trim().min(1).max(500)
-  })).max(0).default([])
-});
-
-const cardJsonSchema: Record<string, unknown> = {
-  type: "object",
-  additionalProperties: false,
-  required: ["overview", "explanation", "keyPoints", "pitfalls", "examples", "flashcards"],
-  properties: {
-    overview: { type: "string", minLength: 1, maxLength: 1200 },
-    explanation: { type: "string", maxLength: 5000 },
-    keyPoints: {
-      type: "array",
-      maxItems: 10,
-      items: { type: "string", minLength: 1, maxLength: 240 }
-    },
-    pitfalls: {
-      type: "array",
-      maxItems: 6,
-      items: { type: "string", minLength: 1, maxLength: 240 }
-    },
-    examples: {
-      type: "array",
-      maxItems: 5,
-      items: { type: "string", minLength: 1, maxLength: 500 }
-    },
-    flashcards: {
-      type: "array",
-      maxItems: 0,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["front", "back"],
-        properties: {
-          front: { type: "string", minLength: 1, maxLength: 200 },
-          back: { type: "string", minLength: 1, maxLength: 500 }
-        }
-      }
-    }
-  }
-};
-
-type OutlineNode = z.infer<typeof outlineNodeSchema> & {
-  depth: number;
-  sortOrder: number;
-};
-
-type GeneratedCard = z.infer<typeof cardSchema> & {
-  nodeId: string;
-};
+type StructuredJsonFailure = { error: Error; responseContent: string | null };
 
 type SupportedParsedSourceType = "pdf";
 
@@ -159,98 +56,13 @@ type SemanticChunk = {
   contentHash: string;
 };
 
-export async function runAiStudyWorkerCycle(batchSize = Number(process.env.AI_STUDY_WORKER_BATCH_SIZE || 1)) {
-  const normalizedBatchSize = Math.max(1, batchSize);
-  if (isAiStudyTaskQueueConfigured()) {
-    const entries = await readAiStudyQueuedTaskEntries(normalizedBatchSize);
-    if (entries.length > 0) {
-      return processQueuedAiStudyEntries(entries);
-    }
-
-    const staleEntries = await claimStaleAiStudyQueuedTaskEntries(normalizedBatchSize);
-    if (staleEntries.length > 0) {
-      return processQueuedAiStudyEntries(staleEntries);
-    }
-
-    if (!shouldRunQueueFallbackScan()) {
-      return { processed: 0 };
-    }
-  }
-
-  return runPostgresFallbackCycle(normalizedBatchSize);
-}
-
-async function processQueuedAiStudyEntries(entries: AiStudyQueuedTaskEntry[]) {
-  let processed = 0;
-  for (const entry of entries) {
-    if (await claimAndProcessAiStudyTask(entry.taskId)) {
-      processed += 1;
-    }
-    await ackAiStudyQueuedTask(entry.entryId);
-  }
-
-  return { processed };
-}
-
-async function runPostgresFallbackCycle(batchSize: number) {
-  const tasks = await prisma.aiStudyGenerationTask.findMany({
-    where: {
-      status: "pending",
-      type: {
-        in: [...aiStudyQueueTaskTypes]
-      }
-    },
-    orderBy: { createdAt: "asc" },
-    take: batchSize
-  });
-
-  let processed = 0;
-  for (const task of tasks) {
-    if (await claimAndProcessAiStudyTask(task.id)) {
-      processed += 1;
-    }
-  }
-
-  return { processed };
-}
-
-async function claimAndProcessAiStudyTask(taskId: string) {
-  const task = await prisma.aiStudyGenerationTask.findUnique({
-    where: { id: taskId }
-  });
-
-  if (!task || task.status !== "pending" || !isSupportedAiStudyTaskType(task.type)) {
-    return false;
-  }
-
-  const claimed = await prisma.aiStudyGenerationTask.updateMany({
-    where: {
-      id: task.id,
-      status: "pending"
-    },
-    data: {
-      status: "running",
-      stage: "claimed",
-      startedAt: new Date(),
-      finishedAt: null,
-      errorMessage: null
-    }
-  });
-
-  if (claimed.count === 0) {
-    return false;
-  }
-
-  await writeAiStudyTaskProgressCache({
-    ...task,
-    status: "running",
-    stage: "claimed",
-    errorMessage: null,
-    updatedAt: new Date()
-  });
+export async function processClaimedAiStudyTask(taskId: string, serverConfig?: ActiveAiServerConfig) {
+  const task = await prisma.aiStudyGenerationTask.findUnique({ where: { id: taskId } });
+  if (!task || task.status !== "running") return false;
 
   try {
-    await processAiStudyTask(task.id);
+    await writeAiStudyTaskProgressCache(task);
+    await processAiStudyTask(task.id, serverConfig);
   } catch (error) {
     const message = error instanceof Error ? error.message : "AI 学习搭子任务执行失败。";
     await markAiStudyTaskFailed(task.id, message, "failed");
@@ -270,17 +82,7 @@ async function claimAndProcessAiStudyTask(taskId: string) {
   return true;
 }
 
-function shouldRunQueueFallbackScan() {
-  const now = Date.now();
-  if (now - lastQueueFallbackScanAt < queueFallbackScanMs) {
-    return false;
-  }
-
-  lastQueueFallbackScanAt = now;
-  return true;
-}
-
-async function processAiStudyTask(taskId: string) {
+async function processAiStudyTask(taskId: string, serverConfig?: ActiveAiServerConfig) {
   const task = await prisma.aiStudyGenerationTask.findUnique({
     where: { id: taskId }
   });
@@ -289,7 +91,7 @@ async function processAiStudyTask(taskId: string) {
   }
 
   if (task.type === "generate_outline") {
-    await generateOutline(task);
+    await generateOutline(task, serverConfig);
     return;
   }
 
@@ -329,11 +131,14 @@ async function parseSource(task: AiStudyGenerationTask) {
   await updateAiStudyTaskStage(task, "downloading_source");
 
   const object = await downloadAiStudyObject(source.storageKey);
+  const body = source.project.partIndex === null
+    ? await splitLargePdfIntoProjects(task, source, object.body)
+    : object.body;
 
   await updateAiStudyTaskStage(task, "submitting_to_mineru");
 
   const parsed = await parseAndPersistMineruArtifacts({
-    body: object.body,
+    body,
     fileName: source.fileName || "learning-material.pdf",
     projectId: source.projectId,
     sourceId: source.id
@@ -421,6 +226,109 @@ async function parseSource(task: AiStudyGenerationTask) {
 
   await refreshAiStudyProgressCache(source.projectId);
   await enqueueAiStudyTask(nextTask);
+}
+
+async function splitLargePdfIntoProjects(
+  task: AiStudyGenerationTask,
+  source: AiStudySource & { project: AiStudyProject },
+  body: Buffer
+): Promise<Buffer> {
+  await updateAiStudyTaskStage(task, "inspecting_pdf_parts");
+  const split = await inspectAndSplitPdf(body);
+  if (split.ranges.length === 1) return body;
+
+  const originalStorageKey = source.storageKey!;
+  const saved: Array<{ bucket: string; key: string; storagePath: string; size: number }> = [];
+  for (const range of split.ranges) {
+    const part = split.parts[range.index - 1];
+    const key = `ai-study/${source.project.ownerId}/${source.projectId}/${source.id}/parts/part-${range.index}.pdf`;
+    const uploaded = await uploadAiStudyObject({ key, body: part, contentType: "application/pdf" });
+    saved.push({ ...uploaded, size: part.length });
+  }
+
+  const queued: AiStudyGenerationTask[] = [];
+  await prisma.$transaction(async (tx) => {
+    const claim = await tx.aiStudyProject.updateMany({
+      where: { id: source.projectId, partIndex: null, deletedAt: null },
+      data: {
+        title: partTitle(source.project.title, 1, split.ranges.length, split.ranges[0].startPage, split.ranges[0].endPage),
+        partGroupId: source.projectId,
+        partIndex: 1,
+        partCount: split.ranges.length
+      }
+    });
+    if (claim.count !== 1) throw new Error("PDF 分部状态已变化，请重试任务。");
+    await tx.aiStudySource.update({
+      where: { id: source.id },
+      data: {
+        storageBucket: saved[0].bucket,
+        storageKey: saved[0].key,
+        storagePath: saved[0].storagePath,
+        fileSizeBytes: saved[0].size,
+        fileName: partFileName(source.fileName, 1, split.ranges[0].startPage, split.ranges[0].endPage),
+        originalStorageKey,
+        originalPageStart: split.ranges[0].startPage,
+        originalPageEnd: split.ranges[0].endPage
+      }
+    });
+    for (const range of split.ranges.slice(1)) {
+      const part = saved[range.index - 1];
+      const project = await tx.aiStudyProject.create({
+        data: {
+          ownerId: source.project.ownerId,
+          title: partTitle(source.project.title, range.index, split.ranges.length, range.startPage, range.endPage),
+          description: source.project.description,
+          sourceType: source.project.sourceType,
+          learningGoal: source.project.learningGoal,
+          courseId: source.project.courseId,
+          aiPromptVersionId: source.project.aiPromptVersionId,
+          status: "processing",
+          partGroupId: source.projectId,
+          partIndex: range.index,
+          partCount: split.ranges.length
+        }
+      });
+      const childSource = await tx.aiStudySource.create({
+        data: {
+          projectId: project.id,
+          sourceType: source.sourceType,
+          fileName: partFileName(source.fileName, range.index, range.startPage, range.endPage),
+          mimeType: "application/pdf",
+          fileSizeBytes: part.size,
+          storageBucket: part.bucket,
+          storageKey: part.key,
+          storagePath: part.storagePath,
+          originalStorageKey,
+          originalPageStart: range.startPage,
+          originalPageEnd: range.endPage,
+          status: "uploaded"
+        }
+      });
+      queued.push(await tx.aiStudyGenerationTask.create({
+        data: {
+          projectId: project.id,
+          sourceId: childSource.id,
+          type: "parse_source",
+          stage: "waiting_for_source_parse",
+          inputSummary: { sourceType: "pdf", partIndex: range.index, partCount: split.ranges.length, originalPageStart: range.startPage, originalPageEnd: range.endPage }
+        }
+      }));
+    }
+  }, { timeout: 30000 });
+  await Promise.all(queued.map((nextTask) => enqueueAiStudyTask(nextTask)));
+  await refreshAiStudyProgressCache(source.projectId);
+  return split.parts[0];
+}
+
+function partTitle(title: string, index: number, count: number, startPage: number, endPage: number) {
+  const prefix = `[Part.${index}/${count}] `;
+  const suffix = `（原文第${startPage}–${endPage}页）`;
+  return `${prefix}${title.slice(0, Math.max(1, 80 - prefix.length - suffix.length))}${suffix}`;
+}
+
+function partFileName(fileName: string | null, index: number, startPage: number, endPage: number) {
+  const base = (fileName || "learning-material.pdf").replace(/\.pdf$/i, "").slice(0, 120);
+  return `${base}-Part${index}-original-p${startPage}-${endPage}.pdf`;
 }
 
 async function parseAndPersistMineruArtifacts(input: {
@@ -533,7 +441,7 @@ function buildPersistedMineruBlocks(
       sourceId,
       pageNumber: pageIndex + 1,
       blockIndex,
-      blockType,
+      blockType: headingLevel !== null ? "heading" : blockType,
       readingOrder: blockIndex,
       bbox: toJsonValue(block.bbox),
       textContent: textContent || null,
@@ -679,7 +587,7 @@ function readMineruLatex(block: MineruContentBlock) {
 }
 
 function readMineruHeadingLevel(block: MineruContentBlock) {
-  if (!["header", "title"].includes(String(block.type || ""))) {
+  if (!["header", "title"].includes(String(block.type || "")) && !(block.type === "text" && typeof block.text_level === "number" && block.text_level > 0)) {
     return null;
   }
   return typeof block.text_level === "number" ? Math.max(1, Math.min(block.text_level, 6)) : 1;
@@ -716,7 +624,10 @@ function isSupportedParsedSourceType(sourceType: string): sourceType is Supporte
   return sourceType === "pdf";
 }
 
-async function generateOutline(task: AiStudyGenerationTask) {
+async function generateOutline(task: AiStudyGenerationTask, serverConfig?: ActiveAiServerConfig) {
+  if (!serverConfig) {
+    throw new Error("知识点提取任务未绑定 AI 服务器。");
+  }
   const project = await prisma.aiStudyProject.findUnique({
     where: { id: task.projectId }
   });
@@ -733,12 +644,42 @@ async function generateOutline(task: AiStudyGenerationTask) {
 
   const promptConfig = await getAiStudyPromptConfig(project.aiPromptVersionId);
   const promptVersion = promptConfig.version;
-  const outline = await generateCompleteOutline(task, project.title, sourceChunks, promptConfig);
-  const preparedNodes = prepareOutlineNodes(outline.nodes, sourceChunks, project.title);
+  const saved = asJsonRecord((await readAiStudyTaskOutputSummary(task.id)).curriculumCheckpoint);
+  const curriculum = await generateChapterCurriculum({
+    projectTitle: project.title, sources: sourceChunks, safetyMaxNodes: curriculumSafetyMaxNodes,
+    checkpoint: typeof saved.fingerprint === "string" && saved.promptVersion === promptVersion
+      ? saved as ChapterCheckpoint : undefined,
+    saveCheckpoint: async (checkpoint) => { await mergeAiStudyTaskOutputSummary(task.id, { curriculumCheckpoint: { ...checkpoint, promptVersion } }); },
+    request: (request) => {
+      const call = request;
+      return requestValidatedJsonWithRetry({
+      task, stage: call.stage, messages: call.messages, inputIds: call.inputIds,
+      retryMessages: (failure) => [...call.messages, { role: "user", content: `本步骤未通过校验：${failure.error.message}。请修正后重新输出完整JSON；不得删减证据或主题。` }],
+      schema: z.string(), parseResponse: (content) => content, validate: call.validateContent,
+      jsonSchema: call.jsonSchema, maxCompletionTokens: call.maxCompletionTokens,
+      timeoutMs: outlineTimeoutMs, temperature: 0.2, enableThinking: false,
+      serverConfig,
+      invalidMessage: "证据与知识目录生成未通过校验。"
+      });
+    }
+  });
+  const preparedNodes = curriculum.nodes.slice().sort((a, b) => a.depth - b.depth || a.sortOrder - b.sortOrder);
+  assertCompleteFourLevelOutline(preparedNodes);
+  const nodeIdByClientId = new Map(preparedNodes.map((node) => [node.clientId, crypto.randomUUID()]));
+  const curriculumManifestKey = `ai-study/${project.id}/generation/${task.id}/${curriculumProtocol}.json`;
+  await uploadAiStudyObject({ key: curriculumManifestKey, body: Buffer.from(JSON.stringify({ ...curriculum, nodeIds: Object.fromEntries(nodeIdByClientId) }), "utf8"), contentType: "application/json" });
   const finalOutputSummary = await buildFinalTaskOutputSummary(task.id, {
     nodeCount: preparedNodes.length,
     promptVersion,
-    outlineCheckpoint: null
+    outlineCheckpoint: null,
+    curriculumCheckpoint: null,
+    generationProtocol: curriculumProtocol,
+    curriculumManifestKey,
+    curriculumFingerprint: curriculum.fingerprint,
+    evidenceUnitCount: curriculum.units.length,
+    objectiveCount: curriculum.topics.reduce((sum, topic) => sum + topic.objectives.length, 0),
+    excludedEvidenceCount: Object.values(curriculum.decisions).filter((decision) => decision.exclusion).length,
+    supportingEvidenceCount: Object.values(curriculum.decisions).filter((decision) => decision.exclusion === "supporting_material").length
   });
 
   let nextTask: AiStudyGenerationTask | null = null;
@@ -747,31 +688,17 @@ async function generateOutline(task: AiStudyGenerationTask) {
     await tx.aiStudyCard.deleteMany({ where: { projectId: project.id } });
     await tx.aiStudyNode.deleteMany({ where: { projectId: project.id } });
 
-    const nodeIdByClientId = new Map<string, string>();
-    for (const node of preparedNodes) {
-      const created = await tx.aiStudyNode.create({
-        data: {
-          projectId: project.id,
-          parentId: node.parentClientId ? nodeIdByClientId.get(node.parentClientId) || null : null,
-          title: node.title,
-          summary: node.summary,
-          sortOrder: node.sortOrder,
-          depth: node.depth,
-          sourceChunkIds: node.sourceChunkIds,
-          status: "ready"
-        }
-      });
-      nodeIdByClientId.set(node.clientId, created.id);
-
-      await tx.aiStudyProgress.create({
-        data: {
-          userId: project.ownerId,
-          projectId: project.id,
-          nodeId: created.id,
-          status: "not_started"
-        }
-      });
-    }
+    await tx.aiStudyNode.createMany({ data: preparedNodes.map((node) => {
+      const parentId = node.parentClientId ? nodeIdByClientId.get(node.parentClientId) : null;
+      if (node.parentClientId && !parentId) throw new Error(`知识框架父节点缺失：${node.title}`);
+      return { id: nodeIdByClientId.get(node.clientId)!, projectId: project.id, parentId,
+        title: node.title, summary: node.summary, sortOrder: node.sortOrder, depth: node.depth,
+        sourceChunkIds: node.sourceChunkIds, status: "ready" as const };
+    }) });
+    await tx.aiStudyProgress.createMany({ data: preparedNodes.map((node) => ({
+      userId: project.ownerId, projectId: project.id,
+      nodeId: nodeIdByClientId.get(node.clientId)!, status: "not_started" as const
+    })) });
 
     await tx.aiStudyGenerationTask.update({
       where: { id: task.id },
@@ -791,7 +718,9 @@ async function generateOutline(task: AiStudyGenerationTask) {
         stage: "waiting_for_card_generation",
         inputSummary: {
           nodeCount: preparedNodes.length,
-          promptVersion
+          promptVersion,
+          outlineTaskId: task.id,
+          generationProtocol: curriculumProtocol
         }
       }
     });
@@ -801,204 +730,39 @@ async function generateOutline(task: AiStudyGenerationTask) {
       data: {
         aiPromptVersionId: project.aiPromptVersionId || promptConfig.id,
         status: "processing",
+        learningReadyAt: new Date(),
         knowledgeCount: preparedNodes.length,
         masteredCount: 0
       }
     });
-  });
+  }, { timeout: 20000 });
 
   await refreshAiStudyProgressCache(project.id);
   await enqueueAiStudyTask(nextTask);
 }
 
 async function generateCards(task: AiStudyGenerationTask) {
-  const project = await prisma.aiStudyProject.findUnique({
-    where: { id: task.projectId },
-    include: {
-      nodes: {
-        where: { status: "ready" },
-        orderBy: [{ depth: "asc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
-        include: { cards: true }
-      }
+  await updateAiStudyTaskStage(task,"scheduling_cards");
+  const project = await prisma.aiStudyProject.findUniqueOrThrow({where:{id:task.projectId},include:{nodes:{include:{cards:{select:{id:true}}}}}});
+  if(project.deletedAt)throw new Error("学习项目已删除。");
+  const outlineTaskId=asJsonRecord(task.inputSummary).outlineTaskId;
+  if(typeof outlineTaskId!=="string")throw new Error("任务缺少框架来源。");
+  const outline=await prisma.aiStudyGenerationTask.findFirstOrThrow({where:{id:outlineTaskId,projectId:project.id,type:"generate_outline",status:"succeeded"}});
+  const key=asJsonRecord(outline.outputSummary).curriculumManifestKey;
+  if(typeof key!=="string"||!key.startsWith(`ai-study/${project.id}/generation/${outline.id}/`))throw new Error("清单路径不属于此项目。");
+  const manifest=await readCardManifest(key);
+  if(project.nodes.length!==manifest.nodes.length || project.nodes.some(n=>!Object.values(manifest.nodeIds!).includes(n.id)))throw new Error("当前目录和来源清单不一致。");
+  await prisma.$transaction(async tx=>{
+    await tx.$queryRaw`SELECT id FROM ai_study_projects WHERE id=${project.id} FOR UPDATE`;
+    for(const n of manifest.nodes.filter(n=>n.depth<3)){
+      const id=manifest.nodeIds![n.clientId];
+      if(!await tx.aiStudyCard.findFirst({where:{nodeId:id},select:{id:true}}))await tx.aiStudyCard.create({data:{...buildDirectoryCard(n,manifest.nodes.filter(c=>c.parentClientId===n.clientId)),projectId:project.id,nodeId:id,modelName:"deterministic-directory",promptVersion:manifest.protocol,aiPromptVersionId:project.aiPromptVersionId}});
     }
-  });
-
-  if (!project || project.deletedAt) {
-    throw new Error("学习项目不存在或已删除。");
-  }
-  const sourceChunks = await loadAiStudySourceChunksWithContent(project.id);
-  if (sourceChunks.length === 0) {
-    throw new Error("学习项目没有可生成的原文片段。");
-  }
-
-  const nodes = project.nodes.filter((node) => node.cards.length === 0);
-  const promptConfig = await getAiStudyPromptConfig(project.aiPromptVersionId);
-  const promptVersion = promptConfig.version;
-  if (nodes.length === 0) {
-    await markAiStudyTaskSucceeded(task.id, { cardCount: 0, promptVersion });
-    await prisma.aiStudyProject.update({
-      where: { id: project.id },
-      data: { aiPromptVersionId: project.aiPromptVersionId || promptConfig.id, status: "ready" }
-    });
-    await refreshAiStudyProgressCache(project.id);
-    return;
-  }
-
-  const chunksById = new Map(sourceChunks.map((chunk) => [chunk.id, chunk]));
-  const generatedCards: GeneratedCard[] = [];
-
-  for (const [index, node] of nodes.entries()) {
-    const nodeSourceChunks = node.depth === 0 ? sourceChunks : getNodeSourceChunks(node, chunksById);
-    const sourceContext = await buildCompleteCardEvidence(project.title, node, nodeSourceChunks, promptConfig);
-    const cardMessages = buildCardMessages(project.title, node, sourceContext, promptConfig);
-    const card = await requestValidatedJsonWithRetry({
-      task,
-      stage: `generating_card_${index + 1}_of_${nodes.length}`,
-      messages: cardMessages,
-      retryMessages: buildCardRetryMessages(cardMessages),
-      schema: cardSchema,
-      jsonSchema: { name: "ai_study_card", schema: cardJsonSchema },
-      relaxedJsonRetry: true,
-      maxCompletionTokens: cardMaxTokens,
-      timeoutMs: cardTimeoutMs,
-      temperature: 0.2,
-      invalidMessage: `知识卡片 JSON 格式不合法：${node.title}`,
-      parseResponse: (responseText) => parseGeneratedCard(responseText, node)
-    });
-    generatedCards.push({
-      nodeId: node.id,
-      overview: card.overview,
-      explanation: card.explanation ?? "",
-      keyPoints: card.keyPoints ?? [],
-      pitfalls: card.pitfalls ?? [],
-      examples: card.examples ?? [],
-      flashcards: card.flashcards ?? []
-    });
-  }
-
-  const finalOutputSummary = await buildFinalTaskOutputSummary(task.id, {
-    cardCount: generatedCards.length,
-    promptVersion
-  });
-  const aiServer = await getAiServerConfigForModule("ai_study_generation");
-
-  await prisma.$transaction(async (tx) => {
-    for (const card of generatedCards) {
-      await tx.aiStudyCard.create({
-        data: {
-          projectId: project.id,
-          nodeId: card.nodeId,
-          overview: card.overview,
-          explanation: card.explanation,
-          keyPoints: card.keyPoints,
-          pitfalls: card.pitfalls,
-          examples: card.examples,
-          flashcards: card.flashcards,
-          modelName: aiServer.model,
-          promptVersion,
-          aiPromptVersionId: promptConfig.id,
-          reviewStatus: "unreviewed"
-        }
-      });
-    }
-
-    await tx.aiStudyGenerationTask.update({
-      where: { id: task.id },
-      data: {
-        status: "succeeded",
-        stage: "cards_generated",
-        outputSummary: finalOutputSummary,
-        finishedAt: new Date(),
-        errorMessage: null
-      }
-    });
-
-    await tx.aiStudyProject.update({
-      where: { id: project.id },
-      data: { aiPromptVersionId: project.aiPromptVersionId || promptConfig.id, status: "ready" }
-    });
-  });
-
-  await refreshAiStudyProgressCache(project.id);
-}
-
-function parseGeneratedCard(responseText: string, node: AiStudyNode) {
-  try {
-    return parseJsonWithSchema(responseText, cardSchema, `知识卡片 JSON 格式不合法：${node.title}`);
-  } catch {
-    const fallbackCard = buildFallbackCard(responseText, node);
-    return parseJsonWithSchema(JSON.stringify(fallbackCard), cardSchema, `知识卡片兜底内容不合法：${node.title}`);
-  }
-}
-
-function buildFallbackCard(responseText: string, node: AiStudyNode) {
-  const overview = extractCardStringField(responseText, "overview", ["explanation", "keyPoints", "pitfalls", "examples", "flashcards"])
-    || extractCardFallbackText(responseText)
-    || node.summary
-    || node.title;
-  const explanation = extractCardStringField(responseText, "explanation", ["keyPoints", "pitfalls", "examples", "flashcards"])
-    || (node.depth >= 3 ? extractCardFallbackText(responseText) || node.summary : "");
-
-  return {
-    overview: limitCardText(overview, 1200),
-    explanation: limitCardText(explanation, 5000),
-    keyPoints: extractCardArrayItems(responseText, "keyPoints", 10),
-    pitfalls: [],
-    examples: [],
-    flashcards: []
-  };
-}
-
-function extractCardStringField(text: string, field: string, nextFields: string[]) {
-  const normalized = stripJsonFence(text);
-  const nextPattern = nextFields.map((name) => `"${name}"`).join("|");
-  const pattern = new RegExp(`"${field}"\\s*:\\s*"([\\s\\S]*?)(?=",\\s*(?:${nextPattern})\\s*:|",\\s*}\\s*$|}\\s*$)`);
-  const value = normalized.match(pattern)?.[1] || "";
-  return cleanCardText(value);
-}
-
-function extractCardArrayItems(text: string, field: string, maxItems: number) {
-  const normalized = stripJsonFence(text);
-  const arrayContent = normalized.match(new RegExp(`"${field}"\\s*:\\s*\\[([\\s\\S]*?)\\]`))?.[1] || "";
-  if (!arrayContent.trim()) {
-    return [];
-  }
-
-  return arrayContent
-    .split(/",\s*"|'\s*,\s*'|\n|；|;/)
-    .map((item) => cleanCardText(item))
-    .filter(Boolean)
-    .slice(0, maxItems)
-    .map((item) => limitCardText(item, 240));
-}
-
-function extractCardFallbackText(text: string) {
-  return cleanCardText(stripJsonFence(text)
-    .replace(/"?(overview|explanation|keyPoints|pitfalls|examples|flashcards)"?\s*:\s*/g, "\n")
-    .replace(/[{}\[\]]/g, "\n"));
-}
-
-function stripJsonFence(text: string) {
-  const trimmed = text.trim();
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  return fenced?.[1]?.trim() || trimmed;
-}
-
-function cleanCardText(text: string) {
-  return text
-    .replace(/\\n/g, "\n")
-    .replace(/\\"/g, "\"")
-    .replace(/^["'\s,]+|["'\s,]+$/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function limitCardText(text: string, maxLength: number) {
-  const cleaned = cleanCardText(text);
-  if (cleaned.length <= maxLength) {
-    return cleaned;
-  }
-  return `${cleaned.slice(0, maxLength - 3)}...`;
+    await tx.aiStudyCardJob.createMany({skipDuplicates:true,data:manifest.nodes.filter(n=>n.depth===3).map(n=>({nodeId:manifest.nodeIds![n.clientId],projectId:project.id,outlineTaskId:outline.id,manifestKey:key,protocol:manifest.protocol,status:project.nodes.find(node=>node.id===manifest.nodeIds![n.clientId])?.cards.length?"succeeded":"unrequested",priority:0}))});
+    await tx.aiStudyProject.update({where:{id:project.id},data:{learningReadyAt:project.learningReadyAt??new Date()}});
+    await tx.aiStudyGenerationTask.update({where:{id:task.id},data:{status:"succeeded",stage:"cards_scheduled",finishedAt:new Date(),outputSummary:{generationProtocol:manifest.protocol,scheduledCardCount:manifest.topics.length}}});
+  },{timeout:20000});
+  await refreshCardProject(project.id);
 }
 
 async function updateAiStudyTaskStage(task: AiStudyGenerationTask, stage: string) {
@@ -1018,39 +782,32 @@ async function updateAiStudyTaskStage(task: AiStudyGenerationTask, stage: string
 type StructuredJsonRequest<T> = {
   task: AiStudyGenerationTask;
   stage: string;
+  inputIds?: string[];
   messages: ChatMessage[];
   retryMessages?: ChatMessage[] | ((failure: StructuredJsonFailure) => ChatMessage[]);
-  prepareRetry?: (failure: StructuredJsonFailure) => {
-    messages: ChatMessage[];
-    jsonSchema: QwenJsonSchema;
-    parseResponse: (content: string) => T;
-  } | null;
   schema: z.ZodType<T>;
   jsonSchema: QwenJsonSchema;
   relaxedJsonRetry?: boolean;
   maxCompletionTokens: number;
   timeoutMs: number;
   temperature: number;
+  presencePenalty?: number;
+  topP?: number;
+  enableThinking?: boolean;
+  serverConfig?: ActiveAiServerConfig;
+  maxAttempts?: number;
   invalidMessage: string;
   validate?: (value: T) => void;
   parseResponse?: (responseText: string) => T;
-};
-
-type OutlineCheckpoint = {
-  promptVersion: string;
-  sourceFingerprint: string;
-  batchCount: number;
-  batches: Array<{
-    batchIndex: number;
-    candidates: OutlineCandidate[];
-  }>;
+  onValidatedResponse?: (response: Awaited<ReturnType<typeof askQwenDetailed>>) => void;
 };
 
 async function requestValidatedJsonWithRetry<T>(request: StructuredJsonRequest<T>): Promise<T> {
   let lastError: Error | null = null;
   let previousFailure: StructuredJsonFailure | null = null;
 
-  for (let attempt = 1; attempt <= structuredJsonMaxAttempts; attempt += 1) {
+  const maxAttempts = request.maxAttempts ?? structuredJsonMaxAttempts;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const attemptStage = attempt === 1 ? request.stage : `${request.stage}_retry_${attempt - 1}`;
     if (attempt > 1) {
       await prisma.aiStudyGenerationTask.update({
@@ -1062,53 +819,68 @@ async function requestValidatedJsonWithRetry<T>(request: StructuredJsonRequest<T
 
     const startedAt = Date.now();
     let response: Awaited<ReturnType<typeof askQwenDetailed>> | null = null;
+    let contentValidated = false;
     try {
       const useRelaxedJsonMode = request.relaxedJsonRetry === true && attempt > 1;
-      const preparedRetry = attempt > 1 && previousFailure ? request.prepareRetry?.(previousFailure) : null;
       const retryMessages = attempt > 1 && previousFailure && request.retryMessages
         ? typeof request.retryMessages === "function"
           ? request.retryMessages(previousFailure)
           : request.retryMessages
         : request.messages;
       response = await askQwenDetailed(
-        preparedRetry?.messages ?? retryMessages,
+        retryMessages,
         {
           moduleKey: "ai_study_generation",
+          serverConfig: request.serverConfig,
           temperature: request.temperature,
+          presencePenalty: request.presencePenalty,
+          topP: request.topP,
           timeoutMs: request.timeoutMs,
-          jsonSchema: useRelaxedJsonMode ? undefined : preparedRetry?.jsonSchema ?? request.jsonSchema,
+          jsonSchema: useRelaxedJsonMode ? undefined : request.jsonSchema,
           jsonMode: useRelaxedJsonMode,
           maxCompletionTokens: request.maxCompletionTokens,
-          enableThinking: false
+          enableThinking: request.enableThinking ?? false
         }
       );
       if (response.finishReason === "length") {
         throw new Error(`模型输出达到 ${request.maxCompletionTokens} token 上限，内容被截断。`);
       }
 
-      const parseResponse = preparedRetry?.parseResponse ?? request.parseResponse;
+      const parseResponse = request.parseResponse;
       const parsed = parseResponse
         ? parseResponse(response.content)
         : parseJsonWithSchema(response.content, request.schema, request.invalidMessage);
       request.validate?.(parsed);
+      request.onValidatedResponse?.(response);
+      contentValidated = true;
       await appendAiStudyTaskDiagnostic(request.task.id, {
         stage: request.stage,
+        inputIds: request.inputIds,
         attempt,
         status: "succeeded",
         durationMs: Date.now() - startedAt,
         finishReason: response.finishReason,
         responseMode: useRelaxedJsonMode ? "json_object" : "json_schema",
         usage: response.usage,
+        model: response.serverConfig.model,
         contentLength: response.content.length
       });
       return parsed;
     } catch (error) {
+      if (contentValidated) throw error; // Persistence failure is not bad model content.
       lastError = error instanceof Error ? error : new Error(request.invalidMessage);
+      if (!response) {
+        const cause = asJsonRecord(asJsonRecord(error).cause);
+        const code = typeof cause.code === "string" ? ` (${cause.code})` : "";
+        lastError = new Error(`模型请求失败：${lastError.message}${code}`);
+      }
       previousFailure = { error: lastError, responseContent: response?.content ?? null };
       await appendAiStudyTaskDiagnostic(request.task.id, {
         stage: request.stage,
+        inputIds: request.inputIds,
         attempt,
         status: "failed",
+        failureType: response ? "validation" : "transport",
         durationMs: Date.now() - startedAt,
         finishReason: response?.finishReason ?? null,
         responseMode: request.relaxedJsonRetry === true && attempt > 1 ? "json_object" : "json_schema",
@@ -1120,18 +892,28 @@ async function requestValidatedJsonWithRetry<T>(request: StructuredJsonRequest<T
     }
   }
 
-  throw new Error(`${request.invalidMessage} 已尝试 ${structuredJsonMaxAttempts} 次；最后错误：${lastError?.message || "未知错误"}`);
+  const reason = lastError?.message || "未知错误";
+  if (reason.startsWith("模型请求失败")) throw new Error(`模型连接或响应异常。 已尝试 ${maxAttempts} 次；最后错误：${reason}`);
+  throw new AiStudyContentValidationError(`${request.invalidMessage} 已尝试 ${maxAttempts} 次；最后错误：${reason}`);
 }
 
 async function appendAiStudyTaskDiagnostic(taskId: string, diagnostic: Record<string, unknown>) {
   const current = await readAiStudyTaskOutputSummary(taskId);
   const existing = Array.isArray(current.diagnostics) ? current.diagnostics : [];
+  const totals = asJsonRecord(current.diagnosticTotals);
+  const failures = Array.isArray(current.failureDiagnostics) ? current.failureDiagnostics : [];
   await prisma.aiStudyGenerationTask.update({
     where: { id: taskId },
     data: {
       outputSummary: toJsonValue({
         ...current,
-        diagnostics: [...existing.slice(-39), diagnostic]
+        diagnostics: [...existing.slice(-39), diagnostic],
+        failureDiagnostics: diagnostic.status === "failed" ? [...failures.slice(-39), diagnostic] : failures,
+        diagnosticTotals: {
+          calls: Number(totals.calls || 0) + 1,
+          failedCalls: Number(totals.failedCalls || 0) + (diagnostic.status === "failed" ? 1 : 0),
+          durationMs: Number(totals.durationMs || 0) + Number(diagnostic.durationMs || 0)
+        }
       })
     }
   });
@@ -1164,581 +946,6 @@ function asJsonRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-async function readOutlineCheckpoint(
-  taskId: string,
-  promptVersion: string,
-  sourceFingerprint: string,
-  batchCount: number
-): Promise<OutlineCheckpoint> {
-  const emptyCheckpoint: OutlineCheckpoint = { promptVersion, sourceFingerprint, batchCount, batches: [] };
-  const summary = await readAiStudyTaskOutputSummary(taskId);
-  const raw = asJsonRecord(summary.outlineCheckpoint);
-  if (raw.promptVersion !== promptVersion || raw.sourceFingerprint !== sourceFingerprint || raw.batchCount !== batchCount) {
-    return emptyCheckpoint;
-  }
-
-  const batches = Array.isArray(raw.batches) ? raw.batches.flatMap((value) => {
-    const record = asJsonRecord(value);
-    const batchIndex = typeof record.batchIndex === "number" ? record.batchIndex : -1;
-    const parsed = outlineCandidateListSchema.safeParse({ candidates: record.candidates });
-    return batchIndex >= 0 && batchIndex < batchCount && parsed.success
-      ? [{ batchIndex, candidates: parsed.data.candidates }]
-      : [];
-  }) : [];
-
-  return { ...emptyCheckpoint, batches };
-}
-
-function buildOutlineSourceFingerprint(chunks: AiStudySourceChunkWithContent[]) {
-  return crypto.createHash("sha256")
-    .update(chunks.map((chunk) => `${chunk.id}:${chunk.content.length}`).join("\0"))
-    .digest("hex");
-}
-
-function validateOutlineCandidates(
-  candidates: OutlineCandidate[],
-  chunks: AiStudySourceChunkWithContent[],
-  maxCandidates: number
-) {
-  if (candidates.length > maxCandidates) {
-    throw new Error(`知识候选数量超过当前批次上限 ${maxCandidates}。`);
-  }
-  validateOutlineSourceReferences(candidates, chunks);
-}
-
-function validateNestedOutline(outline: NestedOutline, chunks: AiStudySourceChunkWithContent[]) {
-  const nodes = flattenNestedOutline(outline);
-  if (nodes.length > maxNodesPerProject) {
-    throw new Error(`知识节点实际生成 ${nodes.length} 个，超过上限 ${maxNodesPerProject}。`);
-  }
-  validateOutlineSourceReferences(nodes, chunks);
-}
-
-function validateOutlineSourceReferences(
-  nodes: Array<{ title: string; sourceChunkIds: string[] }>,
-  chunks: AiStudySourceChunkWithContent[]
-) {
-  const validChunkIds = new Set(chunks.map((chunk) => chunk.id));
-  for (const node of nodes) {
-    const invalidChunkId = node.sourceChunkIds.find((id) => !validChunkIds.has(id));
-    if (invalidChunkId) {
-      throw new Error(`知识节点“${node.title}”引用了不存在的来源片段：${invalidChunkId}`);
-    }
-  }
-}
-
-function buildOutlineCandidateTransportInstruction(partialMaxNodes: number) {
-  return [
-    "【固定输出协议，优先级高于上方可配置提示词中的格式描述】",
-    `只输出 JSON 对象：{\"candidates\":[{\"title\":\"...\",\"summary\":\"...\",\"sourceChunkIds\":[\"真实片段ID\"]}]}，候选不超过 ${partialMaxNodes} 个。`,
-    "本批每一个输入 sourceChunkId 都必须至少出现在一个候选中；同一候选可以绑定多个相关片段。",
-    "候选只是待归并的原子主题，不要输出 clientId、parentClientId、nodes、层级关系、Markdown 或解释文字。"
-  ].join("\n");
-}
-
-function buildNestedOutlineTransportInstruction(maxNodes: number) {
-  const guaranteedMaxNodes = Math.min(maxNodes, maximumStructuredOutlineNodes);
-  return [
-    "【固定输出协议，优先级高于上方可配置提示词中的格式描述】",
-    "只输出 JSON 对象，结构必须严格为 root -> modules -> groups -> points 四层。",
-    "root、每个 module、每个 group、每个 point 都必须包含 title、summary、sourceChunkIds；root 还包含 modules，module 还包含 groups，group 还包含 points。",
-    `modules 必须有 ${outlineTreeLimits.modules.min}-${outlineTreeLimits.modules.max} 个；每个 module 必须有 ${outlineTreeLimits.groupsPerModule.min}-${outlineTreeLimits.groupsPerModule.max} 个 groups；每个 group 必须有 ${outlineTreeLimits.pointsPerGroup.min}-${outlineTreeLimits.pointsPerGroup.max} 个 points。`,
-    `按上述结构总节点最多 ${guaranteedMaxNodes} 个，且不得超过业务上限 ${maxNodes}。`,
-    "sourceChunkIds 只需为每个节点选择 1-3 个最具代表性的真实片段 ID，不要为了逐个搬运全部来源而增加节点；程序会在结构通过后补齐完整来源绑定。",
-    "不要输出 clientId、parentClientId、nodes、Markdown 或解释文字。"
-  ].join("\n");
-}
-
-function buildOutlineRetryMessages(messages: ChatMessage[], maxNodes: number): ChatMessage[] {
-  const retryInstruction = [
-    "【重试要求】上次输出没有通过程序硬校验。",
-    `严格遵守本消息末尾的固定输出协议，总节点不得超过 ${Math.min(maxNodes, maximumStructuredOutlineNodes)} 个。`,
-    "合并重复主题，不要通过增加模块、概念组或知识点来覆盖来源；不要改变字段名或输出额外文字。"
-  ].join("\n");
-  return messages.map((message, index) => index === 0 && message.role === "system"
-    ? { ...message, content: `${message.content}\n\n${retryInstruction}` }
-    : message);
-}
-
-function buildOutlineMessages(
-  projectTitle: string,
-  chunks: AiStudySourceChunkWithContent[],
-  promptConfig: AiStudyPromptConfig,
-  partialMaxNodes = maxNodesPerProject
-): ChatMessage[] {
-  const sourceChunks = formatChunksForPrompt(chunks);
-  return [
-    {
-      role: "system",
-      content: `${promptConfig.render("outline.system", { maxNodesPerProject: partialMaxNodes })}\n\n${buildNestedOutlineTransportInstruction(partialMaxNodes)}`
-    },
-    {
-      role: "user",
-      content: promptConfig.render("outline.user", { projectTitle, sourceChunks })
-    }
-  ];
-}
-
-function buildCardMessages(
-  projectTitle: string,
-  node: AiStudyNode,
-  sourceChunks: string,
-  promptConfig: AiStudyPromptConfig
-): ChatMessage[] {
-  const level = node.depth + 1;
-  const cardInstruction = getCardInstruction(level, promptConfig);
-  return [
-    {
-      role: "system",
-      content: `${promptConfig.render("card.system")}\n\n${buildCardTransportInstruction()}`
-    },
-    {
-      role: "user",
-      content: promptConfig.render("card.user", {
-        projectTitle,
-        level,
-        nodeTitle: node.title,
-        nodeSummary: node.summary,
-        cardInstruction,
-        sourceChunks
-      })
-    }
-  ];
-}
-
-function buildCardTransportInstruction() {
-  return [
-    "【固定输出协议，优先级高于上方可配置提示词中的格式描述】",
-    "只输出单个 JSON 对象，不要输出 Markdown 代码围栏、思考过程或解释文字。",
-    "overview 不超过 800 个中文字符；explanation 不超过 1800 个中文字符；keyPoints 最多 8 条、每条不超过 200 个中文字符。",
-    "pitfalls、examples、flashcards 必须输出空数组。避免重复同一句话；字符串中需要引用术语时使用中文引号。"
-  ].join("\n");
-}
-
-function buildCardRetryMessages(messages: ChatMessage[]): ChatMessage[] {
-  const retryInstruction = "【重试要求】上次严格 Schema 输出失败。本次改用精简 JSON：overview 控制在 400 字以内，explanation 控制在 1000 字以内，keyPoints 仅保留 2-4 条；不要重复内容，务必闭合所有字符串、数组和对象。";
-  return messages.map((message, index) => index === 0 && message.role === "system"
-    ? { ...message, content: `${message.content}\n\n${retryInstruction}` }
-    : message);
-}
-
-async function generateCompleteOutline(
-  task: AiStudyGenerationTask,
-  projectTitle: string,
-  chunks: AiStudySourceChunkWithContent[],
-  promptConfig: AiStudyPromptConfig
-) {
-  const batches = splitChunksForPrompt(chunks, modelBatchChars);
-  if (batches.length === 1) {
-    const outlineMessages = buildOutlineMessages(projectTitle, batches[0], promptConfig);
-    const nestedOutline = await requestValidatedJsonWithRetry({
-      task,
-      stage: "generating_outline_direct",
-      messages: outlineMessages,
-      retryMessages: buildOutlineRetryMessages(outlineMessages, maxNodesPerProject),
-      schema: nestedOutlineSchema,
-      jsonSchema: {
-        name: "ai_study_four_level_outline",
-        schema: buildNestedOutlineJsonSchema(batches[0].map((chunk) => chunk.id))
-      },
-      maxCompletionTokens: outlineMergeMaxTokens,
-      timeoutMs: outlineTimeoutMs,
-      temperature: 0.15,
-      invalidMessage: "知识框架 JSON 格式不合法。",
-      validate: (value) => validateNestedOutline(value, chunks)
-    });
-    return { nodes: flattenNestedOutline(nestedOutline) };
-  }
-
-  const partialMaxNodes = Math.max(8, Math.ceil((maxNodesPerProject - 1) / batches.length) + 3);
-  const sourceFingerprint = buildOutlineSourceFingerprint(chunks);
-  const checkpoint = await readOutlineCheckpoint(task.id, promptConfig.version, sourceFingerprint, batches.length);
-  const partialCandidates: OutlineCandidateWithId[] = [];
-  const completedBatches = new Map(checkpoint.batches.map((batch) => [batch.batchIndex, batch.candidates]));
-
-  for (const [batchIndex, batch] of batches.entries()) {
-    const existingCandidates = completedBatches.get(batchIndex);
-    if (existingCandidates) {
-      await updateAiStudyTaskStage(task, `resuming_outline_partial_${batchIndex + 1}_of_${batches.length}`);
-      const coveredCandidates = ensureOutlineCandidateSourceCoverage(
-        existingCandidates,
-        batch.map((chunk) => chunk.id)
-      );
-      partialCandidates.push(...coveredCandidates.map((candidate, candidateIndex) => ({
-        ...candidate,
-        candidateId: `candidate_${batchIndex + 1}_${candidateIndex + 1}`
-      })));
-      continue;
-    }
-
-    const partial = await requestValidatedJsonWithRetry({
-      task,
-      stage: `generating_outline_partial_${batchIndex + 1}_of_${batches.length}`,
-      messages: [
-        {
-          role: "system",
-          content: `${promptConfig.render("outline.partial.system", { partialMaxNodes })}\n\n${buildOutlineCandidateTransportInstruction(partialMaxNodes)}`
-        },
-        {
-          role: "user",
-          content: promptConfig.render("outline.partial.user", {
-            projectTitle,
-            batchNumber: batchIndex + 1,
-            batchCount: batches.length,
-            sourceChunks: formatChunksForPrompt(batch)
-          })
-        }
-      ],
-      schema: outlineCandidateListSchema,
-      jsonSchema: {
-        name: "ai_study_outline_candidates",
-        schema: buildOutlineCandidateJsonSchema(partialMaxNodes, batch.map((chunk) => chunk.id))
-      },
-      maxCompletionTokens: outlinePartialMaxTokens,
-      timeoutMs: outlineTimeoutMs,
-      temperature: 0.15,
-      invalidMessage: `第 ${batchIndex + 1} 批知识候选 JSON 格式不合法。`,
-      validate: (value) => validateOutlineCandidates(value.candidates, batch, partialMaxNodes)
-    });
-    const coveredCandidates = ensureOutlineCandidateSourceCoverage(
-      partial.candidates,
-      batch.map((chunk) => chunk.id)
-    );
-    partialCandidates.push(...coveredCandidates.map((candidate, candidateIndex) => ({
-      ...candidate,
-      candidateId: `candidate_${batchIndex + 1}_${candidateIndex + 1}`
-    })));
-    checkpoint.batches.push({ batchIndex, candidates: coveredCandidates });
-    await mergeAiStudyTaskOutputSummary(task.id, { outlineCheckpoint: checkpoint });
-  }
-
-  const mergeMessages: ChatMessage[] = [
-    {
-      role: "system",
-      content: `${promptConfig.render("outline.merge.system", { maxNodesPerProject })}\n\n${buildCandidateOutlineTransportInstruction(maxNodesPerProject)}`
-    },
-    {
-      role: "user",
-      content: promptConfig.render("outline.merge.user", {
-        projectTitle,
-        candidateNodes: JSON.stringify({
-          candidates: partialCandidates.map(({ candidateId, title, summary }) => ({ candidateId, title, summary }))
-        })
-      })
-    }
-  ];
-  const nestedOutline = await requestValidatedJsonWithRetry({
-    task,
-    stage: "merging_outline",
-    messages: mergeMessages,
-    retryMessages: (failure) => buildCandidateOutlineRepairMessages(mergeMessages, failure, maxNodesPerProject),
-    prepareRetry: (failure) => buildCandidateOutlineCoverageRepair(mergeMessages, failure, maxNodesPerProject),
-    schema: nestedCandidateOutlineSchema,
-    jsonSchema: {
-      name: "ai_study_candidate_four_level_outline",
-      schema: buildNestedCandidateOutlineJsonSchema(partialCandidates.map((candidate) => candidate.candidateId))
-    },
-    maxCompletionTokens: outlineMergeMaxTokens,
-    timeoutMs: outlineTimeoutMs,
-    temperature: 0.1,
-    invalidMessage: "合并后的知识框架未通过校验。",
-    validate: (value) => validateNestedCandidateOutline(value, partialCandidates, maxNodesPerProject)
-  });
-  return { nodes: flattenNestedCandidateOutline(nestedOutline, partialCandidates) };
-}
-
-async function buildCompleteCardEvidence(
-  projectTitle: string,
-  node: AiStudyNode,
-  chunks: AiStudySourceChunkWithContent[],
-  promptConfig: AiStudyPromptConfig
-) {
-  const batches = splitChunksForPrompt(chunks, modelBatchChars);
-  if (batches.length === 1) {
-    return formatChunksForPrompt(batches[0]);
-  }
-
-  let summaries: string[] = [];
-  for (const [batchIndex, batch] of batches.entries()) {
-    summaries.push(await askQwen([
-      { role: "system", content: promptConfig.render("card.evidence.system") },
-      {
-        role: "user",
-        content: promptConfig.render("card.evidence.user", {
-          projectTitle,
-          nodeTitle: node.title,
-          batchNumber: batchIndex + 1,
-          batchCount: batches.length,
-          sourceChunks: formatChunksForPrompt(batch)
-        })
-      }
-    ], {
-      moduleKey: "ai_study_generation",
-      temperature: 0.1,
-      timeoutMs: cardTimeoutMs,
-      maxCompletionTokens: 4_096,
-      enableThinking: false
-    }));
-  }
-
-  while (summaries.join(promptItemSeparator).length > modelBatchChars) {
-    const groups = splitStringsByChars(summaries, modelBatchChars);
-    const reduced: string[] = [];
-    for (const group of groups) {
-      reduced.push(await askQwen([
-        { role: "system", content: promptConfig.render("card.evidence.system") },
-        {
-          role: "user",
-          content: promptConfig.render("card.evidence.user", {
-            projectTitle,
-            nodeTitle: node.title,
-            batchNumber: 1,
-            batchCount: groups.length,
-            sourceChunks: group.join(promptItemSeparator)
-          })
-        }
-      ], {
-        moduleKey: "ai_study_generation",
-        temperature: 0.1,
-        timeoutMs: cardTimeoutMs,
-        maxCompletionTokens: 4_096,
-        enableThinking: false
-      }));
-    }
-    if (reduced.join("").length >= summaries.join("").length) {
-      throw new Error(`节点证据归并后未能收敛：${node.title}`);
-    }
-    summaries = reduced;
-  }
-
-  return summaries.join(promptItemSeparator);
-}
-
-function getCardInstruction(level: number, promptConfig: AiStudyPromptConfig) {
-  if (level === 1) {
-    return promptConfig.render("card.instruction.level1");
-  }
-
-  if (level === 2 || level === 3) {
-    return promptConfig.render("card.instruction.level2_3");
-  }
-
-  return promptConfig.render("card.instruction.level4");
-}
-
-function prepareOutlineNodes(nodes: z.infer<typeof outlineNodeSchema>[], chunks: AiStudySourceChunkWithContent[], projectTitle: string): OutlineNode[] {
-  const normalizedNodes = ensureOutlineMaxDepth(ensureSingleRootNode(nodes, chunks, projectTitle));
-
-  if (normalizedNodes.length > maxNodesPerProject) {
-    throw new Error(`知识节点数量超过上限 ${maxNodesPerProject}。`);
-  }
-
-  const validChunkIds = new Set(chunks.map((chunk) => chunk.id));
-  const clientIds = new Set<string>();
-  for (const node of normalizedNodes) {
-    if (clientIds.has(node.clientId)) {
-      throw new Error(`知识框架 clientId 重复：${node.clientId}`);
-    }
-    clientIds.add(node.clientId);
-  }
-
-  const depthCache = new Map<string, number>();
-  function resolveDepth(node: z.infer<typeof outlineNodeSchema>, seen = new Set<string>()): number {
-    if (!node.parentClientId) {
-      return 0;
-    }
-    if (seen.has(node.clientId)) {
-      throw new Error("知识框架存在循环父子关系。");
-    }
-    const parent = normalizedNodes.find((candidate) => candidate.clientId === node.parentClientId);
-    if (!parent) {
-      throw new Error(`知识框架父节点不存在：${node.parentClientId}`);
-    }
-    const cached = depthCache.get(parent.clientId);
-    const parentDepth = cached ?? resolveDepth(parent, new Set([...seen, node.clientId]));
-    const depth = parentDepth + 1;
-    if (depth > 3) {
-      throw new Error("知识框架最多支持 4 层。");
-    }
-    depthCache.set(node.clientId, depth);
-    return depth;
-  }
-
-  const preparedNodes = normalizedNodes
-    .map((node, sortOrder) => {
-      const sourceChunkIds = node.parentClientId
-        ? resolveOutlineSourceChunkIds(node, validChunkIds)
-        : chunks.map((chunk) => chunk.id);
-      return {
-        ...node,
-        parentClientId: node.parentClientId || null,
-        sourceChunkIds,
-        depth: resolveDepth(node),
-        sortOrder
-      };
-    });
-
-  assertCompleteFourLevelOutline(preparedNodes);
-  return ensureNonRootChunkCoverage(preparedNodes, chunks)
-    .sort((left, right) => left.depth - right.depth || left.sortOrder - right.sortOrder);
-}
-
-function ensureNonRootChunkCoverage(nodes: OutlineNode[], chunks: AiStudySourceChunkWithContent[]) {
-  const nonRootNodes = nodes.filter((node) => node.depth > 0);
-  if (nonRootNodes.length === 0) {
-    throw new Error("知识框架至少需要一个非根学习节点。");
-  }
-
-  const chunksById = new Map(chunks.map((chunk) => [chunk.id, chunk]));
-  const coveredChunkIds = new Set(nonRootNodes.flatMap((node) => node.sourceChunkIds));
-  for (const chunk of chunks) {
-    if (coveredChunkIds.has(chunk.id)) {
-      continue;
-    }
-
-    const target = [...nonRootNodes].sort((left, right) => {
-      const distanceDifference = readOutlineChunkDistance(left, chunk, chunksById)
-        - readOutlineChunkDistance(right, chunk, chunksById);
-      return distanceDifference || right.depth - left.depth || left.sortOrder - right.sortOrder;
-    })[0];
-    target.sourceChunkIds = [...target.sourceChunkIds, chunk.id];
-    coveredChunkIds.add(chunk.id);
-  }
-
-  return nodes;
-}
-
-function readOutlineChunkDistance(
-  node: OutlineNode,
-  chunk: AiStudySourceChunkWithContent,
-  chunksById: Map<string, AiStudySourceChunkWithContent>
-) {
-  const sourceChunks = node.sourceChunkIds
-    .map((id) => chunksById.get(id))
-    .filter((value): value is AiStudySourceChunkWithContent => Boolean(value));
-  if (sourceChunks.length === 0) {
-    return Number.MAX_SAFE_INTEGER;
-  }
-  return Math.min(...sourceChunks.map((sourceChunk) => Math.abs(sourceChunk.chunkIndex - chunk.chunkIndex)));
-}
-
-function ensureOutlineMaxDepth(nodes: z.infer<typeof outlineNodeSchema>[]) {
-  const depthByClientId = resolveOutlineDepths(nodes);
-  const nodeByClientId = new Map(nodes.map((node) => [node.clientId, node]));
-
-  return nodes.map((node) => {
-    const depth = depthByClientId.get(node.clientId) ?? 0;
-    if (depth <= 3) {
-      return node;
-    }
-
-    return {
-      ...node,
-      parentClientId: findOutlineAncestorAtDepth(node, 2, nodeByClientId, depthByClientId)
-    };
-  });
-}
-
-function resolveOutlineDepths(nodes: z.infer<typeof outlineNodeSchema>[]) {
-  const nodeByClientId = new Map(nodes.map((node) => [node.clientId, node]));
-  const depthByClientId = new Map<string, number>();
-
-  function resolve(node: z.infer<typeof outlineNodeSchema>, seen = new Set<string>()): number {
-    if (!node.parentClientId) {
-      return 0;
-    }
-    if (seen.has(node.clientId)) {
-      throw new Error("知识框架存在循环父子关系。");
-    }
-    const parent = nodeByClientId.get(node.parentClientId);
-    if (!parent) {
-      throw new Error(`知识框架父节点不存在：${node.parentClientId}`);
-    }
-
-    const cached = depthByClientId.get(parent.clientId);
-    const parentDepth = cached ?? resolve(parent, new Set([...seen, node.clientId]));
-    const depth = parentDepth + 1;
-    depthByClientId.set(node.clientId, depth);
-    return depth;
-  }
-
-  for (const node of nodes) {
-    depthByClientId.set(node.clientId, resolve(node));
-  }
-
-  return depthByClientId;
-}
-
-function findOutlineAncestorAtDepth(
-  node: z.infer<typeof outlineNodeSchema>,
-  targetDepth: number,
-  nodeByClientId: Map<string, z.infer<typeof outlineNodeSchema>>,
-  depthByClientId: Map<string, number>
-) {
-  let current = node.parentClientId ? nodeByClientId.get(node.parentClientId) : null;
-  while (current) {
-    const depth = depthByClientId.get(current.clientId) ?? 0;
-    if (depth <= targetDepth) {
-      return current.clientId;
-    }
-    current = current.parentClientId ? nodeByClientId.get(current.parentClientId) : null;
-  }
-  return node.parentClientId || null;
-}
-
-function resolveOutlineSourceChunkIds(
-  node: z.infer<typeof outlineNodeSchema>,
-  validChunkIds: Set<string>
-) {
-  const directChunkIds = normalizeOutlineSourceChunkIds(node.sourceChunkIds, validChunkIds);
-  if (directChunkIds.length > 0) {
-    return directChunkIds;
-  }
-  throw new Error(`知识节点引用了不存在的来源片段：${node.title}`);
-}
-
-function normalizeOutlineSourceChunkIds(sourceChunkIds: string[], validChunkIds: Set<string>) {
-  return Array.from(new Set(sourceChunkIds.filter((id) => validChunkIds.has(id))));
-}
-
-function ensureSingleRootNode(nodes: z.infer<typeof outlineNodeSchema>[], chunks: AiStudySourceChunkWithContent[], projectTitle: string) {
-  const roots = nodes.filter((node) => !node.parentClientId);
-  if (roots.length === 1) {
-    return nodes.map((node) => node.clientId === roots[0].clientId
-      ? { ...node, sourceChunkIds: chunks.map((chunk) => chunk.id) }
-      : node);
-  }
-
-  const rootClientId = "__project_root";
-  const rootSummary = roots.length > 0
-    ? roots.map((node) => node.summary).join("；").slice(0, 600)
-    : "整份学习资料的核心内容总览。";
-  const rootChunkIds = chunks.map((chunk) => chunk.id);
-
-  return [
-    {
-      clientId: rootClientId,
-      parentClientId: null,
-      title: projectTitle.slice(0, 80) || "学习资料知识图谱",
-      summary: rootSummary || "整份学习资料的核心内容总览。",
-      sourceChunkIds: rootChunkIds
-    },
-    ...nodes.map((node) => ({
-      ...node,
-      parentClientId: roots.length === 0 ? rootClientId : node.parentClientId || rootClientId
-    }))
-  ];
-}
-
-function getNodeSourceChunks(node: AiStudyNode, chunksById: Map<string, AiStudySourceChunkWithContent>) {
-  const chunkIds = Array.isArray(node.sourceChunkIds) ? node.sourceChunkIds.filter((value): value is string => typeof value === "string") : [];
-  const chunks = chunkIds.map((id) => chunksById.get(id)).filter((chunk): chunk is AiStudySourceChunkWithContent => Boolean(chunk));
-  if (chunks.length === 0) {
-    throw new Error(`知识节点缺少来源片段：${node.title}`);
-  }
-  return chunks;
-}
-
 function parseJsonWithSchema<T>(text: string, schema: z.ZodType<T>, message: string): T {
   const parsedJson = JSON.parse(extractJsonObject(text));
   const parsed = schema.safeParse(parsedJson);
@@ -1769,65 +976,6 @@ function extractJsonObject(text: string) {
   }
 
   throw new Error("AI 返回内容中没有找到 JSON 对象。");
-}
-
-function formatChunksForPrompt(chunks: AiStudySourceChunkWithContent[]) {
-  return chunks.map((chunk) => {
-    const pageRange = chunk.pageStart && chunk.pageEnd
-      ? `; pages=${chunk.pageStart}-${chunk.pageEnd}`
-      : chunk.pageNumber ? `; page=${chunk.pageNumber}` : "";
-    const chunkType = chunk.chunkType ? `; type=${chunk.chunkType}` : "";
-    return `[sourceChunkId=${chunk.id}; chunkIndex=${chunk.chunkIndex}${pageRange}${chunkType}]\n${chunk.content}`;
-  }).join(promptItemSeparator);
-}
-
-function splitChunksForPrompt(chunks: AiStudySourceChunkWithContent[], maxChars: number) {
-  const batches: AiStudySourceChunkWithContent[][] = [];
-  let current: AiStudySourceChunkWithContent[] = [];
-  let currentLength = 0;
-  for (const chunk of chunks) {
-    const chunkLength = formatChunksForPrompt([chunk]).length;
-    const separatorLength = current.length > 0 ? promptItemSeparator.length : 0;
-    if (chunkLength > maxChars) {
-      throw new Error(`来源片段超过单批模型输入上限：${chunk.id}`);
-    }
-    if (current.length > 0 && currentLength + separatorLength + chunkLength > maxChars) {
-      batches.push(current);
-      current = [];
-      currentLength = 0;
-    }
-    const nextSeparatorLength = current.length > 0 ? promptItemSeparator.length : 0;
-    current.push(chunk);
-    currentLength += nextSeparatorLength + chunkLength;
-  }
-  if (current.length > 0) {
-    batches.push(current);
-  }
-  return batches;
-}
-
-function splitStringsByChars(values: string[], maxChars: number) {
-  const groups: string[][] = [];
-  let current: string[] = [];
-  let currentLength = 0;
-  for (const value of values) {
-    const separatorLength = current.length > 0 ? promptItemSeparator.length : 0;
-    if (value.length > maxChars) {
-      throw new Error("证据摘要超过单批模型输入上限。");
-    }
-    if (current.length > 0 && currentLength + separatorLength + value.length > maxChars) {
-      groups.push(current);
-      current = [];
-      currentLength = 0;
-    }
-    const nextSeparatorLength = current.length > 0 ? promptItemSeparator.length : 0;
-    current.push(value);
-    currentLength += nextSeparatorLength + value.length;
-  }
-  if (current.length > 0) {
-    groups.push(current);
-  }
-  return groups;
 }
 
 function normalizeParsedText(text: string) {

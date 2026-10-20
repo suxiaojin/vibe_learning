@@ -1,15 +1,13 @@
 "use server";
 
-import sharp from "sharp";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { homepageImageSlots, homepageTextGroups, type HomepageImageSlot, type HomepageText } from "@/lib/homepage-settings";
 import { prisma } from "@/lib/prisma";
+import { HomepageMediaError, prepareHomepageMedia } from "@/lib/homepage-media";
 
 const settingsPath = "/admin/settings?tab=homepage";
-const maxUploadBytes = 5 * 1024 * 1024;
-const maxSavedBytes = 1024 * 1024;
 
 function imageSlot(value: FormDataEntryValue | null): HomepageImageSlot | null {
   return typeof value === "string" && homepageImageSlots.includes(value as HomepageImageSlot)
@@ -61,41 +59,25 @@ export async function uploadHomepageImage(formData: FormData) {
   if (!slot) redirect(`${settingsPath}&error=homepage-image-invalid`);
   const file = formData.get("image");
   if (!(file instanceof File) || file.size === 0) {
-    redirect(`${settingsPath}&error=homepage-image-required`);
-  }
-  if (file.size > maxUploadBytes) {
-    redirect(`${settingsPath}&error=homepage-image-too-large`);
+    redirect(`${settingsPath}&error=homepage-media-required&openImage=${slot}`);
   }
 
-  let body: Buffer;
+  let media: Awaited<ReturnType<typeof prepareHomepageMedia>>;
   try {
-    const input = Buffer.from(await file.arrayBuffer());
-    const metadata = await sharp(input, { limitInputPixels: 24_000_000 }).metadata();
-    if (!metadata.format || !["png", "jpeg", "webp"].includes(metadata.format)) {
-      redirect(`${settingsPath}&error=homepage-image-invalid`);
-    }
-    body = await sharp(input, { limitInputPixels: 24_000_000 })
-      .rotate()
-      .resize({ width: 1600, height: 1200, fit: "inside", withoutEnlargement: true })
-      .webp({ quality: 82, effort: 5 })
-      .toBuffer();
-    if (body.byteLength > maxSavedBytes) {
-      redirect(`${settingsPath}&error=homepage-image-too-large`);
-    }
+    media = await prepareHomepageMedia(file);
   } catch (error) {
-    // Next.js redirects throw; keep validation redirects intact.
-    if (error && typeof error === "object" && "digest" in error) throw error;
-    redirect(`${settingsPath}&error=homepage-image-invalid`);
+    if (!(error instanceof HomepageMediaError)) throw error;
+    redirect(`${settingsPath}&error=${error.code}&openImage=${slot}`);
   }
 
   await prisma.homepageImage.upsert({
     where: { slot },
-    update: { body, contentType: "image/webp" },
-    create: { slot, body, contentType: "image/webp" }
+    update: media,
+    create: { slot, ...media }
   });
   revalidatePath("/");
   revalidatePath("/admin/settings");
-  redirect(`${settingsPath}&notice=homepage-image-saved&openImage=${slot}`);
+  redirect(`${settingsPath}&notice=homepage-media-saved&openImage=${slot}`);
 }
 
 export async function restoreHomepageImage(formData: FormData) {

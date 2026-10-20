@@ -64,7 +64,7 @@ assert.equal(nestedOutlineSchema.safeParse({
     ...parsed.root,
     modules: parsed.root.modules.map((module) => ({
       ...module,
-      groups: [module.groups[0], module.groups[0], module.groups[0]]
+      groups: [module.groups[0], module.groups[0], module.groups[0], module.groups[0]]
     }))
   }
 }).success, false);
@@ -90,7 +90,7 @@ const maximumOutline = nestedOutlineSchema.parse({
       title: `模块${moduleIndex + 1}`,
       summary: `模块${moduleIndex + 1}概述`,
       sourceChunkIds: ["chunk-1"],
-      groups: Array.from({ length: 2 }, (_, groupIndex) => ({
+      groups: Array.from({ length: 3 }, (_, groupIndex) => ({
         title: `概念组${moduleIndex + 1}-${groupIndex + 1}`,
         summary: "概念组概述",
         sourceChunkIds: ["chunk-1"],
@@ -100,7 +100,7 @@ const maximumOutline = nestedOutlineSchema.parse({
     }))
   }
 });
-assert.equal(maximumStructuredOutlineNodes, 55);
+assert.equal(maximumStructuredOutlineNodes, 79);
 assert.equal(flattenNestedOutline(maximumOutline).length, maximumStructuredOutlineNodes);
 
 assert.equal(outlineCandidateListSchema.safeParse({

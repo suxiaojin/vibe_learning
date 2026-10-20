@@ -16,6 +16,7 @@ import {
 } from "@/lib/ai-study";
 import { renderMathPlainText } from "@/lib/math-rich-text";
 import { cn } from "@/lib/utils";
+import { CardJobControl } from "@/components/ai-study/card-job-control";
 
 const taskStatusLabels = {
   pending: "等待中",
@@ -47,6 +48,7 @@ type AiStudyLearningProject = {
   id: string;
   title: string;
   status: string;
+  learningReadyAt?: Date | string | null;
   generationProgress?: {
     percent: number;
     text: string;
@@ -202,22 +204,27 @@ export async function AiStudyProjectLearningView({
                     <KnowledgePointDetail explanation={card.explanation || card.overview} />
                   ) : null}
                 </div>
+              ) : nodeDetail.depth === 3 && nodeDetail.cardJob ? (
+                <CardJobControl key={nodeDetail.id} nodeId={nodeDetail.id} status={nodeDetail.cardJob.status} canRequest={!readOnly && nodeDetail.canRequestCard} />
               ) : (
                 <GenerationPanel
-                  description="思维导图已经生成，AI 正在继续制作当前节点的知识卡片。"
+                  description={project.status === "failed" ? "当前知识卡片尚未生成完成，已完成的内容仍可查看。" : "思维导图已经生成，AI 正在继续制作当前节点的知识卡片。"}
                   icon={<BookOpen size={28} />}
                   project={project}
-                  title="知识卡片生成中"
+                  title={project.status === "failed" ? "知识卡片生成失败" : "知识卡片生成中"}
                 />
               )}
+              {nodeDetail.depth >= 3 && !card ? (
+                <div className="mt-6 space-y-4"><h3 className="font-semibold">原文依据</h3>{nodeDetail.sourceChunks.map(chunk=><details key={chunk.id} open><summary className="text-sm text-slate-500">{chunk.pageNumber?`第${chunk.pageNumber}页`:"来源片段"}</summary><pre className="whitespace-pre-wrap break-words font-sans text-sm leading-7">{chunk.content.replace(/<\/(?:tr|p)>/gi,"\n").replace(/<[^>]*>/g," ")}</pre></details>)}</div>
+              ) : null}
             </article>
           ) : (
             <div className="px-6 py-6 md:px-8">
               <GenerationPanel
-                description="资料提交后，AI 会先解析学习资料，再生成四层知识图谱和分层知识卡片。"
+                 description="资料提交后，AI 会先解析资料并生成四层知识图谱。第四层 AI 详解可在进入知识点后按需生成。"
                 icon={<Sparkles size={28} />}
                 project={project}
-                title={project.status === "failed" ? "项目解析失败" : "搭子加急制作中"}
+                title={project.status === "failed" ? "项目生成失败" : "搭子加急制作中"}
               />
             </div>
           )}

@@ -147,7 +147,9 @@ function buildProjectSectionItems(projects: StudyProject[], variant: "personal" 
     const progressTotal = project.knowledgeCount || project._count.nodes || 0;
     const ownerName = "owner" in project ? project.owner.username : "由我创建";
     const ownerProfileHref = "owner" in project ? `/students/${project.owner.id}` : "";
-    const learnerText = variant === "public" ? "公开学习项目" : `${project._count.sources || 1}份资料`;
+    const learnerText = variant === "public" ? "公开学习项目" : project.partIndex && project.partCount
+      ? `第 ${project.partIndex}/${project.partCount} 部分`
+      : `${project._count.sources || 1}份资料`;
     const generation = getGenerationProgress(project);
 
     return {
@@ -159,6 +161,7 @@ function buildProjectSectionItems(projects: StudyProject[], variant: "personal" 
       owned: variant === "personal" || project.ownerId === viewerUserId,
       generationPercent: generation.percent,
       generationText: generation.text,
+      learningAvailable: Boolean(project.learningReadyAt),
       id: project.id,
       knowledgeCount: progressTotal,
       learnerText,

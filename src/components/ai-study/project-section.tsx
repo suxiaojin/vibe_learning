@@ -19,6 +19,7 @@ export type AiStudyProjectSectionItem = {
   owned?: boolean;
   generationPercent: number;
   generationText: string;
+  learningAvailable?: boolean;
   id: string;
   knowledgeCount: number;
   learnerText: string;
@@ -95,6 +96,7 @@ export function AiStudyProjectSection({ title, projects, emptyText, enableTagFil
               owned={project.owned}
               generationPercent={project.generationPercent}
               generationText={project.generationText}
+              learningAvailable={project.learningAvailable}
               id={project.id}
               knowledgeCount={project.knowledgeCount}
               learnerText={project.learnerText}

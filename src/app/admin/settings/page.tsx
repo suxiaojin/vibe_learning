@@ -35,7 +35,7 @@ import { prisma } from "@/lib/prisma";
 import { isShareCopyContext, shareCopyContextLabels } from "@/lib/share-copy";
 import { studyBuddyHeroEffectOptions } from "@/lib/study-buddy-title-effects";
 import { getSystemSettings } from "@/lib/system-settings";
-import { getHomepageImageUrls, getHomepageText } from "@/lib/homepage-settings";
+import { getHomepageMedia, getHomepageText } from "@/lib/homepage-settings";
 import { parseSocialFollowRecommendationRules } from "@/lib/social-follow-recommendations";
 import { cn } from "@/lib/utils";
 
@@ -55,6 +55,7 @@ const noticeText: Record<string, string> = {
   saved: "系统设置已保存。",
   "homepage-text-saved": "首页文字已保存。",
   "homepage-image-saved": "首页图片已保存。",
+  "homepage-media-saved": "首页图片或视频已保存。",
   "homepage-image-restored": "已恢复默认图片。",
   "admin-password-saved": "管理员 admin 登录密码已更新。",
   "browser-tab-settings-saved": "浏览器标签页文字和图标已保存。",
@@ -78,6 +79,10 @@ const errorText: Record<string, string> = {
   "homepage-image-required": "请选择要上传的首页图片。",
   "homepage-image-invalid": "请上传有效的 PNG、JPG 或 WebP 图片。",
   "homepage-image-too-large": "首页图片上传不超过 5MB，处理后不超过 1MB。",
+  "homepage-media-required": "请选择要上传的首页图片或 MP4 视频。",
+  "homepage-media-invalid": "请上传有效的 PNG、JPG、WebP 图片或 MP4 视频。",
+  "homepage-video-invalid": "请上传包含视频画面的有效 MP4 文件，建议使用 H.264 编码。",
+  "homepage-video-too-large": "首页 MP4 视频不超过 50MB。",
   "admin-password-required": "请完整填写当前密码、新密码和确认密码。",
   "admin-password-too-short": "管理员新密码至少需要 8 位。",
   "admin-password-too-long": "管理员新密码不能超过 72 个 UTF-8 字节。",
@@ -190,7 +195,7 @@ export default async function AdminSettingsPage({
   }
   const activeTab = resolveTab(params?.tab);
   const [homepageText, homepageImages] = activeTab === "homepage"
-    ? await Promise.all([getHomepageText(), getHomepageImageUrls()])
+    ? await Promise.all([getHomepageText(), getHomepageMedia()])
     : [null, null];
   const changelogs = activeTab === "agreements" ? await prisma.changelogEntry.findMany({
     orderBy: [{ releaseDate: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }, { id: "desc" }]
@@ -375,7 +380,7 @@ export default async function AdminSettingsPage({
       </form> : null}
 
       {activeTab === "homepage" && homepageText && homepageImages ? (
-        <AdminHomepageSettings content={homepageText} imageUrls={homepageImages} openGroup={params?.openGroup} openImage={params?.openImage} />
+        <AdminHomepageSettings content={homepageText} media={homepageImages} openGroup={params?.openGroup} openImage={params?.openImage} />
       ) : null}
 
       {activeTab === "agreements" ? <AdminAgreementSettings contents={{

@@ -11,9 +11,11 @@ import { useProjectPurchase } from "@/components/ai-study/use-project-purchase";
 type ProjectStatus = "draft" | "processing" | "ready" | "failed" | "archived";
 
 type GenerationProgress = {
+  learningAvailable?: boolean;
   status?: ProjectStatus;
   percent?: number;
   text?: string;
+  stage?: string;
 };
 
 type ProjectCardProps = {
@@ -33,13 +35,14 @@ type ProjectCardProps = {
   owned?: boolean;
   generationPercent?: number;
   generationText?: string;
+  learningAvailable?: boolean;
 };
 
 const statusLabels = {
   draft: "待开始",
   processing: "生成中",
   ready: "学习中",
-  failed: "项目解析失败",
+  failed: "部分内容待处理",
   archived: "已归档"
 };
 
@@ -63,7 +66,8 @@ export function AiStudyProjectCard({
   ownerProfileHref = "",
   canManage = false,
   generationPercent,
-  generationText
+  generationText,
+  learningAvailable = false
 }: ProjectCardProps) {
   const router = useRouter();
   const purchase = useProjectPurchase({ kind: "ai", id, title, diamondPrice: diamondPrice ?? 0, purchased, owned });
@@ -78,19 +82,27 @@ export function AiStudyProjectCard({
   const [error, setError] = useState("");
   const [displayStatus, setDisplayStatus] = useState(status);
   const [displayGeneration, setDisplayGeneration] = useState<GenerationProgress>({
+    learningAvailable,
     percent: generationPercent,
     text: generationText
   });
   const terminalRefreshRef = useRef<ProjectStatus | null>(status === "processing" ? null : status);
+  const splitRefreshRef = useRef(false);
+
+  useEffect(() => {
+    setCurrentTitle(title);
+    setDraftTitle(title.slice(0, 35));
+  }, [title]);
 
   useEffect(() => {
     setDisplayStatus(status);
     setDisplayGeneration({
+      learningAvailable,
       percent: generationPercent,
       text: generationText
     });
     terminalRefreshRef.current = status === "processing" ? null : status;
-  }, [generationPercent, generationText, status]);
+  }, [generationPercent, generationText, status, learningAvailable]);
 
   useEffect(() => {
     const titleElement = titleRef.current;
@@ -118,7 +130,7 @@ export function AiStudyProjectCard({
   }, [currentTitle]);
 
   useEffect(() => {
-    if (status !== "processing") {
+    if (status !== "processing" || learningAvailable) {
       return;
     }
 
@@ -133,6 +145,7 @@ export function AiStudyProjectCard({
         }
 
         setDisplayGeneration({
+          learningAvailable: progress.learningAvailable,
           percent: progress.percent,
           text: progress.text
         });
@@ -141,9 +154,14 @@ export function AiStudyProjectCard({
           setDisplayStatus(progress.status);
         }
 
-        if (progress.status === "ready" || progress.status === "failed") {
-          if (terminalRefreshRef.current !== progress.status) {
-            terminalRefreshRef.current = progress.status;
+        if (!splitRefreshRef.current && !title.startsWith("[Part.") && progress.stage === "submitting_to_mineru") {
+          splitRefreshRef.current = true;
+          router.refresh();
+        }
+
+        if (progress.learningAvailable || progress.status === "ready" || progress.status === "failed") {
+          if (terminalRefreshRef.current !== (progress.status ?? "processing")) {
+            terminalRefreshRef.current = progress.status ?? "processing";
             router.refresh();
           }
           return;
@@ -165,12 +183,12 @@ export function AiStudyProjectCard({
         window.clearTimeout(timer);
       }
     };
-  }, [id, router, status]);
+  }, [id, router, status, learningAvailable, title]);
 
-  const isGenerating = displayStatus === "processing";
-  const isFailed = displayStatus === "failed";
-  const canOpenProject = !isGenerating && !isFailed;
-  const failedDisplayText = "项目解析失败";
+  const isGenerating = displayStatus === "processing" && !displayGeneration.learningAvailable;
+  const isFailed = displayStatus === "failed" && !displayGeneration.learningAvailable;
+  const canOpenProject = Boolean(displayGeneration.learningAvailable) || (!isGenerating && !isFailed);
+  const failedDisplayText = displayGeneration.text || "项目生成失败";
   const shownGenerationPercent = Math.max(1, Math.min(displayGeneration.percent || 8, 99));
   const overviewText = contentOverview.trim() || "暂无内容概述";
   const canSubmitRename = Boolean(draftTitle.trim()) && !isSaving;
@@ -278,6 +296,27 @@ export function AiStudyProjectCard({
     }
   }
 
+  async function retryFailedProject(event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    if (!canManage || isSaving) return;
+    setIsSaving(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/ai-study/projects/${id}/retry`, { method: "POST" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
+        throw new Error(payload?.error?.message || `请求失败：HTTP ${response.status}`);
+      }
+      setDisplayStatus("processing");
+      setDisplayGeneration({ learningAvailable: false, percent: 8, text: "等待重新处理..." });
+      router.refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "重试失败，请稍后重试。");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   return (
     <>
       <article
@@ -285,7 +324,7 @@ export function AiStudyProjectCard({
         aria-label={canOpenProject ? `查看 ${currentTitle}` : currentTitle}
         className={`group relative h-[206px] w-full max-w-[284px] overflow-visible rounded-[24px] border p-5 shadow-[0_2px_30px_rgba(83,108,143,0.04)] outline-none transition hover:z-20 focus-within:z-20 focus-visible:ring-4 focus-visible:ring-[#16a329]/20 ${
           isGenerating
-            ? "cursor-default border-[#6f786f] bg-[linear-gradient(135deg,#7b8477_0%,#5f625e_55%,#4e504e_100%)] text-white"
+            ? `${canOpenProject ? "cursor-pointer" : "cursor-default"} border-[#6f786f] bg-[linear-gradient(135deg,#7b8477_0%,#5f625e_55%,#4e504e_100%)] text-white`
             : canOpenProject
               ? "cursor-pointer border-[#eeeeee] bg-white hover:-translate-y-0.5 hover:shadow-[0_8px_32px_rgba(83,108,143,0.08)]"
               : "cursor-default border-[#eeeeee] bg-white"
@@ -328,12 +367,14 @@ export function AiStudyProjectCard({
                 <AnimatedTrailingDotsText text={displayGeneration.text || "正在解析资料..."} />
               </p>
             ) : null}
-            {displayStatus === "failed" ? (
-              <p className="h-4 min-w-0 truncate text-[12px] font-bold leading-4 text-[#f04438]">
-                {failedDisplayText}
-              </p>
+            {isFailed ? (
+              <div>
+                <p className="h-4 min-w-0 truncate text-[12px] font-bold leading-4 text-[#f04438]">{failedDisplayText}</p>
+                {canManage ? <button className="mt-2 rounded-lg border border-[#f04438] px-3 py-1 text-xs font-semibold text-[#b42318] hover:bg-[#fff4f3] disabled:opacity-50" data-card-action disabled={isSaving} onClick={retryFailedProject} type="button">{isSaving ? "重试中..." : "重试本部分"}</button> : null}
+                {error ? <p className="mt-1 truncate text-xs text-[#b42318]" title={error}>{error}</p> : null}
+              </div>
             ) : null}
-            {displayStatus !== "draft" && displayStatus !== "failed" && !isGenerating ? (
+            {displayStatus !== "draft" && !isFailed && !isGenerating ? (
               <p className="line-clamp-2 text-[14px] font-normal leading-6 text-[#667085] transition-all duration-150 group-hover:line-clamp-4">
                 {overviewText}
               </p>
@@ -377,6 +418,7 @@ export function AiStudyProjectCard({
                     <MoreHorizontal size={18} />
                   </button>
                   <div className="invisible absolute bottom-10 right-2 z-[90] w-[180px] translate-y-1 rounded-[12px] border border-[#edf0f4] bg-white py-2 opacity-0 shadow-[0_16px_42px_rgba(16,24,40,0.16)] transition group-hover/actions:visible group-hover/actions:translate-y-0 group-hover/actions:opacity-100 group-focus-within/actions:visible group-focus-within/actions:translate-y-0 group-focus-within/actions:opacity-100">
+                    {displayStatus === "failed" ? <button className="flex h-11 w-full items-center gap-3 px-4 text-left text-[15px] font-medium text-[#1d2430] hover:bg-[#f7f8fa]" disabled={isSaving} onClick={retryFailedProject} type="button">重试本部分</button> : null}
                     <button className="flex h-11 w-full items-center gap-3 px-4 text-left text-[15px] font-medium text-[#1d2430] hover:bg-[#f7f8fa]" onClick={openRename} type="button">
                       <Pencil size={17} />
                       重命名
@@ -398,10 +440,10 @@ export function AiStudyProjectCard({
                 className="absolute bottom-0 right-0 z-30 h-8 min-w-[56px] rounded-[10px] border border-white/75 px-3 text-[12px] font-black text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
                 data-card-action
                 disabled={isSaving}
-                onClick={cancelGeneratingProject}
+                onClick={displayGeneration.learningAvailable ? (event) => { event.stopPropagation(); openProject(); } : cancelGeneratingProject}
                 type="button"
               >
-                {isSaving ? "取消中" : "取消"}
+                {displayGeneration.learningAvailable ? "进入学习" : isSaving ? "取消中" : "取消"}
               </button>
             ) : null}
           </div>

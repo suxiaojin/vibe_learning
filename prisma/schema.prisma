@@ -1540,6 +1540,11 @@ model AiStudyProject {
   status         AiStudyProjectStatus    @default(draft)
   knowledgeCount Int                     @default(0)
   masteredCount  Int                     @default(0)
+  learningReadyAt DateTime?
+  partGroupId    String?
+  partIndex      Int?
+  partCount      Int?
+  cardJobs       AiStudyCardJob[]
   lastStudiedAt  DateTime?
   deletedAt      DateTime?
   createdAt      DateTime                @default(now())
@@ -1559,6 +1564,7 @@ model AiStudyProject {
 
   @@index([ownerId, status, updatedAt])
   @@index([ownerId, deletedAt, createdAt])
+  @@index([partGroupId, partIndex])
   @@index([courseId])
   @@index([aiPromptVersionId])
   @@index([visibility, status, updatedAt])
@@ -1575,6 +1581,9 @@ model AiStudySource {
   storageBucket       String?
   storageKey          String?
   storagePath         String?
+  originalStorageKey  String?
+  originalPageStart   Int?
+  originalPageEnd     Int?
   pageCount           Int?
   parserVersion       String?
   parseBackend        String?
@@ -1737,6 +1746,7 @@ model AiStudyNode {
   parent         AiStudyNode?         @relation("AiStudyNodeChildren", fields: [parentId], references: [id], onDelete: Cascade)
   children       AiStudyNode[]        @relation("AiStudyNodeChildren")
   cards          AiStudyCard[]
+  cardJob        AiStudyCardJob?
   progress       AiStudyProgress[]
   chatMessages   AiStudyChatMessage[]
 
@@ -1809,6 +1819,32 @@ model AiStudyChatMessage {
   @@index([projectId, createdAt], map: "ai_study_chat_messages_project_created_idx")
   @@index([aiPromptVersionId], map: "ai_study_chat_messages_prompt_version_idx")
   @@map("ai_study_chat_messages")
+}
+
+model AiStudyCardJob {
+  id             String   @id @default(cuid())
+  nodeId         String   @unique
+  projectId      String
+  outlineTaskId  String
+  manifestKey    String
+  protocol       String
+  status         String   @default("unrequested")
+  priority       Int      @default(0)
+  attempts       Int      @default(0)
+  leaseToken     String?
+  leaseExpiresAt DateTime?
+  nextAttemptAt  DateTime @default(now())
+  errorKind      String?
+  errorMessage   String? @db.Text
+  qualityFlags   Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  project        AiStudyProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  node           AiStudyNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@index([status, priority, nextAttemptAt])
+  @@index([projectId, status])
+  @@map("ai_study_card_jobs")
 }
 
 model AiStudyGenerationTask {

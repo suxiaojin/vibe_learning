@@ -89,6 +89,7 @@ export async function getAdminAiStudyProject(projectId: string) {
   return prisma.aiStudyProject.findUnique({
     where: { id: projectId },
     include: {
+      cardJobs: {orderBy:{updatedAt:"desc"},select:{id:true,nodeId:true,status:true,attempts:true,errorMessage:true,errorKind:true,qualityFlags:true,node:{select:{title:true}}}},
       owner: {
         select: {
           id: true,

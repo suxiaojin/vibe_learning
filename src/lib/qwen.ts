@@ -19,6 +19,8 @@ export type QwenJsonSchema = {
 export type AskQwenOptions = {
   signal?: AbortSignal;
   temperature?: number;
+  presencePenalty?: number;
+  topP?: number;
   timeoutMs?: number;
   jsonMode?: boolean;
   jsonSchema?: QwenJsonSchema;
@@ -152,13 +154,15 @@ async function askServerDetailed(
         model,
         messages,
         temperature: options.temperature ?? 0.4,
+        ...(options.presencePenalty !== undefined ? { presence_penalty: options.presencePenalty } : {}),
+        ...(options.topP !== undefined ? { top_p: options.topP } : {}),
         ...(options.maxCompletionTokens
           ? mode === "built_in"
             ? { max_completion_tokens: Math.max(1, Math.floor(options.maxCompletionTokens)) }
             : { max_tokens: Math.max(1, Math.floor(options.maxCompletionTokens)) }
           : {}),
-        ...(mode === "built_in" && options.enableThinking === false
-          ? { chat_template_kwargs: { enable_thinking: false } }
+        ...(mode === "built_in" && typeof options.enableThinking === "boolean"
+          ? { chat_template_kwargs: { enable_thinking: options.enableThinking } }
           : {}),
         ...(options.jsonSchema
           ? {

@@ -119,6 +119,8 @@ export const homepageTextGroups: ReadonlyArray<{ id: string; title: string; fiel
 
 export const homepageImageSlots = ["hero", "learning-path", "ai-explanation", "study-buddy", "review", "start"] as const;
 export type HomepageImageSlot = (typeof homepageImageSlots)[number];
+export type HomepageMedia = { url: string; type: "image" | "video" };
+export type HomepageMediaMap = Record<HomepageImageSlot, HomepageMedia>;
 
 export const homepageImageAlts: Record<HomepageImageSlot, string> = {
   hero: "首页学习介绍配图",
@@ -130,12 +132,12 @@ export const homepageImageAlts: Record<HomepageImageSlot, string> = {
 };
 
 export const homepageImageLabels: Record<HomepageImageSlot, string> = {
-  hero: "首屏插画",
-  "learning-path": "闯关学习插画",
-  "ai-explanation": "AI 答疑插画",
-  "study-buddy": "学习搭子插画",
-  review: "练习与复习插画",
-  start: "底部入口插画"
+  hero: "首屏素材",
+  "learning-path": "闯关学习素材",
+  "ai-explanation": "AI 答疑素材",
+  "study-buddy": "学习搭子素材",
+  review: "练习与复习素材",
+  start: "底部入口素材"
 };
 
 export const getHomepageText = cache(async (): Promise<HomepageText> => {
@@ -158,17 +160,20 @@ export const getHomepageText = cache(async (): Promise<HomepageText> => {
   return result;
 });
 
-export async function getHomepageImageUrls(): Promise<Record<HomepageImageSlot, string>> {
-  const urls = Object.fromEntries(homepageImageSlots.map((slot) => [slot, `/images/homepage/${slot}.webp`])) as Record<HomepageImageSlot, string>;
+export async function getHomepageMedia(): Promise<HomepageMediaMap> {
+  const media = Object.fromEntries(homepageImageSlots.map((slot) => [slot, { url: `/images/homepage/${slot}.webp`, type: "image" }])) as HomepageMediaMap;
   try {
-    const images = await prisma.homepageImage.findMany({ select: { slot: true, updatedAt: true } });
+    const images = await prisma.homepageImage.findMany({ select: { slot: true, updatedAt: true, contentType: true } });
     for (const image of images) {
       if (homepageImageSlots.includes(image.slot as HomepageImageSlot)) {
-        urls[image.slot as HomepageImageSlot] = `/api/homepage/images/${image.slot}?v=${image.updatedAt.getTime()}`;
+        media[image.slot as HomepageImageSlot] = {
+          url: `/api/homepage/images/${image.slot}?v=${image.updatedAt.getTime()}`,
+          type: image.contentType === "video/mp4" ? "video" : "image"
+        };
       }
     }
   } catch (error) {
-    console.error("Failed to load homepage image settings, using defaults", error);
+    console.error("Failed to load homepage media settings, using defaults", error);
   }
-  return urls;
+  return media;
 }

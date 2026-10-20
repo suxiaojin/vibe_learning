@@ -194,7 +194,7 @@ export default async function AdminAiStudyProjectsPage({
                     <div className="mt-1 text-xs text-slate-400">{project.owner.username}</div>
                   </td>
                   <td className="border-b border-slate-100 py-4 pr-4">
-                    <ProjectStatusBadge deleted={Boolean(project.deletedAt)} status={project.status} />
+                    <ProjectStatusBadge deleted={Boolean(project.deletedAt)} learningAvailable={Boolean(project.learningReadyAt)} status={project.status} />
                   </td>
                   <td className="border-b border-slate-100 py-4 pr-4">
                     <VisibilityBadge visibility={project.visibility} />
@@ -254,9 +254,12 @@ export default async function AdminAiStudyProjectsPage({
   );
 }
 
-function ProjectStatusBadge({ deleted = false, status }: { deleted?: boolean; status: string }) {
+function ProjectStatusBadge({ deleted = false, learningAvailable = false, status }: { deleted?: boolean; learningAvailable?: boolean; status: string }) {
   if (deleted) {
     return <span className="badge bg-red-50 text-red-700">学生已删除</span>;
+  }
+  if (learningAvailable && status !== "ready") {
+    return <span className="badge bg-teal/10 text-teal">可学习 · 详解按需生成</span>;
   }
   const className = status === "ready"
     ? "bg-teal/10 text-teal"

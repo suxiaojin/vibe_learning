@@ -11,7 +11,8 @@ export const aiModuleDefinitions = [
   { key: "course_ai_follow_up", group: "课程闯关", label: "AI追问" },
   { key: "special_practice_ai_doubt", group: "专项练习", label: "AI答疑" },
   { key: "special_practice_ai_follow_up", group: "专项练习", label: "AI追问" },
-  { key: "ai_study_generation", group: "学习搭子", label: "学习搭子生成" },
+  { key: "ai_study_generation", group: "学习搭子", label: "提取知识点" },
+  { key: "ai_study_detail", group: "学习搭子", label: "AI详解" },
   { key: "ai_study_chat", group: "学习搭子", label: "问问搭子" },
   { key: "question_bank_ai_tagging", group: "题库管理", label: "AI打标" },
   { key: "question_bank_ai_doubt_draft", group: "题库管理", label: "题目详情AI答疑草稿" },
@@ -238,7 +239,10 @@ function getEffectiveRoutes(setting: AiServerSettingRecord | null, customServers
   const storedRoutes = parseModuleRoutes(setting?.moduleRoutes);
   const defaultServerId = getDefaultServerId(setting, customServers);
   return Object.fromEntries(
-    aiModuleDefinitions.map((module) => [module.key, storedRoutes[module.key] || [defaultServerId]])
+    aiModuleDefinitions.map((module) => [
+      module.key,
+      storedRoutes[module.key] || [module.key === "ai_study_detail" ? builtInAiServerProfileId : defaultServerId]
+    ])
   ) as Record<AiModuleKey, string[]>;
 }
 
