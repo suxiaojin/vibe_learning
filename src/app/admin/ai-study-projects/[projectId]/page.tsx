@@ -72,6 +72,7 @@ export default async function AdminAiStudyProjectDetailPage({ params, searchPara
 
   const currentPath = `/admin/ai-study-projects/${project.id}`;
   const ownerName = project.owner.studentProfile?.nickname || project.owner.username;
+  const managedAsGroup = Boolean(project.partGroupId && (project.partCount ?? 0) > 1);
   const canPublish = project.status === "ready" && !project.deletedAt && project.visibility !== "public";
   const canPrivatize = !project.deletedAt && project.visibility !== "private";
   const publishFormId = `publish-detail-${project.id}`;
@@ -99,7 +100,7 @@ export default async function AdminAiStudyProjectDetailPage({ params, searchPara
                 预览学习内容
               </Link>
             )}
-            <form id={publishFormId} action={publishAiStudyProject}>
+            {managedAsGroup ? <Link className="secondary-button" href="/admin/ai-study-projects">返回合并项目统一管理</Link> : <><form id={publishFormId} action={publishAiStudyProject}>
               <input type="hidden" name="projectId" value={project.id} />
               <input type="hidden" name="returnTo" value={currentPath} />
             </form>
@@ -131,7 +132,7 @@ export default async function AdminAiStudyProjectDetailPage({ params, searchPara
             >
               <Trash2 size={16} />
               删除
-            </ConfirmSubmitButton>
+            </ConfirmSubmitButton></>}
           </div>
         </div>
 

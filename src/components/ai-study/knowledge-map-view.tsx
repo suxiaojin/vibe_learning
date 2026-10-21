@@ -76,7 +76,7 @@ export function KnowledgeMapView({
 }: KnowledgeMapViewProps) {
   const router = useRouter();
   const [mapNodes, setMapNodes] = useState(nodes);
-  const [collapsedNodeIds, setCollapsedNodeIds] = useState<Set<string>>(() => new Set());
+  const [collapsedNodeIds, setCollapsedNodeIds] = useState<Set<string>>(() => new Set(getCollapsibleNodeIds(nodes)));
   const [editingNode, setEditingNode] = useState<EditingNode | null>(null);
   const [editingError, setEditingError] = useState("");
   const [savingNodeId, setSavingNodeId] = useState<string | null>(null);

@@ -32,11 +32,16 @@ export async function purchaseStudyProject(userId: string, input: z.infer<typeof
       return await prisma.$transaction(async (tx) => {
         // Keep the quoted price and publication state stable until the purchase commits.
         if (input.kind === "ai") {
-          await tx.$queryRaw`SELECT "id" FROM "ai_study_projects" WHERE "id" = ${input.id} FOR SHARE`;
+          const requested = await tx.aiStudyProject.findUnique({
+            where: { id: input.id }, select: { canonicalProjectId: true }
+          });
+          const purchaseId = requested?.canonicalProjectId || input.id;
+          await tx.$queryRaw`SELECT "id" FROM "ai_study_projects" WHERE "id" = ${purchaseId} FOR SHARE`;
         } else {
           await tx.$queryRaw`SELECT "id" FROM "official_study_materials" WHERE "id" = ${input.id} FOR SHARE`;
         }
         const offer = await getStudyProjectOffer(userId, input.kind, input.id, tx);
+        const resourceId = offer.id;
         if (offer.purchased || offer.owned) {
           return { offer, charged: false };
         }
@@ -67,11 +72,11 @@ export async function purchaseStudyProject(userId: string, input: z.infer<typeof
             amount: -offer.diamondPrice,
             balanceAfter: updatedAccount.balance,
             occurredOn: getBeijingDate(),
-            dedupeKey: `study_project_purchase:${userId}:${input.kind}:${input.id}`,
+            dedupeKey: `study_project_purchase:${userId}:${input.kind}:${resourceId}`,
             note: `学习搭子：购买《${offer.title}》`,
             metadata: {
               resourceKind: input.kind,
-              resourceId: input.id,
+              resourceId,
               titleSnapshot: offer.title,
               configuredAmount: offer.diamondPrice
             }
@@ -82,9 +87,9 @@ export async function purchaseStudyProject(userId: string, input: z.infer<typeof
           data: {
             userId,
             kind: input.kind,
-            resourceId: input.id,
-            aiProjectId: input.kind === "ai" ? input.id : null,
-            officialMaterialId: input.kind === "official" ? input.id : null,
+            resourceId,
+            aiProjectId: input.kind === "ai" ? resourceId : null,
+            officialMaterialId: input.kind === "official" ? resourceId : null,
             titleSnapshot: offer.title,
             diamondPrice: offer.diamondPrice,
             transactionId: transaction.id

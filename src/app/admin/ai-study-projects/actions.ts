@@ -17,13 +17,20 @@ export async function setStudyProjectDiamondPrice(input: unknown) {
   }
   const { kind, id, diamondPrice } = parsed.data;
   // Only save the advertised price. Access and diamond accounting are unchanged.
-  const result = kind === "ai"
-    ? await prisma.aiStudyProject.updateMany({
-      where: { id, deletedAt: null },
-      data: { diamondPrice }
+  if (kind === "ai") {
+    const project = await prisma.aiStudyProject.findUnique({ where: { id }, select: { partGroupId: true, partCount: true } });
+    if (project?.partGroupId && (project.partCount ?? 0) > 1) {
+      return { ok: false as const, error: "分部项目请在项目列表中统一设置价格。" };
+    }
+  }
+  const result = kind === "official"
+    ? await prisma.officialStudyMaterial.updateMany({
+      where: { id, deletedAt: null }, data: { diamondPrice }
     })
-    : await prisma.officialStudyMaterial.updateMany({
-      where: { id, deletedAt: null },
+    : await prisma.aiStudyProject.updateMany({
+      where: kind === "ai_group"
+        ? { partGroupId: id, partCount: { gt: 1 }, deletedAt: null }
+        : { id, deletedAt: null },
       data: { diamondPrice }
     });
   if (result.count === 0) {
@@ -37,18 +44,55 @@ export async function setStudyProjectDiamondPrice(input: unknown) {
 export async function publishAiStudyProject(formData: FormData) {
   await requireAdmin();
   const projectId = String(formData.get("projectId") || "");
+  const groupId = String(formData.get("groupId") || "");
   const returnTo = getReturnTo(formData);
+  if (groupId) {
+    const result = await prisma.$transaction(async (tx) => {
+      const parts = await tx.aiStudyProject.findMany({
+        where: { partGroupId: groupId, partCount: { gt: 1 }, deletedAt: null },
+        select: {
+          id: true, status: true, partCount: true, canonicalProjectId: true, learningReadyAt: true,
+          tasks: { where: { type: "generate_cards", status: "succeeded" }, select: { id: true }, take: 1 }
+        }
+      });
+      if (parts.length === 0) return { status: "unavailable" as const, ids: [] as string[] };
+      const isUnified = parts.some((part) => Boolean(part.canonicalProjectId));
+      if (parts.length !== parts[0].partCount || parts.some((part) => isUnified
+        ? !part.learningReadyAt || part.tasks.length === 0
+        : part.status !== "ready")) return { status: "not_ready" as const, ids: [] as string[] };
+      const changed = await tx.aiStudyProject.updateMany({
+        where: {
+          partGroupId: groupId, partCount: { gt: 1 }, deletedAt: null,
+          ...(isUnified
+            ? { learningReadyAt: { not: null }, tasks: { some: { type: "generate_cards" as const, status: "succeeded" as const } } }
+            : { status: "ready" as const })
+        },
+        data: { visibility: "public" }
+      });
+      if (changed.count !== parts.length) throw new Error("分部状态已变化，请刷新后重试。");
+      return { status: "ok" as const, ids: parts.map((part) => part.id) };
+    });
+    if (result.status === "unavailable") redirect(withAdminProjectMessage(returnTo, "error", "project-unavailable"));
+    if (result.status === "not_ready") redirect(withAdminProjectMessage(returnTo, "error", "publish-requires-ready"));
+    result.ids.forEach(revalidateAdminAiStudyProject);
+    redirect(withAdminProjectMessage(returnTo, "notice", "published"));
+  }
   const project = await prisma.aiStudyProject.findUnique({
     where: { id: projectId },
     select: {
       id: true,
       status: true,
-      deletedAt: true
+      deletedAt: true,
+      partGroupId: true,
+      partCount: true
     }
   });
 
   if (!project || project.deletedAt) {
     redirect(withAdminProjectMessage(returnTo, "error", "project-unavailable"));
+  }
+  if (project.partGroupId && (project.partCount ?? 0) > 1) {
+    redirect(withAdminProjectMessage(returnTo, "error", "group-managed"));
   }
   if (project.status !== "ready") {
     redirect(withAdminProjectMessage(returnTo, "error", "publish-requires-ready"));
@@ -66,7 +110,25 @@ export async function publishAiStudyProject(formData: FormData) {
 export async function privatizeAiStudyProject(formData: FormData) {
   await requireAdmin();
   const projectId = String(formData.get("projectId") || "");
+  const groupId = String(formData.get("groupId") || "");
   const returnTo = getReturnTo(formData);
+  if (groupId) {
+    const parts = await prisma.aiStudyProject.findMany({
+      where: { partGroupId: groupId, partCount: { gt: 1 }, deletedAt: null }, select: { id: true }
+    });
+    if (parts.length === 0) redirect(withAdminProjectMessage(returnTo, "error", "project-unavailable"));
+    await prisma.aiStudyProject.updateMany({
+      where: { partGroupId: groupId, partCount: { gt: 1 }, deletedAt: null }, data: { visibility: "private" }
+    });
+    parts.forEach((part) => revalidateAdminAiStudyProject(part.id));
+    redirect(withAdminProjectMessage(returnTo, "notice", "privatized"));
+  }
+  const project = await prisma.aiStudyProject.findUnique({
+    where: { id: projectId }, select: { partGroupId: true, partCount: true }
+  });
+  if (project?.partGroupId && (project.partCount ?? 0) > 1) {
+    redirect(withAdminProjectMessage(returnTo, "error", "group-managed"));
+  }
   const result = await prisma.aiStudyProject.updateMany({
     where: {
       id: projectId,
@@ -88,7 +150,24 @@ export async function privatizeAiStudyProject(formData: FormData) {
 export async function deleteAiStudyProjectAsAdmin(formData: FormData) {
   await requireAdmin();
   const projectId = String(formData.get("projectId") || "");
+  const groupId = String(formData.get("groupId") || "");
   const returnTo = getReturnTo(formData);
+  if (groupId) {
+    const parts = await prisma.aiStudyProject.findMany({
+      where: { partGroupId: groupId, partCount: { gt: 1 } }, select: { id: true }
+    });
+    if (parts.length === 0) redirect(withAdminProjectMessage(returnTo, "error", "project-unavailable"));
+    await prisma.aiStudyProject.deleteMany({ where: { partGroupId: groupId, partCount: { gt: 1 } } });
+    await Promise.all(parts.map((part) => clearAiStudyProgressCache(part.id)));
+    parts.forEach((part) => revalidateAdminAiStudyProject(part.id));
+    redirect(withAdminProjectMessage(returnTo, "notice", "deleted"));
+  }
+  const project = await prisma.aiStudyProject.findUnique({
+    where: { id: projectId }, select: { partGroupId: true, partCount: true }
+  });
+  if (project?.partGroupId && (project.partCount ?? 0) > 1) {
+    redirect(withAdminProjectMessage(returnTo, "error", "group-managed"));
+  }
   const result = await prisma.aiStudyProject.deleteMany({
     where: {
       id: projectId

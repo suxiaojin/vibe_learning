@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { ChatMessage } from "./qwen";
-import type { EvidenceUnit, LearningTopic } from "./ai-study-curriculum";
+import type { EvidenceUnit, LearningTopic } from "./ai-study-evidence";
 import { assertEvidenceFidelity, formatEvidenceQuote, type GroundedCard } from "./ai-study-grounded-card";
 export const chapterCardSchema={type:"object",additionalProperties:false,required:["explanation"],properties:{explanation:{type:"string",minLength:20,maxLength:2400}}};
 export function chapterCardMessages(title:string,topic:LearningTopic,units:EvidenceUnit[],previousError?:string):ChatMessage[]{

@@ -111,7 +111,7 @@ async function PublicProjectSection({
     where: {
       userId,
       OR: [
-        { kind: "ai", resourceId: { in: aiProjects.map((project) => project.id) } },
+        { kind: "ai", resourceId: { in: aiProjects.flatMap((project) => [project.id, project.canonicalProjectId].filter((id): id is string => Boolean(id))) } },
         { kind: "official", resourceId: { in: materials.map((material) => material.id) } }
       ]
     },
@@ -156,12 +156,13 @@ function buildProjectSectionItems(projects: StudyProject[], variant: "personal" 
       kind: "ai-project",
       canManage: variant === "personal",
       contentOverview: getProjectContentOverview(project),
-      diamondPrice: variant === "public" ? project.diamondPrice : undefined,
-      purchased: purchasedIds.has(project.id),
+      diamondPrice: variant === "public" ? "canonicalProject" in project ? project.canonicalProject?.diamondPrice ?? project.diamondPrice : project.diamondPrice : undefined,
+      purchased: purchasedIds.has(project.canonicalProjectId || project.id),
       owned: variant === "personal" || project.ownerId === viewerUserId,
       generationPercent: generation.percent,
       generationText: generation.text,
       learningAvailable: Boolean(project.learningReadyAt),
+      linkedPartCount: project.canonicalProjectId || project._count.partProjects > 0 ? project.partCount ?? 1 : undefined,
       id: project.id,
       knowledgeCount: progressTotal,
       learnerText,
@@ -170,7 +171,7 @@ function buildProjectSectionItems(projects: StudyProject[], variant: "personal" 
       ownerProfileHref,
       sourceCount: project._count.sources,
       status: project.status,
-      title: project.title
+      title: project.partIndex ? project.title.replace(/（原文第\d+–\d+页）$/, "") : project.title
     } satisfies AiStudyProjectSectionItem;
   });
 }
@@ -204,24 +205,17 @@ function getGenerationProgress(project: StudyProject) {
   const outlineTask = tasks.find((task) => task.type === "generate_outline");
   const cardTask = tasks.find((task) => task.type === "generate_cards");
 
-  if (cardTask?.status === "running") {
-    const match = String(cardTask.stage || "").match(/generating_card_(\d+)_of_(\d+)/);
-    if (match) {
-      const current = Number(match[1]);
-      const total = Number(match[2]);
-      const cardPercent = total > 0 ? Math.round((current / total) * 28) : 0;
-      return { percent: Math.min(94, 66 + cardPercent), text: "正在生成知识卡片..." };
-    }
-    return { percent: 72, text: "正在生成知识卡片..." };
-  }
-  if (cardTask?.status === "pending") {
-    return { percent: 66, text: "等待生成知识卡片..." };
-  }
   if (outlineTask?.status === "running") {
+    const batch = String(outlineTask.stage || "").match(/planning_(?:evidence|chapter)_(\d+)_of_(\d+)/);
+    if (batch) return { percent: Math.min(90, 38 + Math.round(Number(batch[1]) / Number(batch[2]) * 52)), text: `正在提取知识点 ${batch[1]}/${batch[2]}` };
+    if (String(outlineTask.stage).startsWith("organizing_")) return { percent: 95, text: "正在组织完整知识目录..." };
     return { percent: 46, text: "正在生成思维导图..." };
   }
   if (outlineTask?.status === "pending") {
     return { percent: 38, text: "等待生成思维导图..." };
+  }
+  if (outlineTask?.status === "succeeded" || cardTask) {
+    return { percent: 99, text: "知识目录已生成，正在开放学习..." };
   }
   if (parseTask?.status === "running") {
     return { percent: 18, text: "正在解析资料..." };

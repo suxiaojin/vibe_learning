@@ -1,4 +1,3 @@
-import { curriculumProtocol } from "./ai-study-curriculum";
 import { chapterProtocol } from "./ai-study-chapter-curriculum";
 
 type RecoveryTask = { id: string; type: string; status: string; inputSummary: unknown; outputSummary: unknown };
@@ -20,6 +19,6 @@ export function planAiStudyRecovery(project: RecoveryProject, expectedTaskId?: s
   const input = recoveryRecord(failed.inputSummary);
   const outline = project.tasks.find((task) => task.id === input.outlineTaskId && task.type === "generate_outline" && task.status === "succeeded");
   const protocol=recoveryRecord(outline?.outputSummary).generationProtocol;
-  const canResumeCards = failed.type === "generate_cards" && [curriculumProtocol,chapterProtocol].includes(String(protocol));
+  const canResumeCards = failed.type === "generate_cards" && protocol === chapterProtocol;
   return { failed, type: canResumeCards ? "generate_cards" as const : "generate_outline" as const, protocol:canResumeCards?String(protocol):chapterProtocol };
 }

@@ -3,14 +3,14 @@ import { AdminAiStudyPromptSettings } from "@/components/admin-ai-study-prompt-s
 import { requireAdmin } from "@/lib/auth";
 
 const noticeText: Record<string, string> = {
-  "draft-saved": "学习搭子Prompt草稿已保存；发布后才会影响新项目和新提问。",
-  "version-published": "学习搭子Prompt新版本已发布，后续调用立即生效。",
-  "draft-discarded": "学习搭子Prompt草稿已放弃。",
-  "version-rolled-back": "已通过新版本安全回滚学习搭子Prompt。"
+  "draft-saved": "问问搭子Prompt草稿已保存；发布后才会影响新提问。",
+  "version-published": "问问搭子Prompt新版本已发布，从下一条提问开始生效。",
+  "draft-discarded": "问问搭子Prompt草稿已放弃。",
+  "version-rolled-back": "已通过新版本回滚问问搭子Prompt。"
 };
 
 const errorText: Record<string, string> = {
-  "invalid-template": "Prompt无效，请检查全部15个片段、必要变量和长度限制。",
+  "invalid-template": "Prompt无效，请检查两段对话内容、必要变量和长度限制。",
   "invalid-publish-note": "发布前请填写1到200个字的更改说明。",
   "draft-not-found": "没有可以发布的Prompt草稿，请先保存草稿。",
   "version-not-found": "目标Prompt版本不存在。",
@@ -31,7 +31,7 @@ export default async function AdminAiStudyPromptSettingsPage({
     <main className="space-y-4">
       <header>
         <h1 className="text-xl font-black text-ink">AI配置</h1>
-        <p className="mt-1 text-sm font-semibold text-slate-500">管理闯关页、学习搭子 Prompt 与全局 AI 服务器。</p>
+        <p className="mt-1 text-sm font-semibold text-slate-500">管理闯关页、问问搭子、二层内容概述 Prompt 与全局 AI 服务器。</p>
       </header>
 
       <nav className="flex gap-8 overflow-x-auto whitespace-nowrap border-b border-slate-200 text-sm font-bold text-slate-600" aria-label="AI配置导航">
@@ -39,7 +39,10 @@ export default async function AdminAiStudyPromptSettingsPage({
           闯关页prompt
         </Link>
         <Link className="border-b-2 border-teal px-0 py-3 text-ink" href="/admin/prompt-settings/study-buddy">
-          学习搭子prompt
+          问问搭子prompt
+        </Link>
+        <Link className="border-b-2 border-transparent px-0 py-3 transition hover:border-teal hover:text-teal" href="/admin/prompt-settings/study-buddy-overview">
+          二层内容概述prompt
         </Link>
         <Link className="border-b-2 border-transparent px-0 py-3 transition hover:border-teal hover:text-teal" href="/admin/prompt-settings/ai-server">
           AI服务器配置

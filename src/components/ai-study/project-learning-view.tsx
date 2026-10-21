@@ -17,6 +17,7 @@ import {
 import { renderMathPlainText } from "@/lib/math-rich-text";
 import { cn } from "@/lib/utils";
 import { CardJobControl } from "@/components/ai-study/card-job-control";
+import { OverviewJobControl } from "@/components/ai-study/overview-job-control";
 
 const taskStatusLabels = {
   pending: "等待中",
@@ -186,10 +187,19 @@ export async function AiStudyProjectLearningView({
               {card ? (
                 <div className="mt-6 space-y-7">
                   <CardSection title="内容概述">
-                    <p
-                      className="text-[16px] leading-8 text-[#1f2937] [&_.katex-display]:my-4 [&_.katex-display]:overflow-x-auto [&_.katex-display]:overflow-y-hidden"
-                      dangerouslySetInnerHTML={{ __html: renderMathPlainText(card.overview) }}
-                    />
+                    {nodeDetail.depth === 1 && card.modelName === "deterministic-directory" && mode === "student" ? (
+                      <OverviewJobControl
+                        nodeId={nodeDetail.id}
+                        status={nodeDetail.overviewJob?.status ?? "unrequested"}
+                        autoRequest={hasExplicitNode}
+                        fallbackOverviewHtml={renderMathPlainText(card.overview)}
+                      />
+                    ) : (
+                      <p
+                        className="text-[16px] leading-8 text-[#1f2937] [&_.katex-display]:my-4 [&_.katex-display]:overflow-x-auto [&_.katex-display]:overflow-y-hidden"
+                        dangerouslySetInnerHTML={{ __html: renderMathPlainText(card.overview) }}
+                      />
+                    )}
                   </CardSection>
 
                   {nodeDetail.depth === 0 ? (

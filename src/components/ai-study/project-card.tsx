@@ -36,6 +36,7 @@ type ProjectCardProps = {
   generationPercent?: number;
   generationText?: string;
   learningAvailable?: boolean;
+  linkedPartCount?: number;
 };
 
 const statusLabels = {
@@ -67,7 +68,8 @@ export function AiStudyProjectCard({
   canManage = false,
   generationPercent,
   generationText,
-  learningAvailable = false
+  learningAvailable = false,
+  linkedPartCount
 }: ProjectCardProps) {
   const router = useRouter();
   const purchase = useProjectPurchase({ kind: "ai", id, title, diamondPrice: diamondPrice ?? 0, purchased, owned });
@@ -425,7 +427,7 @@ export function AiStudyProjectCard({
                     </button>
                     <button className="flex h-11 w-full items-center gap-3 px-4 text-left text-[15px] font-medium text-[#1d2430] hover:bg-[#fff4f4]" onClick={() => setDeleteOpen(true)} type="button">
                       <Trash2 size={17} />
-                      删除项目
+                      {linkedPartCount && linkedPartCount > 1 ? "删除整本项目" : "删除项目"}
                     </button>
                   </div>
                 </div>
@@ -496,7 +498,7 @@ export function AiStudyProjectCard({
                 <X size={20} />
               </button>
             </div>
-            <p className="mt-7 text-[14px] font-medium text-[#344054]">删除后项目以及学习进度无法恢复，是否确认删除？</p>
+            <p className="mt-7 text-[14px] font-medium text-[#344054]">{linkedPartCount && linkedPartCount > 1 ? `删除后这份 PDF 的 ${linkedPartCount} 个部分及学习进度均无法恢复，是否确认删除？` : "删除后项目以及学习进度无法恢复，是否确认删除？"}</p>
             {error ? <p className="mt-3 text-sm font-semibold text-[#d92d20]">{error}</p> : null}
             <div className="mt-12 flex justify-end gap-6">
               <button className="h-10 w-[94px] rounded-[9px] border border-[#d3d9e4] bg-white text-[15px] font-bold text-[#344054] transition hover:bg-[#f8fafc]" disabled={isSaving} onClick={() => setDeleteOpen(false)} type="button">

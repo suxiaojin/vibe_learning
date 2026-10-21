@@ -4,8 +4,9 @@ import { useState } from "react";
 import { CheckCircle2, Sparkles } from "lucide-react";
 import {
   aiStudyPromptGroups,
+  aiStudyPromptTemplateKeys,
   validateAiStudyPromptTemplates,
-  type AiStudyPromptTemplateKey,
+  type AiStudyEditablePromptTemplateKey,
   type AiStudyPromptTemplates
 } from "@/lib/ai-study-prompt-template";
 
@@ -14,24 +15,24 @@ export function AdminAiStudyPromptEditor({ initialTemplates }: { initialTemplate
   const [checkResult, setCheckResult] = useState<string | null>(null);
   const valid = checkResult?.includes("通过") || false;
 
-  function updateTemplate(key: AiStudyPromptTemplateKey, value: string) {
+  function updateTemplate(key: AiStudyEditablePromptTemplateKey, value: string) {
     setTemplates((current) => ({ ...current, [key]: value }));
     setCheckResult(null);
   }
 
-  function insertVariable(key: AiStudyPromptTemplateKey, variable: string) {
+  function insertVariable(key: AiStudyEditablePromptTemplateKey, variable: string) {
     updateTemplate(key, `${templates[key]}${templates[key].endsWith("\n") || !templates[key] ? "" : "\n"}{{${variable}}}`);
   }
 
   function checkTemplates() {
-    setCheckResult(validateAiStudyPromptTemplates(templates) || "全部15个Prompt片段检查通过，可以保存草稿。");
+    setCheckResult(validateAiStudyPromptTemplates(templates) || `全部${aiStudyPromptTemplateKeys.length}个Prompt片段检查通过，可以保存草稿。`);
   }
 
   return (
     <div className="space-y-6">
       <div className="border border-blue-200 bg-blue-50 p-4 text-xs font-semibold leading-6 text-blue-900">
-        <p className="font-black">系统强制约束不会被Prompt设置绕过</p>
-        <p>JSON结构、真实sourceChunkIds、完整四层、前三层不得提前结束、最多60节点和卡片字段结构仍由程序校验。发布Prompt只调整模型生成策略。</p>
+        <p className="font-black">此页只配置“问问搭子”对话</p>
+        <p>二层内容概述请到独立页配置；知识目录提取和第四层 AI 详解使用固定生成规则。发布后，新提问使用新版对话 Prompt。</p>
       </div>
 
       {aiStudyPromptGroups.map((group) => (
@@ -81,7 +82,7 @@ export function AdminAiStudyPromptEditor({ initialTemplates }: { initialTemplate
       <div className="flex flex-wrap items-center justify-between gap-3 border border-slate-200 bg-white p-4">
         <p className={`flex items-center gap-2 text-xs font-bold ${valid ? "text-emerald-700" : "text-slate-500"}`} aria-live="polite">
           {valid ? <CheckCircle2 size={16} /> : null}
-          {checkResult || "保存和发布时都会再次检查15个片段、必要变量与长度。"}
+          {checkResult || `保存和发布时都会再次检查${aiStudyPromptTemplateKeys.length}个片段、必要变量与长度。`}
         </p>
         <button className="secondary-button rounded-none border-violet-200 text-violet-700 hover:bg-violet-50" type="button" onClick={checkTemplates}>
           <Sparkles size={16} />检查全部Prompt

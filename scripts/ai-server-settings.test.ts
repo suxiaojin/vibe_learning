@@ -64,7 +64,7 @@ async function main() {
         enabled: true
       }
     ],
-    moduleRoutes: { ai_study_chat: ["server_a", "server_b"], course_ai_explanation: "server_a" }
+    moduleRoutes: { ai_study_chat: ["server_a", "server_b"], ai_study_detail: ["server_a", "server_b"], course_ai_explanation: "server_a" }
   };
   const writes: unknown[] = [];
 
@@ -95,12 +95,23 @@ async function main() {
     assert.equal(chatServers[0].apiKey, originalApiKey);
     assert.equal((await getAiServerConfigForModule("course_ai_explanation")).id, "server_a");
     assert.equal((await getAiServerConfigForModule("question_bank_ai_tagging")).id, "built_in");
+    assert.deepEqual((await getAiServerConfigsForModule("ai_study_overview")).map((server) => server.id), ["server_a", "server_b"]);
+
+    setting = {
+      ...setting,
+      moduleRoutes: { ...(setting.moduleRoutes as Record<string, unknown>), ai_study_overview: ["server_b"] }
+    };
+    assert.equal((await getAiServerConfigForModule("ai_study_overview")).id, "server_b");
 
     const adminSettings = await getAdminAiServerSettings();
     assert.equal(adminSettings.moduleRoutes.length, aiModuleDefinitions.length);
     assert.deepEqual(
       adminSettings.moduleRoutes.find((route) => route.key === "ai_study_chat")?.serverIds,
       ["server_a", "server_b"]
+    );
+    assert.deepEqual(
+      adminSettings.moduleRoutes.find((route) => route.key === "ai_study_overview")?.serverIds,
+      ["server_b"]
     );
 
     const invalidRoutes = Object.fromEntries(

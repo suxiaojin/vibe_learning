@@ -9,6 +9,7 @@ import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { OfficialStudyMaterialPanel } from "@/components/admin/official-study-material-panel";
 import { ProjectDiamondPriceSetting } from "@/components/admin/project-diamond-price-setting";
 import { ProjectPurchaseUsers } from "@/components/admin/project-purchase-users";
+import { AiStudyProjectGroupRows } from "@/components/admin/ai-study-project-group-rows";
 import { requireAdmin } from "@/lib/auth";
 import {
   buildAdminAiStudyProjectsPath,
@@ -54,7 +55,8 @@ const noticeText: Record<string, string> = {
 
 const errorText: Record<string, string> = {
   "project-unavailable": "项目不存在或已删除，操作未完成。",
-  "publish-requires-ready": "只有已就绪且未删除的项目才能转为公开。"
+  "publish-requires-ready": "所有部分的知识目录生成完成后才能转为公开。",
+  "group-managed": "分部项目请在合并后的项目行统一管理。"
 };
 
 export default async function AdminAiStudyProjectsPage({
@@ -76,7 +78,7 @@ export default async function AdminAiStudyProjectsPage({
     ? await Promise.all([listAdminOfficialStudyMaterials(), listOfficialStudyMaterialScopes()])
     : [[], []];
   const filters = aiData?.filters || { keyword: "", status: "", visibility: "" };
-  const projects = aiData?.projects || [];
+  const groups = aiData?.groups || [];
   const stats = aiData?.stats || { filteredCount: 0, activeCount: 0, publicCount: 0, pendingCount: 0 };
   const currentPath = buildAdminAiStudyProjectsPath(filters);
   const notice = params?.notice ? noticeText[params.notice] : "";
@@ -166,11 +168,46 @@ export default async function AdminAiStudyProjectsPage({
             </tr>
           </thead>
           <tbody>
-            {projects.length === 0 ? (
+            {groups.length === 0 ? (
               <tr>
                 <td className="py-8 text-center text-slate-500" colSpan={7}>没有找到符合条件的学习搭子项目。</td>
               </tr>
-            ) : projects.map((project) => {
+            ) : groups.map((group) => {
+              if (group.isPartGroup) {
+                const firstPart = group.parts[0];
+                const ownerName = firstPart.owner.studentProfile?.nickname || firstPart.owner.username;
+                const visibility = group.parts.every((part) => part.visibility === firstPart.visibility)
+                  ? visibilityLabels[firstPart.visibility] || firstPart.visibility
+                  : "各部分不同";
+                return <AiStudyProjectGroupRows
+                  key={group.id}
+                  title={group.title}
+                  ownerId={firstPart.owner.id}
+                  ownerName={ownerName}
+                  ownerUsername={firstPart.owner.username}
+                  expectedPartCount={group.expectedPartCount}
+                  availablePartCount={group.parts.length}
+                  learningReadyCount={group.parts.filter((part) => !part.deletedAt && (part.status === "ready" || Boolean(part.learningReadyAt && part.tasks.length > 0))).length}
+                  failedCount={group.parts.filter((part) => !part.deletedAt && part.status === "failed" && !(part.learningReadyAt && part.tasks.length > 0)).length}
+                  visibility={visibility}
+                  purchaseCount={group.parts.reduce((total, part) => total + part._count.purchases, 0)}
+                  createdAt={formatDate(group.createdAt)}
+                  actions={renderGroupActions(group, currentPath)}
+                >
+                  {group.parts.map((part) => renderProjectRow(part, currentPath, true))}
+                </AiStudyProjectGroupRows>;
+              }
+              return renderProjectRow(group.parts[0], currentPath);
+            })}
+          </tbody>
+        </table>
+      </div>
+      </>}
+    </main>
+  );
+}
+
+function renderProjectRow(project: Awaited<ReturnType<typeof listAdminAiStudyProjects>>["groups"][number]["parts"][number], currentPath: string, nested = false) {
               const ownerName = project.owner.studentProfile?.nickname || project.owner.username;
               const canPublish = project.status === "ready" && !project.deletedAt && project.visibility !== "public";
               const canPrivatize = !project.deletedAt && project.visibility !== "private";
@@ -179,8 +216,9 @@ export default async function AdminAiStudyProjectsPage({
               const deleteFormId = `delete-${project.id}`;
 
               return (
-                <tr key={project.id} className="align-top text-slate-700">
+                <tr key={project.id} className={`align-top text-slate-700 ${nested ? "bg-blue-50/30" : ""}`}>
                   <td className="border-b border-slate-100 py-4 pr-4">
+                    {nested ? <div className="mb-1 text-xs font-semibold text-slate-500">第 {project.partIndex ?? 1} 部分</div> : null}
                     <Link className="font-semibold text-ink hover:text-teal hover:underline" href={`/admin/ai-study-projects/${project.id}`}>
                       {project.title}
                     </Link>
@@ -206,6 +244,7 @@ export default async function AdminAiStudyProjectsPage({
                     {formatDate(project.createdAt)}
                   </td>
                   <td className="border-b border-slate-100 py-4">
+                    {nested ? <Link className="text-sm font-semibold text-teal hover:underline" href={`/admin/ai-study-projects/${project.id}`}>查看部分详情</Link> :
                     <div className="flex min-w-[250px] flex-wrap gap-2">
                       <ProjectDiamondPriceSetting kind="ai" projectId={project.id} title={project.title} diamondPrice={project.diamondPrice} disabled={Boolean(project.deletedAt)} />
                       <form id={publishFormId} action={publishAiStudyProject}>
@@ -241,17 +280,49 @@ export default async function AdminAiStudyProjectsPage({
                         <Trash2 size={14} />
                         删除
                       </ConfirmSubmitButton>
-                    </div>
+                    </div>}
                   </td>
                 </tr>
               );
-            })}
-          </tbody>
-        </table>
-      </div>
-      </>}
-    </main>
-  );
+}
+
+function renderGroupActions(group: Awaited<ReturnType<typeof listAdminAiStudyProjects>>["groups"][number], currentPath: string) {
+  const activeParts = group.parts.filter((part) => !part.deletedAt);
+  const isUnified = activeParts.some((part) => Boolean(part.canonicalProjectId));
+  const canPublish = activeParts.length === group.expectedPartCount && activeParts.every((part) => isUnified
+    ? Boolean(part.learningReadyAt) && part.tasks.length > 0
+    : part.status === "ready")
+    && activeParts.some((part) => part.visibility !== "public");
+  const canPrivatize = activeParts.some((part) => part.visibility !== "private");
+  const price = activeParts[0]?.diamondPrice ?? 0;
+  const priceMixed = activeParts.some((part) => part.diamondPrice !== price);
+  const publishFormId = `publish-group-${group.id}`;
+  const privatizeFormId = `privatize-group-${group.id}`;
+  const deleteFormId = `delete-group-${group.id}`;
+  return <div className="flex min-w-[250px] flex-wrap gap-2">
+    <ProjectDiamondPriceSetting kind="ai_group" projectId={group.id} title={group.title} diamondPrice={price} mixed={priceMixed} disabled={activeParts.length === 0} />
+    <form id={publishFormId} action={publishAiStudyProject}>
+      <input type="hidden" name="groupId" value={group.id} />
+      <input type="hidden" name="returnTo" value={currentPath} />
+    </form>
+    <button className="secondary-button inline-flex items-center gap-1 px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50" disabled={!canPublish} form={publishFormId} type="submit">
+      <Globe2 size={14} />转公开
+    </button>
+    <form id={privatizeFormId} action={privatizeAiStudyProject}>
+      <input type="hidden" name="groupId" value={group.id} />
+      <input type="hidden" name="returnTo" value={currentPath} />
+    </form>
+    <ConfirmSubmitButton className="secondary-button inline-flex items-center gap-1 px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50" disabled={!canPrivatize} form={privatizeFormId} message="确认将这个项目的所有部分转为私有？创建者仍可在自己的项目中看到。">
+      <Lock size={14} />转私有
+    </ConfirmSubmitButton>
+    <form id={deleteFormId} action={deleteAiStudyProjectAsAdmin}>
+      <input type="hidden" name="groupId" value={group.id} />
+      <input type="hidden" name="returnTo" value={currentPath} />
+    </form>
+    <ConfirmSubmitButton className="secondary-button inline-flex items-center gap-1 px-3 py-2 text-xs text-red-700" form={deleteFormId} message={`确认删除“${group.title}”的全部 ${group.parts.length} 个部分及其数据库记录？知识框架、卡片和进度也会删除；MinIO 源文件保留。`}>
+      <Trash2 size={14} />删除
+    </ConfirmSubmitButton>
+  </div>;
 }
 
 function ProjectStatusBadge({ deleted = false, learningAvailable = false, status }: { deleted?: boolean; learningAvailable?: boolean; status: string }) {

@@ -3,7 +3,6 @@ import type { AiStudyCardJob } from "@prisma/client";
 import { prisma } from "./prisma";
 import { askQwenDetailed } from "./qwen";
 import { downloadAiStudyObject } from "./ai-study-storage";
-import type { Curriculum } from "./ai-study-curriculum";
 import { chapterProtocol, type ChapterCurriculum } from "./ai-study-chapter-curriculum";
 import { chapterCardMessages, chapterCardSchema, parseChapterCard } from "./ai-study-chapter-card";
 import { CARD_ATTEMPTS, retryCardPolicy, cardAvailability, shouldPauseCardBatch, type CardFailureKind } from "./ai-study-card-policy";
@@ -13,11 +12,11 @@ const leaseMs=180000;
 const capacity=2; // Database-coordinated across every worker process.
 const cardTimeoutMs=Math.max(5000,Math.min(120000,Number(process.env.AI_STUDY_CARD_TIMEOUT_MS)||120000));
 const cardMaxTokens=Math.max(512,Math.min(8192,Number(process.env.AI_STUDY_CARD_MAX_TOKENS)||4096));
-const manifestCache=new Map<string,Curriculum|ChapterCurriculum>();
+const manifestCache=new Map<string,ChapterCurriculum>();
 export async function readCardManifest(key:string){
   const cached=manifestCache.get(key);if(cached)return cached;
-  const value=JSON.parse((await downloadAiStudyObject(key)).body.toString("utf8")) as Curriculum|ChapterCurriculum;
-  if(![chapterProtocol,"evidence-curriculum-v10"].includes(value.protocol)||!value.nodeIds||!Array.isArray(value.topics))throw new Error("卡片清单协议或节点映射无效。");
+  const value=JSON.parse((await downloadAiStudyObject(key)).body.toString("utf8")) as ChapterCurriculum;
+  if(value.protocol!==chapterProtocol||!value.nodeIds||!Array.isArray(value.topics))throw new Error("卡片清单协议或节点映射无效。");
   if(manifestCache.size>=2)manifestCache.delete(manifestCache.keys().next().value!);
   manifestCache.set(key,value);return value;
 }
@@ -70,11 +69,9 @@ async function runCardJob(job:AiStudyCardJob){
     const manifest=await readCardManifest(job.manifestKey),clientId=Object.entries(manifest.nodeIds!).find(([,id])=>id===job.nodeId)?.[0];
     const topic=manifest.topics.find(t=>t.id===clientId);
     if(!topic||manifest.protocol!==job.protocol)throw new Error("卡片来源与任务版本不一致。");
-    const project=await prisma.aiStudyProject.findUniqueOrThrow({where:{id:job.projectId},select:{title:true,aiPromptVersionId:true,deletedAt:true}});
+    const project=await prisma.aiStudyProject.findUniqueOrThrow({where:{id:job.projectId},select:{title:true,deletedAt:true}});
     if(project.deletedAt)throw new Error("项目已删除。");
     phase="transport";
-    // Also supports missing cards from a v10 manifest, with the single current
-    // teaching protocol. Existing saved cards are never overwritten.
     const response=await askQwenDetailed(chapterCardMessages(project.title,topic,manifest.units,job.errorMessage??undefined),{moduleKey:"ai_study_detail",temperature:0.2,timeoutMs:cardTimeoutMs,maxCompletionTokens:cardMaxTokens,enableThinking:false,jsonSchema:{name:"study_concept_card",schema:chapterCardSchema}});
     phase="content";
     if(response.finishReason==="length")throw new Error("讲解输出截断，请简洁完整回答。");
@@ -85,7 +82,7 @@ async function runCardJob(job:AiStudyCardJob){
       // Fence an expired owner even if it finishes after a replacement worker.
       const owned=await tx.aiStudyCardJob.updateMany({where:{id:job.id,status:"running",leaseToken:job.leaseToken,leaseExpiresAt:{gt:new Date()},project:{deletedAt:null,status:{not:"archived"}}},data:{status:"succeeded",leaseToken:null,leaseExpiresAt:null,errorKind:null,errorMessage:null,qualityFlags:result.qualityFlags}});
       if(!owned.count)throw new Error("卡片任务租约已移交。");
-      if(!await tx.aiStudyCard.findFirst({where:{nodeId:job.nodeId}}))await tx.aiStudyCard.create({data:{...result.card,nodeId:job.nodeId,projectId:job.projectId,aiPromptVersionId:project.aiPromptVersionId,modelName:response.serverConfig.model,promptVersion:`${job.protocol};concept-card-v1`,reviewStatus:"unreviewed"}});
+      if(!await tx.aiStudyCard.findFirst({where:{nodeId:job.nodeId}}))await tx.aiStudyCard.create({data:{...result.card,nodeId:job.nodeId,projectId:job.projectId,modelName:response.serverConfig.model,promptVersion:`${job.protocol};concept-card-v1`,reviewStatus:"unreviewed"}});
     });
   }catch(error){
     const message=(error instanceof Error?error.message:String(error)).slice(0,1500);

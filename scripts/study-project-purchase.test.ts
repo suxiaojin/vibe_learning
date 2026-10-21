@@ -15,6 +15,10 @@ type State = {
   visibility: string;
   status: string;
   deletedAt: Date | null;
+  canonicalProjectId: string | null;
+  learningReadyAt: Date | null;
+  tasks: Row[];
+  partProjects: Row[];
   majorId: string | null;
   publicSubjectId: string | null;
   profile: { majorId: string | null; publicSubjectId: string | null } | null;
@@ -28,8 +32,12 @@ function matches(row: Row, where: Row): boolean {
     if (value === undefined) return true;
     if (key === "OR") return (value as Row[]).some((condition) => matches(row, condition));
     if (key === "AND") return (value as Row[]).every((condition) => matches(row, condition));
+    if (value && typeof value === "object" && "not" in value) return row[key] !== (value as { not: unknown }).not;
+    if (value && typeof value === "object" && "is" in value) {
+      return Boolean(row[key]) && matches(row[key] as Row, (value as { is: Row }).is);
+    }
     if (value && typeof value === "object" && "some" in value) {
-      return (row[key] as Row[]).some((item) => matches(item, (value as { some: Row }).some));
+      return Array.isArray(row[key]) && (row[key] as Row[]).some((item) => matches(item, (value as { some: Row }).some));
     }
     return row[key] === value;
   });
@@ -38,7 +46,7 @@ function matches(row: Row, where: Row): boolean {
 function fixture(overrides: Partial<State> = {}, options: { failPurchase?: boolean; conflicts?: number } = {}) {
   let state: State = {
     price: 50, balance: 100, ownerId: "creator", visibility: "public", status: "ready",
-    deletedAt: null, majorId: null, publicSubjectId: null, profile: null, purchases: [], ledger: [], ...overrides
+    deletedAt: null, canonicalProjectId: null, learningReadyAt: null, tasks: [], partProjects: [], majorId: null, publicSubjectId: null, profile: null, purchases: [], ledger: [], ...overrides
   };
   let attempts = 0;
   let tail = Promise.resolve();
@@ -51,18 +59,28 @@ function fixture(overrides: Partial<State> = {}, options: { failPurchase?: boole
     const draft = structuredClone(state);
     attempts += 1;
     const findResource = (kind: string) => async ({ where }: { where: Row }) => {
+      const resourceId = kind === "ai" && draft.canonicalProjectId && typeof where.id === "string"
+        ? where.id : "resource";
       const row = {
-        id: "resource", title: "基础会计学", diamondPrice: draft.price,
+        id: resourceId, title: "基础会计学", diamondPrice: draft.price,
         ...(kind === "ai" ? { ownerId: draft.ownerId } : {}),
         visibility: draft.visibility, status: draft.status, fileStatus: draft.status, deletedAt: draft.deletedAt,
+        canonicalProjectId: resourceId !== draft.canonicalProjectId ? draft.canonicalProjectId : null,
+        learningReadyAt: draft.learningReadyAt, tasks: draft.tasks,
+        partProjects: resourceId === draft.canonicalProjectId ? draft.partProjects : [],
         majorId: draft.majorId, publicSubjectId: draft.publicSubjectId,
-        purchases: draft.purchases.filter((purchase) => purchase.kind === kind && purchase.userId === "student")
+        purchases: draft.purchases.filter((purchase) => purchase.kind === kind && purchase.userId === "student" && purchase.resourceId === resourceId)
       };
       return matches(row, where) ? row : null;
     };
     const tx = {
       $queryRaw: async () => [{ id: "resource" }],
-      aiStudyProject: { findFirst: findResource("ai") },
+      aiStudyProject: {
+        findFirst: findResource("ai"),
+        findUnique: async ({ where }: { where: { id: string } }) => ({
+          canonicalProjectId: where.id !== draft.canonicalProjectId ? draft.canonicalProjectId : null
+        })
+      },
       officialStudyMaterial: { findFirst: findResource("official") },
       studentProfile: { findUnique: async () => draft.profile },
       diamondAccount: {
@@ -113,6 +131,25 @@ const ai = { kind: "ai" as const, id: "resource", expectedDiamondPrice: 50, conf
 const official = { ...ai, kind: "official" as const };
 
 test.afterEach(() => mock.restoreAll());
+
+test("new split parts share one canonical purchase while keeping separate detail links", async () => {
+  const db = fixture({
+    canonicalProjectId: "canonical", status: "processing", learningReadyAt: new Date(),
+    tasks: [{ type: "generate_cards", status: "succeeded" }], partProjects: [{ deletedAt: null }]
+  });
+  const first = await purchaseStudyProject("student", ai);
+  assert.equal(first.charged, true);
+  assert.equal(first.offer.id, "canonical");
+  assert.equal(first.offer.href, "/study-buddy/resource");
+  assert.equal(db.state().purchases[0].aiProjectId, "canonical");
+  assert.equal(db.state().ledger[0].dedupeKey, "study_project_purchase:student:ai:canonical");
+  assert.equal((await purchaseStudyProject("student", { ...ai, confirmed: false })).charged, false);
+  const otherPart = await purchaseStudyProject("student", { ...ai, id: "part-3", confirmed: false });
+  assert.equal(otherPart.charged, false);
+  assert.equal(otherPart.offer.href, "/study-buddy/part-3");
+  assert.equal(db.state().purchases.length, 1);
+  assert.equal(db.state().ledger.length, 1);
+});
 
 test("paid requests without explicit confirmation never debit or create records", async () => {
   const db = fixture();
@@ -286,7 +323,7 @@ test("official scope allows matching major/public subject and denies mismatches"
 
 test("AI content filter protects nodes/chat while preserving ownership and free access", () => {
   const where = accessibleAiStudyProjectWhere("student") as Row;
-  const row = { ownerId: "creator", deletedAt: null, visibility: "public", status: "ready", diamondPrice: 50, purchases: [] };
+  const row = { ownerId: "creator", deletedAt: null, canonicalProjectId: null, visibility: "public", status: "ready", diamondPrice: 50, purchases: [] };
   assert.equal(matches(row, where), false);
   assert.equal(matches({ ...row, diamondPrice: 0 }, where), true);
   assert.equal(matches({ ...row, ownerId: "student", visibility: "private" }, where), true);
@@ -294,6 +331,14 @@ test("AI content filter protects nodes/chat while preserving ownership and free 
   assert.equal(matches({ ...row, purchases: [{ userId: "other" }] }, where), false);
   assert.equal(matches({ ...row, visibility: "private", purchases: [{ userId: "student" }] }, where), false);
   assert.equal(matches({ ...row, deletedAt: new Date(), ownerId: "student" }, where), false);
+  const canonical = { deletedAt: null, visibility: "public", status: "ready", diamondPrice: 50, purchases: [{ userId: "student" }] };
+  const child = {
+    ...row, canonicalProjectId: "canonical", learningReadyAt: new Date(),
+    tasks: [{ type: "generate_cards", status: "succeeded" }], canonicalProject: canonical
+  };
+  assert.equal(matches(child, where), true);
+  assert.equal(matches({ ...child, canonicalProject: { ...canonical, purchases: [] } }, where), false);
+  assert.equal(matches({ ...child, canonicalProject: { ...canonical, visibility: "private" } }, where), false);
 });
 
 test("purchase gate fetches metadata only, not source text or content", async () => {

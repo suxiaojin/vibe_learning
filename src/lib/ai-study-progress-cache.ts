@@ -35,7 +35,7 @@ export type AiStudyGenerationProgress = {
   cards?: {total:number;completed:number;unrequested:number;failed:number;paused:number};
 };
 
-const progressCachePrefix = `${process.env.AI_STUDY_PROGRESS_CACHE_PREFIX || "ai-study:project-progress"}:on-demand-v1`;
+const progressCachePrefix = `${process.env.AI_STUDY_PROGRESS_CACHE_PREFIX || "ai-study:project-progress"}:catalog-v2`;
 const processingTtlSeconds = getNumberEnv("AI_STUDY_PROGRESS_CACHE_PROCESSING_TTL_SECONDS", 180);
 const finishedTtlSeconds = getNumberEnv("AI_STUDY_PROGRESS_CACHE_FINISHED_TTL_SECONDS", 600);
 
@@ -199,27 +199,17 @@ export function buildAiStudyGenerationProgress(project: ProgressProject): AiStud
     return buildProgress(project.id, project.status, 0, "等待创建", null, project.status, null, steps);
   }
 
-  if (cardTask?.status === "running") {
-    const match = String(cardTask.stage || "").match(/generating_card_(\d+)_of_(\d+)/);
-    if (match) {
-      const current = Number(match[1]);
-      const total = Number(match[2]);
-      const cardPercent = total > 0 ? Math.round((current / total) * 28) : 0;
-      return buildProgress(project.id, project.status, Math.min(94, 66 + cardPercent), `正在生成知识卡片 ${current}/${total}`, cardTask.type, cardTask.stage, null, steps);
-    }
-    return buildProgress(project.id, project.status, 72, "正在生成知识卡片...", cardTask.type, cardTask.stage, null, steps);
-  }
-  if (cardTask?.status === "pending") {
-    return buildProgress(project.id, project.status, 66, "等待生成知识卡片...", cardTask.type, cardTask.stage, null, steps);
-  }
   if (outlineTask?.status === "running") {
     const batch = String(outlineTask.stage || "").match(/planning_(?:evidence|chapter)_(\d+)_of_(\d+)/);
-    if (batch) return buildProgress(project.id, project.status, Math.min(55, 38 + Math.round(Number(batch[1]) / Number(batch[2]) * 17)), `正在提取知识点 ${batch[1]}/${batch[2]}`, outlineTask.type, outlineTask.stage, null, steps);
-    if (String(outlineTask.stage).startsWith("organizing_")) return buildProgress(project.id, project.status, 58, "正在组织完整知识目录...", outlineTask.type, outlineTask.stage, null, steps);
+    if (batch) return buildProgress(project.id, project.status, Math.min(90, 38 + Math.round(Number(batch[1]) / Number(batch[2]) * 52)), `正在提取知识点 ${batch[1]}/${batch[2]}`, outlineTask.type, outlineTask.stage, null, steps);
+    if (String(outlineTask.stage).startsWith("organizing_")) return buildProgress(project.id, project.status, 95, "正在组织完整知识目录...", outlineTask.type, outlineTask.stage, null, steps);
     return buildProgress(project.id, project.status, 46, "正在生成思维导图...", outlineTask.type, outlineTask.stage, null, steps);
   }
   if (outlineTask?.status === "pending") {
     return buildProgress(project.id, project.status, 38, "等待生成思维导图...", outlineTask.type, outlineTask.stage, null, steps);
+  }
+  if (outlineTask?.status === "succeeded" || cardTask) {
+    return buildProgress(project.id, project.status, 99, "知识目录已生成，正在开放学习...", null, "learning_opening", null, steps);
   }
   if (parseTask?.status === "running") {
     const percent = parseTask.stage === "submitting_to_mineru" ? 20 : parseTask.stage === "mineru_result_persisted" ? 32 : 18;
@@ -313,7 +303,7 @@ function buildProgressSteps(tasks: ProgressTask[]) {
     }
   }
 
-  return ["parse_source", "generate_outline", "generate_cards"]
+  return ["parse_source", "generate_outline"]
     .map((type) => latestByType.get(type as AiStudyTaskType))
     .filter((task): task is ProgressTask => Boolean(task))
     .map((task) => ({

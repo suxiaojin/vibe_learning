@@ -156,7 +156,7 @@ export async function rollbackAiStudyPromptVersion(formData: FormData) {
         profileId: profile.id,
         version: nextVersion,
         sourceVersion: buildAiStudyPromptSourceVersion(nextVersion, `rollback-v${target.version}`),
-        templates: target.templates as Prisma.InputJsonValue,
+        templates: normalizeAiStudyPromptTemplates(target.templates) as Prisma.InputJsonValue,
         changeNote: `回滚至 v${target.version}`,
         publishedAt: new Date(),
         createdById: admin.id,

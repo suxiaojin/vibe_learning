@@ -8,7 +8,7 @@ import {
   formatProjectDiamondPrice,
   maxProjectDiamondPrice,
   projectDiamondPriceSchema,
-  type ProjectDiamondPriceKind
+  type ProjectDiamondPriceSettingKind
 } from "@/lib/project-diamond-price";
 
 export function ProjectDiamondPriceSetting({
@@ -16,13 +16,15 @@ export function ProjectDiamondPriceSetting({
   projectId,
   title,
   diamondPrice,
+  mixed = false,
   disabled = false,
   onSaved
 }: {
-  kind: ProjectDiamondPriceKind;
+  kind: ProjectDiamondPriceSettingKind;
   projectId: string;
   title: string;
   diamondPrice: number;
+  mixed?: boolean;
   disabled?: boolean;
   onSaved?: (diamondPrice: number) => void;
 }) {
@@ -81,10 +83,10 @@ export function ProjectDiamondPriceSetting({
         className="secondary-button inline-flex items-center gap-1 px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50"
         disabled={disabled || isSaving}
         onClick={openDialog}
-        title={`当前价格：${formatProjectDiamondPrice(savedPrice)}`}
+        title={mixed ? "各部分当前价格不同；保存后统一设置" : `当前价格：${formatProjectDiamondPrice(savedPrice)}`}
         type="button"
       >
-        <Diamond aria-hidden size={14} />设置钻石：{savedPrice}
+        <Diamond aria-hidden size={14} />设置钻石：{mixed && !notice ? "不一致" : savedPrice}
       </button>
       {notice ? <span className="self-center text-xs text-teal" role="status">{notice}</span> : null}
       <dialog

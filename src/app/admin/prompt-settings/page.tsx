@@ -51,7 +51,7 @@ export default async function AdminPromptSettingsPage({
     <main className="space-y-4">
       <header>
         <h1 className="text-xl font-black text-ink">AI配置</h1>
-        <p className="mt-1 text-sm font-semibold text-slate-500">管理闯关页、学习搭子 Prompt 与全局 AI 服务器。</p>
+        <p className="mt-1 text-sm font-semibold text-slate-500">管理闯关页、问问搭子、二层内容概述 Prompt 与全局 AI 服务器。</p>
       </header>
 
       <nav className="flex gap-8 overflow-x-auto whitespace-nowrap border-b border-slate-200 text-sm font-bold text-slate-600" aria-label="AI配置导航">
@@ -59,7 +59,10 @@ export default async function AdminPromptSettingsPage({
           闯关页prompt
         </Link>
         <Link className="border-b-2 border-transparent px-0 py-3 transition hover:border-teal hover:text-teal" href="/admin/prompt-settings/study-buddy">
-          学习搭子prompt
+          问问搭子prompt
+        </Link>
+        <Link className="border-b-2 border-transparent px-0 py-3 transition hover:border-teal hover:text-teal" href="/admin/prompt-settings/study-buddy-overview">
+          二层内容概述prompt
         </Link>
         <Link className="border-b-2 border-transparent px-0 py-3 transition hover:border-teal hover:text-teal" href="/admin/prompt-settings/ai-server">
           AI服务器配置

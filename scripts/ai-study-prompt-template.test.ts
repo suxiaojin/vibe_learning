@@ -14,12 +14,12 @@ const validTemplates = normalizeAiStudyPromptTemplates(Object.fromEntries(
   ])
 ));
 
-assert.equal(aiStudyPromptTemplateKeys.length, 15);
+assert.deepEqual(aiStudyPromptTemplateKeys, ["chat.system", "chat.user"]);
 assert.equal(validateAiStudyPromptTemplates(validTemplates), null);
 
 assert.match(
-  validateAiStudyPromptTemplates({ ...validTemplates, "outline.user": "只保留项目名称 {{projectTitle}}" }) || "",
-  /sourceChunks/
+  validateAiStudyPromptTemplates({ ...validTemplates, "chat.user": "学生问题" }) || "",
+  /context/
 );
 
 assert.match(
@@ -28,8 +28,13 @@ assert.match(
 );
 
 assert.match(
-  validateAiStudyPromptTemplates({ ...validTemplates, "card.system": "" }) || "",
+  validateAiStudyPromptTemplates({ ...validTemplates, "chat.system": "" }) || "",
   /不能为空/
+);
+assert.deepEqual(
+  normalizeAiStudyPromptTemplates({ ...validTemplates, "unused.field": "旧字段", "another.unused": "旧字段" }),
+  validTemplates,
+  "old published versions retain their records, but inactive fields are excluded from the new editor"
 );
 
 async function main() {

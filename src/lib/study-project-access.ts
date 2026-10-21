@@ -31,9 +31,34 @@ export function accessibleAiStudyProjectWhere(userId: string): Prisma.AiStudyPro
     OR: [
       { ownerId: userId },
       {
+        canonicalProjectId: null,
         visibility: "public",
-        status: "ready",
-        OR: [{ diamondPrice: 0 }, { purchases: { some: { userId } } }]
+        AND: [
+          { OR: [
+            { status: "ready" },
+            { partProjects: { some: { deletedAt: null } }, learningReadyAt: { not: null }, tasks: { some: { type: "generate_cards", status: "succeeded" } } }
+          ] },
+          { OR: [{ diamondPrice: 0 }, { purchases: { some: { userId } } }] }
+        ]
+      },
+      {
+        canonicalProjectId: { not: null },
+        visibility: "public",
+        learningReadyAt: { not: null },
+        tasks: { some: { type: "generate_cards", status: "succeeded" } },
+        canonicalProject: {
+          is: {
+            deletedAt: null,
+            visibility: "public",
+            AND: [
+              { OR: [
+                { status: "ready" },
+                { partProjects: { some: { deletedAt: null } }, learningReadyAt: { not: null }, tasks: { some: { type: "generate_cards", status: "succeeded" } } }
+              ] },
+              { OR: [{ diamondPrice: 0 }, { purchases: { some: { userId } } }] }
+            ]
+          }
+        }
       }
     ]
   };
@@ -72,12 +97,37 @@ export async function getStudyProjectOffer(
     diamondPrice: true,
     purchases: { where: { userId }, select: { id: true }, take: 1 }
   } as const;
+  let purchaseId = id;
+  if (kind === "ai") {
+    const requested = await db.aiStudyProject.findFirst({
+      where: {
+        id, deletedAt: null,
+        OR: [
+          { ownerId: userId },
+          { visibility: "public", OR: [
+            { status: "ready" },
+            { canonicalProjectId: { not: null }, learningReadyAt: { not: null }, tasks: { some: { type: "generate_cards", status: "succeeded" } } },
+            { partProjects: { some: { deletedAt: null } }, learningReadyAt: { not: null }, tasks: { some: { type: "generate_cards", status: "succeeded" } } }
+          ] }
+        ]
+      },
+      select: { id: true, canonicalProjectId: true }
+    });
+    if (!requested) throw new StudyProjectAccessError();
+    purchaseId = requested.canonicalProjectId || id;
+  }
   const resource = kind === "ai"
     ? await db.aiStudyProject.findFirst({
         where: {
-          id,
+          id: purchaseId,
           deletedAt: null,
-          OR: [{ ownerId: userId }, { visibility: "public", status: "ready" }]
+          OR: [
+            { ownerId: userId },
+            { visibility: "public", OR: [
+              { status: "ready" },
+              { partProjects: { some: { deletedAt: null } }, learningReadyAt: { not: null }, tasks: { some: { type: "generate_cards", status: "succeeded" } } }
+            ] }
+          ]
         },
         select: { ...select, ownerId: true }
       })
@@ -93,7 +143,9 @@ export async function getStudyProjectOffer(
   return {
     kind,
     id: resource.id,
-    title: resource.title,
+    title: kind === "ai" && purchaseId !== id
+      ? resource.title.replace(/^\[Part\.\d+\/\d+\]\s*/i, "").replace(/\s*[（(]原文第\d+\s*[-–—]\s*\d+页[）)]\s*$/, "")
+      : resource.title,
     diamondPrice: resource.diamondPrice,
     purchased,
     owned,

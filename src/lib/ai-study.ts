@@ -130,7 +130,8 @@ export async function listAiStudyProjects(ownerId: string, input: unknown = {}) 
         select: {
           sources: true,
           nodes: true,
-          tasks: true
+          tasks: true,
+          partProjects: { where: { deletedAt: null } }
         }
       }
     }
@@ -155,12 +156,17 @@ export async function listPublicAiStudyProjects(input: { take?: number } = {}) {
   const projects = await prisma.aiStudyProject.findMany({
     where: {
       visibility: "public",
-      status: "ready",
-      deletedAt: null
+      deletedAt: null,
+      OR: [
+        { status: "ready" },
+        { canonicalProjectId: { not: null }, learningReadyAt: { not: null }, tasks: { some: { type: "generate_cards", status: "succeeded" } } },
+        { partProjects: { some: { deletedAt: null } }, learningReadyAt: { not: null }, tasks: { some: { type: "generate_cards", status: "succeeded" } } }
+      ]
     },
     orderBy: [{ createdAt: "desc" }],
     ...(take ? { take } : {}),
     include: {
+      canonicalProject: { select: { diamondPrice: true } },
       nodes: {
         where: { depth: 0 },
         orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
@@ -191,7 +197,8 @@ export async function listPublicAiStudyProjects(input: { take?: number } = {}) {
         select: {
           sources: true,
           nodes: true,
-          tasks: true
+          tasks: true,
+          partProjects: { where: { deletedAt: null } }
         }
       }
     }
@@ -277,11 +284,21 @@ export async function getAiStudyProject(ownerId: string, projectId: string) {
 }
 
 export async function deleteAiStudyProject(ownerId: string, projectId: string) {
+  const project = await prisma.aiStudyProject.findFirst({
+    where: { id: projectId, ownerId, deletedAt: null },
+    select: { id: true, canonicalProjectId: true }
+  });
+  if (!project) throw new AiStudyError("学习项目不存在。", 404, "AI_STUDY_PROJECT_NOT_FOUND");
+  const canonicalId = project.canonicalProjectId || project.id;
+  const memberIds = await prisma.aiStudyProject.findMany({
+    where: { ownerId, deletedAt: null, OR: [{ id: canonicalId }, { canonicalProjectId: canonicalId }] },
+    select: { id: true }
+  });
   const result = await prisma.aiStudyProject.updateMany({
     where: {
-      id: projectId,
       ownerId,
-      deletedAt: null
+      deletedAt: null,
+      OR: [{ id: canonicalId }, { canonicalProjectId: canonicalId }]
     },
     data: {
       deletedAt: new Date()
@@ -291,7 +308,7 @@ export async function deleteAiStudyProject(ownerId: string, projectId: string) {
     throw new AiStudyError("学习项目不存在。", 404, "AI_STUDY_PROJECT_NOT_FOUND");
   }
 
-  await clearAiStudyProgressCache(projectId);
+  await Promise.all(memberIds.map((member) => clearAiStudyProgressCache(member.id)));
   return { deleted: true };
 }
 
@@ -330,7 +347,6 @@ export async function uploadAiStudySource(ownerId: string, projectId: string, in
     throw new AiStudyError("学习搭子仅支持上传 PDF 文件。", 400, "AI_STUDY_UNSUPPORTED_FILE_TYPE");
   }
   await assertAiStudyProjectImportAllowed(ownerId);
-  const promptConfig = shouldStartParsing ? await getAiStudyPromptConfig() : null;
 
   const sourceId = randomUUID();
   const safeFileName = sanitizeFileName(input.fileName) || sourceFile.defaultFileName;
@@ -352,7 +368,6 @@ export async function uploadAiStudySource(ownerId: string, projectId: string, in
         },
         data: {
           sourceType: mergeUploadedSourceType(project.sourceType, sourceFile.sourceType),
-          aiPromptVersionId: promptConfig?.id,
           status: "processing"
         }
       });
@@ -402,8 +417,7 @@ export async function uploadAiStudySource(ownerId: string, projectId: string, in
               sourceType: sourceFile.sourceType,
               mimeType: sourceFile.mimeType,
               fileSizeBytes: input.size,
-              storagePath: uploaded.storagePath,
-              promptVersion: promptConfig?.version
+              storagePath: uploaded.storagePath
             }
           }
         })
@@ -473,8 +487,6 @@ export async function startAiStudyProjectGeneration(ownerId: string, projectId: 
   if (!source) {
     throw new AiStudyError("请先上传学习资料。", 400, "AI_STUDY_SOURCE_REQUIRED");
   }
-  const promptConfig = await getAiStudyPromptConfig();
-
   let task: AiStudyGenerationTask;
   try {
     task = await prisma.$transaction(async (tx) => {
@@ -486,7 +498,6 @@ export async function startAiStudyProjectGeneration(ownerId: string, projectId: 
           deletedAt: null
         },
         data: {
-          aiPromptVersionId: promptConfig.id,
           status: "processing"
         }
       });
@@ -518,8 +529,7 @@ export async function startAiStudyProjectGeneration(ownerId: string, projectId: 
             sourceType: source.sourceType,
             mimeType: sourceMimeType,
             fileSizeBytes: source.fileSizeBytes,
-            storagePath: source.storagePath,
-            promptVersion: promptConfig.version
+            storagePath: source.storagePath
           }
         }
       });
@@ -668,6 +678,7 @@ export async function getAiStudyNodeDetail(ownerId: string, nodeId: string) {
         }
       },
       cardJob: {select:{status:true,attempts:true,errorMessage:true,qualityFlags:true}},
+      overviewJob: {select:{status:true,attempts:true,errorMessage:true}},
       progress: {
         where: { userId: ownerId },
         take: 1,

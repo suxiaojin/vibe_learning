@@ -1544,7 +1544,11 @@ model AiStudyProject {
   partGroupId    String?
   partIndex      Int?
   partCount      Int?
+  canonicalProjectId String?
+  canonicalProject AiStudyProject? @relation("AiStudyCanonicalParts", fields: [canonicalProjectId], references: [id], onDelete: Cascade)
+  partProjects AiStudyProject[] @relation("AiStudyCanonicalParts")
   cardJobs       AiStudyCardJob[]
+  overviewJobs   AiStudyOverviewJob[]
   lastStudiedAt  DateTime?
   deletedAt      DateTime?
   createdAt      DateTime                @default(now())
@@ -1565,6 +1569,7 @@ model AiStudyProject {
   @@index([ownerId, status, updatedAt])
   @@index([ownerId, deletedAt, createdAt])
   @@index([partGroupId, partIndex])
+  @@index([canonicalProjectId])
   @@index([courseId])
   @@index([aiPromptVersionId])
   @@index([visibility, status, updatedAt])
@@ -1747,6 +1752,7 @@ model AiStudyNode {
   children       AiStudyNode[]        @relation("AiStudyNodeChildren")
   cards          AiStudyCard[]
   cardJob        AiStudyCardJob?
+  overviewJob    AiStudyOverviewJob?
   progress       AiStudyProgress[]
   chatMessages   AiStudyChatMessage[]
 
@@ -1845,6 +1851,29 @@ model AiStudyCardJob {
   @@index([status, priority, nextAttemptAt])
   @@index([projectId, status])
   @@map("ai_study_card_jobs")
+}
+
+model AiStudyOverviewJob {
+  id             String   @id @default(cuid())
+  nodeId         String   @unique
+  projectId      String
+  status         String   @default("pending")
+  priority       Int      @default(0)
+  attempts       Int      @default(0)
+  assignedAiServerId String?
+  assignedAiModel String?
+  leaseToken     String?
+  leaseExpiresAt DateTime?
+  nextAttemptAt  DateTime @default(now())
+  errorMessage   String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  project        AiStudyProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  node           AiStudyNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@index([status, priority, nextAttemptAt])
+  @@index([projectId, status])
+  @@map("ai_study_overview_jobs")
 }
 
 model AiStudyGenerationTask {

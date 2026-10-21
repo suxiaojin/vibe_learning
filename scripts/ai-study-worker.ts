@@ -1,4 +1,5 @@
 import { runCardJobCycle } from "../src/lib/ai-study-card-jobs";
+import { runAiStudyOverviewJobCycle } from "../src/lib/ai-study-overview-jobs";
 import { runAiStudyWorkerPoolCycle, type AiStudyWorkerPool } from "../src/lib/ai-study-worker-pools";
 import {
   ackAiStudyQueuedTask,
@@ -34,6 +35,17 @@ async function cardLoop() {
   }
 }
 
+async function overviewLoop(lane: number) {
+  while (!stopping) {
+    try {
+      if (await runAiStudyOverviewJobCycle()) continue;
+    } catch (error) {
+      console.error(`AI study overview lane=${lane} failed`, error);
+    }
+    await sleep(pollIntervalMs);
+  }
+}
+
 async function queueNotificationDrain() {
   if (!getAiStudyTaskQueueSettings().configured) return;
   // PostgreSQL is the durable work list and owns the per-pool capacity locks.
@@ -47,12 +59,13 @@ async function queueNotificationDrain() {
 }
 
 async function main() {
-  console.log("AI study worker started: MinerU parse=3, outline=3 (one per configured AI server), cards=on demand");
+  console.log("AI study worker started: MinerU parse=3, outline=3 (one per configured AI server), cards=on demand, overviews=3 background lanes");
   await Promise.all([
     ...Array.from({ length: 3 }, (_, index) => poolLoop("parse_source", index + 1)),
     ...Array.from({ length: 3 }, (_, index) => poolLoop("generate_outline", index + 1)),
     poolLoop("generate_cards", 1),
     cardLoop(),
+    ...Array.from({ length: 3 }, (_, index) => overviewLoop(index + 1)),
     queueNotificationDrain()
   ]);
 }

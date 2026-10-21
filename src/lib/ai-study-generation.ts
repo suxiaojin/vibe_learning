@@ -12,7 +12,6 @@ import { assertCompleteFourLevelOutline } from "@/lib/ai-study-outline-validatio
 import { chapterProtocol as curriculumProtocol, generateChapterCurriculum, type ChapterCheckpoint } from "@/lib/ai-study-chapter-curriculum";
 import { readCardManifest, refreshCardProject } from "@/lib/ai-study-card-jobs";
 import { buildDirectoryCard, AiStudyContentValidationError } from "@/lib/ai-study-grounded-card";
-import { getAiStudyPromptConfig } from "@/lib/ai-study-prompts";
 import { parsePdfWithMineru, type MineruContentBlock, type MineruParseResult } from "@/lib/ai-study-mineru";
 import { inspectAndSplitPdf } from "@/lib/ai-study-pdf-parts";
 import {
@@ -251,7 +250,7 @@ async function splitLargePdfIntoProjects(
     const claim = await tx.aiStudyProject.updateMany({
       where: { id: source.projectId, partIndex: null, deletedAt: null },
       data: {
-        title: partTitle(source.project.title, 1, split.ranges.length, split.ranges[0].startPage, split.ranges[0].endPage),
+        title: partTitle(source.project.title, 1, split.ranges.length),
         partGroupId: source.projectId,
         partIndex: 1,
         partCount: split.ranges.length
@@ -276,16 +275,16 @@ async function splitLargePdfIntoProjects(
       const project = await tx.aiStudyProject.create({
         data: {
           ownerId: source.project.ownerId,
-          title: partTitle(source.project.title, range.index, split.ranges.length, range.startPage, range.endPage),
+          title: partTitle(source.project.title, range.index, split.ranges.length),
           description: source.project.description,
           sourceType: source.project.sourceType,
           learningGoal: source.project.learningGoal,
           courseId: source.project.courseId,
-          aiPromptVersionId: source.project.aiPromptVersionId,
           status: "processing",
           partGroupId: source.projectId,
           partIndex: range.index,
-          partCount: split.ranges.length
+          partCount: split.ranges.length,
+          canonicalProjectId: source.projectId
         }
       });
       const childSource = await tx.aiStudySource.create({
@@ -320,10 +319,9 @@ async function splitLargePdfIntoProjects(
   return split.parts[0];
 }
 
-function partTitle(title: string, index: number, count: number, startPage: number, endPage: number) {
+function partTitle(title: string, index: number, count: number) {
   const prefix = `[Part.${index}/${count}] `;
-  const suffix = `（原文第${startPage}–${endPage}页）`;
-  return `${prefix}${title.slice(0, Math.max(1, 80 - prefix.length - suffix.length))}${suffix}`;
+  return `${prefix}${title.slice(0, Math.max(1, 80 - prefix.length))}`;
 }
 
 function partFileName(fileName: string | null, index: number, startPage: number, endPage: number) {
@@ -642,14 +640,12 @@ async function generateOutline(task: AiStudyGenerationTask, serverConfig?: Activ
 
   await updateAiStudyTaskStage(task, "generating_outline");
 
-  const promptConfig = await getAiStudyPromptConfig(project.aiPromptVersionId);
-  const promptVersion = promptConfig.version;
   const saved = asJsonRecord((await readAiStudyTaskOutputSummary(task.id)).curriculumCheckpoint);
   const curriculum = await generateChapterCurriculum({
     projectTitle: project.title, sources: sourceChunks, safetyMaxNodes: curriculumSafetyMaxNodes,
-    checkpoint: typeof saved.fingerprint === "string" && saved.promptVersion === promptVersion
+    checkpoint: typeof saved.fingerprint === "string"
       ? saved as ChapterCheckpoint : undefined,
-    saveCheckpoint: async (checkpoint) => { await mergeAiStudyTaskOutputSummary(task.id, { curriculumCheckpoint: { ...checkpoint, promptVersion } }); },
+    saveCheckpoint: async (checkpoint) => { await mergeAiStudyTaskOutputSummary(task.id, { curriculumCheckpoint: checkpoint }); },
     request: (request) => {
       const call = request;
       return requestValidatedJsonWithRetry({
@@ -670,7 +666,6 @@ async function generateOutline(task: AiStudyGenerationTask, serverConfig?: Activ
   await uploadAiStudyObject({ key: curriculumManifestKey, body: Buffer.from(JSON.stringify({ ...curriculum, nodeIds: Object.fromEntries(nodeIdByClientId) }), "utf8"), contentType: "application/json" });
   const finalOutputSummary = await buildFinalTaskOutputSummary(task.id, {
     nodeCount: preparedNodes.length,
-    promptVersion,
     outlineCheckpoint: null,
     curriculumCheckpoint: null,
     generationProtocol: curriculumProtocol,
@@ -718,7 +713,6 @@ async function generateOutline(task: AiStudyGenerationTask, serverConfig?: Activ
         stage: "waiting_for_card_generation",
         inputSummary: {
           nodeCount: preparedNodes.length,
-          promptVersion,
           outlineTaskId: task.id,
           generationProtocol: curriculumProtocol
         }
@@ -728,7 +722,6 @@ async function generateOutline(task: AiStudyGenerationTask, serverConfig?: Activ
     await tx.aiStudyProject.update({
       where: { id: project.id },
       data: {
-        aiPromptVersionId: project.aiPromptVersionId || promptConfig.id,
         status: "processing",
         learningReadyAt: new Date(),
         knowledgeCount: preparedNodes.length,
@@ -756,8 +749,9 @@ async function generateCards(task: AiStudyGenerationTask) {
     await tx.$queryRaw`SELECT id FROM ai_study_projects WHERE id=${project.id} FOR UPDATE`;
     for(const n of manifest.nodes.filter(n=>n.depth<3)){
       const id=manifest.nodeIds![n.clientId];
-      if(!await tx.aiStudyCard.findFirst({where:{nodeId:id},select:{id:true}}))await tx.aiStudyCard.create({data:{...buildDirectoryCard(n,manifest.nodes.filter(c=>c.parentClientId===n.clientId)),projectId:project.id,nodeId:id,modelName:"deterministic-directory",promptVersion:manifest.protocol,aiPromptVersionId:project.aiPromptVersionId}});
+      if(!await tx.aiStudyCard.findFirst({where:{nodeId:id},select:{id:true}}))await tx.aiStudyCard.create({data:{...buildDirectoryCard(n,manifest.nodes.filter(c=>c.parentClientId===n.clientId)),projectId:project.id,nodeId:id,modelName:"deterministic-directory",promptVersion:manifest.protocol}});
     }
+    await tx.aiStudyOverviewJob.createMany({skipDuplicates:true,data:manifest.nodes.filter(n=>n.depth===1).map(n=>({nodeId:manifest.nodeIds![n.clientId],projectId:project.id}))});
     await tx.aiStudyCardJob.createMany({skipDuplicates:true,data:manifest.nodes.filter(n=>n.depth===3).map(n=>({nodeId:manifest.nodeIds![n.clientId],projectId:project.id,outlineTaskId:outline.id,manifestKey:key,protocol:manifest.protocol,status:project.nodes.find(node=>node.id===manifest.nodeIds![n.clientId])?.cards.length?"succeeded":"unrequested",priority:0}))});
     await tx.aiStudyProject.update({where:{id:project.id},data:{learningReadyAt:project.learningReadyAt??new Date()}});
     await tx.aiStudyGenerationTask.update({where:{id:task.id},data:{status:"succeeded",stage:"cards_scheduled",finishedAt:new Date(),outputSummary:{generationProtocol:manifest.protocol,scheduledCardCount:manifest.topics.length}}});
