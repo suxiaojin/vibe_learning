@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { buildOverviewGroups, overviewMessages, parseOverview, selectOverviewSources, type OverviewNode } from "../src/lib/ai-study-overview";
 import { defaultAiStudyOverviewPromptTemplates, validateAiStudyOverviewPromptTemplates } from "../src/lib/ai-study-overview-prompt-template";
+import { defaultAiStudyThirdLevelOverviewPromptTemplates } from "../src/lib/ai-study-overview-prompt-template";
+import { chooseAiStudyOverviewServer } from "../src/lib/ai-study-overview-jobs";
+import { buildAiStudyOverviewPromptSourceVersion } from "../src/lib/ai-study-overview-prompts";
+import type { ActiveAiServerConfig } from "../src/lib/ai-server-settings";
 
 const moduleNode: OverviewNode = { id: "module", parentId: "root", title: "会计对象、要素与等式", depth: 1, sourceChunkIds: [] };
 const descendants: OverviewNode[] = [
@@ -18,6 +22,9 @@ const groups = buildOverviewGroups(selected, [
 assert.equal(groups.length, 2);
 assert.equal(groups[1].topics[0], "资产、负债与所有者权益");
 assert.equal(validateAiStudyOverviewPromptTemplates(defaultAiStudyOverviewPromptTemplates), null);
+assert.equal(validateAiStudyOverviewPromptTemplates(defaultAiStudyThirdLevelOverviewPromptTemplates), null);
+assert.notEqual(defaultAiStudyOverviewPromptTemplates["overview.system"], defaultAiStudyThirdLevelOverviewPromptTemplates["overview.system"]);
+assert.notEqual(buildAiStudyOverviewPromptSourceVersion(2), buildAiStudyOverviewPromptSourceVersion(2, "admin", 2));
 assert.match(validateAiStudyOverviewPromptTemplates({ ...defaultAiStudyOverviewPromptTemplates, "overview.user": "没有上下文" }) || "", /context/);
 assert.match(overviewMessages("基础会计", moduleNode.title, groups, defaultAiStudyOverviewPromptTemplates)[1].content, /资金投入/);
 const customized = overviewMessages("基础会计", moduleNode.title, groups, {
@@ -30,4 +37,23 @@ const good = "本节从企业资金投入、运用和退出所形成的资金运
 assert.equal(parseOverview(JSON.stringify({ overview: good }), groups), good);
 assert.throws(() => parseOverview(JSON.stringify({ overview: "本部分包含：会计对象与资金运动、反映财务状况的要素。请选择下层知识点学习。" }), groups));
 assert.throws(() => parseOverview(JSON.stringify({ overview: `${good} 2028年必须使用新等式。` }), groups));
+
+const thirdLevel = descendants[0];
+const thirdSelected = selectOverviewSources(thirdLevel, descendants);
+assert.deepEqual(thirdSelected.sourceIds, ["s1"]);
+const thirdGroups = buildOverviewGroups(thirdSelected, [
+  { id: "s1", pageStart: 4, content: "会计对象是企业的资金运动，包括资金投入、运用和退出。" }
+]);
+assert.deepEqual(thirdGroups.map((group) => group.topics), [["会计对象与资金运动"]]);
+const thirdMessages = overviewMessages("基础会计", thirdLevel.title, thirdGroups, defaultAiStudyThirdLevelOverviewPromptTemplates, moduleNode.title);
+assert.match(thirdMessages[1].content, /parentModule/);
+assert.match(thirdMessages[1].content, /资金投入/);
+assert.throws(() => selectOverviewSources({ ...thirdLevel, id: "empty" }, descendants), /缺少下层知识点/);
+
+const servers = ["a", "b", "c"].map((id): ActiveAiServerConfig => ({ id, mode: "custom", name: id, baseUrl: "https://example.com/v1", apiKey: "", model: id }));
+const running = [{ assignedAiServerId: "a", node: { depth: 1 } }, { assignedAiServerId: "b", node: { depth: 2 } }];
+assert.equal(chooseAiStudyOverviewServer(servers, running, 2)?.id, "c");
+assert.equal(chooseAiStudyOverviewServer(servers.slice(0, 2), running, 2), null);
+assert.equal(chooseAiStudyOverviewServer(servers, [...running, { assignedAiServerId: "c", node: { depth: 2 } }], 2), null);
+assert.equal(chooseAiStudyOverviewServer(servers, [{ assignedAiServerId: null, node: { depth: 1 } }], 2), null);
 console.log("ai-study-overview tests passed");

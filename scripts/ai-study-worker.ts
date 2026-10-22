@@ -35,12 +35,12 @@ async function cardLoop() {
   }
 }
 
-async function overviewLoop(lane: number) {
+async function overviewLoop(depth: 1 | 2, lane: number) {
   while (!stopping) {
     try {
-      if (await runAiStudyOverviewJobCycle()) continue;
+      if (await runAiStudyOverviewJobCycle(depth)) continue;
     } catch (error) {
-      console.error(`AI study overview lane=${lane} failed`, error);
+      console.error(`AI study overview depth=${depth} lane=${lane} failed`, error);
     }
     await sleep(pollIntervalMs);
   }
@@ -59,13 +59,14 @@ async function queueNotificationDrain() {
 }
 
 async function main() {
-  console.log("AI study worker started: MinerU parse=3, outline=3 (one per configured AI server), cards=on demand, overviews=3 background lanes");
+  console.log("AI study worker started: MinerU parse=3, outline=3 (one per configured AI server), cards=on demand, level 2 and 3 overviews=3 lanes each with shared server occupancy");
   await Promise.all([
     ...Array.from({ length: 3 }, (_, index) => poolLoop("parse_source", index + 1)),
     ...Array.from({ length: 3 }, (_, index) => poolLoop("generate_outline", index + 1)),
     poolLoop("generate_cards", 1),
     cardLoop(),
-    ...Array.from({ length: 3 }, (_, index) => overviewLoop(index + 1)),
+    ...Array.from({ length: 3 }, (_, index) => overviewLoop(1, index + 1)),
+    ...Array.from({ length: 3 }, (_, index) => overviewLoop(2, index + 1)),
     queueNotificationDrain()
   ]);
 }

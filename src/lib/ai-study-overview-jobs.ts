@@ -7,11 +7,24 @@ import { askQwenDetailed } from "./qwen";
 import { getAiServerConfigsForModule, type ActiveAiServerConfig } from "./ai-server-settings";
 import { buildOverviewGroups, overviewMessages, overviewSchema, parseOverview, selectOverviewSources } from "./ai-study-overview";
 import { getAiStudyOverviewPromptConfig } from "./ai-study-overview-prompts";
+import type { AiStudyOverviewDepth } from "./ai-study-overview-prompts";
 
 const leaseMs = 180_000;
 const maxAttempts = 2;
 const capacity = 3;
 const timeoutMs = Math.max(5_000, Math.min(120_000, Number(process.env.AI_STUDY_OVERVIEW_TIMEOUT_MS) || 90_000));
+
+export function chooseAiStudyOverviewServer(
+  serverConfigs: ActiveAiServerConfig[],
+  running: { assignedAiServerId: string | null; node: { depth: number } }[],
+  depth: AiStudyOverviewDepth
+) {
+  if (running.filter((item) => item.node.depth === depth).length >= Math.min(capacity, serverConfigs.length)) return null;
+  // A job claimed by an earlier worker version has no assignment; wait for it to finish.
+  if (running.some((item) => !item.assignedAiServerId)) return null;
+  const occupied = new Set(running.map((item) => item.assignedAiServerId));
+  return serverConfigs.find((config) => !occupied.has(config.id)) || null;
+}
 
 export class AiStudyOverviewRequestError extends Error {
   constructor(message: string, readonly status: number, readonly code: string) { super(message); }
@@ -19,13 +32,13 @@ export class AiStudyOverviewRequestError extends Error {
 
 export async function getAiStudyOverviewStatus(viewerId: string, nodeId: string) {
   const node = await prisma.aiStudyNode.findFirst({
-    where: { id: nodeId, depth: 1, project: accessibleAiStudyProjectWhere(viewerId) },
+    where: { id: nodeId, depth: { in: [1, 2] }, project: accessibleAiStudyProjectWhere(viewerId) },
     select: {
       cards: { take: 1, select: { modelName: true } },
       overviewJob: { select: { status: true, attempts: true, errorMessage: true } }
     }
   });
-  if (!node) throw new AiStudyOverviewRequestError("无权查看该二层节点。", 403, "FORBIDDEN");
+  if (!node) throw new AiStudyOverviewRequestError("无权查看该概述节点。", 403, "FORBIDDEN");
   const generated = Boolean(node.cards[0] && node.cards[0].modelName !== "deterministic-directory");
   return {
     job: node.overviewJob ?? { status: generated ? "succeeded" : "unrequested", attempts: 0, errorMessage: null },
@@ -35,12 +48,12 @@ export async function getAiStudyOverviewStatus(viewerId: string, nodeId: string)
 
 export async function requestAiStudyOverview(viewerId: string, nodeId: string, retry: boolean) {
   const node = await prisma.aiStudyNode.findFirst({
-    where: { id: nodeId, depth: 1, project: accessibleAiStudyProjectWhere(viewerId) },
+    where: { id: nodeId, depth: { in: [1, 2] }, project: accessibleAiStudyProjectWhere(viewerId) },
     select: { projectId: true, cards: { take: 1, select: { modelName: true } } }
   });
-  if (!node) throw new AiStudyOverviewRequestError("无权操作该二层节点。", 403, "FORBIDDEN");
+  if (!node) throw new AiStudyOverviewRequestError("无权操作该概述节点。", 403, "FORBIDDEN");
   const card = node.cards[0];
-  if (!card) throw new AiStudyOverviewRequestError("二层目录卡片尚未准备好。", 409, "OVERVIEW_NOT_READY");
+  if (!card) throw new AiStudyOverviewRequestError("目录卡片尚未准备好。", 409, "OVERVIEW_NOT_READY");
   if (card.modelName !== "deterministic-directory") return { status: "succeeded" };
 
   if (retry) {
@@ -61,16 +74,16 @@ export async function requestAiStudyOverview(viewerId: string, nodeId: string, r
   return prisma.aiStudyOverviewJob.findUniqueOrThrow({ where: { nodeId }, select: { status: true, attempts: true, errorMessage: true } });
 }
 
-export async function runAiStudyOverviewJobCycle() {
+export async function runAiStudyOverviewJobCycle(depth: AiStudyOverviewDepth = 1) {
   const now = new Date();
   const availableWork = await prisma.aiStudyOverviewJob.count({
-    where: { OR: [
+    where: { node: { depth }, OR: [
       { status: "pending", nextAttemptAt: { lte: now } },
       { status: "running", leaseExpiresAt: { lt: now } }
     ] }
   });
   if (!availableWork) return false;
-  const serverConfigs = await getAiServerConfigsForModule("ai_study_overview");
+  const serverConfigs = await getAiServerConfigsForModule(depth === 1 ? "ai_study_overview" : "ai_study_level3_overview");
   const claimed = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(71883012)`;
     const now = new Date();
@@ -84,16 +97,12 @@ export async function runAiStudyOverviewJobCycle() {
     });
     const running = await tx.aiStudyOverviewJob.findMany({
       where: { status: "running", leaseExpiresAt: { gte: now } },
-      select: { assignedAiServerId: true }
+      select: { assignedAiServerId: true, node: { select: { depth: true } } }
     });
-    if (running.length >= Math.min(capacity, serverConfigs.length)) return null;
-    // A job claimed by the previous worker version has no assignment; let it finish first.
-    if (running.some((item) => !item.assignedAiServerId)) return null;
-    const occupied = new Set(running.map((item) => item.assignedAiServerId));
-    const serverConfig = serverConfigs.find((config) => !occupied.has(config.id));
+    const serverConfig = chooseAiStudyOverviewServer(serverConfigs, running, depth);
     if (!serverConfig) return null;
     const pending = await tx.aiStudyOverviewJob.findFirst({
-      where: { status: "pending", nextAttemptAt: { lte: now }, project: { deletedAt: null, status: { not: "archived" } } },
+      where: { status: "pending", nextAttemptAt: { lte: now }, node: { depth }, project: { deletedAt: null, status: { not: "archived" } } },
       orderBy: [{ priority: "desc" }, { createdAt: "asc" }, { id: "asc" }]
     });
     if (!pending) return null;
@@ -130,19 +139,20 @@ async function runOverviewJob(job: AiStudyOverviewJob, serverConfig: ActiveAiSer
       where: { id: job.projectId, deletedAt: null }, select: { title: true }
     });
     const node = await prisma.aiStudyNode.findFirstOrThrow({
-      where: { id: job.nodeId, projectId: job.projectId, depth: 1 },
-      select: { id: true, parentId: true, title: true, depth: true, sourceChunkIds: true }
+      where: { id: job.nodeId, projectId: job.projectId, depth: { in: [1, 2] } },
+      select: { id: true, parentId: true, title: true, depth: true, sourceChunkIds: true, parent: { select: { title: true } } }
     });
+    if (node.depth !== 1 && node.depth !== 2) throw new Error("概述任务节点层级无效。");
     const descendants = await prisma.aiStudyNode.findMany({
-      where: { projectId: job.projectId, depth: { in: [2, 3] } },
+      where: { projectId: job.projectId, depth: { in: node.depth === 1 ? [2, 3] : [3] } },
       orderBy: [{ depth: "asc" }, { sortOrder: "asc" }],
       select: { id: true, parentId: true, title: true, depth: true, sourceChunkIds: true }
     });
     const selected = selectOverviewSources(node, descendants);
     const sources = await loadAiStudySourceChunksWithContent(job.projectId, { ids: selected.sourceIds });
     const groups = buildOverviewGroups(selected, sources);
-    const prompt = await getAiStudyOverviewPromptConfig();
-    const response = await askQwenDetailed(overviewMessages(project.title, node.title, groups, prompt.templates), {
+    const prompt = await getAiStudyOverviewPromptConfig(node.depth);
+    const response = await askQwenDetailed(overviewMessages(project.title, node.title, groups, prompt.templates, node.depth === 2 ? node.parent?.title : undefined), {
       serverConfig, temperature: 0.2, timeoutMs, maxCompletionTokens: 600,
       enableThinking: false, jsonSchema: { name: "study_module_overview", schema: overviewSchema }
     });
@@ -159,7 +169,7 @@ async function runOverviewJob(job: AiStudyOverviewJob, serverConfig: ActiveAiSer
         where: { nodeId: job.nodeId, projectId: job.projectId, modelName: "deterministic-directory" },
         data: { overview, modelName: response.serverConfig.model, promptVersion: prompt.sourceVersion, aiPromptVersionId: prompt.id }
       });
-      if (!saved.count) throw new Error("二层目录卡片已更新或不存在。");
+      if (!saved.count) throw new Error("目录卡片已更新或不存在。");
     });
   } catch (error) {
     const message = (error instanceof Error ? error.message : String(error)).slice(0, 1500);

@@ -66,7 +66,7 @@ export async function AdminAiStudyPromptSettings({ promptVersionId }: { promptVe
           />
           <div className="sticky bottom-0 z-10 mt-4 flex justify-end border border-slate-200 bg-white/95 p-4 shadow-lg backdrop-blur">
             <button className="primary-button min-w-44 justify-center rounded-none" type="submit">
-              <Save size={16} />保存草稿 v{editorVersion}
+              <Save size={16} />保存此组草稿 v{editorVersion}
             </button>
           </div>
         </form>
@@ -77,7 +77,7 @@ export async function AdminAiStudyPromptSettings({ promptVersionId }: { promptVe
           <h2 className="text-base font-black text-ink">生效规则</h2>
           <div className="mt-3 space-y-2 text-xs font-semibold leading-5 text-slate-600">
             <p>问问搭子从发布后的下一条提问开始使用新版。</p>
-            <p>二层内容概述使用独立 Prompt；知识目录和第四层 AI 详解不读取此页的 Prompt。</p>
+            <p>二、三层内容概述使用各自独立的 Prompt；知识目录和第四层 AI 详解不读取此组配置。</p>
             <p>已有聊天记录不会改写；历史版本仍可查看和回滚。</p>
           </div>
         </section>
@@ -103,7 +103,7 @@ export async function AdminAiStudyPromptSettings({ promptVersionId }: { promptVe
               const selected = version.id === selectedPublishedVersion?.id;
               return (
                 <div className={cn("flex items-start gap-2 p-3", selected ? "bg-blue-50 ring-1 ring-inset ring-blue-300" : "hover:bg-slate-50")} key={version.id}>
-                  <Link className="min-w-0 flex-1" href={`/admin/prompt-settings/study-buddy?promptVersionId=${version.id}`}>
+                  <Link className="min-w-0 flex-1" href={`/admin/prompt-settings/study-buddy?section=chat&promptVersionId=${version.id}`}>
                     <p className="text-xs font-black text-ink">
                       v{version.version}
                       {active ? <span className="ml-1 bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">当前线上</span> : null}

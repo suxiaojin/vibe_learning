@@ -39,16 +39,19 @@ function evenSample<T>(items: T[], limit: number): T[] {
 }
 
 export function selectOverviewSources(node: OverviewNode, descendants: OverviewNode[]) {
-  if (node.depth !== 1) throw new Error("仅二层节点可以生成内容概述。");
-  const groups = descendants.filter((item) => item.depth === 2 && item.parentId === node.id);
-  if (!groups.length) throw new Error("二层节点缺少下层主题。");
+  if (node.depth !== 1 && node.depth !== 2) throw new Error("仅二、三层节点可以生成内容概述。");
+  const groups = node.depth === 1
+    ? descendants.filter((item) => item.depth === 2 && item.parentId === node.id)
+    : [node];
+  if (node.depth === 1 && !groups.length) throw new Error("二层节点缺少下层主题。");
   const sourceIds = new Set<string>();
   const leavesByGroup = groups.map((group) => ({
     group,
     leaves: descendants.filter((item) => item.depth === 3 && item.parentId === group.id),
     sampledIds: [] as string[]
   }));
-  const perGroup = Math.max(1, Math.floor(32 / groups.length));
+  if (node.depth === 2 && !leavesByGroup[0].leaves.length) throw new Error("三层节点缺少下层知识点。");
+  const perGroup = node.depth === 2 ? 16 : Math.max(1, Math.floor(32 / groups.length));
   for (const entry of leavesByGroup) {
     const selected = evenSample(entry.leaves.length ? entry.leaves : [entry.group], perGroup);
     for (const leaf of selected) {
@@ -59,7 +62,7 @@ export function selectOverviewSources(node: OverviewNode, descendants: OverviewN
       }
     }
   }
-  if (!sourceIds.size) throw new Error("二层节点缺少可引用的原文片段。");
+  if (!sourceIds.size) throw new Error("概述节点缺少可引用的原文片段。");
   return { leavesByGroup, sourceIds: [...sourceIds] };
 }
 
@@ -86,9 +89,9 @@ export function buildOverviewGroups(
   });
 }
 
-export function overviewMessages(projectTitle: string, nodeTitle: string, groups: OverviewGroup[], templates: AiStudyOverviewPromptTemplates): ChatMessage[] {
+export function overviewMessages(projectTitle: string, nodeTitle: string, groups: OverviewGroup[], templates: AiStudyOverviewPromptTemplates, parentTitle?: string): ChatMessage[] {
   if (!groups.some((group) => group.evidence.length)) throw new Error("概述缺少原文依据。");
-  const context = JSON.stringify({ project: projectTitle, module: nodeTitle, groups });
+  const context = JSON.stringify({ project: projectTitle, module: nodeTitle, ...(parentTitle ? { parentModule: parentTitle } : {}), groups });
   return [
     { role: "system", content: templates["overview.system"] },
     { role: "user", content: renderAiStudyOverviewPrompt(templates["overview.user"], context) }
@@ -97,7 +100,7 @@ export function overviewMessages(projectTitle: string, nodeTitle: string, groups
 
 export function parseOverview(raw: string, groups: OverviewGroup[]): string {
   const { overview } = z.object({ overview: z.string().trim().min(40).max(400) }).strict().parse(JSON.parse(raw));
-  if (/本部分包含|请选择下层知识点|请选择下层/.test(overview) || /(?:^|\n)\s*(?:[-•]|\d+[.、])/.test(overview)) {
+  if (/本部分包含|本节包含|请选择下层知识点|请选择下层/.test(overview) || /(?:^|\n)\s*(?:[-•]|\d+[.、])/.test(overview)) {
     throw new Error("概述仍是目录罗列，请改写为连贯导读。");
   }
   const evidence = groups.flatMap((group) => [group.title, ...group.topics, ...group.evidence.map((item) => item.text)]).join("\n");

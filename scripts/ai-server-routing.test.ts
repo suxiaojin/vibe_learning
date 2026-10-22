@@ -33,6 +33,7 @@ async function main() {
     "ai_study_generation",
     "ai_study_detail",
     "ai_study_overview",
+    "ai_study_level3_overview",
     "ai_study_chat",
     "question_bank_ai_tagging",
     "question_bank_ai_doubt_draft",

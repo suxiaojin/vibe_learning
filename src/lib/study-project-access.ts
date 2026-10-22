@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { ProjectDiamondPriceKind } from "@/lib/project-diamond-price";
+import { originalAiStudyProjectTitle } from "@/lib/ai-study-public-catalog";
 
 type AccessClient = Pick<Prisma.TransactionClient, "aiStudyProject" | "officialStudyMaterial" | "studentProfile">;
 
@@ -98,6 +99,7 @@ export async function getStudyProjectOffer(
     purchases: { where: { userId }, select: { id: true }, take: 1 }
   } as const;
   let purchaseId = id;
+  let unifiedAiProject = false;
   if (kind === "ai") {
     const requested = await db.aiStudyProject.findFirst({
       where: {
@@ -111,10 +113,15 @@ export async function getStudyProjectOffer(
           ] }
         ]
       },
-      select: { id: true, canonicalProjectId: true }
+      select: {
+        id: true,
+        canonicalProjectId: true,
+        partProjects: { where: { deletedAt: null }, select: { id: true }, take: 1 }
+      }
     });
     if (!requested) throw new StudyProjectAccessError();
     purchaseId = requested.canonicalProjectId || id;
+    unifiedAiProject = Boolean(requested.canonicalProjectId || requested.partProjects?.length);
   }
   const resource = kind === "ai"
     ? await db.aiStudyProject.findFirst({
@@ -143,9 +150,7 @@ export async function getStudyProjectOffer(
   return {
     kind,
     id: resource.id,
-    title: kind === "ai" && purchaseId !== id
-      ? resource.title.replace(/^\[Part\.\d+\/\d+\]\s*/i, "").replace(/\s*[（(]原文第\d+\s*[-–—]\s*\d+页[）)]\s*$/, "")
-      : resource.title,
+    title: kind === "ai" && unifiedAiProject ? originalAiStudyProjectTitle(resource.title) : resource.title,
     diamondPrice: resource.diamondPrice,
     purchased,
     owned,

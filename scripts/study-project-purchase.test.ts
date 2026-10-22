@@ -9,6 +9,7 @@ import { adminProjectPurchasersSchema, listAdminProjectPurchasers } from "../src
 
 type Row = Record<string, unknown>;
 type State = {
+  title: string;
   price: number;
   balance: number | null;
   ownerId: string;
@@ -45,6 +46,7 @@ function matches(row: Row, where: Row): boolean {
 
 function fixture(overrides: Partial<State> = {}, options: { failPurchase?: boolean; conflicts?: number } = {}) {
   let state: State = {
+    title: "基础会计学",
     price: 50, balance: 100, ownerId: "creator", visibility: "public", status: "ready",
     deletedAt: null, canonicalProjectId: null, learningReadyAt: null, tasks: [], partProjects: [], majorId: null, publicSubjectId: null, profile: null, purchases: [], ledger: [], ...overrides
   };
@@ -62,12 +64,12 @@ function fixture(overrides: Partial<State> = {}, options: { failPurchase?: boole
       const resourceId = kind === "ai" && draft.canonicalProjectId && typeof where.id === "string"
         ? where.id : "resource";
       const row = {
-        id: resourceId, title: "基础会计学", diamondPrice: draft.price,
+        id: resourceId, title: draft.title, diamondPrice: draft.price,
         ...(kind === "ai" ? { ownerId: draft.ownerId } : {}),
         visibility: draft.visibility, status: draft.status, fileStatus: draft.status, deletedAt: draft.deletedAt,
         canonicalProjectId: resourceId !== draft.canonicalProjectId ? draft.canonicalProjectId : null,
         learningReadyAt: draft.learningReadyAt, tasks: draft.tasks,
-        partProjects: resourceId === draft.canonicalProjectId ? draft.partProjects : [],
+        partProjects: !draft.canonicalProjectId || resourceId === draft.canonicalProjectId ? draft.partProjects : [],
         majorId: draft.majorId, publicSubjectId: draft.publicSubjectId,
         purchases: draft.purchases.filter((purchase) => purchase.kind === kind && purchase.userId === "student" && purchase.resourceId === resourceId)
       };
@@ -149,6 +151,21 @@ test("new split parts share one canonical purchase while keeping separate detail
   assert.equal(otherPart.offer.href, "/study-buddy/part-3");
   assert.equal(db.state().purchases.length, 1);
   assert.equal(db.state().ledger.length, 1);
+});
+
+test("a unified public book uses its original title for the offer and ledger", async () => {
+  const db = fixture({ title: "[Part.1/4] 薛兆丰经济学", partProjects: [{ deletedAt: null }] });
+  const result = await purchaseStudyProject("student", ai);
+  assert.equal(result.offer.title, "薛兆丰经济学");
+  assert.equal(db.state().ledger[0].note, "学习搭子：购买《薛兆丰经济学》");
+  assert.equal(db.state().purchases[0].aiProjectId, "resource");
+});
+
+test("legacy independent parts retain their part titles and purchases", async () => {
+  const db = fixture({ title: "[Part.1/2] 旧资料" });
+  const result = await purchaseStudyProject("student", ai);
+  assert.equal(result.offer.title, "[Part.1/2] 旧资料");
+  assert.equal(db.state().purchases[0].aiProjectId, "resource");
 });
 
 test("paid requests without explicit confirmation never debit or create records", async () => {

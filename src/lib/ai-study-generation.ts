@@ -751,7 +751,7 @@ async function generateCards(task: AiStudyGenerationTask) {
       const id=manifest.nodeIds![n.clientId];
       if(!await tx.aiStudyCard.findFirst({where:{nodeId:id},select:{id:true}}))await tx.aiStudyCard.create({data:{...buildDirectoryCard(n,manifest.nodes.filter(c=>c.parentClientId===n.clientId)),projectId:project.id,nodeId:id,modelName:"deterministic-directory",promptVersion:manifest.protocol}});
     }
-    await tx.aiStudyOverviewJob.createMany({skipDuplicates:true,data:manifest.nodes.filter(n=>n.depth===1).map(n=>({nodeId:manifest.nodeIds![n.clientId],projectId:project.id}))});
+    await tx.aiStudyOverviewJob.createMany({skipDuplicates:true,data:manifest.nodes.filter(n=>n.depth===1||n.depth===2).map(n=>({nodeId:manifest.nodeIds![n.clientId],projectId:project.id}))});
     await tx.aiStudyCardJob.createMany({skipDuplicates:true,data:manifest.nodes.filter(n=>n.depth===3).map(n=>({nodeId:manifest.nodeIds![n.clientId],projectId:project.id,outlineTaskId:outline.id,manifestKey:key,protocol:manifest.protocol,status:project.nodes.find(node=>node.id===manifest.nodeIds![n.clientId])?.cards.length?"succeeded":"unrequested",priority:0}))});
     await tx.aiStudyProject.update({where:{id:project.id},data:{learningReadyAt:project.learningReadyAt??new Date()}});
     await tx.aiStudyGenerationTask.update({where:{id:task.id},data:{status:"succeeded",stage:"cards_scheduled",finishedAt:new Date(),outputSummary:{generationProtocol:manifest.protocol,scheduledCardCount:manifest.topics.length}}});

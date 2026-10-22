@@ -76,7 +76,10 @@ export function KnowledgeMapView({
 }: KnowledgeMapViewProps) {
   const router = useRouter();
   const [mapNodes, setMapNodes] = useState(nodes);
-  const [collapsedNodeIds, setCollapsedNodeIds] = useState<Set<string>>(() => new Set(getCollapsibleNodeIds(nodes)));
+  const [collapsedNodeIds, setCollapsedNodeIds] = useState<Set<string>>(() => {
+    const visiblePath = new Set(getAncestorNodeIds(nodes, selectedNodeId));
+    return new Set(getCollapsibleNodeIds(nodes).filter((id) => !visiblePath.has(id)));
+  });
   const [editingNode, setEditingNode] = useState<EditingNode | null>(null);
   const [editingError, setEditingError] = useState("");
   const [savingNodeId, setSavingNodeId] = useState<string | null>(null);
@@ -102,6 +105,20 @@ export function KnowledgeMapView({
   useEffect(() => {
     setMapNodes(nodes);
   }, [nodes]);
+
+  useEffect(() => {
+    const ancestorIds = getAncestorNodeIds(nodes, selectedNodeId);
+    setCollapsedNodeIds((previous) => {
+      if (!ancestorIds.some((id) => previous.has(id))) {
+        return previous;
+      }
+      const next = new Set(previous);
+      for (const id of ancestorIds) {
+        next.delete(id);
+      }
+      return next;
+    });
+  }, [nodes, selectedNodeId]);
 
   useEffect(() => {
     return () => clearNodeClickTimer(nodeClickTimerRef);
@@ -1154,6 +1171,26 @@ function getCollapsibleNodeIds(nodes: KnowledgeMapNode[]) {
     walk(node);
   }
   return ids;
+}
+
+function getAncestorNodeIds(nodes: KnowledgeMapNode[], selectedNodeId: string) {
+  const parentById = new globalThis.Map<string, string | null>();
+  function walk(node: KnowledgeMapNode) {
+    parentById.set(node.id, node.parentId);
+    for (const child of node.children) {
+      walk(child);
+    }
+  }
+  for (const node of nodes) {
+    walk(node);
+  }
+  const ancestors: string[] = [];
+  let parentId = parentById.get(selectedNodeId);
+  while (parentId) {
+    ancestors.push(parentId);
+    parentId = parentById.get(parentId);
+  }
+  return ancestors;
 }
 
 function isMapViewMode(value: unknown): value is MapViewMode {

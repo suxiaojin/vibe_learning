@@ -116,7 +116,10 @@ async function main(){
     "generic level-three placeholders must be rejected"
   );
   const messages=chapterCardMessages("会计",c.topics[0],c.units);assert.equal(messages.length,2);assert(!JSON.stringify(messages).includes("旧JSON"));
-  const card=parseChapterCard(JSON.stringify({explanation:"资产是企业控制、能够带来经济利益的资源。案例分录借记资产3,000元，具体适用情境需结合资料理解。"}),c.topics[0],c.units);assert(card.card.explanation.includes("本卡原文依据"));
+  const detail="资产是企业控制、能够带来经济利益的资源。案例分录借记资产3,000元，具体适用情境需结合资料理解。";
+  const card=parseChapterCard(JSON.stringify({explanation:detail}),c.topics[0],c.units);
+  assert.equal(card.card.overview,"");
+  assert.equal(card.card.explanation,detail,"fourth-level detail must not append source quotations");
   assert.throws(()=>parseChapterCard('{"explanation":',c.topics[0],c.units));
   assert.equal(retryCardPolicy(1,"transport").status,"pending");assert.equal(retryCardPolicy(2,"content").status,"failed");
   assert.equal(cardAvailability({unrequested:1,pending:0,running:0,succeeded:99,failed:0,paused:0}).complete,false,"unrequested detail cannot make a project publishable");

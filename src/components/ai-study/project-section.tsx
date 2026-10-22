@@ -42,18 +42,20 @@ type AiStudyProjectSectionProps = {
   loadMoreStep?: number;
 };
 
+type ProjectFilter = { kind: "all" } | { kind: "purchased" } | { kind: "tag"; key: string };
+
 const initialProjectCount = 10;
 
 export function AiStudyProjectSection({ title, projects, emptyText, enableTagFilter = false, loadMoreStep }: AiStudyProjectSectionProps) {
-  const [activeTag, setActiveTag] = useState("");
+  const [activeFilter, setActiveFilter] = useState<ProjectFilter>({ kind: "all" });
   const [visibleCount, setVisibleCount] = useState(initialProjectCount);
   const tagFilters = enableTagFilter ? buildTagFilters(projects) : [];
-  const filteredProjects = filterProjectsByTag(projects, activeTag);
+  const filteredProjects = enableTagFilter ? filterPublicProjects(projects, activeFilter) : projects;
   const visibleProjects = filteredProjects.slice(0, visibleCount);
   const hasMore = filteredProjects.length > visibleCount;
 
-  function selectTag(tag: string) {
-    setActiveTag(tag);
+  function selectFilter(filter: ProjectFilter) {
+    setActiveFilter(filter);
     setVisibleCount(initialProjectCount);
   }
 
@@ -63,19 +65,27 @@ export function AiStudyProjectSection({ title, projects, emptyText, enableTagFil
       {enableTagFilter ? (
         <nav aria-label="公开项目 Tag" className="mt-4 flex gap-8 overflow-x-auto pb-1">
           <button
-            aria-pressed={!activeTag}
-            className={`relative shrink-0 pb-3 text-[14px] transition ${!activeTag ? "font-semibold text-[#202939] after:absolute after:bottom-0 after:left-1/2 after:h-0.5 after:w-4 after:-translate-x-1/2 after:bg-[#202939]" : "font-normal text-[#98a2b3] hover:text-[#475467]"}`}
-            onClick={() => selectTag("")}
+            aria-pressed={activeFilter.kind === "all"}
+            className={`relative shrink-0 pb-3 text-[14px] transition ${activeFilter.kind === "all" ? "font-semibold text-[#202939] after:absolute after:bottom-0 after:left-1/2 after:h-0.5 after:w-4 after:-translate-x-1/2 after:bg-[#202939]" : "font-normal text-[#98a2b3] hover:text-[#475467]"}`}
+            onClick={() => selectFilter({ kind: "all" })}
             type="button"
           >
             全部
           </button>
+          <button
+            aria-pressed={activeFilter.kind === "purchased"}
+            className={`relative shrink-0 pb-3 text-[14px] transition ${activeFilter.kind === "purchased" ? "font-semibold text-[#202939] after:absolute after:bottom-0 after:left-1/2 after:h-0.5 after:w-4 after:-translate-x-1/2 after:bg-[#202939]" : "font-normal text-[#98a2b3] hover:text-[#475467]"}`}
+            onClick={() => selectFilter({ kind: "purchased" })}
+            type="button"
+          >
+            已购买
+          </button>
           {tagFilters.map((tag) => (
             <button
-              aria-pressed={activeTag === tag.key}
-              className={`relative shrink-0 pb-3 text-[14px] transition ${activeTag === tag.key ? "font-semibold text-[#202939] after:absolute after:bottom-0 after:left-1/2 after:h-0.5 after:w-4 after:-translate-x-1/2 after:bg-[#202939]" : "font-normal text-[#98a2b3] hover:text-[#475467]"}`}
+              aria-pressed={activeFilter.kind === "tag" && activeFilter.key === tag.key}
+              className={`relative shrink-0 pb-3 text-[14px] transition ${activeFilter.kind === "tag" && activeFilter.key === tag.key ? "font-semibold text-[#202939] after:absolute after:bottom-0 after:left-1/2 after:h-0.5 after:w-4 after:-translate-x-1/2 after:bg-[#202939]" : "font-normal text-[#98a2b3] hover:text-[#475467]"}`}
               key={tag.key}
-              onClick={() => selectTag(tag.key)}
+              onClick={() => selectFilter({ kind: "tag", key: tag.key })}
               type="button"
             >
               {tag.label}（{tag.count}）
@@ -112,7 +122,7 @@ export function AiStudyProjectSection({ title, projects, emptyText, enableTagFil
           ))
         ) : (
           <div className="flex min-h-[150px] w-full max-w-[620px] items-center rounded-[22px] border border-dashed border-[#dfe5ec] bg-[#fbfcfd] px-6 text-sm font-medium text-[#98a2b3] sm:col-span-full">
-            {emptyText}
+            {activeFilter.kind === "purchased" ? "暂无已购买项目。" : activeFilter.kind === "tag" ? "该分类暂无项目。" : emptyText}
           </div>
         )}
       </div>
@@ -136,7 +146,7 @@ export function AiStudyProjectSection({ title, projects, emptyText, enableTagFil
 export function buildTagFilters(projects: StudyBuddySectionItem[]) {
   const filters = new Map<string, { key: string; label: string; count: number }>();
   for (const project of projects) {
-    if (project.kind !== "official-material") {
+    if (project.kind !== "official-material" || project.purchased) {
       continue;
     }
     const label = project.tag.trim();
@@ -154,10 +164,14 @@ export function buildTagFilters(projects: StudyBuddySectionItem[]) {
   return Array.from(filters.values());
 }
 
-export function filterProjectsByTag(projects: StudyBuddySectionItem[], activeTag: string) {
-  return activeTag
-    ? projects.filter((project) => project.kind === "official-material" && normalizeTag(project.tag) === activeTag)
-    : projects;
+export function filterPublicProjects(projects: StudyBuddySectionItem[], filter: ProjectFilter) {
+  if (filter.kind === "purchased") {
+    return projects.filter((project) => project.purchased);
+  }
+  if (filter.kind === "tag") {
+    return projects.filter((project) => !project.purchased && project.kind === "official-material" && normalizeTag(project.tag) === filter.key);
+  }
+  return projects.filter((project) => !project.purchased);
 }
 
 export function getNextVisibleCount(current: number, total: number, step?: number) {

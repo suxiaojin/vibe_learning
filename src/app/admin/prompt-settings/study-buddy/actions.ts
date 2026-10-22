@@ -18,7 +18,7 @@ import { prisma } from "@/lib/prisma";
 const settingsPath = "/admin/prompt-settings/study-buddy";
 
 function targetPath(key: "notice" | "error", value: string) {
-  return `${settingsPath}?${key}=${encodeURIComponent(value)}`;
+  return `${settingsPath}?section=chat&${key}=${encodeURIComponent(value)}`;
 }
 
 function requiredText(formData: FormData, key: string) {

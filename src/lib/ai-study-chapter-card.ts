@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ChatMessage } from "./qwen";
 import type { EvidenceUnit, LearningTopic } from "./ai-study-evidence";
-import { assertEvidenceFidelity, formatEvidenceQuote, type GroundedCard } from "./ai-study-grounded-card";
+import { assertEvidenceFidelity, type GroundedCard } from "./ai-study-grounded-card";
 export const chapterCardSchema={type:"object",additionalProperties:false,required:["explanation"],properties:{explanation:{type:"string",minLength:20,maxLength:2400}}};
 export function chapterCardMessages(title:string,topic:LearningTopic,units:EvidenceUnit[],previousError?:string):ChatMessage[]{
   const byId=new Map(units.map(u=>[u.id,u]));
@@ -19,6 +19,5 @@ export function parseChapterCard(raw:string,topic:LearningTopic,units:EvidenceUn
   const words=new Set((text.replace(/<[^>]*>/g,"").match(/[\u4e00-\u9fff]{2,}/g)??[]).flatMap(w=>Array.from({length:w.length-1},(_,i)=>w.slice(i,i+2))));
   const qualityFlags=[...words].filter(w=>explanation.includes(w)).length<5?["low_literal_overlap"]:[];
   try{assertEvidenceFidelity(explanation,text);}catch{qualityFlags.push("claim_scope_review");}
-  const citations=evidence.map(u=>`原文依据（第${u.pageStart}${u.pageEnd!==u.pageStart?`–${u.pageEnd}`:""}页）：${formatEvidenceQuote(u.text)}`);
-  return {qualityFlags,card:{overview:explanation.split(/[。\n]/).filter(Boolean).slice(0,2).join("。")+"。",explanation:`${explanation}\n\n【本卡原文依据】\n\n${citations.join("\n\n")}`,keyPoints:[topic.title],pitfalls:[],examples:[],flashcards:[]}};
+  return {qualityFlags,card:{overview:"",explanation,keyPoints:[topic.title],pitfalls:[],examples:[],flashcards:[]}};
 }

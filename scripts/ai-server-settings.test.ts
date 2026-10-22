@@ -96,12 +96,20 @@ async function main() {
     assert.equal((await getAiServerConfigForModule("course_ai_explanation")).id, "server_a");
     assert.equal((await getAiServerConfigForModule("question_bank_ai_tagging")).id, "built_in");
     assert.deepEqual((await getAiServerConfigsForModule("ai_study_overview")).map((server) => server.id), ["server_a", "server_b"]);
+    assert.deepEqual((await getAiServerConfigsForModule("ai_study_level3_overview")).map((server) => server.id), ["server_a", "server_b"]);
 
     setting = {
       ...setting,
       moduleRoutes: { ...(setting.moduleRoutes as Record<string, unknown>), ai_study_overview: ["server_b"] }
     };
     assert.equal((await getAiServerConfigForModule("ai_study_overview")).id, "server_b");
+    assert.equal((await getAiServerConfigForModule("ai_study_level3_overview")).id, "server_b");
+
+    setting = {
+      ...setting,
+      moduleRoutes: { ...(setting.moduleRoutes as Record<string, unknown>), ai_study_level3_overview: ["server_a"] }
+    };
+    assert.equal((await getAiServerConfigForModule("ai_study_level3_overview")).id, "server_a");
 
     const adminSettings = await getAdminAiServerSettings();
     assert.equal(adminSettings.moduleRoutes.length, aiModuleDefinitions.length);
@@ -112,6 +120,10 @@ async function main() {
     assert.deepEqual(
       adminSettings.moduleRoutes.find((route) => route.key === "ai_study_overview")?.serverIds,
       ["server_b"]
+    );
+    assert.deepEqual(
+      adminSettings.moduleRoutes.find((route) => route.key === "ai_study_level3_overview")?.serverIds,
+      ["server_a"]
     );
 
     const invalidRoutes = Object.fromEntries(

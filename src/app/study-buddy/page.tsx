@@ -9,6 +9,7 @@ import { listAiStudyProjects, listPublicAiStudyProjects } from "@/lib/ai-study";
 import { listPublicOfficialStudyMaterials } from "@/lib/official-study-materials";
 import { getSystemSettings } from "@/lib/system-settings";
 import { prisma } from "@/lib/prisma";
+import { groupCompletedOwnedAiStudyProjects, groupPublicAiStudyProjects, originalAiStudyProjectTitle } from "@/lib/ai-study-public-catalog";
 
 const errorMessages: Record<string, string> = {
   create_failed: "项目创建失败，请稍后重试。",
@@ -82,7 +83,7 @@ export default async function StudyBuddyPage({
   );
 }
 
-function ProjectSection({
+async function ProjectSection({
   title,
   projects,
   emptyText
@@ -91,7 +92,30 @@ function ProjectSection({
   projects: StudyProject[];
   emptyText: string;
 }) {
-  const cardProjects = buildProjectSectionItems(projects, "personal");
+  const splitProjectIds = projects.filter((project) => (project.partCount || 0) > 1).map((project) => project.id);
+  const cardTasks = splitProjectIds.length > 0 ? await prisma.aiStudyGenerationTask.findMany({
+    where: { projectId: { in: splitProjectIds }, type: "generate_cards" },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: { projectId: true, status: true }
+  }) : [];
+  const latestCardTaskStatus = new Map<string, string>();
+  for (const task of cardTasks) {
+    if (!latestCardTaskStatus.has(task.projectId)) {
+      latestCardTaskStatus.set(task.projectId, task.status);
+    }
+  }
+  const completedProjectIds = new Set(Array.from(latestCardTaskStatus)
+    .filter(([, status]) => status === "succeeded")
+    .map(([projectId]) => projectId));
+  const cardProjects = groupCompletedOwnedAiStudyProjects(projects, completedProjectIds).map(({ project, partCount, unified }) => {
+    const item = buildProjectSectionItems([project], "personal")[0];
+    return unified ? {
+      ...item,
+      title: originalAiStudyProjectTitle(project.title),
+      contentOverview: `全书共 ${partCount} 个部分，打开后可切换学习。`,
+      linkedPartCount: partCount
+    } : item;
+  });
 
   return (
     <AiStudyProjectSection emptyText={emptyText} projects={cardProjects} title={title} />
@@ -130,7 +154,15 @@ async function PublicProjectSection({
     fileType: material.fileType,
     fileSizeBytes: material.fileSizeBytes
   } satisfies OfficialStudyMaterialCardItem));
-  const aiItems = buildProjectSectionItems(aiProjects, "public", purchasedAiIds, userId);
+  const aiItems = groupPublicAiStudyProjects(aiProjects).map(({ project, partCount, unified }) => {
+    const item = buildProjectSectionItems([project], "public", purchasedAiIds, userId)[0];
+    return unified ? {
+      ...item,
+      title: originalAiStudyProjectTitle(project.title),
+      contentOverview: `全书共 ${partCount} 个部分，打开后可切换学习。`,
+      linkedPartCount: partCount
+    } : item;
+  });
   return (
     <AiStudyProjectSection
       emptyText="暂无公开项目。"

@@ -60,6 +60,7 @@ type AiStudyLearningProject = {
 type AiStudyProjectLearningViewProps = {
   backHref: string;
   backTitle: string;
+  displayTitle?: string;
   headerAccessory?: ReactNode;
   mode?: "student" | "admin-preview";
   nodeHrefBase: string;
@@ -73,6 +74,7 @@ type AiStudyProjectLearningViewProps = {
 export async function AiStudyProjectLearningView({
   backHref,
   backTitle,
+  displayTitle,
   headerAccessory,
   mode = "student",
   nodeHrefBase,
@@ -106,7 +108,7 @@ export async function AiStudyProjectLearningView({
               <ArrowLeft size={19} />
             </Link>
             <div className="flex min-w-0 items-center gap-3">
-              <h1 className="max-w-[42vw] truncate text-[17px] font-semibold tracking-normal text-[#111827] md:max-w-[520px]">{project.title}</h1>
+              <h1 className="max-w-[42vw] truncate text-[17px] font-semibold tracking-normal text-[#111827] md:max-w-[520px]">{displayTitle || project.title}</h1>
               {headerAccessory}
             </div>
           </div>
@@ -118,7 +120,7 @@ export async function AiStudyProjectLearningView({
                 previousNode={previousNode ? { id: previousNode.id, title: previousNode.title } : null}
                 projectId={project.id}
                 selectedNodeCardKeyPoints={stringArray(card?.keyPoints)}
-                selectedNodeCardOverview={card?.overview || ""}
+                selectedNodeCardOverview={nodeDetail?.depth === 3 ? "" : card?.overview || ""}
                 selectedNodeDepth={nodeDetail?.depth ?? selectedNode?.depth ?? 0}
                 selectedNodeId={selectedNodeId}
                 selectedNodeSummary={selectedNodeSummary}
@@ -186,8 +188,8 @@ export async function AiStudyProjectLearningView({
 
               {card ? (
                 <div className="mt-6 space-y-7">
-                  <CardSection title="内容概述">
-                    {nodeDetail.depth === 1 && card.modelName === "deterministic-directory" && mode === "student" ? (
+                  {nodeDetail.depth < 3 ? <CardSection title="内容概述">
+                    {(nodeDetail.depth === 1 || nodeDetail.depth === 2) && card.modelName === "deterministic-directory" && mode === "student" ? (
                       <OverviewJobControl
                         nodeId={nodeDetail.id}
                         status={nodeDetail.overviewJob?.status ?? "unrequested"}
@@ -200,18 +202,24 @@ export async function AiStudyProjectLearningView({
                         dangerouslySetInnerHTML={{ __html: renderMathPlainText(card.overview) }}
                       />
                     )}
-                  </CardSection>
+                  </CardSection> : null}
 
                   {nodeDetail.depth === 0 ? (
-                    <CardList items={stringArray(card.keyPoints)} title="你能学到啥" />
+                    <CardList items={stringArray(card.keyPoints).map((text) => ({ text }))} title="你能学到啥" />
                   ) : null}
 
                   {nodeDetail.depth === 1 || nodeDetail.depth === 2 ? (
-                    <CardList items={stringArray(card.keyPoints)} title="本节知识点" />
+                    <CardList
+                      items={(selectedNode?.children || []).map((child) => ({
+                        text: child.title,
+                        href: buildNodeHref(nodeHrefBase, child.id)
+                      }))}
+                      title="本节知识点"
+                    />
                   ) : null}
 
                   {nodeDetail.depth >= 3 ? (
-                    <KnowledgePointDetail explanation={card.explanation || card.overview} />
+                    <KnowledgePointDetail explanation={stripLegacyCardEvidence(card.explanation || card.overview)} />
                   ) : null}
                 </div>
               ) : nodeDetail.depth === 3 && nodeDetail.cardJob ? (
@@ -224,8 +232,16 @@ export async function AiStudyProjectLearningView({
                   title={project.status === "failed" ? "知识卡片生成失败" : "知识卡片生成中"}
                 />
               )}
-              {nodeDetail.depth >= 3 && !card ? (
-                <div className="mt-6 space-y-4"><h3 className="font-semibold">原文依据</h3>{nodeDetail.sourceChunks.map(chunk=><details key={chunk.id} open><summary className="text-sm text-slate-500">{chunk.pageNumber?`第${chunk.pageNumber}页`:"来源片段"}</summary><pre className="whitespace-pre-wrap break-words font-sans text-sm leading-7">{chunk.content.replace(/<\/(?:tr|p)>/gi,"\n").replace(/<[^>]*>/g," ")}</pre></details>)}</div>
+              {nodeDetail.depth >= 3 ? (
+                <div className="mt-6 space-y-4">
+                  <h3 className="font-semibold">原文依据</h3>
+                  {nodeDetail.sourceChunks.map(chunk=>(
+                    <details key={chunk.id} open>
+                      <summary className="text-sm text-slate-500">{chunk.pageNumber?`第${chunk.pageNumber}页`:"来源片段"}</summary>
+                      <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-7">{chunk.content.replace(/<\/(?:tr|p)>/gi,"\n").replace(/<[^>]*>/g," ")}</pre>
+                    </details>
+                  ))}
+                </div>
               ) : null}
             </article>
           ) : (
@@ -308,25 +324,44 @@ function CardSection({ children, title }: { children: ReactNode; title: string }
   );
 }
 
-function CardList({ items, title }: { items: string[]; title: string }) {
+function CardList({ items, title }: { items: { text: string; href?: string }[]; title: string }) {
   if (items.length === 0) {
     return null;
   }
   return (
     <CardSection title={title}>
       <ul className="space-y-3">
-        {items.map((item, index) => (
-          <li key={`${item}-${index}`} className="flex gap-3 text-[16px] leading-7 text-[#1f2937]">
-            <span className="mt-[11px] h-0 w-0 shrink-0 border-y-[4px] border-l-[6px] border-y-transparent border-l-[#98a2b3]" />
-            <span
-              className="min-w-0 [&_.katex-display]:my-3 [&_.katex-display]:overflow-x-auto [&_.katex-display]:overflow-y-hidden"
-              dangerouslySetInnerHTML={{ __html: renderMathPlainText(item) }}
-            />
-          </li>
-        ))}
+        {items.map((item, index) => {
+          const content = (
+            <>
+              <span className="mt-[11px] h-0 w-0 shrink-0 border-y-[4px] border-l-[6px] border-y-transparent border-l-[#98a2b3]" />
+              <span
+                className="min-w-0 [&_.katex-display]:my-3 [&_.katex-display]:overflow-x-auto [&_.katex-display]:overflow-y-hidden"
+                dangerouslySetInnerHTML={{ __html: renderMathPlainText(item.text) }}
+              />
+            </>
+          );
+          return (
+            <li key={`${item.href || item.text}-${index}`} className="text-[16px] leading-7 text-[#1f2937]">
+              {item.href ? (
+                <Link className="flex gap-3 rounded-[6px] transition hover:bg-[#f3faf5] hover:text-[#16812a] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16a329]" href={item.href}>
+                  {content}
+                </Link>
+              ) : (
+                <span className="flex gap-3">{content}</span>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </CardSection>
   );
+}
+
+function stripLegacyCardEvidence(explanation: string) {
+  const marker = "\n\n【本卡原文依据】\n\n";
+  const markerIndex = explanation.indexOf(marker);
+  return (markerIndex < 0 ? explanation : explanation.slice(0, markerIndex)).trim();
 }
 
 function KnowledgePointDetail({ explanation }: { explanation: string }) {

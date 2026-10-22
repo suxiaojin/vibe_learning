@@ -14,8 +14,8 @@ import {
 } from "@/lib/ai-study-overview-prompts";
 import { prisma } from "@/lib/prisma";
 
-const settingsPath = "/admin/prompt-settings/study-buddy-overview";
-const targetPath = (kind: "notice" | "error", value: string) => `${settingsPath}?${kind}=${encodeURIComponent(value)}`;
+const settingsPath = "/admin/prompt-settings/study-buddy";
+const targetPath = (kind: "notice" | "error", value: string) => `${settingsPath}?section=level2&${kind}=${encodeURIComponent(value)}`;
 const requiredText = (data: FormData, key: string) => String(data.get(key) || "").trim();
 
 export async function saveAiStudyOverviewPromptDraft(formData: FormData) {
