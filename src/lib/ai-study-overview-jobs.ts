@@ -10,9 +10,12 @@ import { getAiStudyOverviewPromptConfig } from "./ai-study-overview-prompts";
 import type { AiStudyOverviewDepth } from "./ai-study-overview-prompts";
 
 const leaseMs = 180_000;
-const maxAttempts = 2;
 const capacity = 3;
 const timeoutMs = Math.max(5_000, Math.min(120_000, Number(process.env.AI_STUDY_OVERVIEW_TIMEOUT_MS) || 90_000));
+
+export function getAiStudyOverviewMaxAttempts(depth: AiStudyOverviewDepth) {
+  return depth === 2 ? 4 : 2;
+}
 
 export function chooseAiStudyOverviewServer(
   serverConfigs: ActiveAiServerConfig[],
@@ -75,6 +78,7 @@ export async function requestAiStudyOverview(viewerId: string, nodeId: string, r
 }
 
 export async function runAiStudyOverviewJobCycle(depth: AiStudyOverviewDepth = 1) {
+  const maxAttempts = getAiStudyOverviewMaxAttempts(depth);
   const now = new Date();
   const availableWork = await prisma.aiStudyOverviewJob.count({
     where: { node: { depth }, OR: [
@@ -88,11 +92,11 @@ export async function runAiStudyOverviewJobCycle(depth: AiStudyOverviewDepth = 1
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(71883012)`;
     const now = new Date();
     await tx.aiStudyOverviewJob.updateMany({
-      where: { status: "running", leaseExpiresAt: { lt: now }, attempts: { lt: maxAttempts } },
+      where: { node: { depth }, status: "running", leaseExpiresAt: { lt: now }, attempts: { lt: maxAttempts } },
       data: { status: "pending", leaseToken: null, leaseExpiresAt: null, nextAttemptAt: now, errorMessage: "任务租约过期，正在重试。" }
     });
     await tx.aiStudyOverviewJob.updateMany({
-      where: { status: "running", leaseExpiresAt: { lt: now }, attempts: { gte: maxAttempts } },
+      where: { node: { depth }, status: "running", leaseExpiresAt: { lt: now }, attempts: { gte: maxAttempts } },
       data: { status: "failed", leaseToken: null, leaseExpiresAt: null, errorMessage: "任务进程中断，请重试。" }
     });
     const running = await tx.aiStudyOverviewJob.findMany({
@@ -117,11 +121,11 @@ export async function runAiStudyOverviewJobCycle(depth: AiStudyOverviewDepth = 1
     return { job, serverConfig };
   });
   if (!claimed) return false;
-  await runOverviewJob(claimed.job, claimed.serverConfig);
+  await runOverviewJob(claimed.job, claimed.serverConfig, maxAttempts);
   return true;
 }
 
-async function runOverviewJob(job: AiStudyOverviewJob, serverConfig: ActiveAiServerConfig) {
+async function runOverviewJob(job: AiStudyOverviewJob, serverConfig: ActiveAiServerConfig, maxAttempts: number) {
   let heartbeatFailed = false;
   let heartbeatPromise: Promise<unknown> | undefined;
   const timer = setInterval(() => {

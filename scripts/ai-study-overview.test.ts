@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { buildOverviewGroups, overviewMessages, parseOverview, selectOverviewSources, type OverviewNode } from "../src/lib/ai-study-overview";
 import { defaultAiStudyOverviewPromptTemplates, validateAiStudyOverviewPromptTemplates } from "../src/lib/ai-study-overview-prompt-template";
 import { defaultAiStudyThirdLevelOverviewPromptTemplates } from "../src/lib/ai-study-overview-prompt-template";
-import { chooseAiStudyOverviewServer } from "../src/lib/ai-study-overview-jobs";
+import { chooseAiStudyOverviewServer, getAiStudyOverviewMaxAttempts } from "../src/lib/ai-study-overview-jobs";
 import { buildAiStudyOverviewPromptSourceVersion } from "../src/lib/ai-study-overview-prompts";
 import type { ActiveAiServerConfig } from "../src/lib/ai-server-settings";
 
@@ -51,6 +51,8 @@ assert.match(thirdMessages[1].content, /资金投入/);
 assert.throws(() => selectOverviewSources({ ...thirdLevel, id: "empty" }, descendants), /缺少下层知识点/);
 
 const servers = ["a", "b", "c"].map((id): ActiveAiServerConfig => ({ id, mode: "custom", name: id, baseUrl: "https://example.com/v1", apiKey: "", model: id }));
+assert.equal(getAiStudyOverviewMaxAttempts(1), 2);
+assert.equal(getAiStudyOverviewMaxAttempts(2), 4);
 const running = [{ assignedAiServerId: "a", node: { depth: 1 } }, { assignedAiServerId: "b", node: { depth: 2 } }];
 assert.equal(chooseAiStudyOverviewServer(servers, running, 2)?.id, "c");
 assert.equal(chooseAiStudyOverviewServer(servers.slice(0, 2), running, 2), null);
