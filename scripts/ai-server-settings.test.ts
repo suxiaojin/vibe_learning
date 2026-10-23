@@ -64,7 +64,7 @@ async function main() {
         enabled: true
       }
     ],
-    moduleRoutes: { ai_study_chat: ["server_a", "server_b"], ai_study_detail: ["server_a", "server_b"], course_ai_explanation: "server_a" }
+    moduleRoutes: { ai_study_chat: ["server_a", "server_b"], ai_study_chat_suggestions: ["server_a", "server_b"], ai_study_detail: ["server_a", "server_b"], course_ai_explanation: "server_a" }
   };
   const writes: unknown[] = [];
 
@@ -85,6 +85,25 @@ async function main() {
       ["server_a", "server_b"],
       ["server_b", "server_a"]
     ]);
+    const suggestionGroups = [
+      await getAiServerConfigsForModule("ai_study_chat_suggestions", 2),
+      await getAiServerConfigsForModule("ai_study_chat_suggestions", 2)
+    ];
+    assert.deepEqual(suggestionGroups.map((servers) => servers.map((server) => server.id)), [
+      ["server_a", "server_b"],
+      ["server_a", "server_b"]
+    ]);
+    setting = {
+      ...setting,
+      customServers: [
+        ...(setting.customServers as Array<Record<string, unknown>>),
+        { id: "server_c", name: "服务器 C", baseUrl: "https://c.example.com/v1", model: "model-c", apiKeyEncrypted: "", enabled: true },
+        { id: "server_d", name: "服务器 D", baseUrl: "https://d.example.com/v1", model: "model-d", apiKeyEncrypted: "", enabled: true }
+      ],
+      moduleRoutes: { ...(setting.moduleRoutes as Record<string, unknown>), ai_study_chat_suggestions: ["server_a", "server_b", "server_c", "server_d"] }
+    };
+    assert.deepEqual((await getAiServerConfigsForModule("ai_study_chat_suggestions", 2)).slice(0, 2).map((server) => server.id), ["server_a", "server_b"]);
+    assert.deepEqual((await getAiServerConfigsForModule("ai_study_chat_suggestions", 2)).slice(0, 2).map((server) => server.id), ["server_c", "server_d"]);
 
     const chatServers = [
       await getAiServerConfigForModule("ai_study_chat"),

@@ -12,11 +12,13 @@ type AiServerOption = {
 export function AdminAiModuleServerSelector({
   moduleKey,
   servers,
-  initialServerIds
+  initialServerIds,
+  perQuestion = false
 }: {
   moduleKey: AiModuleKey;
   servers: AiServerOption[];
   initialServerIds: string[];
+  perQuestion?: boolean;
 }) {
   const activeServers = servers.filter((server) => server.enabled);
   const [selectedServerIds, setSelectedServerIds] = useState(() => {
@@ -72,7 +74,7 @@ export function AdminAiModuleServerSelector({
       {orderedServers.length > 1 ? (
         <div className="mt-3 border-t border-slate-200 pt-3 text-xs font-bold text-slate-500">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="mr-1 text-slate-600">待保存轮询顺序</span>
+            <span className="mr-1 text-slate-600">{perQuestion ? "待保存分配顺序" : "待保存轮询顺序"}</span>
             {orderedServers.map((server, index) => (
               <span className="inline-flex items-center gap-1.5" key={server.id}>
                 {index > 0 ? <span className="text-slate-300">→</span> : null}
@@ -82,7 +84,7 @@ export function AdminAiModuleServerSelector({
               </span>
             ))}
           </div>
-          <p className="mt-2 font-semibold text-slate-400">按勾选顺序轮询；取消后重选会移到最后。</p>
+          <p className="mt-2 font-semibold text-slate-400">{perQuestion ? "每道推荐问题依次分配一台模型；取消后重选会移到最后。" : "按勾选顺序轮询；取消后重选会移到最后。"}</p>
         </div>
       ) : null}
     </div>

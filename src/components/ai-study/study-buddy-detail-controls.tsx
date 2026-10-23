@@ -6,7 +6,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AiStudyChatShareDialog } from "@/components/ai-study/ai-study-chat-share-dialog";
 import { DiamondInsufficientMessage } from "@/components/diamond-insufficient-message";
-import { buildAiStudyOpeningSuggestions } from "@/lib/ai-study-chat-suggestions";
 import { isDiamondInsufficientMessage } from "@/lib/diamond-insufficient";
 import { cn } from "@/lib/utils";
 
@@ -75,6 +74,7 @@ type ShareSelection = {
 
 const lastNodeStoragePrefix = "vibe-ai-study-last-node:v1:";
 const drawerWidthStorageKey = "vibe-ai-study-chat-drawer-width:v1";
+const suggestionStoragePrefix = "vibe-ai-study-chat-suggestions:v1:";
 const defaultDrawerWidth = 448;
 const minDrawerWidth = 360;
 const maxDrawerWidth = 720;
@@ -91,9 +91,6 @@ export function StudyBuddyDetailControls({
   previousNode,
   projectId,
   materialTitle,
-  selectedNodeCardKeyPoints,
-  selectedNodeCardOverview,
-  selectedNodeDepth,
   selectedNodeId,
   selectedNodeSummary,
   selectedNodeTitle,
@@ -101,6 +98,10 @@ export function StudyBuddyDetailControls({
 }: StudyBuddyDetailControlsProps) {
   const router = useRouter();
   const [chatOpen, setChatOpen] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const suggestionCacheRef = useRef(new Map<string, string[]>());
+  const suggestionRequestRef = useRef<AbortController | null>(null);
   const [drawerWidth, setDrawerWidth] = useState(defaultDrawerWidth);
   const [draft, setDraft] = useState("");
   const [isResizing, setIsResizing] = useState(false);
@@ -123,16 +124,104 @@ export function StudyBuddyDetailControls({
   const validNodeSet = useMemo(() => new Set(validNodeIds), [validNodeIds]);
   const hasDraft = draft.trim().length > 0;
 
-  const suggestions = useMemo(
-    () => buildAiStudyOpeningSuggestions({
-      cardKeyPoints: selectedNodeCardKeyPoints,
-      cardOverview: selectedNodeCardOverview,
-      depth: selectedNodeDepth,
-      summary: selectedNodeSummary,
-      title: selectedNodeTitle
-    }),
-    [selectedNodeCardKeyPoints, selectedNodeCardOverview, selectedNodeDepth, selectedNodeSummary, selectedNodeTitle]
-  );
+  const suggestionCacheKey = `${projectId}:${selectedNodeId}`;
+
+  function getCachedSuggestions(): string[] | undefined {
+    if (suggestionCacheRef.current.has(suggestionCacheKey)) {
+      return suggestionCacheRef.current.get(suggestionCacheKey);
+    }
+    try {
+      const stored = window.sessionStorage.getItem(`${suggestionStoragePrefix}${suggestionCacheKey}`);
+      if (stored === null) {
+        return undefined;
+      }
+      const parsed: unknown = JSON.parse(stored);
+      if (Array.isArray(parsed) && (parsed.length === 0 || parsed.length === 2) && parsed.every((item) => typeof item === "string")) {
+        suggestionCacheRef.current.set(suggestionCacheKey, parsed);
+        return parsed;
+      }
+    } catch {
+      // In-memory cache still prevents a second request in this page.
+    }
+    return undefined;
+  }
+
+  function rememberSuggestions(value: string[]) {
+    suggestionCacheRef.current.set(suggestionCacheKey, value);
+    try {
+      window.sessionStorage.setItem(`${suggestionStoragePrefix}${suggestionCacheKey}`, JSON.stringify(value));
+    } catch {
+      // Session storage is best-effort; the in-memory record remains.
+    }
+  }
+
+  useEffect(() => {
+    suggestionRequestRef.current?.abort();
+    suggestionRequestRef.current = null;
+    setLoadingSuggestions(false);
+    setSuggestions(getCachedSuggestions() || []);
+    return () => suggestionRequestRef.current?.abort();
+  }, [suggestionCacheKey]);
+
+  async function loadSuggestions() {
+    if (!selectedNodeId) {
+      return;
+    }
+    const cached = getCachedSuggestions();
+    if (cached !== undefined) {
+      setSuggestions(cached);
+      return;
+    }
+
+    // Record the attempt before the request so failure, cancellation and reopen do not retry.
+    rememberSuggestions([]);
+    suggestionRequestRef.current?.abort();
+    const controller = new AbortController();
+    suggestionRequestRef.current = controller;
+    setSuggestions([]);
+    setLoadingSuggestions(true);
+    try {
+      const response = await fetch(`/api/ai-study/projects/${projectId}/chat/suggestions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nodeId: selectedNodeId }),
+        signal: controller.signal
+      });
+      if (!response.ok) {
+        throw new Error("Suggestion generation failed.");
+      }
+      const payload = await response.json() as { data?: { suggestions?: unknown } };
+      const next = Array.isArray(payload.data?.suggestions)
+        ? payload.data.suggestions.filter((item): item is string => typeof item === "string")
+        : [];
+      if (suggestionRequestRef.current === controller && next.length === 2) {
+        rememberSuggestions(next);
+        setSuggestions(next);
+      }
+    } catch {
+      // Failed suggestions stay hidden; the student can always ask directly.
+      if (suggestionRequestRef.current === controller) {
+        setSuggestions([]);
+      }
+    } finally {
+      if (suggestionRequestRef.current === controller) {
+        suggestionRequestRef.current = null;
+        setLoadingSuggestions(false);
+      }
+    }
+  }
+
+  function openChat() {
+    setChatOpen(true);
+    void loadSuggestions();
+  }
+
+  function closeChat() {
+    suggestionRequestRef.current?.abort();
+    suggestionRequestRef.current = null;
+    setLoadingSuggestions(false);
+    setChatOpen(false);
+  }
 
   useEffect(() => {
     if (!selectedNodeId) {
@@ -482,7 +571,7 @@ export function StudyBuddyDetailControls({
     <>
       <button
         className="inline-flex h-9 items-center gap-2 rounded-full border border-[#dfe4ea] bg-white px-4 text-sm font-semibold text-[#111827] shadow-sm transition hover:border-[#cbd5e1] hover:bg-[#f8fafc] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563ff]"
-        onClick={() => setChatOpen(true)}
+        onClick={openChat}
         type="button"
       >
         <MessageCircle size={17} />
@@ -516,7 +605,7 @@ export function StudyBuddyDetailControls({
               <button
                 aria-label="关闭对话"
                 className="grid size-9 place-items-center rounded-full text-[#1f2937] transition hover:bg-[#f3f4f6]"
-                onClick={() => setChatOpen(false)}
+                onClick={closeChat}
                 type="button"
               >
                 <X size={21} />
@@ -536,21 +625,30 @@ export function StudyBuddyDetailControls({
                 </div>
               </div>
 
-              <div className="mt-4 flex flex-col items-start gap-3 pl-12">
-                {suggestions.map((suggestion) => (
-                  <button
-                    className="max-w-full rounded-[12px] border border-[#e5e7eb] bg-white px-4 py-3 text-left text-sm font-medium leading-5 text-[#475467] shadow-sm transition hover:border-[#cbd5e1] hover:text-[#111827] disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={sending || loadingHistory || Boolean(regeneratingMessageId)}
-                    key={suggestion}
-                    onClick={() => {
-                      void sendMessage(suggestion);
-                    }}
-                    type="button"
-                  >
-                    <span className="line-clamp-1">{suggestion}</span>
-                  </button>
-                ))}
-              </div>
+              {loadingSuggestions ? (
+                <div className="mt-4 flex items-center gap-2 pl-12 text-sm text-[#667085]">
+                  <Loader2 className="animate-spin" size={15} />
+                  正在生成该知识点推荐问题
+                </div>
+              ) : null}
+
+              {suggestions.length > 0 ? (
+                <div className="mt-4 flex flex-col items-start gap-3 pl-12">
+                  {suggestions.map((suggestion) => (
+                    <button
+                      className="max-w-full rounded-[12px] border border-[#e5e7eb] bg-white px-4 py-3 text-left text-sm font-medium leading-5 text-[#475467] shadow-sm transition hover:border-[#cbd5e1] hover:text-[#111827] disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={sending || loadingHistory || Boolean(regeneratingMessageId)}
+                      key={suggestion}
+                      onClick={() => {
+                        void sendMessage(suggestion);
+                      }}
+                      type="button"
+                    >
+                      <span className="line-clamp-1">{suggestion}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
 
               {loadingHistory && messages.length === 0 ? (
                 <div className="mt-7 flex items-center gap-2 pl-12 text-sm text-[#667085]">

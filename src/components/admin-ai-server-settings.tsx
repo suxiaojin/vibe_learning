@@ -19,7 +19,7 @@ export function AdminAiServerSettingsPanel({ settings }: { settings: AdminAiServ
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
           <div>
             <h2 className="text-lg font-black text-ink">AI 模块分配</h2>
-            <p className="mt-1 text-sm font-semibold text-slate-500">每个模块至少选择一台启用服务器；多选按勾选顺序轮询，且尚未输出内容时失败会尝试下一台。</p>
+            <p className="mt-1 text-sm font-semibold text-slate-500">每个模块至少选择一台启用服务器。推荐问题按勾选顺序每题分配一台；其他模块按勾选顺序轮询。</p>
           </div>
           <button className="primary-button rounded-none" type="submit"><Save size={16} />保存模块分配</button>
         </div>
@@ -40,6 +40,7 @@ export function AdminAiServerSettingsPanel({ settings }: { settings: AdminAiServ
                       <AdminAiModuleServerSelector
                         initialServerIds={route.serverIds}
                         moduleKey={route.key}
+                        perQuestion={route.key === "ai_study_chat_suggestions"}
                         servers={routeServerOptions}
                       />
                     </fieldset>

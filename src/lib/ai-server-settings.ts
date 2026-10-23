@@ -16,6 +16,7 @@ export const aiModuleDefinitions = [
   { key: "ai_study_overview", group: "学习搭子", label: "二层内容概述" },
   { key: "ai_study_level3_overview", group: "学习搭子", label: "三层内容概述" },
   { key: "ai_study_chat", group: "学习搭子", label: "问问搭子" },
+  { key: "ai_study_chat_suggestions", group: "学习搭子", label: "推荐问题" },
   { key: "question_bank_ai_tagging", group: "题库管理", label: "AI打标" },
   { key: "question_bank_ai_doubt_draft", group: "题库管理", label: "题目详情AI答疑草稿" },
   { key: "question_bank_ai_generation", group: "题库管理", label: "AI生题" },
@@ -252,9 +253,9 @@ function getEffectiveRoutes(setting: AiServerSettingRecord | null, customServers
   ) as Record<AiModuleKey, string[]>;
 }
 
-function getRoundRobinServerIds(moduleKey: AiModuleKey, serverIds: string[]) {
+function getRoundRobinServerIds(moduleKey: AiModuleKey, serverIds: string[], advanceBy = 1) {
   const currentIndex = aiModuleRoundRobinIndexes.get(moduleKey) || 0;
-  aiModuleRoundRobinIndexes.set(moduleKey, (currentIndex + 1) % serverIds.length);
+  aiModuleRoundRobinIndexes.set(moduleKey, (currentIndex + advanceBy) % serverIds.length);
   const startIndex = currentIndex % serverIds.length;
   return [...serverIds.slice(startIndex), ...serverIds.slice(0, startIndex)];
 }
@@ -285,7 +286,7 @@ async function writeAiServerSetting(
   });
 }
 
-export async function getAiServerConfigsForModule(moduleKey: AiModuleKey): Promise<ActiveAiServerConfig[]> {
+export async function getAiServerConfigsForModule(moduleKey: AiModuleKey, advanceBy = 1): Promise<ActiveAiServerConfig[]> {
   if (!aiModuleKeySet.has(moduleKey)) {
     throw new Error(`Unknown AI module: ${moduleKey}`);
   }
@@ -294,7 +295,8 @@ export async function getAiServerConfigsForModule(moduleKey: AiModuleKey): Promi
   const customServers = getCustomServers(setting);
   const orderedServerIds = getRoundRobinServerIds(
     moduleKey,
-    getEffectiveRoutes(setting, customServers)[moduleKey]
+    getEffectiveRoutes(setting, customServers)[moduleKey],
+    advanceBy
   );
   const configs = orderedServerIds.flatMap<ActiveAiServerConfig>((serverId) => {
     if (serverId === builtInAiServerProfileId) {
