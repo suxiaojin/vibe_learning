@@ -1,6 +1,6 @@
 import { sanitizeNotificationHtml } from "@/lib/notifications";
 
-export type BuddyShareType = "question_card" | "quiz_result_card" | "active_learning_card";
+export type BuddyShareType = "question_card" | "quiz_result_card" | "active_learning_card" | "ai_study_qa_card";
 
 export type BuddyQuestionShareCard = {
   type: "question_card";
@@ -47,7 +47,15 @@ export type BuddyActiveLearningShareCard = {
   weeks: BuddyActiveLearningDay[][];
 };
 
-export type BuddyShareCard = BuddyQuestionShareCard | BuddyQuizResultShareCard | BuddyActiveLearningShareCard;
+export type BuddyAiStudyQaShareCard = {
+  type: "ai_study_qa_card";
+  question: string;
+  answer: string;
+  materialTitle?: string;
+  nodeTitle?: string;
+};
+
+export type BuddyShareCard = BuddyQuestionShareCard | BuddyQuizResultShareCard | BuddyActiveLearningShareCard | BuddyAiStudyQaShareCard;
 
 const maxTextLength = 140;
 const maxWeeks = 40;
@@ -115,7 +123,26 @@ export function normalizeBuddyShareInput(input: unknown): BuddyShareCard | null 
     };
   }
 
+  if (input.type === "ai_study_qa_card") {
+    const question = cleanPlainText(input.question, 1_000);
+    const answer = cleanPlainText(input.answer, 20_000);
+    if (!question || !answer) {
+      return null;
+    }
+    return {
+      type: "ai_study_qa_card",
+      question,
+      answer,
+      materialTitle: cleanText(input.materialTitle, 180) || undefined,
+      nodeTitle: cleanText(input.nodeTitle, 140) || undefined
+    };
+  }
+
   return null;
+}
+
+function cleanPlainText(value: unknown, maxLength: number) {
+  return typeof value === "string" ? value.replace(/\u0000/g, "").trim().slice(0, maxLength) : "";
 }
 
 function cleanText(value: unknown, maxLength = maxTextLength) {

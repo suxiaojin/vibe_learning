@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { z } from "zod";
-import type { AiStudyGenerationTask, AiStudyTaskStatus } from "@prisma/client";
+import { Prisma, type AiStudyGenerationTask, type AiStudyTaskStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { accessibleAiStudyProjectWhere } from "@/lib/study-project-access";
 import { diamondInsufficientMessage } from "@/lib/diamond-insufficient";
@@ -14,6 +14,7 @@ import {
 } from "@/lib/ai-study-progress-cache";
 import { askQwen, streamQwen, type ChatMessage } from "@/lib/qwen";
 import { getAiStudyPromptConfig, type AiStudyPromptConfig } from "@/lib/ai-study-prompts";
+import { getDiamondRuleConfig } from "@/lib/diamond-rules";
 import { loadAiStudySourceChunksWithContent } from "@/lib/ai-study-source-content";
 import {
   assertSufficientDiamondBalanceForRule,
@@ -52,6 +53,13 @@ const updateProgressSchema = z.object({
 const aiStudyBuddyChatSchema = z.object({
   message: z.string().trim().min(1).max(1000),
   nodeId: z.string().trim().min(1).optional().nullable()
+});
+const aiStudyRegenerationStyleSchema = z.enum(["rephrase", "example", "steps", "concise"]);
+const aiStudyRegenerationSchema = z.object({
+  assistantMessageId: z.string().uuid(),
+  style: aiStudyRegenerationStyleSchema,
+  expectedAmount: z.number().int().nonnegative(),
+  expectedRuleVersion: z.number().int().positive()
 });
 const aiStudyChatMessageRoleSchema = z.enum(["assistant", "user"]);
 
@@ -761,12 +769,27 @@ type AiStudyBuddySourceChunkContext = {
 };
 
 type AiStudyChatMessageRole = z.infer<typeof aiStudyChatMessageRoleSchema>;
+type AiStudyRegenerationStyle = z.infer<typeof aiStudyRegenerationStyleSchema>;
 
+// created_at is a timestamp without time zone. Convert it from the database
+// session time zone to an absolute instant in SELECT and RETURNING queries.
 type AiStudyChatMessageRow = {
   id: string;
   role: string;
   content: string;
   created_at: Date;
+  regeneration_of_id?: string | null;
+  question_message_id?: string | null;
+};
+
+type AiStudyRegenerationTargetRow = AiStudyChatMessageRow & {
+  node_id: string | null;
+};
+
+export type AiStudyChatVersion = {
+  id: string;
+  content: string;
+  createdAt: string;
 };
 
 export type AiStudyChatMessage = {
@@ -774,14 +797,16 @@ export type AiStudyChatMessage = {
   role: AiStudyChatMessageRole;
   content: string;
   createdAt: string;
+  questionMessageId?: string | null;
+  versions?: AiStudyChatVersion[];
 };
 
-export async function askAiStudyBuddy(ownerId: string, projectId: string, input: unknown) {
-  const context = await prepareAiStudyBuddyChat(ownerId, projectId, input);
+export async function askAiStudyBuddy(ownerId: string, projectId: string, input: unknown, regenerationStyle?: AiStudyRegenerationStyle) {
+  const context = await prepareAiStudyBuddyChat(ownerId, projectId, input, regenerationStyle);
   const answer = await askQwen(context.messages, {
     moduleKey: "ai_study_chat",
     enableServerFailover: true,
-    temperature: 0.35,
+    temperature: regenerationStyle ? 0.55 : 0.35,
     timeoutMs: 60_000
   });
 
@@ -822,20 +847,45 @@ export async function listAiStudyChatMessages(ownerId: string, projectId: string
 
   const limit = 80;
   const rows = await prisma.$queryRaw<AiStudyChatMessageRow[]>`
-    SELECT "id", "role", "content", "created_at"
+    SELECT "id", "role", "content", "created_at" AT TIME ZONE current_setting('TimeZone') AS "created_at", "question_message_id"
     FROM (
-      SELECT "id", "role", "content", "created_at"
+      SELECT "id", "role", "content", "created_at", "question_message_id"
       FROM "ai_study_chat_messages"
       WHERE "user_id" = ${ownerId}
         AND "project_id" = ${projectId}
         AND (("node_id" = ${normalizedNodeId}) OR ("node_id" IS NULL AND ${normalizedNodeId} IS NULL))
+        AND "regeneration_of_id" IS NULL
       ORDER BY "created_at" DESC, "id" DESC
       LIMIT ${limit}
     ) AS recent_messages
     ORDER BY "created_at" ASC, "id" ASC
   `;
 
-  return rows.map(mapAiStudyChatMessageRow);
+  const assistantIds = rows.filter((row) => row.role === "assistant").map((row) => row.id);
+  if (assistantIds.length === 0) {
+    return rows.map(mapAiStudyChatMessageRow);
+  }
+
+  const versions = await prisma.$queryRaw<AiStudyChatMessageRow[]>`
+    SELECT "id", "role", "content", "created_at" AT TIME ZONE current_setting('TimeZone') AS "created_at", "regeneration_of_id"
+    FROM "ai_study_chat_messages"
+    WHERE "user_id" = ${ownerId}
+      AND "project_id" = ${projectId}
+      AND "regeneration_of_id" IN (${Prisma.join(assistantIds)})
+    ORDER BY "created_at" ASC, "id" ASC
+  `;
+  const versionsByOriginal = new Map<string, AiStudyChatVersion[]>();
+  for (const row of versions) {
+    if (!row.regeneration_of_id) continue;
+    const siblings = versionsByOriginal.get(row.regeneration_of_id) || [];
+    siblings.push(mapAiStudyChatVersionRow(row));
+    versionsByOriginal.set(row.regeneration_of_id, siblings);
+  }
+
+  return rows.map((row) => ({
+    ...mapAiStudyChatMessageRow(row),
+    ...(versionsByOriginal.has(row.id) ? { versions: versionsByOriginal.get(row.id) } : {})
+  }));
 }
 
 export async function createAiStudyChatMessage(
@@ -844,7 +894,9 @@ export async function createAiStudyChatMessage(
   nodeId: string | null | undefined,
   role: AiStudyChatMessageRole,
   content: string,
-  aiPromptVersionId?: string | null
+  aiPromptVersionId?: string | null,
+  regenerationOfId?: string | null,
+  questionMessageId?: string | null
 ) {
   const normalizedRole = aiStudyChatMessageRoleSchema.parse(role);
   const normalizedNodeId = normalizeAiStudyChatNodeId(nodeId);
@@ -857,9 +909,9 @@ export async function createAiStudyChatMessage(
 
   const id = randomUUID();
   const rows = await prisma.$queryRaw<AiStudyChatMessageRow[]>`
-    INSERT INTO "ai_study_chat_messages" ("id", "user_id", "project_id", "node_id", "role", "content", "ai_prompt_version_id")
-    VALUES (${id}, ${ownerId}, ${projectId}, ${normalizedNodeId}, ${normalizedRole}, ${normalizedContent.slice(0, 20_000)}, ${aiPromptVersionId || null})
-    RETURNING "id", "role", "content", "created_at"
+    INSERT INTO "ai_study_chat_messages" ("id", "user_id", "project_id", "node_id", "role", "content", "ai_prompt_version_id", "regeneration_of_id", "question_message_id")
+    VALUES (${id}, ${ownerId}, ${projectId}, ${normalizedNodeId}, ${normalizedRole}, ${normalizedContent.slice(0, 20_000)}, ${aiPromptVersionId || null}, ${regenerationOfId || null}, ${questionMessageId || null})
+    RETURNING "id", "role", "content", "created_at" AT TIME ZONE current_setting('TimeZone') AS "created_at", "question_message_id"
   `;
 
   const message = rows[0];
@@ -923,7 +975,7 @@ export async function createPaidAiStudyChatUserMessage(
       const rows = await tx.$queryRaw<AiStudyChatMessageRow[]>`
         INSERT INTO "ai_study_chat_messages" ("id", "user_id", "project_id", "node_id", "role", "content")
         VALUES (${id}, ${ownerId}, ${projectId}, ${normalizedNodeId}, 'user', ${normalizedContent.slice(0, 20_000)})
-        RETURNING "id", "role", "content", "created_at"
+        RETURNING "id", "role", "content", "created_at" AT TIME ZONE current_setting('TimeZone') AS "created_at"
       `;
 
       const message = rows[0];
@@ -938,7 +990,94 @@ export async function createPaidAiStudyChatUserMessage(
   }
 }
 
-async function prepareAiStudyBuddyChat(ownerId: string, projectId: string, input: unknown) {
+export async function getAiStudyRegenerationQuote(ownerId: string, projectId: string) {
+  await assertAccessibleProject(ownerId, projectId);
+  const rule = await getDiamondRuleConfig(prisma, "ai_study_buddy_chat");
+  return { amount: rule.enabled ? rule.amount : 0, ruleVersion: rule.version };
+}
+
+export async function regenerateAiStudyBuddy(ownerId: string, projectId: string, input: unknown) {
+  const parsed = parseAiStudyInput(aiStudyRegenerationSchema, input, "重新生成参数不合法。");
+  const targetRows = await prisma.$queryRaw<AiStudyRegenerationTargetRow[]>`
+    SELECT "id", "role", "content", "node_id", "created_at", "regeneration_of_id", "question_message_id"
+    FROM "ai_study_chat_messages"
+    WHERE "id" = ${parsed.assistantMessageId}
+      AND "user_id" = ${ownerId}
+      AND "project_id" = ${projectId}
+    LIMIT 1
+  `;
+  const target = targetRows[0];
+  if (!target || target.role !== "assistant" || target.regeneration_of_id) {
+    throw new AiStudyError("原回答不存在，请刷新对话后重试。", 404, "AI_STUDY_REGENERATION_TARGET_NOT_FOUND");
+  }
+  await assertAiStudyChatContext(ownerId, projectId, target.node_id);
+
+  const questionRows = target.question_message_id
+    ? await prisma.$queryRaw<AiStudyRegenerationTargetRow[]>`
+        SELECT "id", "role", "content", "node_id", "created_at"
+        FROM "ai_study_chat_messages"
+        WHERE "id" = ${target.question_message_id}
+          AND "user_id" = ${ownerId}
+          AND "project_id" = ${projectId}
+          AND (("node_id" = ${target.node_id}) OR ("node_id" IS NULL AND ${target.node_id} IS NULL))
+        LIMIT 1
+      `
+    : await prisma.$queryRaw<AiStudyRegenerationTargetRow[]>`
+        SELECT "id", "role", "content", "node_id", "created_at"
+        FROM "ai_study_chat_messages"
+        WHERE "user_id" = ${ownerId}
+          AND "project_id" = ${projectId}
+          AND (("node_id" = ${target.node_id}) OR ("node_id" IS NULL AND ${target.node_id} IS NULL))
+          AND "regeneration_of_id" IS NULL
+          AND ("created_at", "id") < (${target.created_at}, ${target.id})
+        ORDER BY "created_at" DESC, "id" DESC
+        LIMIT 1
+      `;
+  const question = questionRows[0];
+  if (!question || question.role !== "user") {
+    throw new AiStudyError("未找到该回答对应的提问，请刷新对话后重试。", 400, "AI_STUDY_REGENERATION_QUESTION_NOT_FOUND");
+  }
+
+  const chargeId = randomUUID();
+  try {
+    await prisma.$transaction(async (tx) => {
+      const rule = await getDiamondRuleConfig(tx, "ai_study_buddy_chat");
+      const amount = rule.enabled ? rule.amount : 0;
+      if (amount !== parsed.expectedAmount || rule.version !== parsed.expectedRuleVersion) {
+        throw new AiStudyError("本次消耗已变化，请重新打开菜单确认。", 409, "AI_STUDY_REGENERATION_PRICE_CHANGED");
+      }
+      await consumeDiamondsByRule(tx, {
+        userId: ownerId,
+        ruleKey: "ai_study_buddy_chat",
+        dedupeKey: `ai_study_buddy_chat_regenerate:${chargeId}`,
+        note: "学习搭子：重新生成回答",
+        metadata: {
+          projectId,
+          sourceAssistantMessageId: target.id,
+          questionMessageId: question.id,
+          regenerationStyle: parsed.style,
+          ...(target.node_id ? { nodeId: target.node_id } : {})
+        }
+      });
+    });
+  } catch (error) {
+    rethrowAiStudyDiamondError(error);
+  }
+
+  const result = await askAiStudyBuddy(
+    ownerId,
+    projectId,
+    { message: question.content, nodeId: target.node_id },
+    parsed.style
+  );
+  if (!result.answer) {
+    throw new AiStudyError("暂时没有生成新回答，请稍后再试。", 503, "AI_STUDY_REGENERATION_EMPTY");
+  }
+  const saved = await createAiStudyChatMessage(ownerId, projectId, target.node_id, "assistant", result.answer, result.promptVersionId, target.id, question.id);
+  return { originalMessageId: target.id, version: { id: saved.id, content: saved.content, createdAt: saved.createdAt } };
+}
+
+async function prepareAiStudyBuddyChat(ownerId: string, projectId: string, input: unknown, regenerationStyle?: AiStudyRegenerationStyle) {
   const parsed = parseAiStudyInput(aiStudyBuddyChatSchema, input, "对话参数不合法。");
   const project = await prisma.aiStudyProject.findFirst({
     where: accessibleProjectWhere(ownerId, projectId),
@@ -1010,7 +1149,7 @@ async function prepareAiStudyBuddyChat(ownerId: string, projectId: string, input
       project,
       projectNodes,
       sourceChunks
-    }, promptConfig),
+    }, promptConfig, regenerationStyle),
     nodeTitle: node?.title || null,
     promptVersionId: promptConfig.id
   };
@@ -1028,7 +1167,7 @@ function buildAiStudyBuddyMessages({
   project: AiStudyBuddyProjectContext;
   projectNodes: AiStudyBuddyOutlineNode[];
   sourceChunks: AiStudyBuddySourceChunkContext[];
-}, promptConfig: AiStudyPromptConfig): ChatMessage[] {
+}, promptConfig: AiStudyPromptConfig, regenerationStyle?: AiStudyRegenerationStyle): ChatMessage[] {
   const card = node?.cards[0] || null;
   const context = [
     `项目：${project.title}`,
@@ -1043,7 +1182,13 @@ function buildAiStudyBuddyMessages({
     buildAiStudyBuddyJsonSection("示例", card?.examples, 4),
     buildAiStudyBuddyOutline(projectNodes),
     buildAiStudyBuddySourceContext(sourceChunks),
-    `学生问题：${message}`
+    `学生问题：${message}`,
+    regenerationStyle ? `请针对同一个问题重新讲解，仍以资料和知识点为依据，保持事实准确。${{
+      rephrase: "换一种表达和组织方式说明。",
+      example: "重点用一个贴近学习或生活的例子说明。",
+      steps: "按清晰的步骤逐层解释。",
+      concise: "用更简洁的语言抓住关键结论。"
+    }[regenerationStyle]}` : ""
   ].filter(Boolean).join("\n\n");
 
   return [
@@ -1172,7 +1317,16 @@ function mapAiStudyChatMessageRow(row: AiStudyChatMessageRow): AiStudyChatMessag
     id: row.id,
     role,
     content: row.content,
-    createdAt
+    createdAt,
+    questionMessageId: row.question_message_id || null
+  };
+}
+
+function mapAiStudyChatVersionRow(row: AiStudyChatMessageRow): AiStudyChatVersion {
+  return {
+    id: row.id,
+    content: row.content,
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : new Date(row.created_at).toISOString()
   };
 }
 

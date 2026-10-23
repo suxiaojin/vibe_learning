@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { CheckCircle2, Flame, Gem, Star, Trophy, XCircle } from "lucide-react";
+import { BookOpen, CheckCircle2, Flame, Gem, Star, Trophy, XCircle } from "lucide-react";
 import { ChallengeDifficultyStars } from "@/components/challenge-difficulty-stars";
+import { CollapsiblePostText } from "@/components/collapsible-post-text";
 import { RichTextContent } from "@/components/rich-text-content";
 import { normalizeBuddyShareInput, type BuddyShareCard } from "@/lib/buddy-share-cards";
 import { cn } from "@/lib/utils";
@@ -16,7 +17,7 @@ const heatmapLevelClasses = [
 const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const weekdayLabels = ["", "Mon", "", "Wed", "", "Fri", ""];
 
-export function BuddyShareCardView({ card, compact = false }: { card?: BuddyShareCard | null; compact?: boolean }) {
+export function BuddyShareCardView({ card, compact = false, full = false }: { card?: BuddyShareCard | null; compact?: boolean; full?: boolean }) {
   if (!card) {
     return null;
   }
@@ -32,7 +33,52 @@ export function BuddyShareCardView({ card, compact = false }: { card?: BuddyShar
     return <QuizResultShareCard card={card} compact={compact} />;
   }
 
+  if (card.type === "ai_study_qa_card") {
+    return <AiStudyQaShareCard card={card} compact={compact} full={full} />;
+  }
+
   return <ActiveLearningShareCard card={card} compact={compact} />;
+}
+
+function AiStudyQaShareCard({
+  card,
+  compact,
+  full
+}: {
+  card: Extract<BuddyShareCard, { type: "ai_study_qa_card" }>;
+  compact: boolean;
+  full: boolean;
+}) {
+  return (
+    <div className={cn("min-w-0", full ? "rounded-2xl border border-[#d9e3ee] bg-white" : "border-t border-[#edf0f4]")}>
+      <div className={cn("min-w-0", full ? "px-4 py-4 sm:px-5 sm:py-5" : compact ? "pt-3" : "pt-4")}>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-5 text-[#667085]">
+          <BookOpen aria-hidden="true" className="shrink-0 text-[#1f9d8a]" size={16} />
+          <span className="font-semibold text-[#1f9d8a]">学习搭子问答</span>
+          {card.materialTitle ? <><span aria-hidden="true">·</span><span className="break-all">《{card.materialTitle}》</span></> : null}
+          {card.nodeTitle ? <><span aria-hidden="true">·</span><span className="break-all">{card.nodeTitle}</span></> : null}
+        </div>
+
+        {full ? (
+          <h4 className="mt-3 whitespace-pre-wrap break-words text-base font-semibold leading-7 text-ink sm:text-lg">{card.question}</h4>
+        ) : (
+          <div className="mt-3 [&_p]:!text-base [&_p]:!font-semibold [&_p]:!leading-7 [&_p]:!text-ink sm:[&_p]:!text-lg">
+            <CollapsiblePostText collapseText="收起提问" compact content={card.question} expandText="查看完整提问" previewLines={2} />
+          </div>
+        )}
+
+        <div className="mt-3 border-t border-[#edf0f4] pt-3">
+          <p className="sr-only">学习搭子的回答</p>
+          {full ? (
+            <p className="whitespace-pre-wrap break-words text-sm leading-7 text-ink/85 sm:text-[15px]">{card.answer}</p>
+          ) : (
+            <CollapsiblePostText collapseText="收起回答" compact content={card.answer} expandIcon="right" expandText="查看完整回答" previewLines={2} />
+          )}
+        </div>
+        <p className="mt-3 text-[11px] text-[#98a2b3]">内容由 AI 生成，请仔细甄别</p>
+      </div>
+    </div>
+  );
 }
 
 function QuestionShareCard({ card, compact }: { card: Extract<BuddyShareCard, { type: "question_card" }>; compact: boolean }) {

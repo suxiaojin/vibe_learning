@@ -120,11 +120,16 @@ const buddyHotHalfLifeSeconds = 7 * 24 * 60 * 60;
 
 export async function createBuddyPost(authorId: string, contentInput: string, shareInput?: unknown) {
   const content = normalizePostContent(contentInput);
-  if (!content) {
+  const share = normalizeBuddyShareInput(shareInput);
+  if (shareInput && typeof shareInput === "object" && "type" in shareInput && shareInput.type === "ai_study_qa_card" && !share) {
+    throw new BuddyError("BUDDY_POST_INVALID_AI_STUDY_SHARE", "分享的问答内容不完整，请重新打开分享预览。");
+  }
+  if (!content && share?.type !== "ai_study_qa_card") {
     throw new BuddyError("BUDDY_POST_EMPTY", "动态内容不能为空。");
   }
-  assertPostContentAllowed(content);
-  const share = normalizeBuddyShareInput(shareInput);
+  if (content) {
+    assertPostContentAllowed(content);
+  }
   if (share) {
     assertPostContentAllowed(JSON.stringify(share));
   }

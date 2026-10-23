@@ -104,7 +104,13 @@ function getDiamondRuleKey(metadata: unknown) {
 }
 
 function getTransactionPresentation(item: { type: string; note: string | null; metadata: unknown }) {
-  const rulePresentation = diamondRuleTransactionPresentation[getDiamondRuleKey(item.metadata)];
+  const ruleKey = getDiamondRuleKey(item.metadata);
+  if (ruleKey === "ai_study_buddy_chat"
+    && item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata)
+    && typeof (item.metadata as Record<string, unknown>).sourceAssistantMessageId === "string") {
+    return { typeLabel: "模型调用", description: "学习搭子：重新生成回答" };
+  }
+  const rulePresentation = diamondRuleTransactionPresentation[ruleKey];
   return {
     typeLabel: rulePresentation?.typeLabel || transactionLabels[item.type] || item.type,
     description: rulePresentation?.description || item.note || "-"

@@ -1,9 +1,10 @@
 "use client";
 
 import { type FormEvent, type KeyboardEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Bot, Loader2, MessageCircle, Pause, Send, Sparkles, X } from "lucide-react";
+import { Bot, Check, ChevronLeft, ChevronRight, Copy, Loader2, MessageCircle, Pause, RefreshCw, Send, Share2, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { AiStudyChatShareDialog } from "@/components/ai-study/ai-study-chat-share-dialog";
 import { DiamondInsufficientMessage } from "@/components/diamond-insufficient-message";
 import { buildAiStudyOpeningSuggestions } from "@/lib/ai-study-chat-suggestions";
 import { isDiamondInsufficientMessage } from "@/lib/diamond-insufficient";
@@ -19,6 +20,7 @@ type StudyBuddyDetailControlsProps = {
   nextNode: NavigationNode | null;
   previousNode: NavigationNode | null;
   projectId: string;
+  materialTitle: string;
   selectedNodeCardKeyPoints: string[];
   selectedNodeCardOverview: string;
   selectedNodeDepth: number;
@@ -33,6 +35,28 @@ type ChatMessage = {
   content: string;
   role: "assistant" | "user";
   tone?: "error";
+  createdAt?: string;
+  completed?: boolean;
+  versions?: ChatVersion[];
+  questionMessageId?: string | null;
+};
+
+type ChatVersion = {
+  id: string;
+  content: string;
+  createdAt?: string;
+};
+
+type RegenerationStyle = "rephrase" | "example" | "steps" | "concise";
+
+type RegenerationQuote = { amount: number; ruleVersion: number };
+
+type RegenerationSelection = {
+  messageId: string;
+  style: RegenerationStyle;
+  quote: RegenerationQuote | null;
+  loadingQuote: boolean;
+  error: string;
 };
 
 type ChatHistoryResponse = {
@@ -41,17 +65,32 @@ type ChatHistoryResponse = {
   };
 };
 
+type ShareSelection = {
+  messageId: string;
+  question: string;
+  answer: string;
+  nodeTitle: string;
+  materialTitle: string;
+};
+
 const lastNodeStoragePrefix = "vibe-ai-study-last-node:v1:";
 const drawerWidthStorageKey = "vibe-ai-study-chat-drawer-width:v1";
 const defaultDrawerWidth = 448;
 const minDrawerWidth = 360;
 const maxDrawerWidth = 720;
+const regenerationStyles: { value: RegenerationStyle; label: string }[] = [
+  { value: "rephrase", label: "换个说法" },
+  { value: "example", label: "举个例子" },
+  { value: "steps", label: "分步骤讲" },
+  { value: "concise", label: "更简洁" }
+];
 
 export function StudyBuddyDetailControls({
   hasExplicitNode,
   nextNode,
   previousNode,
   projectId,
+  materialTitle,
   selectedNodeCardKeyPoints,
   selectedNodeCardOverview,
   selectedNodeDepth,
@@ -68,7 +107,15 @@ export function StudyBuddyDetailControls({
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sending, setSending] = useState(false);
+  const [sharedMessageIds, setSharedMessageIds] = useState<Set<string>>(() => new Set());
+  const [shareSelection, setShareSelection] = useState<ShareSelection | null>(null);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [selectedVersionIds, setSelectedVersionIds] = useState<Record<string, string>>({});
+  const [regeneration, setRegeneration] = useState<RegenerationSelection | null>(null);
+  const [regeneratingMessageId, setRegeneratingMessageId] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const regeneratingRequestRef = useRef(false);
+  const copiedResetTimerRef = useRef<number | null>(null);
   const messageIdRef = useRef(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -136,6 +183,9 @@ export function StudyBuddyDetailControls({
     setDraft("");
     setSending(false);
     setMessages([]);
+    setShareSelection(null);
+    setSelectedVersionIds({});
+    setRegeneration(null);
     setLoadingHistory(true);
 
     fetch(`/api/ai-study/projects/${projectId}/chat${searchParams.size ? `?${searchParams.toString()}` : ""}`, {
@@ -200,10 +250,13 @@ export function StudyBuddyDetailControls({
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: "end" });
-  }, [messages, sending]);
+  }, [messages.length, messages[messages.length - 1]?.content.length, sending]);
 
   useEffect(() => {
-    return () => abortControllerRef.current?.abort();
+    return () => {
+      abortControllerRef.current?.abort();
+      if (copiedResetTimerRef.current !== null) window.clearTimeout(copiedResetTimerRef.current);
+    };
   }, []);
 
   function navigateToNode(nodeId: string) {
@@ -216,9 +269,79 @@ export function StudyBuddyDetailControls({
     return `${prefix}-${Date.now()}-${messageIdRef.current}`;
   }
 
+  async function refreshChatHistory() {
+    const searchParams = new URLSearchParams();
+    if (selectedNodeId) searchParams.set("nodeId", selectedNodeId);
+    const response = await fetch(`/api/ai-study/projects/${projectId}/chat${searchParams.size ? `?${searchParams.toString()}` : ""}`);
+    if (!response.ok) throw new Error(await readErrorMessage(response));
+    const payload = (await response.json()) as ChatHistoryResponse;
+    setMessages(normalizeChatMessages(payload.data?.messages));
+  }
+
+  async function openRegeneration(messageId: string) {
+    if (regeneration?.messageId === messageId) {
+      setRegeneration(null);
+      return;
+    }
+    if (sending || regeneratingMessageId) return;
+    setRegeneration({ messageId, style: "rephrase", quote: null, loadingQuote: true, error: "" });
+    try {
+      const response = await fetch(`/api/ai-study/projects/${projectId}/chat/regenerate`, { cache: "no-store" });
+      if (!response.ok) throw new Error(await readErrorMessage(response));
+      const payload = (await response.json()) as { data?: { quote?: RegenerationQuote } };
+      const quote = payload.data?.quote;
+      if (!quote || !Number.isInteger(quote.amount) || !Number.isInteger(quote.ruleVersion)) {
+        throw new Error("暂时无法读取本次消耗，请稍后再试。");
+      }
+      setRegeneration((current) => current?.messageId === messageId ? { ...current, quote, loadingQuote: false } : current);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "暂时无法读取本次消耗，请稍后再试。";
+      setRegeneration((current) => current?.messageId === messageId ? { ...current, loadingQuote: false, error: message } : current);
+    }
+  }
+
+  async function submitRegeneration(messageId: string) {
+    const selection = regeneration;
+    if (!selection?.quote || selection.messageId !== messageId || regeneratingRequestRef.current || sending) return;
+    regeneratingRequestRef.current = true;
+    setRegeneratingMessageId(messageId);
+    setRegeneration({ ...selection, error: "" });
+    try {
+      const response = await fetch(`/api/ai-study/projects/${projectId}/chat/regenerate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assistantMessageId: messageId,
+          style: selection.style,
+          expectedAmount: selection.quote.amount,
+          expectedRuleVersion: selection.quote.ruleVersion
+        })
+      });
+      if (!response.ok) throw new Error(await readErrorMessage(response));
+      const payload = (await response.json()) as { data?: { originalMessageId?: string; version?: ChatVersion } };
+      const version = payload.data?.version;
+      if (payload.data?.originalMessageId !== messageId || !version?.id || !version.content) {
+        throw new Error("新回答已生成，请刷新对话查看。");
+      }
+      setMessages((current) => current.map((message) => message.id === messageId
+        ? { ...message, versions: [...(message.versions || []), version] }
+        : message));
+      setSelectedVersionIds((current) => ({ ...current, [messageId]: version.id }));
+      setRegeneration(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "重新生成失败，请稍后再试。";
+      setRegeneration((current) => current?.messageId === messageId
+        ? { ...current, error: message, quote: message.includes("本次消耗已变化") ? null : current.quote }
+        : current);
+    } finally {
+      regeneratingRequestRef.current = false;
+      setRegeneratingMessageId(null);
+    }
+  }
+
   async function sendMessage(rawMessage = draft) {
     const message = rawMessage.trim();
-    if (!message || sending || loadingHistory) {
+    if (!message || sending || loadingHistory || regeneratingMessageId) {
       return;
     }
 
@@ -231,7 +354,7 @@ export function StudyBuddyDetailControls({
     setMessages((current) => [
       ...current,
       { id: nextMessageId("user"), content: message, role: "user" },
-      { id: assistantMessageId, content: "", role: "assistant" }
+      { id: assistantMessageId, content: "", role: "assistant", completed: false }
     ]);
 
     try {
@@ -267,14 +390,15 @@ export function StudyBuddyDetailControls({
       }
 
       rawAnswer += decoder.decode();
-      updateAssistantMessage(assistantMessageId, cleanAiText(rawAnswer) || "暂时没有生成回答，请稍后再试。");
+      updateAssistantMessage(assistantMessageId, cleanAiText(rawAnswer) || "暂时没有生成回答，请稍后再试。", undefined, true);
+      await refreshChatHistory().catch(() => {});
     } catch (error) {
       if (controller.signal.aborted) {
         const pausedText = cleanAiText(rawAnswer) || "已暂停输出。";
-        updateAssistantMessage(assistantMessageId, pausedText);
+        updateAssistantMessage(assistantMessageId, pausedText, undefined, true);
       } else {
         const messageText = error instanceof Error ? error.message : "AI学习搭子暂时不可用，请稍后再试。";
-        updateAssistantMessage(assistantMessageId, messageText, "error");
+        updateAssistantMessage(assistantMessageId, messageText, "error", true);
       }
     } finally {
       if (abortControllerRef.current === controller) {
@@ -288,14 +412,26 @@ export function StudyBuddyDetailControls({
     abortControllerRef.current?.abort();
   }
 
-  function updateAssistantMessage(messageId: string, content: string, tone?: ChatMessage["tone"]) {
+  async function copyAnswer(messageId: string, content: string) {
+    if (copiedResetTimerRef.current !== null) window.clearTimeout(copiedResetTimerRef.current);
+    setCopiedMessageId(null);
+    if (!await writeClipboardText(content)) return;
+    setCopiedMessageId(messageId);
+    copiedResetTimerRef.current = window.setTimeout(() => {
+      setCopiedMessageId(null);
+      copiedResetTimerRef.current = null;
+    }, 1800);
+  }
+
+  function updateAssistantMessage(messageId: string, content: string, tone?: ChatMessage["tone"], completed = false) {
     setMessages((current) =>
       current.map((message) =>
         message.id === messageId
           ? {
               ...message,
               content,
-              tone
+              tone,
+              ...(completed ? { completed: true, createdAt: new Date().toISOString() } : {})
             }
           : message
       )
@@ -314,7 +450,7 @@ export function StudyBuddyDetailControls({
   function handleDraftKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      if (!sending && !loadingHistory) {
+      if (!sending && !loadingHistory && !regeneratingMessageId) {
         void sendMessage();
       }
     }
@@ -404,7 +540,7 @@ export function StudyBuddyDetailControls({
                 {suggestions.map((suggestion) => (
                   <button
                     className="max-w-full rounded-[12px] border border-[#e5e7eb] bg-white px-4 py-3 text-left text-sm font-medium leading-5 text-[#475467] shadow-sm transition hover:border-[#cbd5e1] hover:text-[#111827] disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={sending || loadingHistory}
+                    disabled={sending || loadingHistory || Boolean(regeneratingMessageId)}
                     key={suggestion}
                     onClick={() => {
                       void sendMessage(suggestion);
@@ -425,34 +561,130 @@ export function StudyBuddyDetailControls({
 
               {messages.length > 0 ? (
                 <div className="mt-7 space-y-4">
-                  {messages.map((message) => {
-                    const renderedContent = message.role === "assistant" ? cleanAiText(message.content) : message.content;
+                  {messages.map((message, index) => {
+                    const versions: ChatVersion[] = message.role === "assistant"
+                      ? [{ id: message.id, content: message.content, createdAt: message.createdAt }, ...(message.versions || [])]
+                      : [];
+                    const selectedVersionIndex = versions.findIndex((version) => version.id === selectedVersionIds[message.id]);
+                    const activeVersionIndex = selectedVersionIndex >= 0 ? selectedVersionIndex : versions.length - 1;
+                    const activeVersion = versions[activeVersionIndex];
+                    const renderedContent = message.role === "assistant" ? cleanAiText(activeVersion?.content || "") : message.content;
+                    const showAnswerActions = message.role === "assistant" && message.tone !== "error" && message.completed !== false && Boolean(renderedContent);
+                    const answerTime = showAnswerActions ? formatAnswerTime(activeVersion?.createdAt) : null;
+                    const pairedQuestion = message.questionMessageId
+                      ? messages.find((candidate) => candidate.id === message.questionMessageId && candidate.role === "user")
+                      : null;
+                    const question = message.questionMessageId
+                      ? pairedQuestion?.content || null
+                      : index > 0 && messages[index - 1].role === "user" ? messages[index - 1].content : null;
                     return (
                       <div
                         className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}
                         key={message.id}
                       >
-                        <div
-                          className={cn(
-                            "max-w-[86%] whitespace-pre-wrap rounded-[16px] px-4 py-3 text-sm leading-6 shadow-sm",
-                            message.role === "user"
-                              ? "bg-[#2563ff] text-white"
-                              : "border border-[#edf0f4] bg-[#f8fafc] text-[#1f2937]",
-                            message.tone === "error" ? "border-red-100 bg-red-50 text-red-600" : ""
-                          )}
-                        >
-                          {renderedContent ? (
-                            isDiamondInsufficientMessage(renderedContent) ? (
-                              <DiamondInsufficientMessage />
+                        <div className="min-w-0 max-w-[86%]">
+                          <div
+                            className={cn(
+                              "whitespace-pre-wrap rounded-[16px] px-4 py-3 text-sm leading-6 shadow-sm",
+                              message.role === "user"
+                                ? "bg-[#2563ff] text-white"
+                                : "border border-[#edf0f4] bg-[#f8fafc] text-[#1f2937]",
+                              message.tone === "error" ? "border-red-100 bg-red-50 text-red-600" : ""
+                            )}
+                          >
+                            {renderedContent ? (
+                              isDiamondInsufficientMessage(renderedContent) ? (
+                                <DiamondInsufficientMessage />
+                              ) : (
+                                renderedContent
+                              )
                             ) : (
-                              renderedContent
-                            )
-                          ) : (
-                            <span className="inline-flex items-center gap-2 text-[#667085]">
-                              <Loader2 className="animate-spin" size={15} />
-                              搭子正在思考
-                            </span>
-                          )}
+                              <span className="inline-flex items-center gap-2 text-[#667085]">
+                                <Loader2 className="animate-spin" size={15} />
+                                搭子正在思考
+                              </span>
+                            )}
+                          </div>
+                          {showAnswerActions ? (
+                            <div className="mt-1.5 flex items-center justify-between gap-3 px-1 text-[#98a2b3]">
+                              <div className="flex items-center gap-3" aria-label="回答操作">
+                                <button
+                                  aria-label="复制回答"
+                                  className="rounded text-[#98a2b3] transition hover:text-[#475467] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563ff]"
+                                  onClick={() => { void copyAnswer(activeVersion.id, renderedContent); }}
+                                  title="复制回答"
+                                  type="button"
+                                >
+                                  {copiedMessageId === activeVersion.id ? <Check size={15} /> : <Copy size={15} />}
+                                </button>
+                                <button
+                                  aria-label={sharedMessageIds.has(activeVersion.id) ? "已分享到一起上岸" : "分享到一起上岸"}
+                                  className="rounded text-[#98a2b3] transition hover:text-[#475467] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563ff] disabled:cursor-not-allowed disabled:opacity-50"
+                                  disabled={!question || sharedMessageIds.has(activeVersion.id)}
+                                  onClick={() => { if (question) setShareSelection({ messageId: activeVersion.id, question, answer: renderedContent, nodeTitle: selectedNodeTitle, materialTitle }); }}
+                                  title={!question ? "未找到对应提问" : sharedMessageIds.has(activeVersion.id) ? "已分享到一起上岸" : "分享到一起上岸"}
+                                  type="button"
+                                >
+                                  {sharedMessageIds.has(activeVersion.id) ? <Check size={15} /> : <Share2 size={15} />}
+                                </button>
+                                <button
+                                  aria-expanded={regeneration?.messageId === message.id}
+                                  aria-label="重新生成这条回答"
+                                  className="rounded text-[#98a2b3] transition hover:text-[#475467] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563ff] disabled:cursor-not-allowed disabled:opacity-50"
+                                  disabled={!question || message.id.startsWith("assistant-") || sending || Boolean(regeneratingMessageId)}
+                                  onClick={() => { void openRegeneration(message.id); }}
+                                  title={!question ? "未找到对应提问" : "重新生成这条回答"}
+                                  type="button"
+                                >
+                                  <RefreshCw size={15} />
+                                </button>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-2">
+                                {versions.length > 1 ? (
+                                  <div className="flex items-center gap-0.5 text-xs" aria-label={`回答版本 ${activeVersionIndex + 1}/${versions.length}`}>
+                                    <button aria-label="上一版回答" className="rounded p-0.5 hover:bg-[#edf0f4] disabled:opacity-40" disabled={activeVersionIndex === 0} onClick={() => setSelectedVersionIds((current) => ({ ...current, [message.id]: versions[activeVersionIndex - 1].id }))} type="button"><ChevronLeft size={14} /></button>
+                                    <span className="tabular-nums">{activeVersionIndex + 1}/{versions.length}</span>
+                                    <button aria-label="下一版回答" className="rounded p-0.5 hover:bg-[#edf0f4] disabled:opacity-40" disabled={activeVersionIndex === versions.length - 1} onClick={() => setSelectedVersionIds((current) => ({ ...current, [message.id]: versions[activeVersionIndex + 1].id }))} type="button"><ChevronRight size={14} /></button>
+                                  </div>
+                                ) : null}
+                                {answerTime ? <time className="shrink-0 text-xs" dateTime={activeVersion.createdAt}>{answerTime}</time> : null}
+                              </div>
+                            </div>
+                          ) : null}
+                          {regeneration?.messageId === message.id ? (
+                            <div className="mt-2 rounded-xl border border-[#d9e3ee] bg-white p-3 text-sm text-[#344054] shadow-sm">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="font-semibold">这次想怎么讲？</p>
+                                <button aria-label="关闭重新生成菜单" className="rounded p-1 text-[#98a2b3] hover:bg-[#f3f4f6]" disabled={regeneratingMessageId === message.id} onClick={() => setRegeneration(null)} type="button"><X size={15} /></button>
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="选择讲解方式">
+                                {regenerationStyles.map((style) => (
+                                  <button
+                                    aria-pressed={regeneration.style === style.value}
+                                    className={cn("rounded-full border px-3 py-1.5 text-xs font-medium transition", regeneration.style === style.value ? "border-[#1f9d8a] bg-[#e8f6f3] text-[#117666]" : "border-[#d9e3ee] text-[#667085] hover:border-[#1f9d8a]")}
+                                    disabled={Boolean(regeneratingMessageId)}
+                                    key={style.value}
+                                    onClick={() => setRegeneration((current) => current ? { ...current, style: style.value } : current)}
+                                    type="button"
+                                  >{style.label}</button>
+                                ))}
+                              </div>
+                              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-xs text-[#667085]">{regeneration.loadingQuote ? "正在读取本次消耗…" : regeneration.quote ? regeneration.quote.amount > 0 ? `本次生成消耗 ${regeneration.quote.amount} 钻石` : "本次生成不消耗钻石" : "暂时无法确认消耗"}</p>
+                                <button className="inline-flex min-h-9 items-center gap-2 rounded-full bg-[#1f9d8a] px-4 text-xs font-semibold text-white hover:bg-[#168473] disabled:cursor-not-allowed disabled:opacity-50" disabled={!regeneration.quote || Boolean(regeneratingMessageId)} onClick={() => { void submitRegeneration(message.id); }} type="button">
+                                  {regeneratingMessageId === message.id ? <Loader2 className="animate-spin" size={14} /> : <RefreshCw size={14} />}
+                                  {regeneratingMessageId === message.id ? "正在生成新版本" : "生成新版本"}
+                                </button>
+                              </div>
+                              {regeneration.error ? (
+                                <div className="mt-2" role="alert">
+                                  {isDiamondInsufficientMessage(regeneration.error)
+                                    ? <DiamondInsufficientMessage />
+                                    : <p className="text-xs text-red-600">{regeneration.error}</p>}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     );
@@ -472,7 +704,7 @@ export function StudyBuddyDetailControls({
               <form className="relative" onSubmit={handleSubmit}>
                 <textarea
                   className="h-[120px] w-full resize-none rounded-[18px] border border-[#d9e5ff] bg-white px-4 py-4 pr-14 text-sm leading-6 text-[#111827] outline-none transition placeholder:text-[#98a2b3] focus:border-[#b8ccff] focus:ring-4 focus:ring-[#2563ff]/10 disabled:bg-[#f8fafc]"
-                  disabled={sending || loadingHistory}
+                  disabled={sending || loadingHistory || Boolean(regeneratingMessageId)}
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={handleDraftKeyDown}
                   placeholder={selectedNodeSummary ? "对于该知识点有什么想要了解的呢" : "问问搭子关于这个项目的问题"}
@@ -489,7 +721,7 @@ export function StudyBuddyDetailControls({
                         ? "bg-[#16a329] hover:bg-[#118320]"
                         : "bg-[#c0c4cc] disabled:cursor-not-allowed disabled:opacity-80"
                   )}
-                  disabled={!sending && (!hasDraft || loadingHistory)}
+                  disabled={!sending && (!hasDraft || loadingHistory || Boolean(regeneratingMessageId))}
                   onClick={sending ? stopStreaming : undefined}
                   type={sending ? "button" : "submit"}
                 >
@@ -509,6 +741,20 @@ export function StudyBuddyDetailControls({
             </div>
           </aside>
         </div>
+      ) : null}
+      {shareSelection ? (
+        <AiStudyChatShareDialog
+          answer={shareSelection.answer}
+          materialTitle={shareSelection.materialTitle}
+          messageId={shareSelection.messageId}
+          nodeTitle={shareSelection.nodeTitle}
+          onClose={() => setShareSelection(null)}
+          onPublished={(messageId) => {
+            setSharedMessageIds((current) => new Set(current).add(messageId));
+            setShareSelection(null);
+          }}
+          question={shareSelection.question}
+        />
       ) : null}
     </>
   );
@@ -565,7 +811,77 @@ function isChatMessage(value: unknown): value is ChatMessage {
 }
 
 function normalizeChatMessages(value: unknown) {
-  return Array.isArray(value) ? value.filter(isChatMessage).slice(-80) : [];
+  return Array.isArray(value) ? value.filter(isChatMessage).slice(-80).map((message) => ({
+    ...message,
+    versions: Array.isArray(message.versions) ? message.versions.filter(isChatVersion) : [],
+    questionMessageId: typeof message.questionMessageId === "string" ? message.questionMessageId : null
+  })) : [];
+}
+
+function isChatVersion(value: unknown): value is ChatVersion {
+  if (!value || typeof value !== "object") return false;
+  const version = value as Partial<ChatVersion>;
+  return typeof version.id === "string" && typeof version.content === "string" && typeof version.createdAt === "string";
+}
+
+const answerDateFormatter = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai",
+  year: "numeric",
+  month: "numeric",
+  day: "numeric"
+});
+
+const answerTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23"
+});
+
+function formatAnswerTime(value?: string) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const now = new Date();
+  const parts = answerDateFormatter.formatToParts(date);
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
+  const dayOfMonth = Number(parts.find((part) => part.type === "day")?.value);
+  const currentYear = Number(answerDateFormatter.formatToParts(now).find((part) => part.type === "year")?.value);
+  const day = answerDateFormatter.format(date) === answerDateFormatter.format(now)
+    ? "今天"
+    : year === currentYear
+      ? `${month}月${dayOfMonth}日`
+      : `${year}年${month}月${dayOfMonth}日`;
+  return `${day} ${answerTimeFormatter.format(date)}`;
+}
+
+async function writeClipboardText(content: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(content);
+      return true;
+    } catch {
+      // HTTP deployments may not expose the Clipboard API.
+    }
+  }
+
+  const textarea = document.createElement("textarea");
+  const focusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  textarea.value = content;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  try {
+    textarea.select();
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+    focusedElement?.focus({ preventScroll: true });
+  }
 }
 
 async function readErrorMessage(response: Response) {

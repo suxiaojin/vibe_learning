@@ -121,6 +121,7 @@ enum BuddyPostShareType {
   question_card
   quiz_result_card
   active_learning_card
+  ai_study_qa_card
 }
 
 enum ShareCopyContext {
@@ -1813,6 +1814,8 @@ model AiStudyChatMessage {
   projectId String         @map("project_id")
   nodeId    String?        @map("node_id")
   aiPromptVersionId String? @map("ai_prompt_version_id")
+  questionMessageId String? @map("question_message_id")
+  regenerationOfId String? @map("regeneration_of_id")
   role      String
   content   String         @db.Text
   createdAt DateTime       @default(now()) @map("created_at")
@@ -1820,10 +1823,16 @@ model AiStudyChatMessage {
   project   AiStudyProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   node      AiStudyNode?   @relation(fields: [nodeId], references: [id], onDelete: SetNull)
   aiPromptVersion AiStudyPromptVersion? @relation(fields: [aiPromptVersionId], references: [id], onDelete: SetNull)
+  questionMessage AiStudyChatMessage? @relation("AiStudyChatQuestion", fields: [questionMessageId], references: [id], onDelete: SetNull)
+  answers AiStudyChatMessage[] @relation("AiStudyChatQuestion")
+  regenerationOf AiStudyChatMessage? @relation("AiStudyChatVersions", fields: [regenerationOfId], references: [id], onDelete: Cascade)
+  regenerations AiStudyChatMessage[] @relation("AiStudyChatVersions")
 
   @@index([userId, projectId, nodeId, createdAt], map: "ai_study_chat_messages_user_project_node_created_idx")
   @@index([projectId, createdAt], map: "ai_study_chat_messages_project_created_idx")
   @@index([aiPromptVersionId], map: "ai_study_chat_messages_prompt_version_idx")
+  @@index([questionMessageId], map: "ai_study_chat_messages_question_idx")
+  @@index([regenerationOfId, createdAt], map: "ai_study_chat_messages_regeneration_created_idx")
   @@map("ai_study_chat_messages")
 }
 

@@ -192,7 +192,11 @@ function SocialPostBody({
 }) {
   return (
     <div className={cn(compact ? "mt-2" : "mt-4", "space-y-3")}>
-      {content ? <CollapsiblePostText compact={compact} content={content} /> : null}
+      {content ? (
+        <div className={!compact && sharePayload?.type === "ai_study_qa_card" ? "[&_p]:!text-base [&_p]:!font-semibold [&_p]:!leading-7 [&_p]:!text-ink sm:[&_p]:!text-[17px]" : undefined}>
+          <CollapsiblePostText compact={compact} content={content} />
+        </div>
+      ) : null}
       <BuddyShareCardView card={sharePayload} compact={compact} />
     </div>
   );

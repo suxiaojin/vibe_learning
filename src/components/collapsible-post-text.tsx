@@ -1,15 +1,23 @@
 "use client";
 
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronUp } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 export function CollapsiblePostText({
   compact = false,
-  content
+  content,
+  expandText,
+  expandIcon = "down",
+  collapseText,
+  previewLines
 }: {
   compact?: boolean;
   content: string;
+  expandText?: string;
+  expandIcon?: "down" | "right";
+  collapseText?: string;
+  previewLines?: 2;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [hasOverflow, setHasOverflow] = useState(false);
@@ -60,8 +68,8 @@ export function CollapsiblePostText({
     setExpanded((current) => !current);
   }
 
-  const expandLabel = compact ? "展开原文" : "阅读全文";
-  const collapseLabel = compact ? "收起原文" : "收起";
+  const expandLabel = expandText || (compact ? "展开原文" : "阅读全文");
+  const collapseLabel = collapseText || (compact ? "收起原文" : "收起");
 
   return (
     <div ref={containerRef}>
@@ -69,7 +77,7 @@ export function CollapsiblePostText({
         className={cn(
           "whitespace-pre-wrap break-words font-medium leading-7 text-ink/85",
           compact ? "text-sm" : "text-[15px]",
-          !expanded && (compact ? "line-clamp-3" : "line-clamp-5 sm:line-clamp-4")
+          !expanded && (previewLines === 2 ? "line-clamp-2" : compact ? "line-clamp-3" : "line-clamp-5 sm:line-clamp-4")
         )}
         id={paragraphId}
         ref={paragraphRef}
@@ -85,7 +93,7 @@ export function CollapsiblePostText({
           type="button"
         >
           {expanded ? collapseLabel : expandLabel}
-          {expanded ? <ChevronUp aria-hidden="true" size={15} /> : <ChevronDown aria-hidden="true" size={15} />}
+          {expanded ? <ChevronUp aria-hidden="true" size={15} /> : expandIcon === "right" ? <ArrowRight aria-hidden="true" size={15} /> : <ChevronDown aria-hidden="true" size={15} />}
         </button>
       ) : null}
     </div>
