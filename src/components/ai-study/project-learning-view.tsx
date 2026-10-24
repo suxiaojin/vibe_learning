@@ -10,6 +10,7 @@ import {
 import { KnowledgeMapView, type KnowledgeMapNode } from "@/components/ai-study/knowledge-map-view";
 import { ResizableStudyPanels } from "@/components/ai-study/resizable-study-panels";
 import { StudyBuddyDetailControls } from "@/components/ai-study/study-buddy-detail-controls";
+import { AiStudySourcePagePreview } from "@/components/ai-study/source-page-preview";
 import {
   getAiStudyNodeDetail,
   listAiStudyProjectNodes
@@ -65,6 +66,7 @@ type AiStudyProjectLearningViewProps = {
   mode?: "student" | "admin-preview";
   nodeHrefBase: string;
   nodes: NodeListItem[];
+  partResume?: { storageKey: string; validPartIds: string[] };
   project: AiStudyLearningProject;
   queryError?: string;
   requestedNodeId?: string;
@@ -79,6 +81,7 @@ export async function AiStudyProjectLearningView({
   mode = "student",
   nodeHrefBase,
   nodes,
+  partResume,
   project,
   queryError,
   requestedNodeId,
@@ -119,6 +122,7 @@ export async function AiStudyProjectLearningView({
                 nextNode={nextNode ? { id: nextNode.id, title: nextNode.title } : null}
                 previousNode={previousNode ? { id: previousNode.id, title: previousNode.title } : null}
                 projectId={project.id}
+                partResume={partResume}
                 materialTitle={displayTitle || project.title}
                 selectedNodeCardKeyPoints={stringArray(card?.keyPoints)}
                 selectedNodeCardOverview={nodeDetail?.depth === 3 ? "" : card?.overview || ""}
@@ -239,7 +243,17 @@ export async function AiStudyProjectLearningView({
                   {nodeDetail.sourceChunks.map(chunk=>(
                     <details key={chunk.id} open>
                       <summary className="text-sm text-slate-500">{chunk.pageNumber?`第${chunk.pageNumber}页`:"来源片段"}</summary>
-                      <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-7">{chunk.content.replace(/<\/(?:tr|p)>/gi,"\n").replace(/<[^>]*>/g," ")}</pre>
+                      {mode === "student" && chunk.sourceId ? chunk.visualPageNumbers.map((pageNumber) => (
+                        <AiStudySourcePagePreview
+                          key={`${chunk.id}:${pageNumber}`}
+                          pageNumber={pageNumber}
+                          projectId={project.id}
+                          sourceId={chunk.sourceId}
+                        />
+                      )) : null}
+                      {chunk.displayContent ? (
+                        <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-7">{chunk.displayContent.replace(/<\/(?:tr|p)>/gi,"\n").replace(/<[^>]*>/g," ")}</pre>
+                      ) : null}
                     </details>
                   ))}
                 </div>

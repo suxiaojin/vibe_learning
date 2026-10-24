@@ -19,6 +19,7 @@ type StudyBuddyDetailControlsProps = {
   nextNode: NavigationNode | null;
   previousNode: NavigationNode | null;
   projectId: string;
+  partResume?: { storageKey: string; validPartIds: string[] };
   materialTitle: string;
   selectedNodeCardKeyPoints: string[];
   selectedNodeCardOverview: string;
@@ -90,6 +91,7 @@ export function StudyBuddyDetailControls({
   nextNode,
   previousNode,
   projectId,
+  partResume,
   materialTitle,
   selectedNodeId,
   selectedNodeSummary,
@@ -229,6 +231,12 @@ export function StudyBuddyDetailControls({
     }
 
     try {
+      if (partResume) {
+        const savedPartId = window.localStorage.getItem(partResume.storageKey);
+        if (savedPartId && savedPartId !== projectId && partResume.validPartIds.includes(savedPartId)) {
+          return;
+        }
+      }
       const savedNodeId = window.localStorage.getItem(storageKey);
       if (!hasExplicitNode && savedNodeId && validNodeSet.has(savedNodeId) && savedNodeId !== selectedNodeId) {
         router.replace(buildNodeHref(projectId, savedNodeId));
@@ -238,7 +246,7 @@ export function StudyBuddyDetailControls({
     } catch {
       // Local navigation memory is best-effort only.
     }
-  }, [hasExplicitNode, projectId, router, selectedNodeId, storageKey, validNodeSet]);
+  }, [hasExplicitNode, partResume, projectId, router, selectedNodeId, storageKey, validNodeSet]);
 
   useEffect(() => {
     function handleKeyDown(event: globalThis.KeyboardEvent) {
@@ -642,6 +650,7 @@ export function StudyBuddyDetailControls({
                       onClick={() => {
                         void sendMessage(suggestion);
                       }}
+                      title={suggestion}
                       type="button"
                     >
                       <span className="line-clamp-1">{suggestion}</span>

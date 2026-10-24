@@ -707,13 +707,15 @@ export async function getAiStudyNodeDetail(ownerId: string, nodeId: string) {
   const sourceChunkIds = Array.isArray(node.sourceChunkIds) ? node.sourceChunkIds.filter((value): value is string => typeof value === "string") : [];
   const sourceChunks = sourceChunkIds.length
     ? (await loadAiStudySourceChunksWithContent(node.projectId, { ids: sourceChunkIds }))
-        .map(({ id, sourceId, pageNumber, chunkIndex, content, bbox, createdAt }) => ({
+        .map(({ id, sourceId, pageNumber, chunkIndex, content, displayContent, bbox, visualPageNumbers, createdAt }) => ({
           id,
           sourceId,
           pageNumber,
           chunkIndex,
           content,
+          displayContent,
           bbox,
+          visualPageNumbers,
           createdAt
         }))
     : [];

@@ -8,8 +8,10 @@ type SourceBlockContent = Pick<
 
 export type AiStudySourceChunkWithContent = AiStudySourceChunk & {
   content: string;
+  displayContent: string;
   pageNumber: number | null;
   bbox: Prisma.JsonValue | null;
+  visualPageNumbers: number[];
   evidenceBlocks: { id: string; content: string; pageNumber: number; blockType: string; readingOrder?: number }[];
 };
 
@@ -21,6 +23,10 @@ export function formatAiStudySourceBlockContent(block: Pick<SourceBlockContent, 
     return block.textContent ? `图片内容：${block.textContent}` : (block.assetKey ? `图片：${block.assetKey}` : "");
   }
   return block.textContent || "";
+}
+
+function isVisualSourceBlock(block: Pick<SourceBlockContent, "blockType" | "assetKey">) {
+  return ["image", "chart", "figure", "table"].includes(block.blockType) || Boolean(block.assetKey);
 }
 
 export function hydrateAiStudySourceChunks(
@@ -38,9 +44,17 @@ export function hydrateAiStudySourceChunks(
     if (!content) {
       throw new Error(`来源片段缺少可用的来源块：${chunk.id}`);
     }
+    const displayContents = Array.from(new Set(sourceBlocks
+      .filter((block) => !isVisualSourceBlock(block))
+      .map(formatAiStudySourceBlockContent)
+      .filter(Boolean)));
     return {
       ...chunk,
       content,
+      displayContent: normalizeSourceText(displayContents.join("\n\n")),
+      visualPageNumbers: Array.from(new Set(sourceBlocks
+        .filter(isVisualSourceBlock)
+        .map((block) => block.pageNumber ?? chunk.pageStart))),
       evidenceBlocks: sourceBlocks.map((block) => ({ id: block.id, content: formatAiStudySourceBlockContent(block), pageNumber: block.pageNumber ?? chunk.pageStart, blockType: block.blockType, readingOrder: block.readingOrder })).filter((block) => Boolean(block.content)),
       pageNumber: chunk.pageStart === chunk.pageEnd ? chunk.pageStart : null,
       bbox: sourceBlocks.length === 1 ? sourceBlocks[0].bbox : null

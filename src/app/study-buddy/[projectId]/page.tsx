@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
-import { ChevronDown } from "lucide-react";
 import { AiStudyProjectLearningView } from "@/components/ai-study/project-learning-view";
+import { StudyPartPicker } from "@/components/ai-study/study-part-picker";
 import { requireUser } from "@/lib/auth";
 import { ProjectPurchasePage } from "@/components/ai-study/project-purchase-page";
 import { accessibleAiStudyProjectWhere, getStudyProjectOffer, StudyProjectAccessError } from "@/lib/study-project-access";
@@ -18,7 +17,7 @@ export default async function StudyBuddyProjectPage({
   searchParams
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams?: Promise<{ node?: string; error?: string }>;
+  searchParams?: Promise<{ node?: string; error?: string; selectPart?: string }>;
 }) {
   const user = await requireUser();
   const { projectId } = await params;
@@ -77,49 +76,32 @@ export default async function StudyBuddyProjectPage({
   const bookTitle = unified
     ? originalAiStudyProjectTitle(parts.find((part) => part.id === canonicalId)?.title || project.title)
     : undefined;
+  const resumePart = !query?.node && query?.selectPart !== "1";
+  const partStorageKey = `vibe-ai-study-last-part:v1:${user.id}:${canonicalId}`;
 
   return (
     <AiStudyProjectLearningView
       backHref="/study-buddy"
       backTitle="返回项目列表"
       displayTitle={bookTitle}
-      headerAccessory={unified ? <StudyPartPicker currentId={project.id} parts={parts} /> : undefined}
+      headerAccessory={unified ? <StudyPartPicker
+        canonicalId={canonicalId}
+        currentId={project.id}
+        parts={parts}
+        resume={resumePart}
+        storageKey={partStorageKey}
+      /> : undefined}
       mode="student"
       nodeHrefBase={`/study-buddy/${project.id}`}
       nodes={nodes}
+      partResume={unified && resumePart && project.id === canonicalId ? {
+        storageKey: partStorageKey,
+        validPartIds: parts.map((part) => part.id)
+      } : undefined}
       project={project}
       queryError={query?.error}
       requestedNodeId={query?.node}
       viewerUserId={user.id}
     />
-  );
-}
-
-function StudyPartPicker({ currentId, parts }: {
-  currentId: string;
-  parts: Array<{ id: string; title: string; partIndex: number | null; partCount: number | null }>;
-}) {
-  const current = parts.find((part) => part.id === currentId);
-  const count = Math.max(parts.length, ...parts.map((part) => part.partCount || 1));
-  return (
-    <details className="group relative shrink-0">
-      <summary className="flex cursor-pointer list-none items-center gap-1 rounded-lg border border-[#dce5e0] bg-white px-2.5 py-1.5 text-xs font-bold text-[#344054] [&::-webkit-details-marker]:hidden">
-        第 {current?.partIndex || 1}/{count} 部分
-        <ChevronDown className="transition-transform group-open:rotate-180" size={14} />
-      </summary>
-      <nav aria-label="切换学习部分" className="absolute left-0 top-full z-40 mt-2 max-h-72 w-44 overflow-y-auto rounded-xl border border-[#e4e8ee] bg-white p-1.5 shadow-lg">
-        {parts.map((part, index) => (
-          <Link
-            aria-current={part.id === currentId ? "page" : undefined}
-            className={`block rounded-lg px-3 py-2 text-sm font-semibold hover:bg-[#f2f8f4] ${part.id === currentId ? "bg-[#e8f7ee] text-[#0e8528]" : "text-[#344054]"}`}
-            href={`/study-buddy/${part.id}`}
-            key={part.id}
-            title={part.title}
-          >
-            第 {part.partIndex || index + 1} 部分
-          </Link>
-        ))}
-      </nav>
-    </details>
   );
 }
