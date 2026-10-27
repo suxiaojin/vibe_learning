@@ -50,6 +50,7 @@ export function AiStudyProjectSection({ title, projects, emptyText, enableTagFil
   const [activeFilter, setActiveFilter] = useState<ProjectFilter>({ kind: "all" });
   const [visibleCount, setVisibleCount] = useState(initialProjectCount);
   const tagFilters = enableTagFilter ? buildTagFilters(projects) : [];
+  const purchasedCount = enableTagFilter ? filterPublicProjects(projects, { kind: "purchased" }).length : 0;
   const filteredProjects = enableTagFilter ? filterPublicProjects(projects, activeFilter) : projects;
   const visibleProjects = filteredProjects.slice(0, visibleCount);
   const hasMore = filteredProjects.length > visibleCount;
@@ -78,7 +79,7 @@ export function AiStudyProjectSection({ title, projects, emptyText, enableTagFil
             onClick={() => selectFilter({ kind: "purchased" })}
             type="button"
           >
-            已购买
+            已购买（{purchasedCount}）
           </button>
           {tagFilters.map((tag) => (
             <button

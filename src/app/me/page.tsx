@@ -9,13 +9,14 @@ import { AvatarUploadForm } from "@/components/avatar-upload-form";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { DiamondRechargeQrPreview } from "@/components/diamond-recharge-qr-preview";
 import { HomeProfileEditor } from "@/components/home-profile-editor";
+import { MeTabs, type MeTab } from "@/components/me-tabs";
 import { SaveLearningActivityImageButton } from "@/components/save-learning-activity-image-button";
 import { ShareToBuddyButton, type ShareCopySuggestion } from "@/components/share-to-buddy-button";
 import { SocialPostCard, type SocialPostNode } from "@/components/social-post-card";
 import { SocialMedalBadge } from "@/components/social-medal-badge";
 import { SocialPostActions } from "@/components/social-post-actions";
 import { StudentPageShell } from "@/components/student-page-shell";
-import { SurfaceCard, TabNav } from "@/components/student-ui";
+import { SurfaceCard } from "@/components/student-ui";
 import { requireUser } from "@/lib/auth";
 import { AvatarStorageError, deleteStoredAvatarByUrl, storeUploadedAvatar } from "@/lib/avatar-storage";
 import type { BuddyShareCard } from "@/lib/buddy-share-cards";
@@ -117,15 +118,6 @@ function getTransactionPresentation(item: { type: string; note: string | null; m
   };
 }
 
-type MeTab = "profile" | "medals" | "diamonds" | "homepage";
-
-const meTabs: Array<{ key: MeTab; label: string }> = [
-  { key: "homepage", label: "我的主页" },
-  { key: "profile", label: "我的信息" },
-  { key: "medals", label: "我的勋章" },
-  { key: "diamonds", label: "我的钻石" }
-];
-
 type SocialProfile = Awaited<ReturnType<typeof getSocialProfile>>;
 type ProfilePost = Awaited<ReturnType<typeof listProfileBuddyPosts>>["items"][number];
 type DailyAttemptStat = { count: number; dateKey: string };
@@ -144,9 +136,7 @@ export default async function MePage({
   const query = await searchParams;
   const activeTab = getActiveMeTab(query?.tab);
   const requestedDiamondPage = getPositivePage(query?.diamondPage);
-  const diamondTransactionCount = activeTab === "diamonds"
-    ? await prisma.diamondTransaction.count({ where: { userId: user.id } })
-    : 0;
+  const diamondTransactionCount = await prisma.diamondTransaction.count({ where: { userId: user.id } });
   const diamondPageCount = Math.max(1, Math.ceil(diamondTransactionCount / diamondPageSize));
   const diamondPage = Math.min(requestedDiamondPage, diamondPageCount);
   const heatmapStart = new Date(Date.now() - (heatmapWeekCount * 7 + 7) * dayMs);
@@ -169,25 +159,18 @@ export default async function MePage({
         }
       }
     }),
-    activeTab === "diamonds"
-      ? prisma.diamondTransaction.findMany({
-          where: { userId: user.id },
-          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-          skip: (diamondPage - 1) * diamondPageSize,
-          take: diamondPageSize
-        })
-      : Promise.resolve([]),
-    activeTab === "medals"
-      ? prisma.questionAttempt.count({ where: { userId: user.id } })
-      : Promise.resolve(0),
-    activeTab === "medals"
-      ? prisma.questionAttempt.findMany({
-          where: { userId: user.id, createdAt: { gte: heatmapStart } },
-          select: { createdAt: true }
-        })
-      : Promise.resolve([]),
-    activeTab === "medals"
-      ? prisma.$queryRaw<DailyAttemptStat[]>`
+    prisma.diamondTransaction.findMany({
+      where: { userId: user.id },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      skip: (diamondPage - 1) * diamondPageSize,
+      take: diamondPageSize
+    }),
+    prisma.questionAttempt.count({ where: { userId: user.id } }),
+    prisma.questionAttempt.findMany({
+      where: { userId: user.id, createdAt: { gte: heatmapStart } },
+      select: { createdAt: true }
+    }),
+    prisma.$queryRaw<DailyAttemptStat[]>`
           SELECT
             TO_CHAR(("createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Shanghai')::date, 'YYYY-MM-DD') AS "dateKey",
             COUNT(*)::int AS "count"
@@ -195,18 +178,15 @@ export default async function MePage({
           WHERE "userId" = ${user.id}
           GROUP BY 1
           ORDER BY 1
-        `
-      : Promise.resolve([] as DailyAttemptStat[]),
-    activeTab === "profile"
-      ? prisma.school.findMany({
-          where: { status: "published" },
-          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-          select: { id: true, name: true, province: true }
-        })
-      : Promise.resolve([]),
-    activeTab === "homepage" ? getSocialProfile(user.id, user.id) : Promise.resolve(null),
-    activeTab === "homepage" ? listProfileBuddyPosts(user.id, user.id, { includeInteractions: true, tab: "posts", limit: 30 }) : Promise.resolve({ items: [], nextCursor: null }),
-    activeTab === "diamonds" ? getSystemSettings(["diamondRechargeQrCodeUrl"]) : Promise.resolve(null)
+        `,
+    prisma.school.findMany({
+      where: { status: "published" },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, province: true }
+    }),
+    getSocialProfile(user.id, user.id),
+    listProfileBuddyPosts(user.id, user.id, { includeInteractions: true, tab: "posts", limit: 30 }),
+    getSystemSettings(["diamondRechargeQrCodeUrl"])
   ]);
 
   if (!fullUser) {
@@ -222,67 +202,68 @@ export default async function MePage({
 
   return (
     <StudentPageShell active="me" contentClassName="xl:px-8">
-      <div className="space-y-6">
-        <ProfileTabs activeTab={activeTab} />
-
-        <Message type={query?.profile} successText="资料已保存" />
-        <Message type={query?.password} successText="密码已更新" />
-
-        {activeTab === "profile" ? (
-          <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
-            <ProfilePanel
-              username={fullUser.username}
-              nickname={nickname}
+      <MeTabs
+        initialTab={activeTab}
+        notices={
+          <>
+            <Message type={query?.profile} successText="资料已保存" />
+            <Message type={query?.password} successText="密码已更新" />
+          </>
+        }
+        panels={{
+          profile: (
+            <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+              <ProfilePanel
+                username={fullUser.username}
+                nickname={nickname}
+                avatarColor={avatarColor}
+                avatarImage={avatarImage}
+                profileStatus={query?.profile}
+                gender={fullUser.studentProfile?.gender || ""}
+                school={fullUser.studentProfile?.school || ""}
+                schoolId={fullUser.studentProfile?.schoolId || ""}
+                schools={schools}
+                phoneNumber={fullUser.phoneNumber || ""}
+                email={fullUser.email || ""}
+              />
+              <PasswordPanel status={query?.password} />
+            </section>
+          ),
+          medals: (
+            <MedalTrack
               avatarColor={avatarColor}
               avatarImage={avatarImage}
-              profileStatus={query?.profile}
-              gender={fullUser.studentProfile?.gender || ""}
-              school={fullUser.studentProfile?.school || ""}
-              schoolId={fullUser.studentProfile?.schoolId || ""}
-              schools={schools}
-              phoneNumber={fullUser.phoneNumber || ""}
-              email={fullUser.email || ""}
+              dailyAttemptStats={dailyAttemptStats}
+              dailyAttempts={dailyAttempts}
+              nickname={nickname}
+              totalAttempts={totalAttempts}
+              username={fullUser.username}
             />
-            <PasswordPanel status={query?.password} />
-          </section>
-        ) : null}
-
-        {activeTab === "medals" ? (
-          <MedalTrack
-            avatarColor={avatarColor}
-            avatarImage={avatarImage}
-            dailyAttemptStats={dailyAttemptStats}
-            dailyAttempts={dailyAttempts}
-            nickname={nickname}
-            totalAttempts={totalAttempts}
-            username={fullUser.username}
-          />
-        ) : null}
-
-        {activeTab === "diamonds" ? (
-          <DiamondPanel
-            currentPage={diamondPage}
-            totalCount={diamondTransactionCount}
-            totalPages={diamondPageCount}
-            transactions={transactions}
-            rechargeQrCodeUrl={systemSettings?.diamondRechargeQrCodeUrl || ""}
-          />
-        ) : null}
-
-        {activeTab === "homepage" && homeProfile ? (
-          <MyHomePagePanel
-            posts={homePosts.items}
-            profile={homeProfile}
-            profileStatus={query?.profile}
-          />
-        ) : null}
-      </div>
+          ),
+          diamonds: (
+            <DiamondPanel
+              currentPage={diamondPage}
+              totalCount={diamondTransactionCount}
+              totalPages={diamondPageCount}
+              transactions={transactions}
+              rechargeQrCodeUrl={systemSettings?.diamondRechargeQrCodeUrl || ""}
+            />
+          ),
+          homepage: homeProfile ? (
+            <MyHomePagePanel
+              posts={homePosts.items}
+              profile={homeProfile}
+              profileStatus={query?.profile}
+            />
+          ) : null
+        }}
+      />
     </StudentPageShell>
   );
 }
 
 function getActiveMeTab(tab?: string): MeTab {
-  return meTabs.some((item) => item.key === tab) ? (tab as MeTab) : "homepage";
+  return tab === "profile" || tab === "medals" || tab === "diamonds" ? tab : "homepage";
 }
 
 function getPositivePage(value?: string) {
@@ -310,10 +291,6 @@ function SectionFrame({
       <div className={cn("p-5", bodyClassName)}>{children}</div>
     </SurfaceCard>
   );
-}
-
-function ProfileTabs({ activeTab }: { activeTab: MeTab }) {
-  return <TabNav activeKey={activeTab} ariaLabel="个人档案功能" items={meTabs.map((tab) => ({ ...tab, href: `/me?tab=${tab.key}` }))} />;
 }
 
 function ProfilePanel({
