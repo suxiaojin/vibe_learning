@@ -1,8 +1,10 @@
 import { ContentStatus, type Prisma } from "@prisma/client";
 import { Filter, Plus } from "lucide-react";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { createMajor, deleteMajor, updateMajor, updateMajorStatus } from "@/app/admin/actions";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
+import { MajorFilterForm } from "@/components/major-filter-form";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -11,18 +13,25 @@ const contentStatuses = new Set<string>(Object.values(ContentStatus));
 export default async function MajorsPage({
   searchParams
 }: {
-  searchParams?: Promise<{ regionId?: string; status?: string; keyword?: string }>;
+  searchParams?: Promise<{ regionId?: string; status?: string; keyword?: string; error?: string }>;
 }) {
   await requireAdmin();
   const params = await searchParams;
-  const selectedRegionId = params?.regionId || "";
-  const selectedStatus = contentStatuses.has(params?.status || "") ? params?.status || "" : "";
+  const cookieStore = await cookies();
+  const savedRegionId = cookieStore.get("adminMajorsRegionId")?.value || "";
+  const regionId = params?.regionId ?? savedRegionId;
+  const selectedRegionId = /^[a-zA-Z0-9_-]{1,128}$/.test(regionId) ? regionId : "";
+  const status = params?.status ?? cookieStore.get("adminMajorsStatus")?.value ?? "";
+  const selectedStatus = contentStatuses.has(status) ? status : "";
   const keyword = params?.keyword?.trim() || "";
 
   const where: Prisma.MajorWhereInput = {
     ...(selectedRegionId ? { regions: { some: { regionId: selectedRegionId } } } : {}),
     ...(selectedStatus ? { status: selectedStatus as ContentStatus } : {}),
-    ...(keyword ? { name: { contains: keyword, mode: "insensitive" } } : {})
+    ...(keyword ? { OR: [
+      { name: { contains: keyword, mode: "insensitive" } },
+      { regions: { some: { ...(selectedRegionId ? { regionId: selectedRegionId } : {}), displayName: { contains: keyword, mode: "insensitive" } } } }
+    ] } : {})
   };
 
   const [regions, majors] = await Promise.all([
@@ -39,6 +48,9 @@ export default async function MajorsPage({
 
   return (
     <main>
+      {params?.error === "region-required" ? (
+        <p className="mb-4 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">请至少保留一个适用区域，修改未保存。</p>
+      ) : null}
       <details className="group relative">
         <summary className="absolute right-0 top-0 flex h-10 cursor-pointer list-none items-center gap-2 bg-[#0872b9] px-6 text-sm font-bold text-white transition hover:bg-[#0767a8] [&::-webkit-details-marker]:hidden">
           <Plus size={16} />
@@ -80,7 +92,7 @@ export default async function MajorsPage({
         </form>
       </details>
 
-      <form className="mb-6 grid gap-4 border border-slate-300 bg-white p-4 shadow-sm lg:grid-cols-[1.4fr_1fr_1fr_auto]" action="/admin/majors">
+      <MajorFilterForm className="mb-6 grid gap-4 border border-slate-300 bg-white p-4 shadow-sm lg:grid-cols-[1.4fr_1fr_1fr_auto]">
         <div>
           <label className="label">搜索专业</label>
           <input className="input rounded-none" name="keyword" defaultValue={keyword} placeholder="按名称或关键词搜索..." />
@@ -109,7 +121,7 @@ export default async function MajorsPage({
             筛选
           </button>
         </div>
-      </form>
+      </MajorFilterForm>
 
       <section className="overflow-hidden border border-slate-300 bg-white shadow-sm">
         <div className="max-h-[calc(100vh-300px)] min-h-[520px] overflow-auto">
@@ -130,7 +142,7 @@ export default async function MajorsPage({
                 return (
                   <tr key={major.id} className="align-top hover:bg-slate-50">
                     <td className="px-4 py-4">
-                      <Link className="font-semibold text-[#0869a9] hover:underline" href={`/admin/majors/${major.id}/courses`}>{major.name}</Link>
+                      <Link className="font-semibold text-[#0869a9] hover:underline" href={`/admin/majors/${major.id}/courses${selectedRegionId ? `?initialRegionId=${encodeURIComponent(selectedRegionId)}` : ""}`}>{major.regions.find((item) => item.regionId === selectedRegionId)?.displayName || major.name}</Link>
                       {major.description ? <p className="mt-1 text-xs text-slate-500">{major.description}</p> : null}
                     </td>
                     <td className="px-4 py-4 text-slate-600">{major.regions.length ? major.regions.map((item) => item.region.name).join("、") : "未绑定"}</td>
@@ -152,12 +164,19 @@ export default async function MajorsPage({
                         <summary className="cursor-pointer list-none text-sm font-semibold text-[#0869a9] [&::-webkit-details-marker]:hidden">编辑</summary>
                         <form action={updateMajor} className="absolute right-10 z-10 mt-2 grid w-[560px] gap-3 border border-slate-300 bg-white p-4 text-left shadow-xl">
                           <input type="hidden" name="id" value={major.id} />
-                          <input className="input rounded-none" name="name" defaultValue={major.name} required />
-                          <select className="input min-h-24 rounded-none" name="regionIds" multiple defaultValue={selectedRegionIds} required>
+                          <label className="grid gap-1 text-xs font-semibold">默认专业名称（未设置区域名称时使用）<input className="input rounded-none" name="name" defaultValue={major.name} required /></label>
+                          <fieldset className="border border-slate-300 p-3">
+                            <legend className="px-1 text-sm font-semibold">适用区域</legend>
+                            <p className="mb-2 text-xs text-slate-500">勾选关联区域，可分别填写专业名称；留空使用默认名称。取消勾选并保存可解除关联，至少保留一个区域。</p>
+                            <div className="grid max-h-56 gap-2 overflow-auto">
                             {regions.map((region) => (
-                              <option key={region.id} value={region.id}>{region.name}</option>
+                              <div key={region.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] items-center gap-2">
+                                <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="regionIds" value={region.id} defaultChecked={selectedRegionIds.includes(region.id)} />{region.name}</label>
+                                <input className="input h-9 rounded-none text-sm" name={`regionName:${region.id}`} defaultValue={major.regions.find((item) => item.regionId === region.id)?.displayName || ""} placeholder="留空使用默认名称" aria-label={`${region.name}专业名称`} />
+                              </div>
                             ))}
-                          </select>
+                            </div>
+                          </fieldset>
                           <input className="input rounded-none" name="description" defaultValue={major.description || ""} />
                           <div className="grid grid-cols-[1fr_auto_auto] gap-3">
                             <select className="input rounded-none" name="status" defaultValue={major.status}>
@@ -169,9 +188,9 @@ export default async function MajorsPage({
                             <ConfirmSubmitButton
                               className="danger-button rounded-none"
                               form={`delete-major-${major.id}`}
-                              message="确认删除该专业及其课程、题库？此操作不可恢复。"
+                              message="确认删除整个专业？这会删除该专业在所有区域的关联、课程和题库，无法恢复。仅需解除某个区域时，请取消勾选该区域并点击保存。"
                             >
-                              删除
+                              删除整个专业
                             </ConfirmSubmitButton>
                           </div>
                         </form>

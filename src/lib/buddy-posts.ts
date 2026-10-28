@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getMedalLevel, getMedalRule } from "@/lib/rewards";
 import { getBlockedUserIds, getFollowingIds } from "@/lib/social";
 import { createUserEventNotification } from "@/lib/user-event-notifications";
+import { getRegionMajorName } from "@/lib/region-major-name";
 
 const postStudentProfileSelect = {
   avatarColor: true,
@@ -13,7 +14,8 @@ const postStudentProfileSelect = {
   bio: true,
   gender: true,
   nickname: true,
-  major: { select: { name: true } },
+  regionId: true,
+  major: { select: { name: true, regions: { select: { regionId: true, displayName: true } } } },
   region: { select: { province: true, studySystem: true } }
 } satisfies Prisma.StudentProfileSelect;
 
@@ -992,7 +994,8 @@ function toPostUser(user: {
     avatarImage: string | null;
     bio?: string | null;
     gender: "male" | "female" | null;
-    major?: { name: string } | null;
+    regionId?: string | null;
+    major?: { name: string; regions: Array<{ regionId: string; displayName: string | null }> } | null;
     nickname: string | null;
     region?: { province: string; studySystem: string } | null;
   } | null;
@@ -1009,7 +1012,7 @@ function toPostUser(user: {
     gender: user.studentProfile?.gender || null,
     province: user.studentProfile?.region?.province || null,
     studySystem: user.studentProfile?.region?.studySystem || null,
-    majorName: user.studentProfile?.major?.name || null,
+    majorName: getRegionMajorName(user.studentProfile),
     medalLevel,
     medalLabel: medalRule.label
   };

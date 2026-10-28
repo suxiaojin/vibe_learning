@@ -645,6 +645,7 @@ model RegionMajor {
   id                       String                  @id @default(cuid())
   regionId                 String
   majorId                  String
+  displayName              String?
   aiExplainPromptProfileId String?
   region                   Region                  @relation(fields: [regionId], references: [id], onDelete: Cascade)
   major                    Major                   @relation(fields: [majorId], references: [id], onDelete: Cascade)

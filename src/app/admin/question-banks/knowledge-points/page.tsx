@@ -166,7 +166,7 @@ export default async function QuestionBankKnowledgePointsPage({
     ...majors.map((major) => ({
       type: "major" as const,
       id: major.id,
-      name: major.name,
+      name: major.regions.find((item) => matchingRegionIds.has(item.regionId))?.displayName || major.name,
       sortOrder: major.sortOrder,
       regions: major.regions.map((item) => item.region)
     }))

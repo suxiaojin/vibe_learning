@@ -71,15 +71,21 @@ export async function listAdminOfficialStudyMaterials() {
 
 export async function listPublicOfficialStudyMaterials(input: { userId: string; take?: number }) {
   const take = typeof input.take === "number" ? Math.max(1, Math.min(input.take, 200)) : undefined;
-  return prisma.officialStudyMaterial.findMany({
+  const profile = await prisma.studentProfile.findUnique({ where: { userId: input.userId }, select: { regionId: true } });
+  const materials = await prisma.officialStudyMaterial.findMany({
     where: await publicOfficialMaterialWhere(input.userId),
     orderBy: [{ sortOrder: "desc" }, { publishedAt: "desc" }, { createdAt: "desc" }],
     ...(take ? { take } : {}),
     include: {
       course: { select: { id: true, name: true } },
-      major: { select: { id: true, name: true } },
+      major: { select: { id: true, name: true, regions: { where: { regionId: profile?.regionId || "" }, select: { displayName: true }, take: 1 } } },
       publicSubject: { select: { id: true, name: true } }
     }
+  });
+  return materials.map((material) => {
+    if (!material.major) return material;
+    const { regions, ...major } = material.major;
+    return { ...material, major: { ...major, name: regions[0]?.displayName || major.name } };
   });
 }
 
@@ -258,6 +264,7 @@ export async function getAdminOfficialStudyMaterial(materialId: string) {
 }
 
 export async function getPublicOfficialStudyMaterial(materialId: string, userId: string) {
+  const profile = await prisma.studentProfile.findUnique({ where: { userId }, select: { regionId: true } });
   const material = await prisma.officialStudyMaterial.findFirst({
     where: {
       id: materialId,
@@ -266,14 +273,16 @@ export async function getPublicOfficialStudyMaterial(materialId: string, userId:
     },
     include: {
       course: { select: { id: true, name: true } },
-      major: { select: { id: true, name: true } },
+      major: { select: { id: true, name: true, regions: { where: { regionId: profile?.regionId || "" }, select: { displayName: true }, take: 1 } } },
       publicSubject: { select: { id: true, name: true } }
     }
   });
   if (!material) {
     throw new OfficialStudyMaterialError("公开资料不存在或已下架。", 404, "OFFICIAL_MATERIAL_NOT_FOUND");
   }
-  return material;
+  if (!material.major) return material;
+  const { regions, ...major } = material.major;
+  return { ...material, major: { ...major, name: regions[0]?.displayName || major.name } };
 }
 
 export function formatOfficialStudyMaterialError(error: unknown) {

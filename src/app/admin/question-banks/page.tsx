@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import {
   ArrowUpDown,
   CheckCircle2,
@@ -14,6 +15,7 @@ import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { CopyQuestionBankDialog } from "@/components/copy-question-bank-dialog";
 import { QuestionBankAiGenerationDialog } from "@/components/question-bank-ai-generation-dialog";
 import { QuestionBankImportDialog } from "@/components/question-bank-import-dialog";
+import { QuestionBankFilterForm } from "@/components/question-bank-filter-form";
 import { QuestionBankSidebar } from "@/components/question-bank-sidebar";
 import { requireAdmin } from "@/lib/auth";
 import { ensureDefaultQuestionBankCatalog, type QuestionBankOwnerType } from "@/lib/question-bank-catalog";
@@ -84,6 +86,14 @@ function uniqueValues(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
+function decodeFilterCookie(value?: string) {
+  try {
+    return decodeURIComponent(value || "");
+  } catch {
+    return "";
+  }
+}
+
 function formatDate(date: Date) {
   const parts = new Intl.DateTimeFormat("zh-CN", {
     timeZone: "Asia/Shanghai",
@@ -134,6 +144,7 @@ export default async function QuestionBanksPage({
   await ensureDefaultQuestionBankCatalog();
 
   const params = await searchParams;
+  const cookieStore = await cookies();
   const [regions, publicSubjects, majors] = await Promise.all([
     prisma.region.findMany({
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
@@ -160,13 +171,15 @@ export default async function QuestionBanksPage({
   ]);
 
   const provinceOptions = uniqueValues(regions.map((region) => region.province));
-  const selectedProvince = provinceOptions.includes(params?.province || "")
-    ? params?.province || ""
+  const requestedProvince = params?.province ?? decodeFilterCookie(cookieStore.get("adminQuestionBanksProvince")?.value);
+  const selectedProvince = provinceOptions.includes(requestedProvince)
+    ? requestedProvince
     : provinceOptions.includes("江苏")
       ? "江苏"
       : provinceOptions[0] || "";
   const examTypeOptions = uniqueValues(regions.filter((region) => region.province === selectedProvince).map((region) => region.studySystem));
-  const selectedExamType = examTypeOptions.includes(params?.examType || "") ? params?.examType || "" : examTypeOptions[0] || "";
+  const requestedExamType = params?.examType ?? decodeFilterCookie(cookieStore.get("adminQuestionBanksExamType")?.value);
+  const selectedExamType = examTypeOptions.includes(requestedExamType) ? requestedExamType : examTypeOptions[0] || "";
   const matchingRegions = regions.filter(
     (region) => region.province === selectedProvince && region.studySystem === selectedExamType
   );
@@ -183,7 +196,7 @@ export default async function QuestionBanksPage({
     ...majors.map((major) => ({
       type: "major" as const,
       id: major.id,
-      name: major.name,
+      name: major.regions.find((item) => matchingRegionIds.has(item.regionId))?.displayName || major.name,
       sortOrder: major.sortOrder,
       regions: major.regions.map((item) => item.region)
     }))
@@ -347,7 +360,7 @@ export default async function QuestionBanksPage({
             </Link>
           ))}
         </nav>
-        <form className="flex min-w-0 flex-1 items-center gap-2 px-3" action="/admin/question-banks">
+        <QuestionBankFilterForm className="flex min-w-0 flex-1 items-center gap-2 px-3">
           <input name="type" type="hidden" value={selectedOwner.type} />
           <input name="id" type="hidden" value={selectedOwner.id} />
           <input name="page" type="hidden" value="1" />
@@ -371,7 +384,7 @@ export default async function QuestionBanksPage({
             <Filter size={14} />
             筛选
           </button>
-        </form>
+        </QuestionBankFilterForm>
         <Link className="grid h-[63px] w-20 shrink-0 place-items-center text-sm font-semibold text-[#071b38] hover:bg-white" href="/admin" aria-label="返回首页">
           首页
         </Link>

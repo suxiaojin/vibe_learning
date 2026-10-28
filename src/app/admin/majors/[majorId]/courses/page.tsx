@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { ContentStatus } from "@prisma/client";
 import { ArrowLeft, Filter, Plus } from "lucide-react";
 import { createMajorCourse, deleteMajorCourse, updateMajorCourse, updateMajorCourseStatus } from "@/app/admin/actions";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { CopyMajorCourseDialog } from "@/components/copy-major-course-dialog";
+import { MajorCourseFilterForm } from "@/components/major-course-filter-form";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -22,11 +24,12 @@ export default async function MajorCoursesPage({
   searchParams
 }: {
   params: Promise<{ majorId: string }>;
-  searchParams?: Promise<{ copiedCourseId?: string; copyError?: string; regionId?: string; status?: string }>;
+  searchParams?: Promise<{ copiedCourseId?: string; copyError?: string; regionId?: string; initialRegionId?: string; status?: string }>;
 }) {
   await requireAdmin();
   const { majorId } = await params;
   const query = await searchParams;
+  const cookieStore = await cookies();
   const major = await prisma.major.findUniqueOrThrow({
     where: { id: majorId },
     include: {
@@ -48,8 +51,10 @@ export default async function MajorCoursesPage({
     ? major.learningCourses.find((course) => course.id === query.copiedCourseId)
     : null;
   const copyErrorMessage = query?.copyError ? copyErrorMessages[query.copyError] : null;
-  const selectedRegionId = major.regions.some((item) => item.regionId === query?.regionId) ? query?.regionId || "" : "";
-  const selectedStatus = contentStatuses.has(query?.status || "") ? query?.status || "" : "";
+  const requestedRegionId = query?.regionId ?? query?.initialRegionId ?? cookieStore.get("adminMajorCoursesRegionId")?.value ?? "";
+  const requestedStatus = query?.status ?? cookieStore.get("adminMajorCoursesStatus")?.value ?? "";
+  const selectedRegionId = major.regions.some((item) => item.regionId === requestedRegionId) ? requestedRegionId : "";
+  const selectedStatus = contentStatuses.has(requestedStatus) ? requestedStatus : "";
   const displayedCourses = major.learningCourses.filter(
     (course) => (!selectedRegionId || course.regionId === selectedRegionId) && (!selectedStatus || course.status === selectedStatus)
   );
@@ -62,7 +67,7 @@ export default async function MajorCoursesPage({
             <ArrowLeft size={16} />
             返回专业课管理
           </Link>
-          <h1 className="text-2xl font-black tracking-normal">{major.name}课程</h1>
+          <h1 className="text-2xl font-black tracking-normal">{major.regions.find((item) => item.regionId === selectedRegionId)?.displayName || major.name}课程</h1>
           <p className="mt-2 text-sm text-slate-500">在专业下维护课程，后续可进入课程维护考察目标、考察内容和试卷。</p>
         </div>
       </div>
@@ -118,8 +123,8 @@ export default async function MajorCoursesPage({
           </form>
         </details>
 
-        <form
-          action={`/admin/majors/${major.id}/courses`}
+        <MajorCourseFilterForm
+          majorId={major.id}
           className="mt-4 grid gap-3 sm:grid-cols-[minmax(180px,1fr)_minmax(160px,1fr)_auto_auto] lg:absolute lg:left-44 lg:top-0 lg:mt-0 lg:w-[660px]"
         >
           <div>
@@ -144,8 +149,7 @@ export default async function MajorCoursesPage({
             <Filter aria-hidden="true" size={15} />
             筛选
           </button>
-          <Link className="secondary-button h-10 rounded-none px-4" href={`/admin/majors/${major.id}/courses`}>重置</Link>
-        </form>
+        </MajorCourseFilterForm>
       </div>
 
       <section className="overflow-hidden border border-slate-300 bg-white shadow-sm">

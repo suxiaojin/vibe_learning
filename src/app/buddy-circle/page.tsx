@@ -1,9 +1,11 @@
-import { Check, ChevronDown, SlidersHorizontal } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { BuddyErrorNotice } from "@/components/buddy-error-notice";
 import { BuddyFeedLoadMore } from "@/components/buddy-feed-load-more";
 import { BuddyPostComposer } from "@/components/buddy-post-composer";
+import { BuddyFeedFilters } from "@/components/buddy-feed-filters";
 import { DiscoveryFeedReadMarker } from "@/components/discovery-feed-read-marker";
 import { FollowingFeedReadMarker } from "@/components/following-feed-read-marker";
 import { SocialAvatar } from "@/components/social-post-card";
@@ -22,6 +24,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { followUser, listRecommendedFollows, type SocialRecommendation } from "@/lib/social";
 import { cn } from "@/lib/utils";
+import { getFeedFilterOptions } from "@/lib/buddy-feed-filter-options";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -59,31 +62,39 @@ export default async function BuddyCirclePage({
     redirect("/admin");
   }
 
-  const params = await searchParams;
-  const scope = getScope(params?.tab);
-  const sort = getSort(params?.sort);
+  const query = await searchParams;
+  const cookieStore = await cookies();
+  const readSavedFilter = (name: string) => {
+    try { return decodeURIComponent(cookieStore.get(name)?.value || ""); } catch { return ""; }
+  };
+  const requestedProvince = query?.province ?? readSavedFilter("buddyFeedProvince");
+  const requestedStudySystem = query?.studySystem ?? readSavedFilter("buddyFeedStudySystem");
+  const requestedMajorId = query?.majorId ?? readSavedFilter("buddyFeedMajorId");
+  const scope = getScope(query?.tab);
+  const sort = getSort(query?.sort);
   const discoveryReadThroughAt = new Date();
   const followingReadThroughAt = new Date();
-  const [regions, majors, feed, recommendedFollows, followingUnreadCount] = await Promise.all([
+  const [regions, majors, recommendedFollows, followingUnreadCount] = await Promise.all([
     prisma.region.findMany({
       where: { status: "active" },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
     }),
     prisma.major.findMany({
       where: { status: "published" },
+      select: { id: true, name: true, regions: { select: { regionId: true, displayName: true } } },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }]
-    }),
-    listBuddyFeed(user.id, {
-      majorId: params?.majorId || undefined,
-      province: params?.province || undefined,
-      scope,
-      sort,
-      studySystem: params?.studySystem || undefined,
-      limit: 20
     }),
     listRecommendedFollows(user.id, { limit: 5 }),
     scope === "following" ? Promise.resolve(0) : getFollowingFeedUnreadCount(user.id)
   ]);
+  const allOptions = getFeedFilterOptions(regions, majors, "", "");
+  const province = allOptions.provinces.includes(requestedProvince) ? requestedProvince : "";
+  const provinceOptions = getFeedFilterOptions(regions, majors, province, "");
+  const studySystem = provinceOptions.studySystems.includes(requestedStudySystem) ? requestedStudySystem : "";
+  const validMajors = getFeedFilterOptions(regions, majors, province, studySystem).majors;
+  const majorId = validMajors.some((major) => major.id === requestedMajorId) ? requestedMajorId : "";
+  const params = { ...query, province, studySystem, majorId };
+  const feed = await listBuddyFeed(user.id, { majorId: majorId || undefined, province: province || undefined, scope, sort, studySystem: studySystem || undefined, limit: 20 });
   const returnTo = buildCircleHref(params);
 
   return (
@@ -117,7 +128,7 @@ export default async function BuddyCirclePage({
         </div>
 
         <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
-          <FeedFilters majors={majors} params={params} regions={regions} scope={scope} sort={sort} />
+          <BuddyFeedFilters key={`${params?.province || ""}:${params?.studySystem || ""}:${params?.majorId || ""}:${scope}:${sort}`} majors={majors} params={params} regions={regions.map(({ id, province, studySystem }) => ({ id, province, studySystem }))} scope={scope} sort={sort} />
           <RecommendedFollowPanel returnTo={returnTo} users={recommendedFollows.items} />
         </aside>
       </div>
@@ -209,61 +220,6 @@ function FeedTab({
 
 function PostComposer() {
   return <BuddyPostComposer />;
-}
-
-function FeedFilters({
-  majors,
-  params,
-  regions,
-  scope,
-  sort
-}: {
-  majors: Array<{ id: string; name: string }>;
-  params?: CircleSearchParams;
-  regions: Array<{ province: string; studySystem: string }>;
-  scope: BuddyFeedScope;
-  sort: BuddyFeedSort;
-}) {
-  const provinces = Array.from(new Set(regions.map((region) => region.province))).filter(Boolean);
-  const studySystems = Array.from(new Set(regions.map((region) => region.studySystem))).filter(Boolean);
-
-  return (
-    <SurfaceCard className="border-border-soft/70 bg-surface/80 p-4 shadow-none">
-      <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-ink">
-        <SlidersHorizontal className="text-slate-400" size={18} />
-        筛选条件
-      </div>
-      <form className="space-y-3" method="get">
-        <input name="tab" type="hidden" value={scope} />
-        <input name="sort" type="hidden" value={sort} />
-        <label className="block">
-          <span className="label">省份</span>
-          <select className="input min-h-11 rounded-xl text-sm" name="province" defaultValue={params?.province || ""}>
-            <option value="">全部省份</option>
-            {provinces.map((province) => <option key={province} value={province}>{province}</option>)}
-          </select>
-        </label>
-        <label className="block">
-          <span className="label">学制</span>
-          <select className="input min-h-11 rounded-xl text-sm" name="studySystem" defaultValue={params?.studySystem || ""}>
-            <option value="">全部学制</option>
-            {studySystems.map((studySystem) => <option key={studySystem} value={studySystem}>{studySystem}</option>)}
-          </select>
-        </label>
-        <label className="block">
-          <span className="label">专业</span>
-          <select className="input min-h-11 rounded-xl text-sm" name="majorId" defaultValue={params?.majorId || ""}>
-            <option value="">全部专业</option>
-            {majors.map((major) => <option key={major.id} value={major.id}>{major.name}</option>)}
-          </select>
-        </label>
-        <div className="flex gap-2 pt-1">
-          <button className="primary-button min-h-11 flex-1 rounded-xl text-sm" type="submit">筛选</button>
-          <a className="secondary-button min-h-11 rounded-xl px-4 text-sm" href={`/buddy-circle?tab=${scope}`}>重置</a>
-        </div>
-      </form>
-    </SurfaceCard>
-  );
 }
 
 function RecommendedFollowPanel({ returnTo, users }: { returnTo: string; users: SocialRecommendation[] }) {

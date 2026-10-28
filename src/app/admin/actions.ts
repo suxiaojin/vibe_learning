@@ -1473,20 +1473,25 @@ export async function createMajor(formData: FormData) {
 export async function updateMajor(formData: FormData) {
   await requireAdmin();
   const id = String(formData.get("id"));
-  const regionIds = getRegionIds(formData);
+  const regionIds = Array.from(new Set(getRegionIds(formData)));
+  if (regionIds.length === 0) {
+    redirect("/admin/majors?error=region-required");
+  }
   await prisma.$transaction([
-    prisma.regionMajor.deleteMany({ where: { majorId: id } }),
+    prisma.regionMajor.deleteMany({ where: { majorId: id, regionId: { notIn: regionIds } } }),
     prisma.major.update({
       where: { id },
       data: {
         name: String(formData.get("name") || "").trim(),
         description: String(formData.get("description") || "").trim() || null,
-        status: getStatus(formData),
-        regions: {
-          create: regionIds.map((regionId) => ({ regionId }))
-        }
+        status: getStatus(formData)
       }
-    })
+    }),
+    prisma.regionMajor.createMany({ data: regionIds.map((regionId) => ({ majorId: id, regionId })), skipDuplicates: true }),
+    ...regionIds.map((regionId) => prisma.regionMajor.update({
+      where: { regionId_majorId: { regionId, majorId: id } },
+      data: { displayName: String(formData.get(`regionName:${regionId}`) || "").trim() || null }
+    }))
   ]);
   revalidatePath("/admin/majors");
   redirect("/admin/majors");

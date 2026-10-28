@@ -53,17 +53,18 @@ export async function getFoundationOptions(regionId?: string) {
       },
       select: {
         id: true,
-        name: true
+        name: true,
+        regions: { where: { regionId: selectedRegionId }, select: { displayName: true }, take: 1 }
       },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
     })
   ]);
 
-  return { regions, selectedRegionId, publicSubjects, majors };
+  return { regions, selectedRegionId, publicSubjects, majors: majors.map(({ regions: bindings, ...major }) => ({ ...major, name: bindings[0]?.displayName || major.name })) };
 }
 
 export async function getStudentFoundationProfile(userId: string) {
-  return prisma.studentProfile.findUnique({
+  const profile = await prisma.studentProfile.findUnique({
     where: { userId },
     select: {
       regionId: true,
@@ -71,9 +72,12 @@ export async function getStudentFoundationProfile(userId: string) {
       majorId: true,
       region: { select: { id: true, name: true, province: true, studySystem: true } },
       publicSubject: { select: { id: true, name: true } },
-      major: { select: { id: true, name: true } }
+      major: { select: { id: true, name: true, regions: { select: { regionId: true, displayName: true } } } }
     }
   });
+  if (!profile?.major) return profile;
+  const { regions: bindings, ...major } = profile.major;
+  return { ...profile, major: { ...major, name: bindings.find((binding) => binding.regionId === profile.regionId)?.displayName || major.name } };
 }
 
 export async function getStudentFoundationProfileStatus(userId: string) {
@@ -137,7 +141,7 @@ export async function saveStudentFoundationProfile(
     throw new FoundationSelectionError("Selected major is unavailable for this region.");
   }
 
-  return prisma.studentProfile.upsert({
+  const profile = await prisma.studentProfile.upsert({
     where: { userId },
     update: {
       regionId: input.regionId,
@@ -153,7 +157,10 @@ export async function saveStudentFoundationProfile(
     include: {
       region: true,
       publicSubject: true,
-      major: true
+      major: { include: { regions: { where: { regionId: input.regionId }, select: { displayName: true }, take: 1 } } }
     }
   });
+  if (!profile.major) return profile;
+  const { regions: bindings, ...savedMajor } = profile.major;
+  return { ...profile, major: { ...savedMajor, name: bindings[0]?.displayName || savedMajor.name } };
 }

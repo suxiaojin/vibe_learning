@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getMedalLevel, getMedalRule } from "@/lib/rewards";
 import { createUserEventNotification } from "@/lib/user-event-notifications";
+import { getRegionMajorName } from "@/lib/region-major-name";
 
 const buddyRequestValidDays = 30;
 const withdrawnReapplyCooldownDays = 30;
@@ -15,7 +16,8 @@ const searchStudentProfileSelect = {
   ...basicStudentProfileSelect,
   school: true,
   region: { select: { province: true, studySystem: true } },
-  major: { select: { name: true } },
+  regionId: true,
+  major: { select: { name: true, regions: { select: { regionId: true, displayName: true } } } },
   schoolOption: { select: { name: true } }
 } satisfies Prisma.StudentProfileSelect;
 
@@ -761,7 +763,7 @@ function toSearchUser(user: Prisma.UserGetPayload<{
   return {
     ...toBasicUser(user),
     schoolName: user.studentProfile?.schoolOption?.name || user.studentProfile?.school || null,
-    majorName: user.studentProfile?.major?.name || null,
+    majorName: getRegionMajorName(user.studentProfile),
     province: user.studentProfile?.region?.province || null,
     studySystem: user.studentProfile?.region?.studySystem || null
   };

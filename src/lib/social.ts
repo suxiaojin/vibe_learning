@@ -5,13 +5,15 @@ import { getMedalLevel, getMedalRule } from "@/lib/rewards";
 import { getSystemSettings } from "@/lib/system-settings";
 import { parseSocialFollowRecommendationRules } from "@/lib/social-follow-recommendations";
 import { createUserEventNotification } from "@/lib/user-event-notifications";
+import { getRegionMajorName } from "@/lib/region-major-name";
 
 const socialListProfileSelect = {
   avatarColor: true,
   avatarImage: true,
   bio: true,
   nickname: true,
-  major: { select: { name: true } },
+  regionId: true,
+  major: { select: { name: true, regions: { select: { regionId: true, displayName: true } } } },
   region: { select: { province: true, studySystem: true } }
 } satisfies Prisma.StudentProfileSelect;
 
@@ -79,7 +81,7 @@ export async function getSocialProfile(viewerId: string, targetId: string) {
         studentProfile: {
           include: {
             region: true,
-            major: true,
+            major: { include: { regions: { select: { regionId: true, displayName: true } } } },
             schoolOption: true
           }
         },
@@ -128,7 +130,7 @@ export async function getSocialProfile(viewerId: string, targetId: string) {
       gender: target.studentProfile?.gender || null,
       province: target.studentProfile?.region?.province || target.studentProfile?.schoolOption?.province || null,
       studySystem: target.studentProfile?.region?.studySystem || null,
-      majorName: target.studentProfile?.major?.name || null,
+      majorName: getRegionMajorName(target.studentProfile),
       joinedAt: target.createdAt,
       joinedYear: target.createdAt.getFullYear(),
       diamondBalance: target.diamondAccount?.balance || 0,
@@ -269,7 +271,7 @@ export async function listFollowers(userId: string) {
       avatarColor: follow.follower.studentProfile?.avatarColor || "green",
       province: follow.follower.studentProfile?.region?.province || null,
       studySystem: follow.follower.studentProfile?.region?.studySystem || null,
-      majorName: follow.follower.studentProfile?.major?.name || null,
+      majorName: getRegionMajorName(follow.follower.studentProfile),
       isFollowing: follow.follower.followers.length > 0
     }))
   };
@@ -308,7 +310,7 @@ export async function listFollowing(userId: string) {
       avatarColor: follow.following.studentProfile?.avatarColor || "green",
       province: follow.following.studentProfile?.region?.province || null,
       studySystem: follow.following.studentProfile?.region?.studySystem || null,
-      majorName: follow.following.studentProfile?.major?.name || null
+      majorName: getRegionMajorName(follow.following.studentProfile)
     }))
   };
 }
@@ -345,7 +347,7 @@ export async function listBlockedUsers(userId: string) {
       avatarColor: block.blocked.studentProfile?.avatarColor || "green",
       province: block.blocked.studentProfile?.region?.province || null,
       studySystem: block.blocked.studentProfile?.region?.studySystem || null,
-      majorName: block.blocked.studentProfile?.major?.name || null
+      majorName: getRegionMajorName(block.blocked.studentProfile)
     }))
   };
 }
@@ -402,7 +404,7 @@ export async function searchUsersByNickname(viewerId: string, query: string, inp
       bio: user.studentProfile?.bio || "",
       province: user.studentProfile?.region?.province || null,
       studySystem: user.studentProfile?.region?.studySystem || null,
-      majorName: user.studentProfile?.major?.name || null,
+      majorName: getRegionMajorName(user.studentProfile),
       isFollowing: user.followers.length > 0,
       followerCount: user._count.followers,
       followingCount: user._count.following
@@ -494,7 +496,7 @@ export async function listRecommendedFollows(viewerId: string, input?: { limit?:
       avatarColor: user.studentProfile?.avatarColor || "green",
       province: user.studentProfile?.region?.province || null,
       studySystem: user.studentProfile?.region?.studySystem || null,
-      majorName: user.studentProfile?.major?.name || null,
+      majorName: getRegionMajorName(user.studentProfile),
       diamondBalance: user.diamondAccount?.balance || 0,
       followerCount: user._count.followers,
       followingCount: user._count.following
