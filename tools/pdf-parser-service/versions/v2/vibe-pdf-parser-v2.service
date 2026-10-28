@@ -1,0 +1,12 @@
+[Unit]
+Description=Vibe Learning PDF Parser V2
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/vibe_pdf_parser/versions/v2
+Environment=VIBE_PDF_TASK_DIR=/data/vibe_pdf_parser_tasks_v2
+ExecStart=/opt/vibe_pdf_parser/version-envs/v2/bin/python -m uvicorn app:app --host 0.0.0.0 --port 8005
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

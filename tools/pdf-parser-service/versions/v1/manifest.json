@@ -1,0 +1,17 @@
+{
+  "versions": [
+    {
+      "id": "v1",
+      "label": "V1 稳定版",
+      "status": "已保存基线",
+      "snapshotDate": "2026-10-28",
+      "sourceSha256": "d5d45c4eaa077f2d0fc972c8fc277275213ce9808edef81d40587e3d0fabe4b4",
+      "sourcePath": "tools/pdf-parser-service/versions/v1/app.py",
+      "runtimeSnapshotPath": "/opt/vibe_pdf_parser/versions/v1",
+      "pythonVersion": "3.11.7",
+      "dependenciesSha256": "86c6a86fa7bc96fe2dd89e636e75477b78552478d9d9412da1741e34b66fb419",
+      "systemPromptSha256": "25f8ed1a5102da1a8963a35dfeb557b09f817784e2b174ffb533542a87edafb2",
+      "userPromptSha256": "de08701367dfc8ad769280be3d6ba6f5c3e488bb5a0492f132aa66254789fd69"
+    }
+  ]
+}

@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAiServerConfigForModule } from "@/lib/ai-server-settings";
 import { getCurrentAdmin } from "@/lib/auth";
+import registry from "@/lib/question-pdf-parser-versions.json";
+import { isParserVersion, parserVersionUrl } from "@/lib/question-pdf-parser-versions";
 
 export const runtime = "nodejs";
-
-function parserBaseUrl() {
-  return (process.env.QUESTION_PDF_PARSER_URL || "http://172.18.255.14:8000").replace(/\/+$/, "");
-}
 
 function isUploadFile(value: FormDataEntryValue | null): value is File {
   return Boolean(value && typeof value === "object" && "arrayBuffer" in value && "name" in value);
@@ -25,6 +23,10 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const questionPdf = formData.get("questionPdf");
   const answerPdf = formData.get("answerPdf");
+  const parserVersion = String(formData.get("parserVersion") || registry.defaultVersion);
+  if (!isParserVersion(parserVersion)) {
+    return NextResponse.json({ error: "请选择有效的解析版本。" }, { status: 400 });
+  }
 
   if (!isUploadFile(questionPdf)) {
     return NextResponse.json({ error: "请上传真题 PDF。" }, { status: 400 });
@@ -60,10 +62,12 @@ export async function POST(request: NextRequest) {
   outbound.append("ai_api_key", aiServer.apiKey);
   outbound.append("ai_model", aiServer.model);
 
-  const response = await fetch(`${parserBaseUrl()}/parse-question-paper-tasks`, {
-    method: "POST",
-    body: outbound
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${parserVersionUrl(parserVersion)}/parse-question-paper-tasks`, { method: "POST", body: outbound });
+  } catch {
+    return NextResponse.json({ error: "所选解析版本的服务不可用，请检查题库解析版本状态。" }, { status: 503 });
+  }
 
   if (!response.ok) {
     const message = await response.text();
@@ -76,5 +80,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  return NextResponse.json(await response.json());
+  const task = await response.json() as { taskId?: string };
+  if (!task.taskId || !/^[a-f0-9]{12}$/.test(task.taskId)) return NextResponse.json({ error: "解析服务返回无效任务编号。" }, { status: 502 });
+  return NextResponse.json({ ...task, taskId: `${parserVersion}~${task.taskId}`, parserVersion });
 }

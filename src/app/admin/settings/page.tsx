@@ -38,8 +38,10 @@ import { getSystemSettings } from "@/lib/system-settings";
 import { getHomepageMedia, getHomepageText } from "@/lib/homepage-settings";
 import { parseSocialFollowRecommendationRules } from "@/lib/social-follow-recommendations";
 import { cn } from "@/lib/utils";
+import parserVersionRegistry from "@/lib/question-pdf-parser-versions.json";
+import { parserVersionStatuses } from "@/lib/question-pdf-parser-versions";
 
-type SettingsTab = "login" | "homepage" | "admin" | "agreements" | "study-buddy" | "share-copy" | "diamonds";
+type SettingsTab = "login" | "homepage" | "admin" | "agreements" | "study-buddy" | "share-copy" | "diamonds" | "question-parser";
 
 const tabs: Array<{ key: SettingsTab; label: string }> = [
   { key: "login", label: "登录页配置" },
@@ -48,7 +50,8 @@ const tabs: Array<{ key: SettingsTab; label: string }> = [
   { key: "agreements", label: "协议内容" },
   { key: "study-buddy", label: "学习搭子" },
   { key: "share-copy", label: "分享文案" },
-  { key: "diamonds", label: "钻石设置" }
+  { key: "diamonds", label: "钻石设置" },
+  { key: "question-parser", label: "题库解析" }
 ];
 
 const noticeText: Record<string, string> = {
@@ -194,6 +197,7 @@ export default async function AdminSettingsPage({
     redirect(`/admin/prompt-settings${query.size ? `?${query.toString()}` : ""}`);
   }
   const activeTab = resolveTab(params?.tab);
+  const parserVersions = activeTab === "question-parser" ? await parserVersionStatuses() : [];
   const [homepageText, homepageImages] = activeTab === "homepage"
     ? await Promise.all([getHomepageText(), getHomepageMedia()])
     : [null, null];
@@ -696,6 +700,21 @@ export default async function AdminSettingsPage({
       ) : null}
 
       {activeTab === "diamonds" ? <AdminDiamondRuleSettings rules={diamondRules} /> : null}
+
+      {activeTab === "question-parser" ? (
+        <section className="space-y-4 border border-slate-200 bg-white p-5 shadow-sm">
+          <div>
+            <h2 className="text-lg font-black text-ink">题库解析版本</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">管理试卷和答案 PDF 的解析能力版本。已保存版本作为后续测试和回退的基线。</p>
+          </div>
+          {parserVersions.map((version) => <div key={version.id} className="border border-slate-200 p-4">
+            <div className="flex flex-wrap items-center gap-3"><h3 className="font-bold text-ink">{version.label}</h3><span className="rounded bg-teal/10 px-2 py-1 text-xs font-bold text-teal">{version.status}</span></div>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{version.id === "v1" ? "已保存独立代码、提示词和依赖环境，作为稳定基线。" : "独立调试环境，当前以 V1 为起点；调整不覆盖 V1。"}</p>
+            <p className="mt-1 text-xs font-semibold text-slate-500">{version.available ? "解析服务可用" : "解析服务暂不可用"}{version.id === parserVersionRegistry.defaultVersion ? " · 导入默认版本" : ""}</p>
+          </div>)}
+          <p className="text-xs leading-5 text-slate-500">上传 PDF 时可选择版本，每个任务使用创建时选择的版本。调试版经确认后才保存为 V2。</p>
+        </section>
+      ) : null}
     </main>
   );
 }

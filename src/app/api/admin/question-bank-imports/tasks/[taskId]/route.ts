@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentAdmin } from "@/lib/auth";
 import { assertImportQuestionPaperPayload, getQuestionPaperImportStats } from "@/lib/question-paper-import";
+import { isParserVersion, parserVersionUrl } from "@/lib/question-pdf-parser-versions";
 
 export const runtime = "nodejs";
 
@@ -26,9 +27,19 @@ export async function GET(
   }
 
   const { taskId } = await params;
-  const response = await fetch(`${parserBaseUrl()}/parse-question-paper-tasks/${encodeURIComponent(taskId)}`, {
-    cache: "no-store"
-  });
+  const parts = taskId.split("~");
+  const version = parts.length === 2 ? parts[0] : "";
+  const rawTaskId = parts.length === 2 ? parts[1] : taskId;
+  if ((version && !isParserVersion(version)) || parts.length > 2 || !/^[a-f0-9]{12}$/.test(rawTaskId)) {
+    return NextResponse.json({ error: "无效的解析任务编号。" }, { status: 400 });
+  }
+  const base = version && isParserVersion(version) ? parserVersionUrl(version) : parserBaseUrl();
+  let response: Response;
+  try {
+    response = await fetch(`${base}/parse-question-paper-tasks/${encodeURIComponent(rawTaskId)}`, { cache: "no-store" });
+  } catch {
+    return NextResponse.json({ error: "解析任务对应的版本服务不可用，请稍后重试。" }, { status: 503 });
+  }
 
   if (!response.ok) {
     const message = await response.text();
@@ -46,9 +57,11 @@ export async function GET(
     assertImportQuestionPaperPayload(task.payload);
     return NextResponse.json({
       ...task,
+      taskId,
+      ...(version ? { parserVersion: version } : {}),
       stats: getQuestionPaperImportStats(task.payload)
     });
   }
 
-  return NextResponse.json(task);
+  return NextResponse.json({ ...task, taskId, ...(version ? { parserVersion: version } : {}) });
 }

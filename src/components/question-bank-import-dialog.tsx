@@ -7,6 +7,7 @@ import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 import type { ImportQuestion, ImportQuestionPaperPayload } from "@/lib/question-paper-import";
 import { cn } from "@/lib/utils";
 import { RichTextContent } from "@/components/rich-text-content";
+import parserVersionRegistry from "@/lib/question-pdf-parser-versions.json";
 
 type RegionOption = {
   id: string;
@@ -28,6 +29,7 @@ type ParseResponse = {
 
 type ParserTaskResponse = Partial<ParseResponse> & {
   taskId: string;
+  parserVersion?: string;
   status: "queued" | "running" | "succeeded" | "failed";
   stage: string;
   progress: number;
@@ -163,6 +165,7 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
   const [regionId, setRegionId] = useState((selectedOwner.regions[0] || regions[0])?.id || "");
   const [questionPdf, setQuestionPdf] = useState<File | null>(null);
   const [answerPdf, setAnswerPdf] = useState<File | null>(null);
+  const [parserVersion, setParserVersion] = useState(parserVersionRegistry.defaultVersion);
   const [parsed, setParsed] = useState<ParseResponse | null>(null);
   const [task, setTask] = useState<ParserTaskResponse | null>(null);
   const [taskId, setTaskId] = useState("");
@@ -391,6 +394,7 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
         body.append("ownerName", activeOwner.name);
         body.append("ownerType", activeOwner.type);
         body.append("courseName", activeOwner.name);
+        body.append("parserVersion", parserVersion);
 
         const response = await fetch("/api/admin/question-bank-imports/tasks", {
           method: "POST",
@@ -514,6 +518,13 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
                       <input className="input rounded-none" value={year} onChange={(event) => { setYear(event.target.value); resetState(); }} inputMode="numeric" />
                     </div>
                   </div>
+                  <div>
+                    <label className="label" htmlFor="question-pdf-parser-version">解析版本</label>
+                    <select id="question-pdf-parser-version" className="input rounded-none" value={parserVersion} disabled={activeTask || isCommitting} onChange={(event) => { setParserVersion(event.target.value); resetState(); }}>
+                      {parserVersionRegistry.versions.map((version) => <option key={version.id} value={version.id}>{version.label}</option>)}
+                    </select>
+                    <p className="mt-1 text-xs text-slate-500">当前调试版用于验证新规则；选择 V1 可使用稳定基线。</p>
+                  </div>
                   <label className="grid cursor-pointer gap-2 rounded-md border border-dashed border-[#b8c2d2] bg-[#f9fafc] p-4 text-sm text-[#071b38] hover:border-[#6f8dff]">
                     <span className="inline-flex items-center gap-2 font-semibold"><UploadCloud size={17} />真题 PDF</span>
                     <span className="truncate text-xs text-slate-500">{questionPdf?.name || "选择文件"}</span>
@@ -533,6 +544,7 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
                     {isParsing ? <Loader2 className="animate-spin" size={16} /> : null}
                     开始解析
                   </button>
+                  {task?.parserVersion ? <p className="text-xs font-semibold text-slate-600">本次解析：{parserVersionRegistry.versions.find((version) => version.id === task.parserVersion)?.label || task.parserVersion}</p> : null}
                   {(activeTask || isCommitting) ? (
                     <div className="rounded-md border border-[#d8dee8] bg-[#f9fafc] p-3 text-xs text-[#071b38]">
                       <div className="mb-2 flex items-center justify-between gap-3 font-semibold">
