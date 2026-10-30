@@ -482,8 +482,8 @@ function DiamondPanel({
                   const presentation = getTransactionPresentation(item);
                   return (
                     <tr key={item.id} className="border-b border-slate-100 last:border-0">
-                      <td className="py-3 pr-4 font-semibold text-slate-500">{formatDateTime(item.createdAt)}</td>
-                      <td className="py-3 pr-4 font-bold text-ink">{presentation.typeLabel}</td>
+                      <td className="whitespace-nowrap py-3 pr-4 font-semibold text-slate-500">{formatDateTime(item.createdAt)}</td>
+                      <td className="whitespace-nowrap py-3 pr-4 font-bold text-ink">{presentation.typeLabel}</td>
                       <td className={cn("py-3 pr-4 font-semibold", item.amount >= 0 ? "text-success-strong" : "text-coral")}>
                         {item.amount >= 0 ? "+" : ""}
                         {item.amount}
@@ -510,6 +510,7 @@ function DiamondPanel({
                 <input name="tab" type="hidden" value="diamonds" />
                 <label className="sr-only" htmlFor="diamond-page-input">跳转到页码</label>
                 <input
+                  key={currentPage}
                   id="diamond-page-input"
                   className="h-10 w-12 appearance-none rounded border border-slate-300 bg-white px-1 text-center text-sm font-semibold text-ink outline-none transition focus:border-teal focus:ring-2 focus:ring-teal/15 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                   defaultValue={currentPage}

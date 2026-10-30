@@ -40,7 +40,12 @@ export default async function MajorsPage({
       where,
       include: {
         regions: { include: { region: true }, orderBy: { createdAt: "asc" } },
-        _count: { select: { studentProfiles: true, learningCourses: true } }
+        _count: {
+          select: {
+            studentProfiles: { where: selectedRegionId ? { regionId: selectedRegionId } : {} },
+            learningCourses: { where: { courseType: "major", ...(selectedRegionId ? { regionId: selectedRegionId } : {}) } }
+          }
+        }
       },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }]
     })

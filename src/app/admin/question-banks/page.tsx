@@ -449,8 +449,8 @@ export default async function QuestionBanksPage({
 
               {!(selectedOwner.type === "public_subject" && selectedOwner.name.trim() === "高等数学") ? (
                 <QuestionBankImportDialog
-                  selectedOwner={{ type: selectedOwner.type, id: selectedOwner.id, name: selectedOwner.name, regions: selectedOwner.regions }}
-                  regions={regions}
+                  selectedOwner={{ type: selectedOwner.type, id: selectedOwner.id, name: selectedOwner.name, regions: regionOptions }}
+                  regions={regionOptions}
                 />
               ) : null}
 
