@@ -7,6 +7,7 @@ import {
   ChevronRight,
   FilePlus2,
   Filter,
+  LibraryBig,
   ListFilter,
   Trash2
 } from "lucide-react";
@@ -33,6 +34,7 @@ type SearchParams = {
   copyNotice?: string;
   mapped?: string;
   unmapped?: string;
+  view?: string;
 };
 
 type RegionOption = {
@@ -56,10 +58,11 @@ function isOwnerType(value?: string): value is QuestionBankOwnerType {
   return value === "public_subject" || value === "major";
 }
 
-function ownerHref(owner: OwnerOption, page = 1, province = "", examType = "") {
+function ownerHref(owner: OwnerOption, page = 1, province = "", examType = "", other = false) {
   const query = new URLSearchParams({ type: owner.type, id: owner.id, page: String(page) });
   if (province) query.set("province", province);
   if (examType) query.set("examType", examType);
+  if (other) query.set("view", "other");
   return `/admin/question-banks?${query.toString()}`;
 }
 
@@ -144,6 +147,7 @@ export default async function QuestionBanksPage({
   await ensureDefaultQuestionBankCatalog();
 
   const params = await searchParams;
+  const otherBanks = params?.view === "other";
   const cookieStore = await cookies();
   const [regions, publicSubjects, majors] = await Promise.all([
     prisma.region.findMany({
@@ -218,6 +222,20 @@ export default async function QuestionBanksPage({
     owners.find((owner) => owner.type === "major" && owner.name.includes("计算机")) ||
     owners[0];
   const regionOptions = selectedOwner?.regions.filter((region) => matchingRegionIds.has(region.id)) || matchingRegions;
+  const copyTargetRegions = regions.map((region) => ({
+    id: region.id,
+    name: region.name,
+    province: region.province,
+    owners: [
+      ...publicSubjects.filter((subject) => subject.regions.some((binding) => binding.regionId === region.id)).map((subject) => ({
+        type: "public_subject" as const, id: subject.id, name: subject.name
+      })),
+      ...majors.flatMap((major) => {
+        const binding = major.regions.find((item) => item.regionId === region.id);
+        return binding ? [{ type: "major" as const, id: major.id, name: binding.displayName || major.name }] : [];
+      })
+    ]
+  })).filter((region) => region.owners.length > 0);
 
   if (!selectedOwner) {
     return (
@@ -299,6 +317,7 @@ export default async function QuestionBanksPage({
 
   const paperWhere = {
     ownerType: selectedOwner.type,
+    isCrossRegionCopy: otherBanks,
     regionId: { in: matchingRegions.map((region) => region.id) },
     ...(selectedOwner.type === "public_subject" ? { publicSubjectId: selectedOwner.id } : { majorId: selectedOwner.id })
   };
@@ -312,7 +331,7 @@ export default async function QuestionBanksPage({
       include: {
         region: true,
         _count: {
-          select: { questions: true }
+          select: { questions: true, purchases: true }
         }
       },
       orderBy: [{ year: "desc" }, { updatedAt: "desc" }],
@@ -335,10 +354,6 @@ export default async function QuestionBanksPage({
   const copiedPaper = papers.find((paper) => paper.id === params?.copiedPaperId);
   const copiedMappedCount = Math.max(0, Number(params?.mapped || 0) || 0);
   const copiedUnmappedCount = Math.max(0, Number(params?.unmapped || 0) || 0);
-  const courseManagementHref = selectedOwner.type === "major"
-    ? `/admin/majors/${selectedOwner.id}/courses`
-    : `/admin/public-subjects/${selectedOwner.id}/courses`;
-
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-[#081a33]">
       <header className="flex h-[64px] min-w-0 border-b border-[#d6dbe4] bg-[#f7f8fb]">
@@ -364,6 +379,7 @@ export default async function QuestionBanksPage({
           <input name="type" type="hidden" value={selectedOwner.type} />
           <input name="id" type="hidden" value={selectedOwner.id} />
           <input name="page" type="hidden" value="1" />
+          {otherBanks ? <input name="view" type="hidden" value="other" /> : null}
           <label className="grid min-w-[130px] flex-1 gap-0.5 text-[10px] font-bold text-[#64748b]">
             省份
             <select className="h-8 min-w-0 rounded border border-[#cfd8e6] bg-white px-2 text-xs font-medium text-[#071b38]" name="province" defaultValue={selectedProvince}>
@@ -398,6 +414,7 @@ export default async function QuestionBanksPage({
           regions={matchingRegions}
           province={selectedProvince}
           examType={selectedExamType}
+          otherBanks={otherBanks}
         />
 
         <section className="min-w-0 overflow-auto bg-[#f3f5f9] px-5 pb-10 pt-12">
@@ -459,6 +476,14 @@ export default async function QuestionBanksPage({
                 regions={regions}
                 knowledgeTreesByRegion={aiReferenceKnowledgeTreesByRegion}
               />
+              <Link
+                aria-label={otherBanks ? "返回本区域题库" : "查看其它题库"}
+                className="grid min-h-12 justify-items-center gap-1 text-xs font-medium text-[#071b38]"
+                href={ownerHref(selectedOwner, 1, selectedProvince, selectedExamType, !otherBanks)}
+              >
+                <LibraryBig aria-hidden="true" className="text-[#0872b9]" size={28} strokeWidth={2.2} />
+                其它题库
+              </Link>
             </div>
 
             <section className="overflow-visible rounded-t-lg bg-white">
@@ -466,9 +491,11 @@ export default async function QuestionBanksPage({
                 <thead className="bg-[#f0f1f4] text-[#030712]">
                   <tr className="h-11">
                     <th className="border-r border-[#e0e3e8] px-3 font-bold">{headerLabel("题库名称")}</th>
+                    <th className="w-[165px] border-r border-[#e0e3e8] px-3 font-bold">{headerLabel("来源")}</th>
                     <th className="w-[90px] border-r border-[#e0e3e8] px-3 font-bold">{headerLabel("题数")}</th>
                     <th className="w-[205px] border-r border-[#e0e3e8] px-3 font-bold">{headerLabel("区域信息")}</th>
-                    <th className="w-[110px] border-r border-[#e0e3e8] px-3 font-bold">{headerLabel("年份")}</th>
+                    {otherBanks && <th className="w-[110px] border-r border-[#e0e3e8] px-3 font-bold">购买人数</th>}
+                    <th className="w-[110px] border-r border-[#e0e3e8] px-3 font-bold">{headerLabel(otherBanks ? "钻石数" : "年份")}</th>
                     <th className="w-[185px] border-r border-[#e0e3e8] px-3 font-bold">{headerLabel("更新时间")}</th>
                     <th className="w-[250px] px-3 font-bold"></th>
                   </tr>
@@ -476,8 +503,8 @@ export default async function QuestionBanksPage({
                 <tbody>
                   {papers.length === 0 ? (
                     <tr>
-                      <td className="h-64 border-b border-[#e5e7eb] text-center text-sm text-slate-500" colSpan={6}>
-                        当前专业还没有题库。
+                      <td className="h-64 border-b border-[#e5e7eb] text-center text-sm text-slate-500" colSpan={otherBanks ? 8 : 7}>
+                        {otherBanks ? "当前专业或公共课暂无从其他区域复制的题库。" : "当前专业还没有题库。"}
                       </td>
                     </tr>
                   ) : papers.map((paper, index) => {
@@ -496,9 +523,11 @@ export default async function QuestionBanksPage({
                             {paper.title}
                           </Link>
                         </td>
+                        <td className="px-3 text-[#071b38]">{paper.copiedFromRegionName || "-"}</td>
                         <td className="px-3 text-[#071b38]">{paper._count.questions}</td>
                         <td className="px-3 text-[#071b38]">{paper.region.name}</td>
-                        <td className="px-3 text-[#071b38]">{paper.year || "-"}</td>
+                        {otherBanks && <td className="px-3 text-[#071b38]">{paper._count.purchases}</td>}
+                        <td className="px-3 text-[#071b38]">{otherBanks ? paper.diamondPrice : paper.year || "-"}</td>
                         <td className="px-3 text-[#071b38]">{formatDate(paper.updatedAt)}</td>
                         <td className="px-3">
                           <div className="flex items-center justify-end gap-4">
@@ -507,6 +536,7 @@ export default async function QuestionBanksPage({
                               <form action={updateQuestionBankPaper} className="absolute right-0 z-50 mt-3 grid max-h-[430px] w-[430px] gap-3 overflow-auto border border-[#cdd4df] bg-white p-4 text-left shadow-xl">
                                 {ownerInputs(selectedOwner)}
                                 <input type="hidden" name="id" value={paper.id} />
+                                <input type="hidden" name="view" value={otherBanks ? "other" : ""} />
                                 <div>
                                   <label className="label">题库名称</label>
                                   <input className="input rounded-none" name="title" defaultValue={paper.title} required />
@@ -521,27 +551,26 @@ export default async function QuestionBanksPage({
                                     </select>
                                   </div>
                                   <div>
-                                    <label className="label">年份</label>
-                                    <input className="input rounded-none" name="year" type="number" min="2000" max="2100" defaultValue={paper.year || ""} />
+                                    <label className="label">{otherBanks ? "钻石数" : "年份"}</label>
+                                    {otherBanks ? <input className="input rounded-none" name="diamondPrice" type="number" min="0" max="2147483647" step="1" defaultValue={paper.diamondPrice} required /> : <input className="input rounded-none" name="year" type="number" min="2000" max="2100" defaultValue={paper.year || ""} />}
                                   </div>
                                 </div>
                                 <button className="primary-button rounded-none" type="submit">保存修改</button>
                               </form>
                             </details>
                             <CopyQuestionBankDialog
-                              courseManagementHref={courseManagementHref}
                               ownerId={selectedOwner.id}
                               ownerType={selectedOwner.type}
                               paperId={paper.id}
                               paperTitle={paper.title}
-                              paperYear={paper.year}
+                              paperDiamondPrice={paper.diamondPrice}
                               questionCount={paper._count.questions}
                               sourceRegionName={paper.region.name}
-                              sourceRegionProvince={paper.region.province}
                               sourceStatus={paper.status}
-                              targetRegions={selectedOwner.regions
-                                .filter((region) => region.id !== paper.regionId)
-                                .map((region) => ({ id: region.id, name: region.name, province: region.province }))}
+                              targetRegions={copyTargetRegions.map((region) => ({
+                                ...region,
+                                owners: region.owners.filter((owner) => region.id !== paper.regionId || owner.type !== selectedOwner.type || owner.id !== selectedOwner.id)
+                              })).filter((region) => region.owners.length > 0)}
                             />
                             <form action={toggleQuestionBankPaperStatus}>
                               {ownerInputs(selectedOwner)}
@@ -561,6 +590,7 @@ export default async function QuestionBanksPage({
                             <form id={`delete-paper-${paper.id}`} action={deleteQuestionBankPaper}>
                               {ownerInputs(selectedOwner)}
                               <input type="hidden" name="id" value={paper.id} />
+                              <input type="hidden" name="view" value={otherBanks ? "other" : ""} />
                             </form>
                             <ConfirmSubmitButton
                               className="grid size-7 place-items-center text-red-500 hover:bg-red-50"
@@ -581,7 +611,7 @@ export default async function QuestionBanksPage({
             <div className="flex items-center justify-end gap-4 px-2 py-5 text-sm text-[#071b38]">
               <Link
                 className={cn("grid size-8 place-items-center text-slate-400", currentPage > 1 ? "hover:text-[#006aff]" : "pointer-events-none opacity-40")}
-                href={ownerHref(selectedOwner, Math.max(1, currentPage - 1), selectedProvince, selectedExamType)}
+                href={ownerHref(selectedOwner, Math.max(1, currentPage - 1), selectedProvince, selectedExamType, otherBanks)}
               >
                 <ChevronLeft size={18} />
               </Link>
@@ -592,14 +622,14 @@ export default async function QuestionBanksPage({
                     "grid size-8 place-items-center rounded-lg",
                     pageNumber === currentPage ? "border border-[#5d80ff] bg-white text-[#3562ff]" : "hover:bg-white hover:text-[#006aff]"
                   )}
-                  href={ownerHref(selectedOwner, pageNumber, selectedProvince, selectedExamType)}
+                  href={ownerHref(selectedOwner, pageNumber, selectedProvince, selectedExamType, otherBanks)}
                 >
                   {pageNumber}
                 </Link>
               ))}
               <Link
                 className={cn("grid size-8 place-items-center text-slate-600", currentPage < totalPages ? "hover:text-[#006aff]" : "pointer-events-none opacity-40")}
-                href={ownerHref(selectedOwner, Math.min(totalPages, currentPage + 1), selectedProvince, selectedExamType)}
+                href={ownerHref(selectedOwner, Math.min(totalPages, currentPage + 1), selectedProvince, selectedExamType, otherBanks)}
               >
                 <ChevronRight size={18} />
               </Link>

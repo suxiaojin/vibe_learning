@@ -1885,7 +1885,9 @@ async function getQuestionBankCopyPlan(
   ownerType: QuestionBankOwnerType,
   ownerId: string,
   sourcePaperId: string,
-  targetRegionId: string
+  targetRegionId: string,
+  targetOwnerType: QuestionBankOwnerType,
+  targetOwnerId: string
 ) {
   const sourcePaper = await prisma.examPaper.findFirst({
     where: {
@@ -1895,6 +1897,7 @@ async function getQuestionBankCopyPlan(
     select: {
       id: true,
       regionId: true,
+      region: { select: { name: true } },
       title: true,
       year: true,
       paperType: true,
@@ -1944,11 +1947,14 @@ async function getQuestionBankCopyPlan(
   if (!sourcePaper) {
     throw new QuestionBankCopyError("来源题库不存在或已被删除。");
   }
-  if (!targetRegionId || targetRegionId === sourcePaper.regionId) {
-    throw new QuestionBankCopyError("请选择与来源不同的目标区域。");
+  if (!targetRegionId || !targetOwnerId || (targetOwnerType !== "major" && targetOwnerType !== "public_subject")) {
+    throw new QuestionBankCopyError("请选择目标区域和专业或公共课。");
+  }
+  if (targetRegionId === sourcePaper.regionId && targetOwnerType === ownerType && targetOwnerId === ownerId) {
+    throw new QuestionBankCopyError("请选择与来源不同的目标区域或专业、公共课。");
   }
 
-  await assertQuestionBankOwnerRegion(ownerType, ownerId, targetRegionId);
+  await assertQuestionBankOwnerRegion(targetOwnerType, targetOwnerId, targetRegionId);
   const targetRegion = await prisma.region.findUnique({
     where: { id: targetRegionId },
     select: { id: true, name: true, province: true, studySystem: true }
@@ -1959,7 +1965,7 @@ async function getQuestionBankCopyPlan(
 
   const [sourceCourses, targetCourses] = await Promise.all([
     getQuestionBankCopyCatalog(ownerType, ownerId, sourcePaper.regionId),
-    getQuestionBankCopyCatalog(ownerType, ownerId, targetRegionId)
+    getQuestionBankCopyCatalog(targetOwnerType, targetOwnerId, targetRegionId)
   ]);
   const knowledgeMapping = buildQuestionBankKnowledgeCopyMapping(
     sourceCourses,
@@ -2106,11 +2112,13 @@ export async function previewQuestionBankCopy(
   ownerType: QuestionBankOwnerType,
   ownerId: string,
   sourcePaperId: string,
-  targetRegionId: string
+  targetRegionId: string,
+  targetOwnerType: QuestionBankOwnerType,
+  targetOwnerId: string
 ) {
   await requireAdmin();
   try {
-    const plan = await getQuestionBankCopyPlan(ownerType, ownerId, sourcePaperId, targetRegionId);
+    const plan = await getQuestionBankCopyPlan(ownerType, ownerId, sourcePaperId, targetRegionId, targetOwnerType, targetOwnerId);
     return {
       ok: true as const,
       targetRegionName: plan.targetRegion.name,
@@ -2136,17 +2144,19 @@ export async function copyQuestionBankPaper(
   const { ownerType, ownerId } = getQuestionBankOwner(formData);
   const sourcePaperId = String(formData.get("sourcePaperId") || "");
   const targetRegionId = String(formData.get("targetRegionId") || "");
+  const targetOwnerType = String(formData.get("targetOwnerType") || "") as QuestionBankOwnerType;
+  const targetOwnerId = String(formData.get("targetOwnerId") || "");
   const title = String(formData.get("title") || "").trim();
-  const rawYear = String(formData.get("year") || "").trim();
-  const year = rawYear ? Number(rawYear) : null;
+  const rawDiamondPrice = String(formData.get("diamondPrice") ?? "").trim();
+  const diamondPrice = Number(rawDiamondPrice);
   const rawStatus = String(formData.get("status") || "");
   const status = rawStatus as ContentStatus;
 
   if (!title) {
     return { error: "请输入复制后的题库名称。" };
   }
-  if (rawYear && (!Number.isInteger(year) || Number(year) < 2000 || Number(year) > 2100)) {
-    return { error: "年份应为 2000 至 2100 之间的整数。" };
+  if (!/^\d+$/.test(rawDiamondPrice) || !Number.isSafeInteger(diamondPrice) || diamondPrice > 2147483647) {
+    return { error: "钻石数必须是 0 至 2147483647 的整数。" };
   }
   if (!Object.values(ContentStatus).includes(status)) {
     return { error: "复制后的题库状态无效。" };
@@ -2154,10 +2164,11 @@ export async function copyQuestionBankPaper(
 
   let plan: Awaited<ReturnType<typeof getQuestionBankCopyPlan>>;
   try {
-    plan = await getQuestionBankCopyPlan(ownerType, ownerId, sourcePaperId, targetRegionId);
+    plan = await getQuestionBankCopyPlan(ownerType, ownerId, sourcePaperId, targetRegionId, targetOwnerType, targetOwnerId);
   } catch (error) {
     return { error: error instanceof QuestionBankCopyError ? error.message : "复制前检查失败，请稍后重试。" };
   }
+  const year = plan.sourcePaper.year;
 
   if (plan.knowledgeMapping.summary.unmappedAssociationCount > 0 && formData.get("allowUnmapped") !== "yes") {
     return { error: "仍有知识点关联无法匹配，请确认按未归类处理后再复制。" };
@@ -2165,14 +2176,14 @@ export async function copyQuestionBankPaper(
 
   const duplicatePaper = await prisma.examPaper.findFirst({
     where: {
-      ...ownerPaperWhere(ownerType, ownerId, targetRegionId),
+      ...ownerPaperWhere(targetOwnerType, targetOwnerId, targetRegionId),
       title,
       year
     },
     select: { id: true }
   });
   if (duplicatePaper) {
-    return { error: "目标区域已存在同名、同年份题库，请修改题库名称或年份。" };
+    return { error: "目标区域已存在同名、同年份题库，请修改题库名称。" };
   }
 
   const questionIdMap = new Map(plan.sourcePaper.questions.map(({ question }) => [question.id, randomUUID()]));
@@ -2182,12 +2193,17 @@ export async function copyQuestionBankPaper(
       const paper = await tx.examPaper.create({
         data: {
           regionId: targetRegionId,
-          ownerType,
-          publicSubjectId: ownerType === "public_subject" ? ownerId : null,
-          majorId: ownerType === "major" ? ownerId : null,
+          ownerType: targetOwnerType,
+          publicSubjectId: targetOwnerType === "public_subject" ? targetOwnerId : null,
+          majorId: targetOwnerType === "major" ? targetOwnerId : null,
           title,
           year,
           paperType: plan.sourcePaper.paperType,
+          visibleInPastPractice: plan.sourcePaper.paperType === "real_exam",
+          diamondPrice,
+          copiedFromRegionId: plan.sourcePaper.regionId,
+          copiedFromRegionName: plan.sourcePaper.region.name,
+          isCrossRegionCopy: plan.sourcePaper.regionId !== targetRegionId,
           description: plan.sourcePaper.description,
           ...(plan.sourcePaper.questionTypeConfig === null
             ? {}
@@ -2266,16 +2282,21 @@ export async function copyQuestionBankPaper(
   }
 
   const orderedPapers = await prisma.examPaper.findMany({
-    where: ownerPaperWhere(ownerType, ownerId, targetRegionId),
+    where: {
+      ...ownerPaperWhere(targetOwnerType, targetOwnerId),
+      region: { province: plan.targetRegion.province, studySystem: plan.targetRegion.studySystem },
+      isCrossRegionCopy: plan.sourcePaper.regionId !== targetRegionId
+    },
     select: { id: true },
     orderBy: [{ year: "desc" }, { updatedAt: "desc" }]
   });
   const copiedPaperIndex = Math.max(0, orderedPapers.findIndex((paper) => paper.id === copiedPaperId));
   const query = new URLSearchParams({
-    type: ownerType,
-    id: ownerId,
+    type: targetOwnerType,
+    id: targetOwnerId,
     province: plan.targetRegion.province,
     examType: plan.targetRegion.studySystem,
+    ...(plan.sourcePaper.regionId !== targetRegionId ? { view: "other" } : {}),
     page: String(Math.floor(copiedPaperIndex / 10) + 1),
     copiedPaperId,
     copyNotice: "paper-copied",
@@ -2285,6 +2306,7 @@ export async function copyQuestionBankPaper(
   revalidatePath("/admin/question-banks");
   revalidatePath("/admin/question-banks/knowledge-points");
   revalidatePath("/admin/question-banks/statistics");
+  revalidatePath("/mock-tests/special");
   redirect(`/admin/question-banks?${query.toString()}#paper-${copiedPaperId}`);
 }
 
@@ -2395,23 +2417,31 @@ export async function updateQuestionBankPaper(formData: FormData) {
       id,
       ...ownerPaperWhere(ownerType, ownerId)
     },
-    select: { regionId: true, updatedAt: true }
+    select: { regionId: true, updatedAt: true, copiedFromRegionId: true, year: true, diamondPrice: true }
   });
   const regionId = String(formData.get("regionId") || paper.regionId);
+  const rawDiamondPrice = formData.has("diamondPrice") ? String(formData.get("diamondPrice") ?? "").trim() : String(paper.diamondPrice);
+  const diamondPrice = Number(rawDiamondPrice);
+  if (!/^\d+$/.test(rawDiamondPrice) || !Number.isSafeInteger(diamondPrice) || diamondPrice > 2147483647) {
+    throw new Error("钻石数必须是 0 至 2147483647 的整数。");
+  }
   await ensureQuestionBankOwnerRegion(ownerType, ownerId, regionId);
 
   await prisma.examPaper.update({
     where: { id },
     data: {
       regionId,
+      isCrossRegionCopy: paper.copiedFromRegionId != null && paper.copiedFromRegionId !== regionId,
       title: String(formData.get("title") || "").trim(),
-      year: getPaperYear(formData),
+      year: formData.has("year") ? getPaperYear(formData) : paper.year,
+      diamondPrice,
       updatedAt: paper.updatedAt
     }
   });
 
   revalidatePath("/admin/question-banks");
-  redirect(questionBankPath(ownerType, ownerId));
+  revalidatePath("/mock-tests/special");
+  redirect(questionBankPath(ownerType, ownerId) + (paper.copiedFromRegionId != null && paper.copiedFromRegionId !== regionId ? "&view=other" : ""));
 }
 
 export async function deleteQuestionBankPaper(formData: FormData) {
@@ -2427,7 +2457,7 @@ export async function deleteQuestionBankPaper(formData: FormData) {
   });
   await prisma.examPaper.delete({ where: { id } });
   revalidatePath("/admin/question-banks");
-  redirect(questionBankPath(ownerType, ownerId));
+  redirect(questionBankPath(ownerType, ownerId) + (formData.get("view") === "other" ? "&view=other" : ""));
 }
 
 export async function toggleQuestionBankPaperStatus(formData: FormData) {

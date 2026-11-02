@@ -794,6 +794,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
         where: {
           paper: {
             ownerType: selectedOwner.type,
+            isCrossRegionCopy: false,
             ...(selectedOwner.type === "public_subject"
               ? { publicSubjectId: selectedOwner.id }
               : { majorId: selectedOwner.id }),

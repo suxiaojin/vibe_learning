@@ -105,6 +105,13 @@ function getDiamondRuleKey(metadata: unknown) {
 }
 
 function getTransactionPresentation(item: { type: string; note: string | null; metadata: unknown }) {
+  if (item.type === "project_purchase" && item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata)) {
+    const metadata = item.metadata as Record<string, unknown>;
+    if (metadata.resourceKind === "past_exam") {
+      const title = typeof metadata.titleSnapshot === "string" ? metadata.titleSnapshot.trim() : "";
+      return { typeLabel: "题库购买", description: title || item.note || "-" };
+    }
+  }
   const ruleKey = getDiamondRuleKey(item.metadata);
   if (ruleKey === "ai_study_buddy_chat"
     && item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata)

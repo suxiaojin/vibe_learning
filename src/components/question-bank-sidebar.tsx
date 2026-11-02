@@ -31,14 +31,16 @@ type QuestionBankSidebarProps = {
   regions: RegionOption[];
   province: string;
   examType: string;
+  otherBanks?: boolean;
 };
 
 function ownerKey(owner: Pick<QuestionBankSidebarOwner, "type" | "id">) {
   return `${owner.type}:${owner.id}`;
 }
 
-function ownerHref(owner: QuestionBankSidebarOwner, province: string, examType: string) {
+function ownerHref(owner: QuestionBankSidebarOwner, province: string, examType: string, otherBanks: boolean) {
   const query = new URLSearchParams({ type: owner.type, id: owner.id, page: "1", province, examType });
+  if (otherBanks) query.set("view", "other");
   return `/admin/question-banks?${query.toString()}`;
 }
 
@@ -60,7 +62,7 @@ function firstRegionId(owner: QuestionBankSidebarOwner, fallbackRegions: RegionO
   return owner.regions[0]?.id || fallbackRegions[0]?.id || "";
 }
 
-export function QuestionBankSidebar({ owners, selectedOwnerKey, selectedPapers, regions, province, examType }: QuestionBankSidebarProps) {
+export function QuestionBankSidebar({ owners, selectedOwnerKey, selectedPapers, regions, province, examType, otherBanks = false }: QuestionBankSidebarProps) {
   const [orderedOwners, setOrderedOwners] = useState(owners);
   const [expandedOwnerKeys, setExpandedOwnerKeys] = useState(() => new Set([selectedOwnerKey]));
   const draggedKeyRef = useRef<string>("");
@@ -178,7 +180,7 @@ export function QuestionBankSidebar({ owners, selectedOwnerKey, selectedPapers, 
                 <Folder size={16} className="shrink-0" />
                 <Link
                   className="min-w-0 flex-1 truncate py-2 font-medium"
-                  href={ownerHref(owner, province, examType)}
+                  href={ownerHref(owner, province, examType, otherBanks)}
                   onClick={(event) => {
                     if (active) {
                       event.preventDefault();

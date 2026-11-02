@@ -36,6 +36,7 @@ function ownerHref(paper: {
   ownerType: "public_subject" | "major";
   publicSubjectId: string | null;
   majorId: string | null;
+  isCrossRegionCopy: boolean;
   region: { province: string; studySystem: string };
 }) {
   const query = new URLSearchParams({
@@ -45,6 +46,7 @@ function ownerHref(paper: {
     examType: paper.region.studySystem,
     page: "1"
   });
+  if (paper.isCrossRegionCopy) query.set("view", "other");
   return `/admin/question-banks?${query.toString()}`;
 }
 

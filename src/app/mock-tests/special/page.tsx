@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import { ArrowLeft, CircleMinus } from "lucide-react";
 import { EmptyMockTestState, MockTestPageFrame } from "@/app/mock-tests/mock-test-components";
 import { SpecialPracticeProgress } from "@/app/mock-tests/special/special-practice-progress";
+import { PastExamList } from "@/app/mock-tests/special/past-exam-list";
+import { getPastExams } from "@/lib/past-exams";
 import { ChallengeDifficultyStars } from "@/components/challenge-difficulty-stars";
 import { requireUser } from "@/lib/auth";
 import {
@@ -17,16 +19,19 @@ const PAGE_SIZE = 10;
 export default async function SpecialPracticePage({
   searchParams
 }: {
-  searchParams?: Promise<{ course?: string; page?: string }>;
+  searchParams?: Promise<{ course?: string; page?: string; tab?: string }>;
 }) {
   const [user, query] = await Promise.all([requireUser(), searchParams]);
   const courseKey = normalizeMockTestCourseKey(query?.course);
-  const context = await getMockTestContext(user.id, courseKey);
-  const totalSections = context.practiceSections.length;
+  const isPast = query?.tab === "past";
+  const context = isPast ? null : await getMockTestContext(user.id, courseKey);
+  const pastExams = isPast ? await getPastExams(user.id, courseKey) : null;
+  const practiceSections = context?.practiceSections || [];
+  const totalSections = practiceSections.length;
   const totalPages = Math.max(1, Math.ceil(totalSections / PAGE_SIZE));
   const currentPage = normalizePage(query?.page, totalPages);
   const offset = (currentPage - 1) * PAGE_SIZE;
-  const visibleSections = context.practiceSections.slice(offset, offset + PAGE_SIZE);
+  const visibleSections = practiceSections.slice(offset, offset + PAGE_SIZE);
   const questionsBySectionId = new Map<string, MockTestQuestion[]>(
     visibleSections.map((section) => [section.id, section.questions])
   );
@@ -37,7 +42,14 @@ export default async function SpecialPracticePage({
         <ArrowLeft size={22} />
         返回课程中心
       </Link>
-      {!context.group ? (
+      <nav aria-label="练习分类" className="mb-6 flex gap-8 border-b border-slate-200">
+        <Link className={`border-b-2 px-2 py-4 font-semibold ${!isPast ? "border-teal text-teal" : "border-transparent text-slate-500"}`} href={`/mock-tests/special?course=${courseKey}`}>专项练习</Link>
+        <Link className={`border-b-2 px-2 py-4 font-semibold ${isPast ? "border-teal text-teal" : "border-transparent text-slate-500"}`} href={`/mock-tests/special?course=${courseKey}&tab=past`}>历年真题</Link>
+      </nav>
+      {isPast ? (
+        !pastExams?.ownerName ? <EmptyMockTestState title="还没有可用课程" description="请先回到课程中心保存公共课和专业课。" /> :
+        <PastExamList courseKey={courseKey} userId={user.id} papers={pastExams.papers.map((paper) => ({ id: paper.id, title: paper.title, diamondPrice: paper.diamondPrice, purchased: paper.purchases.length > 0, questionIds: paper.questions.map((item) => item.question.id) }))} />
+      ) : !context?.group ? (
         <EmptyMockTestState description="请先回到课程中心保存公共课和专业课，系统会按你的课程生成练习入口。" title="还没有可用课程" />
       ) : totalSections === 0 ? (
         <EmptyMockTestState description="管理员还没有为当前课程发布专项练习关卡。" title="还没有专项练习" />
@@ -48,7 +60,6 @@ export default async function SpecialPracticePage({
           questionsBySectionId={questionsBySectionId}
           sections={visibleSections}
           totalPages={totalPages}
-          totalSections={totalSections}
         />
       )}
     </MockTestPageFrame>
@@ -60,22 +71,20 @@ function SpecialPracticeTable({
   questionsBySectionId,
   sections,
   currentPage,
-  totalPages,
-  totalSections
+  totalPages
 }: {
   courseKey: "public_subject" | "major";
   questionsBySectionId: ReadonlyMap<string, MockTestQuestion[]>;
   sections: MockTestSection[];
   currentPage: number;
   totalPages: number;
-  totalSections: number;
 }) {
   return (
     <section className="overflow-hidden rounded-[22px] border border-slate-200/80 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
       <div className="overflow-x-auto">
         <div className="min-w-[920px]">
           <div className="grid min-h-[64px] grid-cols-[minmax(300px,1fr)_180px_260px_124px] items-center bg-slate-50/90 px-5 text-sm font-semibold text-slate-500">
-            <div>专项练习</div>
+            <div>知识点</div>
             <div className="text-center">难度</div>
             <div className="text-center">进度</div>
             <div className="text-right">操作</div>
@@ -95,9 +104,7 @@ function SpecialPracticeTable({
         </div>
       </div>
 
-      <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-4 text-sm font-medium text-slate-500">
-        <span>共 {totalSections} 个专项练习</span>
-        {totalPages > 1 ? (
+      {totalPages > 1 && <footer className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-100 px-5 py-4 text-sm font-medium text-slate-500">
           <nav className="flex items-center gap-2" aria-label="专项练习分页">
             <PageLink courseKey={courseKey} disabled={currentPage <= 1} page={currentPage - 1}>
               上一页
@@ -109,8 +116,7 @@ function SpecialPracticeTable({
               下一页
             </PageLink>
           </nav>
-        ) : null}
-      </footer>
+      </footer>}
     </section>
   );
 }

@@ -12,18 +12,17 @@ type TargetRegionOption = {
   id: string;
   name: string;
   province: string;
+  owners: { type: "major" | "public_subject"; id: string; name: string }[];
 };
 
 type CopyQuestionBankDialogProps = {
-  courseManagementHref: string;
   ownerId: string;
   ownerType: "major" | "public_subject";
   paperId: string;
   paperTitle: string;
-  paperYear: number | null;
+  paperDiamondPrice: number;
   questionCount: number;
   sourceRegionName: string;
-  sourceRegionProvince: string;
   sourceStatus: ContentStatus;
   targetRegions: TargetRegionOption[];
 };
@@ -32,22 +31,6 @@ function statusLabel(status: ContentStatus) {
   if (status === "published") return "启用";
   if (status === "archived") return "停用";
   return "草稿";
-}
-
-function suggestedTitle(
-  sourceTitle: string,
-  sourceRegionName: string,
-  sourceRegionProvince: string,
-  targetRegion: TargetRegionOption | undefined
-) {
-  if (!targetRegion) return sourceTitle;
-  if (sourceRegionName && sourceTitle.includes(sourceRegionName)) {
-    return sourceTitle.replace(sourceRegionName, targetRegion.name);
-  }
-  if (sourceRegionProvince && sourceTitle.includes(sourceRegionProvince)) {
-    return sourceTitle.replace(sourceRegionProvince, targetRegion.province);
-  }
-  return sourceTitle;
 }
 
 function SubmitButton({ enabled }: { enabled: boolean }) {
@@ -60,15 +43,13 @@ function SubmitButton({ enabled }: { enabled: boolean }) {
 }
 
 export function CopyQuestionBankDialog({
-  courseManagementHref,
   ownerId,
   ownerType,
   paperId,
   paperTitle,
-  paperYear,
+  paperDiamondPrice,
   questionCount,
   sourceRegionName,
-  sourceRegionProvince,
   sourceStatus,
   targetRegions
 }: CopyQuestionBankDialogProps) {
@@ -76,29 +57,36 @@ export function CopyQuestionBankDialog({
   const titleId = useId();
   const descriptionId = useId();
   const targetRegionId = useId();
+  const targetOwnerId = useId();
   const paperTitleId = useId();
-  const yearId = useId();
+  const diamondPriceId = useId();
   const statusId = useId();
   const [actionState, formAction] = useActionState(copyQuestionBankPaper, { error: null });
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedTargetRegionId, setSelectedTargetRegionId] = useState(targetRegions[0]?.id || "");
-  const [copyTitle, setCopyTitle] = useState(
-    suggestedTitle(paperTitle, sourceRegionName, sourceRegionProvince, targetRegions[0])
-  );
+  const [selectedTargetRegionId, setSelectedTargetRegionId] = useState("");
+  const [selectedTargetOwnerKey, setSelectedTargetOwnerKey] = useState("");
+  const [copyTitle, setCopyTitle] = useState(paperTitle);
   const [preview, setPreview] = useState<Awaited<ReturnType<typeof previewQuestionBankCopy>> | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [allowUnmapped, setAllowUnmapped] = useState(false);
   const selectedTargetRegion = targetRegions.find((region) => region.id === selectedTargetRegionId);
+  const selectedTargetOwner = selectedTargetRegion?.owners.find((owner) => `${owner.type}:${owner.id}` === selectedTargetOwnerKey);
+  const courseManagementHref = selectedTargetOwner?.type === "major"
+    ? `/admin/majors/${selectedTargetOwner.id}/courses`
+    : `/admin/public-subjects/${selectedTargetOwner?.id || ""}/courses`;
 
   useEffect(() => {
-    if (!isOpen || !selectedTargetRegionId) return;
+    if (!isOpen || !selectedTargetRegionId || !selectedTargetOwner) return;
     let cancelled = false;
     setPreview(null);
     setPreviewLoading(true);
     setAllowUnmapped(false);
-    previewQuestionBankCopy(ownerType, ownerId, paperId, selectedTargetRegionId)
+    previewQuestionBankCopy(ownerType, ownerId, paperId, selectedTargetRegionId, selectedTargetOwner.type, selectedTargetOwner.id)
       .then((result) => {
         if (!cancelled) setPreview(result);
+      })
+      .catch(() => {
+        if (!cancelled) setPreview({ ok: false, message: "暂时无法检查知识点映射，请稍后重试。" });
       })
       .finally(() => {
         if (!cancelled) setPreviewLoading(false);
@@ -106,27 +94,30 @@ export function CopyQuestionBankDialog({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, ownerId, ownerType, paperId, selectedTargetRegionId]);
+  }, [isOpen, ownerId, ownerType, paperId, selectedTargetRegionId, selectedTargetOwnerKey]);
 
   const openDialog = () => {
-    const firstRegion = targetRegions[0];
-    if (!firstRegion) return;
-    setSelectedTargetRegionId(firstRegion.id);
-    setCopyTitle(suggestedTitle(paperTitle, sourceRegionName, sourceRegionProvince, firstRegion));
+    if (!targetRegions.length) return;
+    setSelectedTargetRegionId("");
+    setSelectedTargetOwnerKey("");
+    setCopyTitle(paperTitle);
+    setPreview(null);
     setAllowUnmapped(false);
     setIsOpen(true);
     dialogRef.current?.showModal();
   };
 
   const handleTargetChange = (regionId: string) => {
-    const region = targetRegions.find((item) => item.id === regionId);
     setSelectedTargetRegionId(regionId);
-    setCopyTitle(suggestedTitle(paperTitle, sourceRegionName, sourceRegionProvince, region));
+    setSelectedTargetOwnerKey("");
+    setPreview(null);
+    setPreviewLoading(false);
+    setAllowUnmapped(false);
   };
 
   const unmappedCount = preview?.ok ? preview.summary.unmappedAssociationCount : 0;
   const canSubmit = Boolean(
-    preview?.ok &&
+    selectedTargetOwner && preview?.ok &&
     !previewLoading &&
     copyTitle.trim() &&
     (!unmappedCount || allowUnmapped)
@@ -138,7 +129,7 @@ export function CopyQuestionBankDialog({
         className="inline-flex items-center gap-1 text-[#006aff] hover:underline disabled:cursor-not-allowed disabled:text-slate-400 disabled:no-underline"
         disabled={!targetRegions.length}
         onClick={openDialog}
-        title={targetRegions.length ? "复制到其他已绑定区域" : "当前专业或公共课未绑定其他区域"}
+        title={targetRegions.length ? "选择目标区域和专业或公共课" : "暂无可复制到的目标专业或公共课"}
         type="button"
       >
         <Copy aria-hidden="true" size={14} />
@@ -156,6 +147,8 @@ export function CopyQuestionBankDialog({
           <input name="sourcePaperId" type="hidden" value={paperId} />
           <input name="ownerType" type="hidden" value={ownerType} />
           <input name="ownerId" type="hidden" value={ownerId} />
+          <input name="targetOwnerType" type="hidden" value={selectedTargetOwner?.type || ""} />
+          <input name="targetOwnerId" type="hidden" value={selectedTargetOwner?.id || ""} />
 
           <div className="flex items-start justify-between border-b border-slate-200 px-6 py-5">
             <div>
@@ -163,6 +156,7 @@ export function CopyQuestionBankDialog({
               <p className="mt-1 text-sm text-slate-500" id={descriptionId}>
                 题目和可匹配的知识点关联将生成独立副本，后续修改互不影响。
               </p>
+              <p className="mt-1 text-sm text-slate-500">启用的历年真题会显示在目标区域对应课程的“历年真题”中。</p>
             </div>
             <button
               aria-label="关闭复制题库窗口"
@@ -200,9 +194,19 @@ export function CopyQuestionBankDialog({
                 required
                 value={selectedTargetRegionId}
               >
+                <option value="">请选择目标区域</option>
                 {targetRegions.map((region) => (
                   <option key={region.id} value={region.id}>{region.name}</option>
                 ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="label" htmlFor={targetOwnerId}>目标专业或公共课</label>
+              <select className="input rounded-none" disabled={!selectedTargetRegion} id={targetOwnerId} required value={selectedTargetOwnerKey}
+                onChange={(event) => { setSelectedTargetOwnerKey(event.target.value); setPreview(null); setPreviewLoading(false); setAllowUnmapped(false); }}>
+                <option value="">请选择目标专业或公共课</option>
+                {selectedTargetRegion?.owners.map((owner) => <option key={`${owner.type}:${owner.id}`} value={`${owner.type}:${owner.id}`}>{owner.type === "major" ? "专业" : "公共课"} / {owner.name}</option>)}
               </select>
             </div>
 
@@ -220,15 +224,16 @@ export function CopyQuestionBankDialog({
 
             <div className="grid grid-cols-[1fr_1fr] gap-3">
               <div>
-                <label className="label" htmlFor={yearId}>年份</label>
+                <label className="label" htmlFor={diamondPriceId}>钻石数</label>
                 <input
                   className="input rounded-none"
-                  defaultValue={paperYear || ""}
-                  id={yearId}
-                  max="2100"
-                  min="2000"
-                  name="year"
-                  placeholder="2026"
+                  defaultValue={paperDiamondPrice}
+                  id={diamondPriceId}
+                  max="2147483647"
+                  min="0"
+                  step="1"
+                  name="diamondPrice"
+                  required
                   type="number"
                 />
               </div>
@@ -281,7 +286,7 @@ export function CopyQuestionBankDialog({
             </div>
 
             <div className="border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-900">
-              学生答题记录、错题记录、学习进度和 AI 对话不会复制。目标区域：{selectedTargetRegion?.name || "-"}。
+              学生答题记录、错题记录、学习进度和 AI 对话不会复制。目标：{selectedTargetRegion?.name || "-"} / {selectedTargetOwner?.name || "-"}。
             </div>
 
             {actionState.error ? (

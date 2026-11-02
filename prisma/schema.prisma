@@ -368,6 +368,7 @@ model User {
   diamondAccount                     DiamondAccount?
   diamondTransactions                DiamondTransaction[]
   studyProjectPurchases              StudyProjectPurchase[]
+  pastExamPurchases                  PastExamPurchase[]
   diamondRuleConfigsUpdated          DiamondRuleConfig[]             @relation("DiamondRuleConfigUpdater")
   passwordChangeLogs                 PasswordChangeLog[]             @relation("PasswordChangeTarget")
   passwordChangesMade                PasswordChangeLog[]             @relation("PasswordChangeActor")
@@ -875,12 +876,18 @@ model ExamPaper {
   paperType          PaperType             @default(real_exam)
   description        String?
   questionTypeConfig Json?
+  visibleInPastPractice Boolean             @default(false)
+  diamondPrice       Int                    @default(0)
+  copiedFromRegionId String?
+  copiedFromRegionName String?
+  isCrossRegionCopy  Boolean               @default(false)
   status             ContentStatus         @default(draft)
   sortOrder          Int                   @default(0)
   region             Region                @relation(fields: [regionId], references: [id], onDelete: Cascade)
   publicSubject      PublicSubject?        @relation(fields: [publicSubjectId], references: [id], onDelete: Cascade)
   major              Major?                @relation(fields: [majorId], references: [id], onDelete: Cascade)
   questions          ExamPaperQuestion[]
+  purchases          PastExamPurchase[]
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
 
@@ -1178,6 +1185,7 @@ model DiamondTransaction {
   note         String?
   metadata     Json?
   studyProjectPurchase StudyProjectPurchase?
+  pastExamPurchase PastExamPurchase?
   createdAt    DateTime               @default(now())
 
   @@index([userId, createdAt])
@@ -1668,6 +1676,24 @@ model OfficialStudyMaterialReadProgress {
 
   @@unique([userId, materialId])
   @@map("official_study_material_read_progress")
+}
+
+model PastExamPurchase {
+  id            String @id @default(cuid())
+  userId        String
+  resourceId    String
+  paperId       String?
+  titleSnapshot String
+  diamondPrice  Int
+  transactionId String @unique
+  createdAt     DateTime @default(now())
+  user          User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paper         ExamPaper? @relation(fields: [paperId], references: [id], onDelete: SetNull)
+  transaction   DiamondTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, resourceId])
+  @@index([paperId, userId])
+  @@map("past_exam_purchases")
 }
 
 model StudyProjectPurchase {
