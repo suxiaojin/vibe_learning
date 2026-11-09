@@ -93,6 +93,10 @@ const diamondRuleTransactionPresentation: Record<string, { typeLabel: string; de
   special_practice_ai_follow_up: {
     typeLabel: "模型调用",
     description: "专项练习：提问"
+  },
+  past_exam_ai_follow_up: {
+    typeLabel: "模型调用",
+    description: "历年真题：提问"
   }
 };
 

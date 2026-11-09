@@ -666,6 +666,7 @@ model StudentProfile {
   regionId         String?
   publicSubjectId  String?
   majorId          String?
+  foundationPlanConfirmedAt DateTime?
   schoolId         String?
   nickname         String?
   avatarColor      String         @default("green")
@@ -904,6 +905,7 @@ model ExamPaperQuestion {
   questionId String
   sortOrder  Int       @default(0)
   score      Float?
+  reviewMarked Boolean @default(false)
   paper      ExamPaper @relation(fields: [paperId], references: [id], onDelete: Cascade)
   question   Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
   createdAt  DateTime  @default(now())

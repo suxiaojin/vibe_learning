@@ -9,6 +9,10 @@ export default async function CourseCenterPage() {
   const user = await requireUser();
   const learningPath = await getStudentLearningPath(user.id);
   const profile = learningPath.profile;
+  const planState = await prisma.studentProfile.findUnique({
+    where: { userId: user.id },
+    select: { foundationPlanConfirmedAt: true }
+  });
   let options = await getFoundationOptions(profile?.regionId || undefined).catch(() => null);
 
   if (!options) {
@@ -43,7 +47,8 @@ export default async function CourseCenterPage() {
         currentProfile={currentProfile}
         overview={overview}
         majorIconUrl={majorIconUrl}
-        initialDrawerOpen={!learningPath.completed}
+        planConfirmed={Boolean(planState?.foundationPlanConfirmedAt)}
+        initialDrawerOpen={!learningPath.completed && !planState?.foundationPlanConfirmedAt}
       />
     </StudentPageShell>
   );

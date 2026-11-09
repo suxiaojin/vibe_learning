@@ -125,6 +125,16 @@ export const diamondRuleDefinitions = [
     defaultAmount: 2,
     defaultEnabled: true,
     sortOrder: 160
+  },
+  {
+    key: "past_exam_ai_follow_up",
+    direction: "consume",
+    label: "历年真题 - 提问",
+    description: "学生在历年真题 AI 答疑弹窗每次提交问题并准备调用大模型时扣减钻石。",
+    triggerTiming: "每次提问请求通过校验并创建 AI 对话记录时",
+    defaultAmount: 2,
+    defaultEnabled: true,
+    sortOrder: 170
   }
 ] as const satisfies readonly DiamondRuleDefinitionShape[];
 

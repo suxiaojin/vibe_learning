@@ -9,6 +9,7 @@ import {
   Filter,
   LibraryBig,
   ListFilter,
+  Search,
   Trash2
 } from "lucide-react";
 import { createQuestionBankPaper, deleteQuestionBankPaper, toggleQuestionBankPaperStatus, updateQuestionBankPaper } from "@/app/admin/actions";
@@ -483,6 +484,13 @@ export default async function QuestionBanksPage({
               >
                 <LibraryBig aria-hidden="true" className="text-[#0872b9]" size={28} strokeWidth={2.2} />
                 其它题库
+              </Link>
+              <Link
+                className="grid min-h-12 justify-items-center gap-1 text-xs font-medium text-[#071b38]"
+                href={`/admin/question-banks/search?${new URLSearchParams({ type: selectedOwner.type, id: selectedOwner.id, province: selectedProvince, examType: selectedExamType, ...(otherBanks ? { view: "other" } : {}) }).toString()}`}
+              >
+                <Search aria-hidden="true" className="text-[#0872b9]" size={28} strokeWidth={2.2} />
+                关键词搜索
               </Link>
             </div>
 

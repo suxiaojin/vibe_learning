@@ -61,6 +61,7 @@ type ChoiceOptionDraft = {
 
 type QuestionRow = {
   id: string;
+  reviewMarked: boolean;
   questionId: string;
   title: string;
   type: string;
@@ -1866,6 +1867,7 @@ export function QuestionBankDetailWorkbench({ allowFillBlankScoring, ownerName, 
   const [questionTypeConfigOpen, setQuestionTypeConfigOpen] = useState(false);
   const [questionSaving, setQuestionSaving] = useState(false);
   const [questionSaveNotice, setQuestionSaveNotice] = useState<{ tone: "success" | "error"; message: string } | null>(null);
+  const [markSaving, setMarkSaving] = useState(false);
   const draggedQuestionIdRef = useRef("");
   const focusedQuestionIdRef = useRef("");
   const orderInputRef = useRef<HTMLInputElement | null>(null);
@@ -1933,6 +1935,29 @@ export function QuestionBankDetailWorkbench({ allowFillBlankScoring, ownerName, 
     setKnowledgeTagMessage("");
     setQuestionSaveNotice(null);
   }, [selectedQuestionId]);
+
+  async function toggleReviewMark(question: QuestionRow) {
+    if (markSaving) return;
+    const targetId = question.id;
+    const reviewMarked = !question.reviewMarked;
+    setMarkSaving(true);
+    setQuestionSaveNotice(null);
+    try {
+      const response = await fetch(`/api/admin/question-banks/${encodeURIComponent(paperId)}/review-mark`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paperQuestionId: targetId, reviewMarked })
+      });
+      const result = await response.json().catch(() => null) as { error?: string } | null;
+      if (!response.ok) throw new Error(result?.error || "标记保存失败，请重试。");
+      setOrderedQuestions((current) => current.map((question) => question.id === targetId ? { ...question, reviewMarked } : question));
+      setQuestionSaveNotice({ tone: "success", message: reviewMarked ? "已标记" : "已取消标记" });
+    } catch (error) {
+      setQuestionSaveNotice({ tone: "error", message: error instanceof Error ? error.message : "标记保存失败，请重试。" });
+    } finally {
+      setMarkSaving(false);
+    }
+  }
 
   async function saveSelectedQuestion(formData: FormData) {
     if (questionSaving) {
@@ -2437,7 +2462,20 @@ export function QuestionBankDetailWorkbench({ allowFillBlankScoring, ownerName, 
                       moveQuestionAfter(question.id);
                     }}
                   >
-                    <div className="grid place-items-center text-sm font-bold text-[#071b38]">{displayIndex}</div>
+                    <button
+                      className="relative grid place-items-center text-sm font-bold text-[#071b38] hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-600 disabled:cursor-wait disabled:opacity-60"
+                      type="button"
+                      aria-label={`${question.reviewMarked ? "取消标记" : "标记"}第 ${displayIndex} 题`}
+                      aria-pressed={question.reviewMarked}
+                      title={question.reviewMarked ? "点击取消标记" : "点击标记此题"}
+                      disabled={markSaving}
+                      draggable={false}
+                      onDragStart={(event) => event.stopPropagation()}
+                      onClick={() => void toggleReviewMark(question)}
+                    >
+                      {displayIndex}
+                      {question.reviewMarked ? <span className="absolute right-0 top-1 size-2 rounded-full bg-red-600" aria-hidden="true" /> : null}
+                    </button>
                     <button
                       className={cn(
                         "mb-1 flex min-h-[48px] min-w-0 items-center rounded-md border px-3 text-left text-xs font-medium leading-5 transition hover:brightness-[0.98]",

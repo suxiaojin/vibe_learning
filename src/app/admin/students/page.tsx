@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { resetStudentPassword, toggleStudentAccountStatus } from "@/app/admin/actions";
+import { StudentPlanEditor } from "@/components/student-plan-editor";
 import { AdminDeleteStudentButton } from "@/components/admin-delete-student-button";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -64,7 +65,7 @@ export default async function StudentsPage({
     majorId: selectedMajorId
   });
 
-  const [students, totalCount, activeCount, disabledCount, regions, majors] = await Promise.all([
+  const [students, totalCount, activeCount, disabledCount, regions, majors, planRegions] = await Promise.all([
     prisma.user.findMany({
       where,
       orderBy: { createdAt: "desc" },
@@ -81,6 +82,10 @@ export default async function StudentsPage({
         },
         studentProfile: {
           select: {
+            id: true,
+            regionId: true,
+            majorId: true,
+            publicSubjectId: true,
             region: { select: { province: true, studySystem: true } },
             major: { select: { name: true } }
           }
@@ -96,9 +101,23 @@ export default async function StudentsPage({
     }),
     prisma.major.findMany({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      select: { id: true, name: true }
+      select: { id: true, name: true, status: true, regions: { select: { regionId: true, displayName: true } } }
+    }),
+    prisma.region.findMany({
+      where: { status: "active" },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      select: {
+        id: true, province: true, studySystem: true, name: true,
+        publicSubjects: { where: { publicSubject: { status: "published" } }, select: { publicSubject: { select: { id: true, name: true } } } },
+        majors: { where: { major: { status: "published" } }, select: { displayName: true, major: { select: { id: true, name: true } } } }
+      }
     })
   ]);
+  const planOptions = planRegions.map((region) => ({
+    id: region.id, province: region.province, studySystem: region.studySystem, name: region.name,
+    publicSubjects: region.publicSubjects.map(({ publicSubject }) => publicSubject),
+    majors: region.majors.map(({ major, displayName }) => ({ id: major.id, name: displayName || major.name }))
+  }));
   const studyStats = students.length
     ? await prisma.studyStat.groupBy({
         by: ["userId"],
@@ -196,7 +215,10 @@ export default async function StudentsPage({
               </tr>
             ) : students.map((student) => {
               const totalSeconds = studySecondsByUserId.get(student.id) || 0;
-              const majorName = student.studentProfile?.major?.name;
+              const regionId = student.studentProfile?.regionId;
+              const currentMajorId = student.studentProfile?.majorId;
+              const currentMajor = majors.find((major) => major.id === currentMajorId);
+              const majorName = currentMajor?.regions.find((binding) => binding.regionId === regionId)?.displayName || student.studentProfile?.major?.name;
               const profileParts = [
                 student.studentProfile?.region?.province,
                 student.studentProfile?.region?.studySystem,
@@ -223,7 +245,21 @@ export default async function StudentsPage({
                   </td>
                   <td className="border-b border-slate-100 py-4 pr-4">{student._count.attempts}</td>
                   <td className="border-b border-slate-100 py-4 pr-4">{formatSeconds(totalSeconds)}</td>
-                  <td className="border-b border-slate-100 py-4 pr-4">{majorLabel}</td>
+                  <td className="border-b border-slate-100 py-4 pr-4">
+                    <div>{majorLabel}</div>
+                    <StudentPlanEditor
+                      studentId={student.id}
+                      username={student.username}
+                      returnTo={currentPath}
+                      initialProfile={student.studentProfile ? {
+                        id: student.studentProfile.id,
+                        regionId: student.studentProfile.regionId,
+                        majorId: student.studentProfile.majorId,
+                        publicSubjectId: student.studentProfile.publicSubjectId
+                      } : null}
+                      regions={planOptions}
+                    />
+                  </td>
                   <td className="border-b border-slate-100 py-4">
                     <div className="flex min-w-[360px] flex-wrap gap-2">
                       <Link className="secondary-button px-3 py-2 text-xs" href={`/admin/students/${student.id}`}>查看详情</Link>

@@ -141,19 +141,27 @@ export async function saveStudentFoundationProfile(
     throw new FoundationSelectionError("Selected major is unavailable for this region.");
   }
 
-  const profile = await prisma.studentProfile.upsert({
-    where: { userId },
-    update: {
-      regionId: input.regionId,
-      publicSubjectId: input.publicSubjectId,
-      majorId: input.majorId
-    },
-    create: {
+  // Create the optional profile first, then claim an unconfirmed plan in one atomic update.
+  // This also prevents two simultaneous first submissions from changing each other's choice.
+  await prisma.studentProfile.createMany({ data: [{ userId }], skipDuplicates: true });
+  const result = await prisma.studentProfile.updateMany({
+    where: {
       userId,
+      foundationPlanConfirmedAt: null
+    },
+    data: {
       regionId: input.regionId,
       publicSubjectId: input.publicSubjectId,
-      majorId: input.majorId
-    },
+      majorId: input.majorId,
+      foundationPlanConfirmedAt: new Date()
+    }
+  });
+  if (result.count === 0) {
+    throw new FoundationSelectionError("学习方案已经确定，无法更改。", 409);
+  }
+
+  const profile = await prisma.studentProfile.findUniqueOrThrow({
+    where: { userId },
     include: {
       region: true,
       publicSubject: true,

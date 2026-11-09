@@ -556,6 +556,24 @@ def normalize_question_row(row: str, expected: int) -> str:
 
 
 def parse_questions_from_rows(pages: list[list[str]]) -> tuple[list[dict[str, Any]], list[str], dict[str, Any]]:
+    # Some papers place an extra "A" after the question number, before the
+    # actual stem. Treat it as a prefix only if subsequent rows contain both
+    # genuine A and B option markers before the next numbered question.
+    rows = [row for page in pages for row in page]
+    prefix_rows: set[int] = set()
+    for index, row in enumerate(rows):
+        start = QUESTION_START.match(normalize_text(remove_noise_fragments(row)))
+        if not start or not re.match(r"^A\s+(?=[\u3400-\u9fff])", start.group(2)):
+            continue
+        option_keys: set[str] = set()
+        for following in rows[index + 1:]:
+            normalized = normalize_text(remove_noise_fragments(following))
+            if QUESTION_START.match(normalized) or detect_section(normalized):
+                break
+            option_keys.update(option["key"] for option in parse_options(normalized))
+        if {"A", "B"}.issubset(option_keys):
+            prefix_rows.add(index)
+
     questions: list[dict[str, Any]] = []
     warnings: list[str] = []
     section = "single_choice"
@@ -607,9 +625,14 @@ def parse_questions_from_rows(pages: list[list[str]]) -> tuple[list[dict[str, An
             "options": parse_options(body) if matches else [],
         }
 
+    row_index = 0
     for page_index, page_rows in enumerate(pages, start=1):
         for raw_row in page_rows:
+            has_extra_prefix = row_index in prefix_rows
+            row_index += 1
             row = normalize_question_row(raw_row, expected)
+            if has_extra_prefix:
+                row = re.sub(r"^((?:第\s*)?\d{1,3}\s*(?:题)?\s*[\.、,，。:：\)）])\s*A\s+(?=[\u3400-\u9fff])", r"\1", row, count=1)
             if not row:
                 continue
             if any(token in row for token in ("答案：", "解题关键词")):

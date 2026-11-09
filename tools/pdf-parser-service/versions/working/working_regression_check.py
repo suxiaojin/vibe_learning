@@ -22,4 +22,17 @@ page = [
 ]
 parsed, _, _ = app.parse_questions_from_ocr([page])
 assert parsed[0]['stem'].endswith('____')
+
+# A marker immediately after a question number is not an option when actual
+# A and B options occur on later rows; normal inline options remain intact.
+parsed, _, _ = app.parse_questions_from_rows([[
+    '1.A 公司制定了生产计划', '并安排各班组执行。',
+    'A.作业计划 B.战略计划', 'C.其他计划 D.长期计划',
+    '2.这是正常题干 A.第一项 B.第二项',
+    '3.A first B. second',
+]])
+assert parsed[0]['stem'] == '公司制定了生产计划 并安排各班组执行。'
+assert [item['text'] for item in parsed[0]['options']] == ['作业计划', '战略计划', '其他计划', '长期计划']
+assert parsed[1]['stem'] == '这是正常题干' and len(parsed[1]['options']) == 2
+assert parsed[2]['stem'] == '' and len(parsed[2]['options']) == 2
 print('working parser focused regression checks passed')

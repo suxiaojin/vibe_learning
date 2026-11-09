@@ -100,18 +100,21 @@ export function CourseCenterForm({
   currentProfile,
   overview,
   majorIconUrl,
+  planConfirmed: initialPlanConfirmed,
   initialDrawerOpen
 }: {
   initialOptions: FoundationOptions;
   currentProfile: CurrentProfile;
   overview: CourseCenterOverview;
   majorIconUrl: string | null;
+  planConfirmed: boolean;
   initialDrawerOpen: boolean;
 }) {
   const router = useRouter();
   const initialRegionId = currentProfile?.regionId || initialOptions.selectedRegionId || initialOptions.regions[0]?.id || "";
-  const initialRegion = initialOptions.regions.find((region) => region.id === initialRegionId) || initialOptions.regions[0] || null;
-  const [options, setOptions] = useState(initialOptions);
+  const optionsWithSavedProfile = initialPlanConfirmed ? includeSavedProfile(initialOptions, currentProfile) : initialOptions;
+  const initialRegion = optionsWithSavedProfile.regions.find((region) => region.id === initialRegionId) || optionsWithSavedProfile.regions[0] || null;
+  const [options, setOptions] = useState(optionsWithSavedProfile);
   const [selectedProvince, setSelectedProvince] = useState(initialRegion?.province || "");
   const [selectedStudySystem, setSelectedStudySystem] = useState(initialRegion?.studySystem || "");
   const [selectedRegionId, setSelectedRegionId] = useState(initialRegion?.id || "");
@@ -121,6 +124,7 @@ export function CourseCenterForm({
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [savedProfile, setSavedProfile] = useState(currentProfile);
+  const [confirmed, setConfirmed] = useState(initialPlanConfirmed);
   const [drawerOpen, setDrawerOpen] = useState(initialDrawerOpen);
 
   const provinces = useMemo(() => uniqueValues(options.regions.map((region) => region.province)), [options.regions]);
@@ -133,7 +137,8 @@ export function CourseCenterForm({
   const selectedMajor = options.majors.find((major) => major.id === majorId) || null;
   const displayProfile = savedProfile || currentProfile;
   const savedPlanLabel = formatSavedPlanLabel(displayProfile);
-  const canSave = Boolean(selectedRegionId && publicSubjectId && majorId && !loadingOptions && !saving);
+  const planConfirmed = confirmed || initialPlanConfirmed;
+  const canSave = Boolean(!planConfirmed && selectedRegionId && publicSubjectId && majorId && !loadingOptions && !saving);
 
   useEffect(() => {
     if (!drawerOpen) {
@@ -176,7 +181,10 @@ export function CourseCenterForm({
           return;
         }
 
-        const nextOptions = payload.data as FoundationOptions;
+        const loadedOptions = payload.data as FoundationOptions;
+        const nextOptions = planConfirmed && displayProfile?.regionId === selectedRegionId
+          ? includeSavedProfile(loadedOptions, displayProfile)
+          : loadedOptions;
         setOptions(nextOptions);
         setPublicSubjectId((current) =>
           nextOptions.publicSubjects.some((subject) => subject.id === current) ? current : nextOptions.publicSubjects[0]?.id || ""
@@ -198,10 +206,25 @@ export function CourseCenterForm({
     return () => {
       cancelled = true;
     };
-  }, [selectedRegionId]);
+  }, [selectedRegionId, planConfirmed]);
 
   function closeDrawer() {
     setDrawerOpen(false);
+  }
+
+  function openDrawer() {
+    if (planConfirmed && displayProfile) {
+      const restoredOptions = includeSavedProfile(initialOptions, displayProfile);
+      const restoredRegion = restoredOptions.regions.find((region) => region.id === displayProfile.regionId);
+      setOptions(restoredOptions);
+      setSelectedProvince(displayProfile.province || "");
+      setSelectedStudySystem(displayProfile.studySystem || "");
+      setSelectedRegionId(restoredRegion?.id || "");
+      setPublicSubjectId(displayProfile.publicSubjectId || "");
+      setMajorId(displayProfile.majorId || "");
+      setFeedback(null);
+    }
+    setDrawerOpen(true);
   }
 
   function updateProvince(province: string) {
@@ -232,6 +255,11 @@ export function CourseCenterForm({
       return;
     }
 
+    if (planConfirmed) return;
+
+    const planSummary = `${selectedRegion?.province || ""} ${selectedRegion?.studySystem || ""} · ${selectedPublicSubject?.name || ""} + ${selectedMajor?.name || ""}`;
+    if (!window.confirm(`请确认你的学习方案：\n${planSummary}\n\n确定后将无法更改，请仔细核对。`)) return;
+
     setSaving(true);
     setFeedback(null);
     try {
@@ -256,10 +284,11 @@ export function CourseCenterForm({
         publicSubjectName: selectedPublicSubject?.name || "",
         majorName: selectedMajor?.name || ""
       });
+      setConfirmed(true);
       setDrawerOpen(false);
       router.refresh();
-    } catch {
-      setFeedback({ type: "error", message: text.saveFailed });
+    } catch (error) {
+      setFeedback({ type: "error", message: error instanceof Error ? error.message : text.saveFailed });
     } finally {
       setSaving(false);
     }
@@ -271,9 +300,9 @@ export function CourseCenterForm({
         title="课程中心"
         description={savedPlanLabel || "请先保存学习方案"}
         actions={
-          <button className="secondary-button border-teal/30 px-5 text-[15px] text-teal hover:border-teal/60" type="button" onClick={() => setDrawerOpen(true)}>
+          <button className="secondary-button border-teal/30 px-5 text-[15px] text-teal hover:border-teal/60" type="button" onClick={openDrawer}>
             <Settings2 size={19} />
-            调整学习方案
+            {planConfirmed ? "调整学习方案" : "设置学习方案"}
           </button>
         }
       />
@@ -288,13 +317,13 @@ export function CourseCenterForm({
         <div className="mt-6">
           <EmptyState
             icon={<BookOpenCheck size={28} />}
-            title="先完成学习方案设置"
-            description="保存地区、公共课和专业课后，这里会展示你的课程与真实学习进度。"
-            action={
+            title={planConfirmed ? "课程内容准备中" : "先完成学习方案设置"}
+            description={planConfirmed ? "当前学习方案的课程内容正在准备中，请稍后再来。" : "保存地区、公共课和专业课后，这里会展示你的课程与真实学习进度。"}
+            action={!planConfirmed ? (
               <button className="primary-button px-6 text-[15px]" type="button" onClick={() => setDrawerOpen(true)}>
                 设置学习方案
               </button>
-            }
+            ) : undefined}
           />
         </div>
       )}
@@ -310,11 +339,11 @@ export function CourseCenterForm({
           >
             <header className="flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-6 py-5">
               <div>
-                <h2 className="text-2xl font-semibold text-ink" id="course-plan-title">调整学习方案</h2>
-                <p className="mt-1 text-sm font-medium leading-6 text-slate-500">课程调整后，已完成的学习记录不会被清除。</p>
+                <h2 className="text-2xl font-semibold text-ink" id="course-plan-title">{planConfirmed ? "调整学习方案" : "设置学习方案"}</h2>
+                <p className="mt-1 text-sm font-medium leading-6 text-slate-500">{planConfirmed ? "可查看其他选项，当前学习方案不会改变。" : "学习方案确定后无法更改，请仔细核对地区、学制和课程。"}</p>
               </div>
               <button
-                aria-label="关闭调整学习方案"
+                aria-label="关闭学习方案设置"
                 className="icon-button shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/30"
                 type="button"
                 onClick={closeDrawer}
@@ -370,10 +399,11 @@ export function CourseCenterForm({
                 </fieldset>
 
                 <div className="rounded-panel border border-teal/20 bg-teal/5 px-5 py-4">
-                  <p className="text-xs font-semibold uppercase text-teal">调整后的学习方案</p>
+                  <p className="text-xs font-semibold uppercase text-teal">{planConfirmed ? "查看的学习方案（不会保存）" : "即将确定的学习方案"}</p>
                   <p className="mt-2 font-semibold text-ink">{selectedRegion?.name || selectedRegion?.province || "待选择"} · {selectedRegion?.studySystem || "待选择"}</p>
                   <p className="mt-1 text-sm font-medium text-slate-600">{selectedPublicSubject?.name || "待选择公共课"} + {selectedMajor?.name || "待选择专业课"}</p>
                 </div>
+                {planConfirmed ? <p className="px-5 text-xs font-medium text-red-600">如需调整学习科目，请<Link className="underline underline-offset-2 hover:text-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500" href="/me?tab=diamonds">联系管理员</Link></p> : null}
 
                 {feedback ? (
                   <div
@@ -397,7 +427,7 @@ export function CourseCenterForm({
             <footer className="border-t border-slate-200 bg-white px-6 py-5">
               <div className="flex justify-end gap-3">
                 <button className="secondary-button min-w-24 text-[15px]" type="button" onClick={closeDrawer}>{text.cancel}</button>
-                <button className="primary-button min-w-40 text-[15px]" type="button" disabled={!canSave} onClick={saveSelection}>
+                <button className="primary-button min-w-40 text-[15px] disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-300 disabled:text-slate-500 disabled:opacity-100" type="button" disabled={!canSave} onClick={saveSelection}>
                   {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
                   {saving ? text.saving : text.save}
                 </button>
@@ -553,6 +583,23 @@ function PracticeTestAction({
       </Link>
     </div>
   );
+}
+
+function includeSavedProfile(options: FoundationOptions, profile: CurrentProfile): FoundationOptions {
+  if (!profile?.regionId) return options;
+  const regions = options.regions.some((region) => region.id === profile.regionId)
+    ? options.regions
+    : [...options.regions, { id: profile.regionId, name: profile.regionName, province: profile.province, studySystem: profile.studySystem }];
+  const sameRegion = options.selectedRegionId === profile.regionId;
+  const publicSubjects = sameRegion ? [...options.publicSubjects] : [];
+  const majors = sameRegion ? [...options.majors] : [];
+  if (profile.publicSubjectId && !publicSubjects.some((item) => item.id === profile.publicSubjectId)) {
+    publicSubjects.push({ id: profile.publicSubjectId, name: profile.publicSubjectName || "当前公共课" });
+  }
+  if (profile.majorId && !majors.some((item) => item.id === profile.majorId)) {
+    majors.push({ id: profile.majorId, name: profile.majorName || "当前专业课" });
+  }
+  return { regions, selectedRegionId: profile.regionId, publicSubjects, majors };
 }
 
 function SelectField({

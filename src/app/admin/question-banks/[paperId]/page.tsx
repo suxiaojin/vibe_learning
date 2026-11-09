@@ -257,6 +257,7 @@ export default async function QuestionBankDetailPage({
 
         return {
           id: item.id,
+          reviewMarked: item.reviewMarked,
           questionId: item.question.id,
           title: item.question.stem,
           type: item.question.type,

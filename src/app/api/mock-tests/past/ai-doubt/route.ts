@@ -4,6 +4,9 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { getPastExams } from "@/lib/past-exams";
 import { prisma } from "@/lib/prisma";
+import { InsufficientDiamondBalanceError } from "@/lib/rewards";
+import { diamondInsufficientMessage } from "@/lib/diamond-insufficient";
+import { reservePastExamAiConversation } from "@/lib/past-exam-ai-reservation";
 import { type ChatMessage, streamQwen } from "@/lib/qwen";
 import { liveAiFormulaInstruction } from "@/lib/ai-formula-format";
 import { hasMeaningfulRichText, richTextToAiText, richTextValueToAiText } from "@/lib/rich-text-plain";
@@ -124,6 +127,7 @@ export async function POST(request: Request) {
     const reservationError = await reserveAiConversationOrError({
       answer: "",
       answerSource: "pending",
+      chargeFollowUp: true,
       conversationId,
       purpose: FOLLOW_UP_PENDING_PURPOSE,
       questionId: question.id,
@@ -366,6 +370,7 @@ function createInitialDoubtConversationId(userId: string, questionId: string) {
 async function reserveAiConversationOrError({
   answer,
   answerSource,
+  chargeFollowUp = false,
   conversationId,
   purpose,
   questionId,
@@ -374,6 +379,7 @@ async function reserveAiConversationOrError({
 }: {
   answer: string;
   answerSource: string;
+  chargeFollowUp?: boolean;
   conversationId: string;
   purpose: string;
   questionId: string;
@@ -382,24 +388,13 @@ async function reserveAiConversationOrError({
 }): Promise<Response | null> {
   try {
     await prisma.$transaction(async (tx) => {
-      await tx.aiConversation.create({
-        data: {
-          id: conversationId,
-          userId,
-          questionId,
-          purpose,
-          modelName: null,
-          answerSource,
-          messages: [
-            { role: "user", content: userPrompt },
-            { role: "assistant", content: answer, source: answerSource }
-          ]
-        }
-      });
-
+      await reservePastExamAiConversation(tx, { answer, answerSource, chargeFollowUp, conversationId, purpose, questionId, userId, userPrompt });
     });
     return null;
   } catch (error) {
+    if (error instanceof InsufficientDiamondBalanceError) {
+      return NextResponse.json({ error: diamondInsufficientMessage, code: "AI_QUESTION_DOUBT_INSUFFICIENT_DIAMONDS" }, { status: 402 });
+    }
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       const followUpRequest = purpose === FOLLOW_UP_PENDING_PURPOSE;
       const replay = await getAiConversationReplayResponse({
