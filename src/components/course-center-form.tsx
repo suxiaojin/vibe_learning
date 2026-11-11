@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Circle,
   Clock3,
+  FileText,
   Loader2,
   Monitor,
   Save,
@@ -99,6 +100,7 @@ export function CourseCenterForm({
   initialOptions,
   currentProfile,
   overview,
+  englishPapers,
   majorIconUrl,
   planConfirmed: initialPlanConfirmed,
   initialDrawerOpen
@@ -106,6 +108,7 @@ export function CourseCenterForm({
   initialOptions: FoundationOptions;
   currentProfile: CurrentProfile;
   overview: CourseCenterOverview;
+  englishPapers: Array<{ id: string; title: string }> | null;
   majorIconUrl: string | null;
   planConfirmed: boolean;
   initialDrawerOpen: boolean;
@@ -310,7 +313,11 @@ export function CourseCenterForm({
       {overview.courses.length > 0 ? (
         <section className="mt-6 grid gap-5 xl:grid-cols-2">
           {overview.courses.map((course) => (
-            <CourseCard key={course.key} course={course} majorIconUrl={course.key === "major" ? majorIconUrl : null} />
+            course.key === "public_subject" && englishPapers !== null ? (
+              <EnglishPastExamCard key={course.key} papers={englishPapers} />
+            ) : (
+              <CourseCard key={course.key} course={course} majorIconUrl={course.key === "major" ? majorIconUrl : null} />
+            )
           ))}
         </section>
       ) : (
@@ -437,6 +444,30 @@ export function CourseCenterForm({
         </div>
       ) : null}
     </>
+  );
+}
+
+function EnglishPastExamCard({ papers }: { papers: Array<{ id: string; title: string }> }) {
+  return (
+    <SurfaceCard as="article" className="flex flex-col border-info/15 p-6">
+      <div className="flex min-w-0 items-center gap-4">
+        <span className="grid size-16 shrink-0 place-items-center rounded-2xl border border-info/15 bg-info-muted text-info"><FileText size={32} /></span>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2"><h2 className="text-2xl font-semibold text-ink">公共英语</h2><span className="badge bg-info-muted text-info">公共课</span></div>
+          <p className="mt-1 text-sm font-medium text-slate-500">历年真题练习</p>
+        </div>
+      </div>
+      <div className="mt-6 overflow-hidden rounded-2xl border border-info/10">
+        {papers.length ? <ul className="divide-y divide-slate-100 bg-white px-5">
+          {papers.map((paper) => (
+            <li key={paper.id} className="break-words py-4 text-base font-semibold text-ink">{paper.title}</li>
+          ))}
+        </ul> : <p className="bg-white px-5 py-8 text-sm text-slate-400">暂无已发布的历年真题</p>}
+      </div>
+      <Link href="/course-center/english-past-exams" className="mt-6 inline-flex min-h-12 w-full items-center justify-center gap-1 rounded-xl border border-teal/40 bg-white px-4 text-base font-semibold text-teal transition hover:border-teal hover:bg-teal/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal/25">
+        查看全部真题 <ChevronRight size={18} />
+      </Link>
+    </SurfaceCard>
   );
 }
 

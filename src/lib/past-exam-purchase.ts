@@ -3,13 +3,15 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { projectDiamondPriceSchema } from "@/lib/project-diamond-price";
 import { getBeijingDate, InsufficientDiamondBalanceError } from "@/lib/rewards";
+import { henanEnglishPastExamScope } from "@/lib/henan-english-past-exams";
 
 type Db = Pick<Prisma.TransactionClient, "studentProfile" | "examPaper">;
 export const pastExamPurchaseSchema = z.object({
   courseKey: z.enum(["major", "public_subject"]),
+  entry: z.literal("henan_english").optional(),
   expectedDiamondPrice: projectDiamondPriceSchema,
   confirmed: z.boolean().optional()
-}).strict();
+}).strict().refine((input) => !input.entry || input.courseKey === "public_subject");
 
 export async function pastExamScope(userId: string, courseKey: "major" | "public_subject", db: Db = prisma): Promise<Prisma.ExamPaperWhereInput> {
   const profile = await db.studentProfile.findUnique({ where: { userId }, select: { regionId: true, majorId: true, publicSubjectId: true } });
@@ -21,15 +23,21 @@ export async function pastExamScope(userId: string, courseKey: "major" | "public
   };
 }
 
-export async function getPastExamOffer(userId: string, courseKey: "major" | "public_subject", paperId: string, db: Db = prisma) {
+export async function getPastExamOffer(userId: string, courseKey: "major" | "public_subject", paperId: string, db: Db = prisma, entry?: "henan_english") {
+  const scope = entry === "henan_english"
+    ? henanEnglishPastExamScope(userId)
+    : await pastExamScope(userId, courseKey, db);
   const paper = await db.examPaper.findFirst({
-    where: { AND: [await pastExamScope(userId, courseKey, db), { id: paperId }] },
+    where: { AND: [scope, { id: paperId }] },
     select: { id: true, title: true, diamondPrice: true, purchases: { where: { userId }, select: { id: true }, take: 1 } }
   });
   if (!paper) throw new PastExamPurchaseError("题库不存在或暂不可用。", 404, "PAST_EXAM_NOT_FOUND");
   const purchased = paper.purchases.length > 0;
-  return { id: paper.id, title: paper.title, diamondPrice: paper.diamondPrice, purchased, requiresPurchase: paper.diamondPrice > 0 && !purchased,
-    href: `/mock-tests/special/past/${encodeURIComponent(paper.id)}?course=${courseKey}` };
+  const id = encodeURIComponent(paper.id);
+  const href = entry === "henan_english"
+    ? `/course-center/english-past-exams/${id}`
+    : `/mock-tests/special/past/${id}?course=${courseKey}`;
+  return { id: paper.id, title: paper.title, diamondPrice: paper.diamondPrice, purchased, requiresPurchase: paper.diamondPrice > 0 && !purchased, href };
 }
 export type PastExamOffer = Awaited<ReturnType<typeof getPastExamOffer>>;
 
@@ -42,7 +50,7 @@ export async function purchasePastExam(userId: string, paperId: string, input: z
     try {
       return await prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT "id" FROM "exam_papers" WHERE "id" = ${paperId} FOR SHARE`;
-        const offer = await getPastExamOffer(userId, input.courseKey, paperId, tx);
+        const offer = await getPastExamOffer(userId, input.courseKey, paperId, tx, input.entry);
         if (offer.purchased) return { offer, charged: false };
         if (offer.diamondPrice !== input.expectedDiamondPrice) throw new PastExamPurchaseError("题库价格已更新，请确认新价格后再次购买。", 409, "PAST_EXAM_PRICE_CHANGED", offer);
         if (!offer.requiresPurchase) return { offer, charged: false };

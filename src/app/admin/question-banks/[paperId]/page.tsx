@@ -1,5 +1,7 @@
 import { QuestionBankDetailWorkbench, type KnowledgeTreeCourse } from "@/components/question-bank-detail-workbench";
+import { EnglishV1Workbench } from "@/components/english-v1-workbench";
 import { requireAdmin } from "@/lib/auth";
+import { EnglishPaperError, readEnglishPaper } from "@/lib/english-v1-paper";
 import { prisma } from "@/lib/prisma";
 import { isAdvancedMathPublicSubject, parseQuestionBankQuestionTypeConfig, resolveQuestionBankQuestionTypes } from "@/lib/question-bank-types";
 
@@ -204,6 +206,17 @@ export default async function QuestionBankDetailPage({
       }
     }
   });
+  if (paper.questionBankStructure === "english_v1") {
+    try {
+      return <EnglishV1Workbench key={paper.id} sample={readEnglishPaper(paper).sample} paperId={paper.id} returnHref={ownerHref(paper)} />;
+    } catch (error) {
+      if (!(error instanceof EnglishPaperError)) throw error;
+      return (
+        <EnglishV1Workbench key={paper.id} sample={null} paperId={paper.id}
+          returnHref={ownerHref(paper)} loadError={error.message} />
+      );
+    }
+  }
   const ownerCourseWhere =
     paper.ownerType === "public_subject"
       ? { courseType: "public_subject" as const, publicSubjectId: paper.publicSubjectId, regionId: paper.regionId }

@@ -28,6 +28,13 @@
       "userPromptSha256": "de08701367dfc8ad769280be3d6ba6f5c3e488bb5a0492f132aa66254789fd69"
     },
     {
+      "id": "english",
+      "label": "英语 V1",
+      "status": "英语专用",
+      "sourcePath": "tools/pdf-parser-service/versions/english/app.py",
+      "runtimeSnapshotPath": "/opt/vibe_pdf_parser/versions/english"
+    },
+    {
       "id": "working",
       "label": "当前调试版",
       "status": "调试中",

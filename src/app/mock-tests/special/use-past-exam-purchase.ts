@@ -4,14 +4,13 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PastExamOffer } from "@/lib/past-exam-purchase";
 
-export function usePastExamPurchase(paper: { id: string; title: string; diamondPrice: number; purchased: boolean }, courseKey: string) {
+export function usePastExamPurchase(paper: { id: string; title: string; diamondPrice: number; purchased: boolean }, courseKey: string, henanEnglish: boolean) {
   const router = useRouter();
   const busy = useRef(false);
   const [offer, setOffer] = useState(paper);
   const [confirmation, setConfirmation] = useState(false);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
-  const href = `/mock-tests/special/past/${encodeURIComponent(paper.id)}?course=${courseKey}`;
 
   function open() {
     if (busy.current) return;
@@ -32,7 +31,12 @@ export function usePastExamPurchase(paper: { id: string; title: string; diamondP
     try {
       const response = await fetch(`/api/mock-tests/past/${encodeURIComponent(paper.id)}/purchase`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ courseKey, expectedDiamondPrice: offer.diamondPrice, confirmed })
+        body: JSON.stringify({
+          courseKey,
+          entry: henanEnglish ? "henan_english" : undefined,
+          expectedDiamondPrice: offer.diamondPrice,
+          confirmed
+        })
       });
       const payload = await response.json().catch(() => null) as { ok?: boolean; data?: { offer?: PastExamOffer }; error?: { code?: string; message?: string } } | null;
       const next = payload?.data?.offer;
@@ -49,7 +53,7 @@ export function usePastExamPurchase(paper: { id: string; title: string; diamondP
       setError(caught instanceof Error ? caught.message : "题库打开失败，请稍后重试。");
     } finally { busy.current = false; setPending(false); }
   }
-  return { open, href, offer, pending, dialogProps: {
+  return { open, offer, pending, dialogProps: {
     error, pending, onClose: close,
     confirmation: confirmation ? { title: offer.title, diamondPrice: offer.diamondPrice, onConfirm: () => { void submit(true); } } : undefined
   } };

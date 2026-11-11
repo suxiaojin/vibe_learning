@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, FileInput, Loader2, Maximize2, Minimize2, Move, UploadCloud, X } from "lucide-react";
 import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 import type { ImportQuestion, ImportQuestionPaperPayload } from "@/lib/question-paper-import";
+import { englishImportSections, getQuestionBankTypeLabel, type QuestionBankStructure } from "@/lib/question-bank-types";
 import { cn } from "@/lib/utils";
 import { RichTextContent } from "@/components/rich-text-content";
 import parserVersionRegistry from "@/lib/question-pdf-parser-versions.json";
@@ -58,6 +59,13 @@ const typeLabels: Record<string, string> = {
   comprehensive: "综合"
 };
 
+function categoryLabel(category: string) {
+  if (Object.hasOwn(englishImportSections, category)) {
+    return englishImportSections[category as keyof typeof englishImportSections].label;
+  }
+  return typeLabels[category] || getQuestionBankTypeLabel(category);
+}
+
 function answerToText(answer: string[]) {
   return answer.join("、");
 }
@@ -107,11 +115,12 @@ function ImportRichTextEditor({
 
 function questionIssues(question: ImportQuestion) {
   const issues: string[] = [];
+  const section = question.englishSection ? englishImportSections[question.englishSection] : undefined;
   const optionKeys = new Set(question.options.map((option) => option.key));
   if (!question.stem.trim()) {
     issues.push("题干为空");
   }
-  if ((question.type === "single_choice" || question.type === "multiple_choice") && question.options.length !== 4) {
+  if ((question.type === "single_choice" || question.type === "multiple_choice") && question.options.length !== (section?.options.length ?? 4)) {
     issues.push(`选项数量 ${question.options.length}`);
   }
   if (question.type === "single_choice" && question.answer.length !== 1) {
@@ -129,7 +138,7 @@ function questionIssues(question: ImportQuestion) {
   if (question.answer.length === 0) {
     issues.push("答案为空");
   }
-  if (!question.analysis.trim()) {
+  if (!section && !question.analysis.trim()) {
     issues.push("解析为空");
   }
   return issues;
@@ -166,6 +175,7 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
   const [questionPdf, setQuestionPdf] = useState<File | null>(null);
   const [answerPdf, setAnswerPdf] = useState<File | null>(null);
   const [parserVersion, setParserVersion] = useState(parserVersionRegistry.defaultVersion);
+  const [questionBankStructure, setQuestionBankStructure] = useState<QuestionBankStructure>("general_v1");
   const [parsed, setParsed] = useState<ParseResponse | null>(null);
   const [task, setTask] = useState<ParserTaskResponse | null>(null);
   const [taskId, setTaskId] = useState("");
@@ -186,7 +196,7 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
   const selectedRegionName = useMemo(() => ownerRegions.find((region) => region.id === regionId)?.name || ownerRegions[0]?.name || "江苏三年制", [ownerRegions, regionId]);
   const filteredQuestions = useMemo(() => {
     const questions = parsed?.payload.questions || [];
-    return selectedType === "all" ? questions : questions.filter((question) => question.type === selectedType);
+    return selectedType === "all" ? questions : questions.filter((question) => (question.englishSection ?? question.type) === selectedType);
   }, [parsed, selectedType]);
   const selectedQuestion = useMemo(() => {
     const questions = parsed?.payload.questions || [];
@@ -344,7 +354,8 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
       }
       const questions = current.payload.questions.map((question) => (question.number === number ? updater(question) : question));
       const stats = questions.reduce<Record<string, number>>((counts, question) => {
-        counts[question.type] = (counts[question.type] || 0) + 1;
+        const category = question.englishSection ?? question.type;
+        counts[category] = (counts[category] || 0) + 1;
         return counts;
       }, {});
       return {
@@ -395,6 +406,7 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
         body.append("ownerType", activeOwner.type);
         body.append("courseName", activeOwner.name);
         body.append("parserVersion", parserVersion);
+        body.append("questionBankStructure", questionBankStructure);
 
         const response = await fetch("/api/admin/question-bank-imports/tasks", {
           method: "POST",
@@ -427,6 +439,7 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
             ownerType: activeOwner.type,
             ownerId: activeOwner.id,
             regionId,
+            questionBankStructure,
             payload: parsed.payload
           })
         });
@@ -519,8 +532,25 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
                     </div>
                   </div>
                   <div>
+                    <label className="label" htmlFor="question-bank-structure">题库结构</label>
+                    <select id="question-bank-structure" className="input rounded-none" value={questionBankStructure} disabled={activeTask || isParsing || isCommitting} onChange={(event) => {
+                      const structure = event.target.value as QuestionBankStructure;
+                      setQuestionBankStructure(structure);
+                      if (structure === "english_v1") setParserVersion("english");
+                      else if (parserVersion === "english") setParserVersion(parserVersionRegistry.defaultVersion);
+                      resetState();
+                    }}>
+                      <option value="general_v1">通用 V1</option>
+                      <option value="english_v1">英语 V1</option>
+                    </select>
+                  </div>
+                  <div>
                     <label className="label" htmlFor="question-pdf-parser-version">解析版本</label>
-                    <select id="question-pdf-parser-version" className="input rounded-none" value={parserVersion} disabled={activeTask || isCommitting} onChange={(event) => { setParserVersion(event.target.value); resetState(); }}>
+                    <select id="question-pdf-parser-version" className="input rounded-none" value={parserVersion} disabled={activeTask || isCommitting} onChange={(event) => {
+                      setParserVersion(event.target.value);
+                      setQuestionBankStructure(event.target.value === "english" ? "english_v1" : "general_v1");
+                      resetState();
+                    }}>
                       {parserVersionRegistry.versions.map((version) => <option key={version.id} value={version.id}>{version.label}</option>)}
                     </select>
                     <p className="mt-1 text-xs text-slate-500">当前调试版用于验证新规则；选择 V1 可使用稳定基线。</p>
@@ -538,7 +568,7 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
                   <button
                     className="primary-button inline-flex h-10 items-center justify-center gap-2 rounded-none disabled:cursor-not-allowed disabled:opacity-60"
                     type="button"
-                    disabled={isParsing}
+                    disabled={isParsing || isCommitting || activeTask}
                     onClick={parsePaper}
                   >
                     {isParsing ? <Loader2 className="animate-spin" size={16} /> : null}
@@ -606,7 +636,7 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
                             type="button"
                             onClick={() => { setSelectedType(type); setSelectedQuestionNumber(null); }}
                           >
-                            {typeLabels[type] || type}：{type === "all" ? parsed.payload.questions.length : parsed.stats[type]}
+                            {categoryLabel(type)}：{type === "all" ? parsed.payload.questions.length : parsed.stats[type]}
                           </button>
                         ))}
                       </div>
@@ -642,7 +672,7 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
                                   onClick={() => setSelectedQuestionNumber(question.number)}
                                 >
                                   <td className="px-2 py-2 font-semibold">{question.number}</td>
-                                  <td className="px-2 py-2">{typeLabels[question.type] || question.type}</td>
+                                  <td className="px-2 py-2">{categoryLabel(question.englishSection ?? question.type)}</td>
                                   <td className="max-w-[520px] px-2 py-2"><RichTextContent className="line-clamp-1" value={question.stem} /></td>
                                   <td className="px-2 py-2"><RichTextContent value={answerToText(question.answer)} /></td>
                                 </tr>
@@ -655,7 +685,7 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
                           <div className="grid max-h-[520px] gap-3 overflow-auto border border-[#e2e6ee] bg-[#fbfcfe] p-3 text-xs">
                             <div className="flex items-center justify-between">
                               <div className="font-bold text-[#071b38]">第 {selectedQuestion.number} 题</div>
-                              <span className="rounded bg-[#eef3ff] px-2 py-1 font-semibold text-[#1746d3]">{typeLabels[selectedQuestion.type]}</span>
+                              <span className="rounded bg-[#eef3ff] px-2 py-1 font-semibold text-[#1746d3]">{categoryLabel(selectedQuestion.englishSection ?? selectedQuestion.type)}</span>
                             </div>
                             {questionIssues(selectedQuestion).length > 0 ? (
                               <div className="rounded border border-amber-200 bg-amber-50 p-2 text-amber-800">
@@ -691,12 +721,23 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
                             ) : null}
                             <div className="grid gap-1">
                               <span className="font-semibold text-[#071b38]">答案</span>
-                              <ImportRichTextEditor
+                              {selectedQuestion.englishSection && selectedQuestion.options.length > 0 ? (
+                                <select aria-label="答案" className="input rounded-none" value={selectedQuestion.answer[0] ?? ""}
+                                  onChange={(event) => {
+                                    const answer = event.target.value;
+                                    updateQuestion(selectedQuestion.number, (question) => ({ ...question, answer: answer ? [answer] : [] }));
+                                  }}>
+                                  <option value="">请选择答案</option>
+                                  {selectedQuestion.options.map((option) => <option key={option.key} value={option.key}>{option.key}</option>)}
+                                </select>
+                              ) : <ImportRichTextEditor
                                 ariaLabel="答案"
                                 className="min-h-9 border border-[#d6dce7] bg-white px-2 py-2 outline-none focus:border-[#6f8dff]"
                                 value={answerToText(selectedQuestion.answer)}
-                                onChange={(html) => updateQuestion(selectedQuestion.number, (question) => ({ ...question, answer: textToAnswer(html) }))}
-                              />
+                                onChange={(html) => updateQuestion(selectedQuestion.number, (question) => ({
+                                  ...question, answer: question.englishSection ? (html ? [html] : []) : textToAnswer(html)
+                                }))}
+                              />}
                             </div>
                             <div className="grid gap-1">
                               <span className="font-semibold text-[#071b38]">解析</span>

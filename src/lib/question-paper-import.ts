@@ -3,7 +3,10 @@ import { prisma } from "./prisma";
 import type { QuestionBankOwnerType } from "./question-bank-catalog";
 import { hasMeaningfulRichText } from "./rich-text-plain";
 
-import type { QuestionBankEditableQuestionType } from "./question-bank-types";
+import {
+  englishImportSections, englishQuestionBankQuestionTypes, type EnglishImportSection,
+  type QuestionBankEditableQuestionType, type QuestionBankStructure
+} from "./question-bank-types";
 
 export type ImportQuestionType = QuestionBankEditableQuestionType;
 export type ImportQuestionSourceType = "manual" | "real_exam" | "outline" | "import" | "ai_generated";
@@ -15,6 +18,8 @@ export type ImportQuestion = {
   options: Array<{ key: string; text: string }>;
   answer: string[];
   analysis: string;
+  englishSection?: EnglishImportSection;
+  score?: number;
   syllabusItemId?: string;
   syllabusItemIds?: string[];
   source?: string;
@@ -34,6 +39,7 @@ export type ImportQuestionPaperPayload = {
   subjectName?: string;
   chapterTitle: string;
   knowledgePointTitle: string;
+  questionBankStructure?: QuestionBankStructure;
   questions: ImportQuestion[];
 };
 
@@ -41,6 +47,7 @@ export type ImportQuestionPaperTarget = {
   ownerType?: QuestionBankOwnerType;
   ownerId?: string;
   regionId?: string;
+  questionBankStructure?: QuestionBankStructure;
 };
 
 export type ImportQuestionPaperResult = {
@@ -74,6 +81,9 @@ export function assertImportQuestionPaperPayload(value: unknown): asserts value 
   if (!Array.isArray(payload.questions) || payload.questions.length === 0) {
     throw new Error("导入数据没有题目。");
   }
+  if (payload.questionBankStructure && payload.questionBankStructure !== "general_v1" && payload.questionBankStructure !== "english_v1") {
+    throw new Error("导入数据的题库结构无效。");
+  }
 
   payload.questions.forEach((question, index) => {
     if (!question || typeof question !== "object") {
@@ -97,12 +107,38 @@ export function assertImportQuestionPaperPayload(value: unknown): asserts value 
       }
       return { key, text };
     });
+    if (payload.questionBankStructure === "english_v1") {
+      const section = question.englishSection && Object.hasOwn(englishImportSections, question.englishSection)
+        ? englishImportSections[question.englishSection] : undefined;
+      if (!section || question.type !== section.type || question.number !== index + 1 ||
+        typeof question.score !== "number" || !Number.isFinite(question.score) || question.score <= 0 ||
+        question.options.map((option) => option.key).sort().join("") !== section.options) {
+        throw new Error(`第 ${index + 1} 题的英语题型、题号、选项或分值无效。`);
+      }
+    }
   });
+}
+
+export function assertQuestionPaperCommit(payload: ImportQuestionPaperPayload, structure: QuestionBankStructure) {
+  if ((payload.questionBankStructure ?? "general_v1") !== structure) {
+    throw new Error("解析结果和所选题库结构不一致，请重新解析。");
+  }
+  if (structure === "english_v1") {
+    for (const question of payload.questions) {
+      if (!hasMeaningfulRichText(question.stem)) {
+        throw new Error(`请填写第 ${question.number} 题题干。`);
+      }
+      if (question.options.length > 0 && (question.answer.length !== 1 || !question.options.some((option) => option.key === question.answer[0]))) {
+        throw new Error(`请核对第 ${question.number} 题的答案字母后再导入。`);
+      }
+    }
+  }
 }
 
 export function getQuestionPaperImportStats(payload: ImportQuestionPaperPayload) {
   return payload.questions.reduce<Record<string, number>>((counts, question) => {
-    counts[question.type] = (counts[question.type] || 0) + 1;
+    const key = payload.questionBankStructure === "english_v1" ? question.englishSection ?? question.type : question.type;
+    counts[key] = (counts[key] || 0) + 1;
     return counts;
   }, {});
 }
@@ -157,7 +193,7 @@ async function ensureRegion(tx: Prisma.TransactionClient, payload: ImportQuestio
   if (target.regionId) {
     return tx.region.findUniqueOrThrow({
       where: { id: target.regionId },
-      select: { id: true, name: true }
+      select: { id: true, name: true, province: true }
     });
   }
 
@@ -174,7 +210,7 @@ async function ensureRegion(tx: Prisma.TransactionClient, payload: ImportQuestio
       studySystem: payload.regionName.replace("江苏", "") || "三年制",
       status: "active"
     },
-    select: { id: true, name: true }
+    select: { id: true, name: true, province: true }
   });
 }
 
@@ -262,6 +298,11 @@ export async function importQuestionPaperPayload(
   options: ImportQuestionPaperOptions = {}
 ): Promise<ImportQuestionPaperResult> {
   assertImportQuestionPaperPayload(payload);
+  const structure = target.questionBankStructure ?? payload.questionBankStructure ?? "general_v1";
+  assertQuestionPaperCommit(payload, structure);
+  if (structure === "english_v1" && (!target.ownerType || !target.ownerId || !target.regionId)) {
+    throw new Error("请选择题库所属科目或专业和区域。");
+  }
 
   return prisma.$transaction(async (tx) => {
     const region = await ensureRegion(tx, payload, target);
@@ -269,17 +310,18 @@ export async function importQuestionPaperPayload(
     await ensureOwnerRegionLink(tx, region.id, owner);
 
     const subjectName = payload.subjectName || ownerNameToSubjectName(owner.name);
+    const province = structure === "english_v1" ? region.province : "江苏";
     const subject = await tx.subject.upsert({
       where: {
         province_examType_name: {
-          province: "江苏",
+          province,
           examType: "专转本",
           name: subjectName
         }
       },
       update: { status: "published" },
       create: {
-        province: "江苏",
+        province,
         examType: "专转本",
         name: subjectName,
         status: "published"
@@ -335,7 +377,7 @@ export async function importQuestionPaperPayload(
         title: payload.title,
         year: payload.year
       },
-      select: { id: true }
+      select: { id: true, questionBankStructure: true }
     });
     if (!paper) {
       paper = await tx.examPaper.create({
@@ -347,11 +389,16 @@ export async function importQuestionPaperPayload(
           title: payload.title,
           year: payload.year,
           paperType: payload.paperType,
+          questionBankStructure: structure,
+          ...(structure === "english_v1" ? { questionTypeConfig: englishQuestionBankQuestionTypes } : {}),
           status: "archived"
         },
-        select: { id: true }
+        select: { id: true, questionBankStructure: true }
       });
     } else {
+      if (paper.questionBankStructure !== structure) {
+        throw new Error("同名题库的结构与所选结构不一致，无法覆盖导入。");
+      }
       await tx.examPaper.update({
         where: { id: paper.id },
         data: {
@@ -415,7 +462,7 @@ export async function importQuestionPaperPayload(
           paperId: paper.id,
           questionId: createdQuestion.id,
           sortOrder: question.number,
-          score: scoreForQuestion(question.number)
+          score: structure === "english_v1" ? question.score : scoreForQuestion(question.number)
         }
       });
     }

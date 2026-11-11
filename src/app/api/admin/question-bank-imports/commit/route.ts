@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentAdmin } from "@/lib/auth";
 import {
   assertImportQuestionPaperPayload,
+  assertQuestionPaperCommit,
   getQuestionPaperImportStats,
   importQuestionPaperPayload,
   type ImportQuestionPaperPayload,
@@ -31,15 +32,31 @@ export async function POST(request: NextRequest) {
     ownerType?: unknown;
     ownerId?: unknown;
     regionId?: unknown;
+    questionBankStructure?: unknown;
   };
 
-  assertImportQuestionPaperPayload(body.payload);
-  const payload: ImportQuestionPaperPayload = body.payload;
+  const questionBankStructure = body.questionBankStructure ?? "general_v1";
+  if (questionBankStructure !== "general_v1" && questionBankStructure !== "english_v1") {
+    return NextResponse.json({ error: "题库结构无效。" }, { status: 400 });
+  }
+
   const target: ImportQuestionPaperTarget = {
     ownerType: isOwnerType(body.ownerType) ? body.ownerType : undefined,
     ownerId: typeof body.ownerId === "string" ? body.ownerId : undefined,
-    regionId: typeof body.regionId === "string" ? body.regionId : undefined
+    regionId: typeof body.regionId === "string" ? body.regionId : undefined,
+    questionBankStructure
   };
+  if (questionBankStructure === "english_v1" && (!target.ownerType || !target.ownerId || !target.regionId)) {
+    return NextResponse.json({ error: "请选择题库所属科目或专业和区域。" }, { status: 400 });
+  }
+  let payload: ImportQuestionPaperPayload;
+  try {
+    assertImportQuestionPaperPayload(body.payload);
+    payload = body.payload;
+    assertQuestionPaperCommit(payload, questionBankStructure);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "导入数据无效。" }, { status: 400 });
+  }
   const result = await importQuestionPaperPayload(payload, target);
 
   revalidatePath("/admin/question-banks");

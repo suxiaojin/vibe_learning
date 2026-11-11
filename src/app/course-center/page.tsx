@@ -39,6 +39,25 @@ export default async function CourseCenterPage() {
       }
     : null;
   const overview = buildCourseCenterOverview(learningPath.groups);
+  const isHenanEnglish = profile?.region?.province === "河南" && profile.region.studySystem === "三年制" && profile.publicSubject?.name === "公共英语";
+  const englishPapers = isHenanEnglish ? await prisma.examPaper.findMany({
+    where: {
+      regionId: profile.regionId!,
+      publicSubjectId: profile.publicSubjectId!,
+      ownerType: "public_subject",
+      status: "published"
+    },
+    orderBy: [{ year: { sort: "desc", nulls: "last" } }, { sortOrder: "asc" }, { createdAt: "asc" }],
+    take: 3,
+    select: { id: true, title: true }
+  }) : null;
+
+  if (isHenanEnglish && !overview.courses.some((course) => course.key === "public_subject")) {
+    overview.courses.unshift({
+      key: "public_subject", title: profile.publicSubject?.name || "公共英语", publishedCourseCount: 0,
+      chapterCount: 0, sectionCount: 0, progressPercent: 0, currentSection: null, upcomingSections: []
+    });
+  }
 
   return (
     <StudentPageShell active="course-center" maxWidthClassName="max-w-[1280px]">
@@ -46,6 +65,7 @@ export default async function CourseCenterPage() {
         initialOptions={options}
         currentProfile={currentProfile}
         overview={overview}
+        englishPapers={englishPapers}
         majorIconUrl={majorIconUrl}
         planConfirmed={Boolean(planState?.foundationPlanConfirmedAt)}
         initialDrawerOpen={!learningPath.completed && !planState?.foundationPlanConfirmedAt}

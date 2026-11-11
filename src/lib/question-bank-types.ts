@@ -42,6 +42,19 @@ export type QuestionBankChoiceQuestionType = (typeof questionBankChoiceQuestionT
 export type QuestionBankAutoGradedQuestionType = (typeof questionBankAutoGradedQuestionTypes)[number];
 export type QuestionBankRichAnswerQuestionType = (typeof questionBankRichAnswerQuestionTypes)[number];
 export type QuestionBankEditableQuestionType = (typeof questionBankEditableQuestionTypes)[number];
+export type QuestionBankStructure = "general_v1" | "english_v1";
+
+export const englishImportSections = {
+  reading: { label: "阅读理解", type: "single_choice", options: "ABCD" },
+  cloze: { label: "完形填空", type: "single_choice", options: "ABCD" },
+  judgment: { label: "阅读理解（判断）", type: "true_false", options: "AB" },
+  translation_choice: { label: "翻译选择", type: "single_choice", options: "ABCD" },
+  word_selection: { label: "选词填空", type: "single_choice", options: "ABCDEFGHIJ" },
+  translation: { label: "英汉互译", type: "short_answer", options: "" },
+  correction: { label: "短文改错", type: "question_answer", options: "" },
+  writing: { label: "写作", type: "writing", options: "" }
+} as const;
+export type EnglishImportSection = keyof typeof englishImportSections;
 
 export type QuestionBankQuestionTypeConfig = {
   type: QuestionBankEditableQuestionType;
@@ -132,6 +145,11 @@ export const universityChineseQuestionBankQuestionTypes = [
   q("poetry_appreciation"),
   q("writing")
 ] as const;
+
+export const englishQuestionBankQuestionTypes = [
+  q("single_choice"), q("true_false", "阅读理解（判断）"), q("short_answer", "英汉互译"),
+  q("question_answer", "短文改错"), q("writing")
+];
 
 const majorQuestionBankQuestionTypes: Array<{
   keywords: string[];

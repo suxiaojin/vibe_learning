@@ -57,6 +57,32 @@ test("purchase stores one entitlement and exact negative ledger atomically", asy
   assert.equal(db.state().ledger[0].dedupeKey, "past_exam_purchase:student:paper");
   assert.equal(db.state().purchases[0].resourceId, "paper");
 });
+
+test("Henan English purchase uses the course-center scope and shares the past-exam entitlement", async () => {
+  const db = fixture({ price: 50 });
+  const englishInput = pastExamPurchaseSchema.parse({
+    courseKey: "public_subject", entry: "henan_english", expectedDiamondPrice: 50, confirmed: true
+  });
+  const purchase = await purchasePastExam("student", "paper", englishInput);
+  assert.equal(purchase.offer.href, "/course-center/english-past-exams/paper");
+  assert.equal(purchase.offer.purchased, true);
+  assert.deepEqual(db.where(), { AND: [{
+    ownerType: "public_subject",
+    status: "published",
+    region: { province: "河南", studySystem: "三年制", studentProfiles: { some: { userId: "student" } } },
+    publicSubject: { name: "公共英语", studentProfiles: { some: { userId: "student" } } },
+    questions: { some: { question: { status: "published" } } }
+  }, { id: "paper" }] });
+  const reopened = await purchasePastExam("student", "paper", {
+    courseKey: "public_subject", expectedDiamondPrice: 50, confirmed: false
+  });
+  assert.equal(reopened.offer.href, "/mock-tests/special/past/paper?course=public_subject");
+  assert.equal(reopened.charged, false);
+  assert.equal(db.state().balance, 50);
+  assert.equal(db.state().ledger.length, 1);
+  assert.equal(db.state().purchases.length, 1);
+  assert.equal(pastExamPurchaseSchema.safeParse({ ...englishInput, courseKey: "major" }).success, false);
+});
 test("missing/false confirmation writes nothing", async () => {
   const db = fixture();
   for (const confirmed of [false, undefined]) await assert.rejects(purchasePastExam("student", "paper", { ...input, confirmed }), (e: unknown) => e instanceof PastExamPurchaseError && e.code === "PAST_EXAM_CONFIRMATION_REQUIRED");

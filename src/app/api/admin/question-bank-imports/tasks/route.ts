@@ -21,11 +21,18 @@ export async function POST(request: NextRequest) {
   }
 
   const formData = await request.formData();
+  const questionBankStructure = formData.get("questionBankStructure") ?? "general_v1";
+  if (questionBankStructure !== "general_v1" && questionBankStructure !== "english_v1") {
+    return NextResponse.json({ error: "题库结构无效。" }, { status: 400 });
+  }
   const questionPdf = formData.get("questionPdf");
   const answerPdf = formData.get("answerPdf");
   const parserVersion = String(formData.get("parserVersion") || registry.defaultVersion);
   if (!isParserVersion(parserVersion)) {
     return NextResponse.json({ error: "请选择有效的解析版本。" }, { status: 400 });
+  }
+  if ((parserVersion === "english") !== (questionBankStructure === "english_v1")) {
+    return NextResponse.json({ error: "英语 V1 解析版本须配合英语 V1 题库结构。" }, { status: 400 });
   }
 
   if (!isUploadFile(questionPdf)) {
@@ -57,10 +64,12 @@ export async function POST(request: NextRequest) {
     }
   });
 
-  const aiServer = await getAiServerConfigForModule("question_bank_pdf_ai_review");
-  outbound.append("ai_api_base_url", aiServer.baseUrl);
-  outbound.append("ai_api_key", aiServer.apiKey);
-  outbound.append("ai_model", aiServer.model);
+  if (parserVersion !== "english") {
+    const aiServer = await getAiServerConfigForModule("question_bank_pdf_ai_review");
+    outbound.append("ai_api_base_url", aiServer.baseUrl);
+    outbound.append("ai_api_key", aiServer.apiKey);
+    outbound.append("ai_model", aiServer.model);
+  }
 
   let response: Response;
   try {

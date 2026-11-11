@@ -709,7 +709,7 @@ export default async function AdminSettingsPage({
           </div>
           {parserVersions.map((version) => <div key={version.id} className="border border-slate-200 p-4">
             <div className="flex flex-wrap items-center gap-3"><h3 className="font-bold text-ink">{version.label}</h3><span className="rounded bg-teal/10 px-2 py-1 text-xs font-bold text-teal">{version.status}</span></div>
-            <p className="mt-2 text-sm leading-6 text-slate-600">{version.id === "v1" ? "已保存独立代码、提示词和依赖环境，作为稳定基线。" : "独立调试环境，当前以 V1 为起点；调整不覆盖 V1。"}</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{version.id === "english" ? "题库导入时可选择英语 V1，解析 Part I–VI 并预览核对。" : version.id === "v1" ? "已保存独立代码、提示词和依赖环境，作为稳定基线。" : "独立调试环境，当前以 V1 为起点；调整不覆盖 V1。"}</p>
             <p className="mt-1 text-xs font-semibold text-slate-500">{version.available ? "解析服务可用" : "解析服务暂不可用"}{version.id === parserVersionRegistry.defaultVersion ? " · 导入默认版本" : ""}</p>
           </div>)}
           <p className="text-xs leading-5 text-slate-500">上传 PDF 时可选择版本，每个任务使用创建时选择的版本。调试版经确认后才保存为 V2。</p>

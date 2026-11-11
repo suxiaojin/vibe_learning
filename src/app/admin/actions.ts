@@ -18,7 +18,9 @@ import {
 import { requireAdmin } from "@/lib/auth";
 import { deleteStudentAccountByAdmin, StudentDeletionError } from "@/lib/admin-student-deletion";
 import { getDiamondRuleDefinition, maxDiamondRuleAmount } from "@/lib/diamond-rules";
+import { isHenanThreeYearEnglish } from "@/lib/henan-english-past-exams";
 import { prisma } from "@/lib/prisma";
+import { projectDiamondPriceSchema } from "@/lib/project-diamond-price";
 import { buildQuestionBankKnowledgeCopyMapping } from "@/lib/question-bank-copy";
 import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 import { deleteAiStudyObject } from "@/lib/ai-study-storage";
@@ -1903,6 +1905,7 @@ async function getQuestionBankCopyPlan(
       paperType: true,
       description: true,
       questionTypeConfig: true,
+      questionBankStructure: true,
       status: true,
       sortOrder: true,
       questions: {
@@ -2205,6 +2208,7 @@ export async function copyQuestionBankPaper(
           copiedFromRegionName: plan.sourcePaper.region.name,
           isCrossRegionCopy: plan.sourcePaper.regionId !== targetRegionId,
           description: plan.sourcePaper.description,
+          questionBankStructure: plan.sourcePaper.questionBankStructure,
           ...(plan.sourcePaper.questionTypeConfig === null
             ? {}
             : { questionTypeConfig: plan.sourcePaper.questionTypeConfig as Prisma.InputJsonValue }),
@@ -2417,13 +2421,30 @@ export async function updateQuestionBankPaper(formData: FormData) {
       id,
       ...ownerPaperWhere(ownerType, ownerId)
     },
-    select: { regionId: true, updatedAt: true, copiedFromRegionId: true, year: true, diamondPrice: true }
+    select: {
+      regionId: true, updatedAt: true, copiedFromRegionId: true, isCrossRegionCopy: true, year: true,
+      region: { select: { province: true, studySystem: true } },
+      publicSubject: { select: { name: true } }
+    }
   });
   const regionId = String(formData.get("regionId") || paper.regionId);
-  const rawDiamondPrice = formData.has("diamondPrice") ? String(formData.get("diamondPrice") ?? "").trim() : String(paper.diamondPrice);
-  const diamondPrice = Number(rawDiamondPrice);
-  if (!/^\d+$/.test(rawDiamondPrice) || !Number.isSafeInteger(diamondPrice) || diamondPrice > 2147483647) {
-    throw new Error("钻石数必须是 0 至 2147483647 的整数。");
+  const region = regionId === paper.regionId ? paper.region : await prisma.region.findUniqueOrThrow({
+    where: { id: regionId },
+    select: { province: true, studySystem: true }
+  });
+  const subjectName = ownerType === "public_subject" ? paper.publicSubject?.name : undefined;
+  const canSetLocalPrice = isHenanThreeYearEnglish(paper.region, subjectName) && isHenanThreeYearEnglish(region, subjectName);
+  let diamondPrice: number | undefined;
+  if (formData.has("diamondPrice")) {
+    if (!paper.isCrossRegionCopy && !canSetLocalPrice) {
+      throw new Error("当前题库不支持设置钻石数。");
+    }
+    const rawDiamondPrice = String(formData.get("diamondPrice") ?? "").trim();
+    const parsedPrice = projectDiamondPriceSchema.safeParse(Number(rawDiamondPrice));
+    if (!/^\d+$/.test(rawDiamondPrice) || !parsedPrice.success) {
+      throw new Error("钻石数必须是 0 至 2147483647 的整数。");
+    }
+    diamondPrice = parsedPrice.data;
   }
   await ensureQuestionBankOwnerRegion(ownerType, ownerId, regionId);
 
@@ -2434,14 +2455,20 @@ export async function updateQuestionBankPaper(formData: FormData) {
       isCrossRegionCopy: paper.copiedFromRegionId != null && paper.copiedFromRegionId !== regionId,
       title: String(formData.get("title") || "").trim(),
       year: formData.has("year") ? getPaperYear(formData) : paper.year,
-      diamondPrice,
+      ...(diamondPrice === undefined ? {} : { diamondPrice }),
       updatedAt: paper.updatedAt
     }
   });
 
   revalidatePath("/admin/question-banks");
   revalidatePath("/mock-tests/special");
-  redirect(questionBankPath(ownerType, ownerId) + (paper.copiedFromRegionId != null && paper.copiedFromRegionId !== regionId ? "&view=other" : ""));
+  const otherView = paper.copiedFromRegionId != null && paper.copiedFromRegionId !== regionId ? "&view=other" : "";
+  if (canSetLocalPrice) {
+    revalidatePath("/course-center/english-past-exams");
+    const scope = new URLSearchParams({ province: region.province, examType: region.studySystem });
+    redirect(questionBankPath(ownerType, ownerId) + "&" + scope.toString() + otherView);
+  }
+  redirect(questionBankPath(ownerType, ownerId) + otherView);
 }
 
 export async function deleteQuestionBankPaper(formData: FormData) {

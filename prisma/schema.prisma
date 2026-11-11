@@ -877,6 +877,7 @@ model ExamPaper {
   paperType          PaperType             @default(real_exam)
   description        String?
   questionTypeConfig Json?
+  questionBankStructure String @default("general_v1")
   visibleInPastPractice Boolean             @default(false)
   diamondPrice       Int                    @default(0)
   copiedFromRegionId String?

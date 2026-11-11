@@ -22,7 +22,9 @@ import { QuestionBankSidebar } from "@/components/question-bank-sidebar";
 import { requireAdmin } from "@/lib/auth";
 import { ensureDefaultQuestionBankCatalog, type QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 import { buildAiReferenceKnowledgeTree } from "@/lib/question-bank-ai-reference";
+import { isHenanThreeYearEnglish } from "@/lib/henan-english-past-exams";
 import { prisma } from "@/lib/prisma";
+import { maxProjectDiamondPrice } from "@/lib/project-diamond-price";
 import { cn } from "@/lib/utils";
 
 type SearchParams = {
@@ -245,6 +247,11 @@ export default async function QuestionBanksPage({
       </main>
     );
   }
+
+  const showLocalPricing = !otherBanks && selectedOwner.type === "public_subject" &&
+    isHenanThreeYearEnglish({ province: selectedProvince, studySystem: selectedExamType }, selectedOwner.name);
+  const showPricing = otherBanks || showLocalPricing;
+  const columnCount = showPricing ? 8 : 6;
 
   const aiReferenceKnowledgeTreeEntries = await Promise.all(
     regionOptions.map(async (region) => {
@@ -499,11 +506,14 @@ export default async function QuestionBanksPage({
                 <thead className="bg-[#f0f1f4] text-[#030712]">
                   <tr className="h-11">
                     <th className="border-r border-[#e0e3e8] px-3 font-bold">{headerLabel("题库名称")}</th>
-                    <th className="w-[165px] border-r border-[#e0e3e8] px-3 font-bold">{headerLabel("来源")}</th>
+                    {otherBanks && <th className="w-[165px] border-r border-[#e0e3e8] px-3 font-bold">{headerLabel("来源")}</th>}
                     <th className="w-[90px] border-r border-[#e0e3e8] px-3 font-bold">{headerLabel("题数")}</th>
                     <th className="w-[205px] border-r border-[#e0e3e8] px-3 font-bold">{headerLabel("区域信息")}</th>
-                    {otherBanks && <th className="w-[110px] border-r border-[#e0e3e8] px-3 font-bold">购买人数</th>}
-                    <th className="w-[110px] border-r border-[#e0e3e8] px-3 font-bold">{headerLabel(otherBanks ? "钻石数" : "年份")}</th>
+                    {!otherBanks && <th className="w-[110px] border-r border-[#e0e3e8] px-3 font-bold">{headerLabel("年份")}</th>}
+                    {showPricing && <>
+                      <th className="w-[110px] whitespace-nowrap border-r border-[#e0e3e8] px-3 font-bold">购买人数</th>
+                      <th className="w-[110px] whitespace-nowrap border-r border-[#e0e3e8] px-3 font-bold">{headerLabel("钻石数")}</th>
+                    </>}
                     <th className="w-[185px] border-r border-[#e0e3e8] px-3 font-bold">{headerLabel("更新时间")}</th>
                     <th className="w-[250px] px-3 font-bold"></th>
                   </tr>
@@ -511,7 +521,7 @@ export default async function QuestionBanksPage({
                 <tbody>
                   {papers.length === 0 ? (
                     <tr>
-                      <td className="h-64 border-b border-[#e5e7eb] text-center text-sm text-slate-500" colSpan={otherBanks ? 8 : 7}>
+                      <td className="h-64 border-b border-[#e5e7eb] text-center text-sm text-slate-500" colSpan={columnCount}>
                         {otherBanks ? "当前专业或公共课暂无从其他区域复制的题库。" : "当前专业还没有题库。"}
                       </td>
                     </tr>
@@ -531,11 +541,14 @@ export default async function QuestionBanksPage({
                             {paper.title}
                           </Link>
                         </td>
-                        <td className="px-3 text-[#071b38]">{paper.copiedFromRegionName || "-"}</td>
+                        {otherBanks && <td className="px-3 text-[#071b38]">{paper.copiedFromRegionName || "-"}</td>}
                         <td className="px-3 text-[#071b38]">{paper._count.questions}</td>
                         <td className="px-3 text-[#071b38]">{paper.region.name}</td>
-                        {otherBanks && <td className="px-3 text-[#071b38]">{paper._count.purchases}</td>}
-                        <td className="px-3 text-[#071b38]">{otherBanks ? paper.diamondPrice : paper.year || "-"}</td>
+                        {!otherBanks && <td className="px-3 text-[#071b38]">{paper.year || "-"}</td>}
+                        {showPricing && <>
+                          <td className="px-3 text-[#071b38]">{paper._count.purchases}</td>
+                          <td className="px-3 text-[#071b38]">{paper.diamondPrice}</td>
+                        </>}
                         <td className="px-3 text-[#071b38]">{formatDate(paper.updatedAt)}</td>
                         <td className="px-3">
                           <div className="flex items-center justify-end gap-4">
@@ -549,7 +562,7 @@ export default async function QuestionBanksPage({
                                   <label className="label">题库名称</label>
                                   <input className="input rounded-none" name="title" defaultValue={paper.title} required />
                                 </div>
-                                <div className="grid grid-cols-[1fr_110px] gap-3">
+                                <div className={cn("grid gap-3", showLocalPricing ? "grid-cols-[minmax(0,1fr)_85px_110px]" : "grid-cols-[minmax(0,1fr)_110px]")}>
                                   <div>
                                     <label className="label">区域信息</label>
                                     <select className="input rounded-none" name="regionId" defaultValue={paper.regionId} required>
@@ -558,10 +571,14 @@ export default async function QuestionBanksPage({
                                       ))}
                                     </select>
                                   </div>
-                                  <div>
-                                    <label className="label">{otherBanks ? "钻石数" : "年份"}</label>
-                                    {otherBanks ? <input className="input rounded-none" name="diamondPrice" type="number" min="0" max="2147483647" step="1" defaultValue={paper.diamondPrice} required /> : <input className="input rounded-none" name="year" type="number" min="2000" max="2100" defaultValue={paper.year || ""} />}
-                                  </div>
+                                  {!otherBanks && <label>
+                                    <span className="label">年份</span>
+                                    <input className="input rounded-none" name="year" type="number" min="2000" max="2100" defaultValue={paper.year || ""} />
+                                  </label>}
+                                  {showPricing && <label>
+                                    <span className="label">钻石数</span>
+                                    <input className="input rounded-none" name="diamondPrice" type="number" min="0" max={maxProjectDiamondPrice} step="1" defaultValue={paper.diamondPrice} required />
+                                  </label>}
                                 </div>
                                 <button className="primary-button rounded-none" type="submit">保存修改</button>
                               </form>
