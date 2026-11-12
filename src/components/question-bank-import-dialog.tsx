@@ -6,6 +6,7 @@ import { AlertTriangle, CheckCircle2, FileInput, Loader2, Maximize2, Minimize2, 
 import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 import type { ImportQuestion, ImportQuestionPaperPayload } from "@/lib/question-paper-import";
 import { englishImportSections, getQuestionBankTypeLabel, type QuestionBankStructure } from "@/lib/question-bank-types";
+import { hasMeaningfulRichText } from "@/lib/rich-text-plain";
 import { cn } from "@/lib/utils";
 import { RichTextContent } from "@/components/rich-text-content";
 import parserVersionRegistry from "@/lib/question-pdf-parser-versions.json";
@@ -117,8 +118,12 @@ function questionIssues(question: ImportQuestion) {
   const issues: string[] = [];
   const section = question.englishSection ? englishImportSections[question.englishSection] : undefined;
   const optionKeys = new Set(question.options.map((option) => option.key));
-  if (!question.stem.trim()) {
+  if (section ? !hasMeaningfulRichText(question.stem) : !question.stem.trim()) {
     issues.push("题干为空");
+  }
+  if (section) {
+    const missingOptions = question.options.filter((option) => !hasMeaningfulRichText(option.text));
+    if (missingOptions.length > 0) issues.push(`请补录选项 ${missingOptions.map((option) => option.key).join("、")}`);
   }
   if ((question.type === "single_choice" || question.type === "multiple_choice") && question.options.length !== (section?.options.length ?? 4)) {
     issues.push(`选项数量 ${question.options.length}`);
@@ -347,12 +352,14 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
     window.addEventListener("pointerup", handleUp);
   }
 
-  function updateQuestion(number: number, updater: (question: ImportQuestion) => ImportQuestion) {
+  function updateQuestion(number: number, updater: (question: ImportQuestion) => ImportQuestion, sharedWordBank = false) {
     setParsed((current) => {
       if (!current) {
         return current;
       }
-      const questions = current.payload.questions.map((question) => (question.number === number ? updater(question) : question));
+      const questions = current.payload.questions.map((question) =>
+        question.number === number || (sharedWordBank && question.englishSection === "word_selection") ? updater(question) : question
+      );
       const stats = questions.reduce<Record<string, number>>((counts, question) => {
         const category = question.englishSection ?? question.type;
         counts[category] = (counts[category] || 0) + 1;
@@ -373,7 +380,7 @@ export function QuestionBankImportDialog({ selectedOwner, regions }: Props) {
     updateQuestion(question.number, (item) => ({
       ...item,
       options: item.options.map((option) => (option.key === key ? { ...option, text } : option))
-    }));
+    }), question.englishSection === "word_selection");
   }
 
   function parsePaper() {

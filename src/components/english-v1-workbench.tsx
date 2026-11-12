@@ -75,6 +75,71 @@ type EditablePassage = ReadingPassage | ClozePassage | JudgmentPassage | Transla
 type EditableQuestion = EditablePassage["questions"][number];
 type PassageKey = "passages" | "clozePassages" | "judgmentPassages" | "translationSections" | "correctionPassages" | "writingPassages";
 
+function serializeStemEditor(root: HTMLElement): string {
+  function visit(node: Node, underline: boolean): string {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const value = (node.textContent || "").replace(/\u00a0/g, " ").replace(/[\uE000\uE001]/g, "");
+      return underline ? value.split("\n").map((part) => part ? `\uE000${part}\uE001` : "").join("\n") : value;
+    }
+    if (!(node instanceof HTMLElement)) return "";
+    if (node.tagName === "BR") return "\n";
+    const marked = underline || node.tagName === "U" || node.style.textDecorationLine.includes("underline");
+    const children = Array.from(node.childNodes).map((child) => visit(child, marked)).join("");
+    return (node.tagName === "DIV" || node.tagName === "P") ? `\n${children}` : children;
+  }
+  return Array.from(root.childNodes).map((node) => visit(node, false)).join("");
+}
+
+function renderStemEditor(root: HTMLElement, value: string) {
+  root.replaceChildren();
+  let underlined = false;
+  let target: HTMLElement = root;
+  for (const part of value.split(/([\uE000\uE001])/)) {
+    if (part === "\uE000") {
+      underlined = true;
+      target = document.createElement("u");
+      root.appendChild(target);
+    } else if (part === "\uE001") {
+      underlined = false;
+      target = root;
+    } else if (part) {
+      (underlined ? target : root).appendChild(document.createTextNode(part));
+    }
+  }
+}
+
+function StemEditor({ value, onChange, disabled, editorRef, storageKey }: {
+  value: string; onChange: (value: string) => void; disabled: boolean;
+  editorRef: React.RefObject<HTMLDivElement | null>; storageKey: string;
+}) {
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (editor && serializeStemEditor(editor) !== value) renderStemEditor(editor, value);
+  }, [value, editorRef]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const key = `english-v1-textarea-height:${storageKey}`;
+    try {
+      const height = Number(window.localStorage.getItem(key));
+      if (Number.isFinite(height) && height > 0 && height <= 10000) editor.style.height = `${height}px`;
+    } catch { /* Browser storage may be unavailable. */ }
+    const observer = new ResizeObserver(() => {
+      const height = Number.parseFloat(editor.style.height);
+      if (!Number.isFinite(height) || height <= 0 || height > 10000) return;
+      try { window.localStorage.setItem(key, String(height)); } catch { /* Ignore storage failures. */ }
+    });
+    observer.observe(editor);
+    return () => observer.disconnect();
+  }, [editorRef, storageKey]);
+
+  return <div ref={editorRef} contentEditable={!disabled} role="textbox" aria-label="题干" aria-multiline="true"
+    suppressContentEditableWarning onInput={(event) => onChange(serializeStemEditor(event.currentTarget))}
+    onPaste={(event) => { event.preventDefault(); document.execCommand("insertText", false, event.clipboardData.getData("text/plain")); }}
+    className="h-[480px] min-h-32 w-full resize-y overflow-auto whitespace-pre-wrap break-words rounded-none border border-[#c6d3e6] bg-[#d9e5fb] p-3 leading-7 outline-none focus:border-blue-500" />;
+}
+
 function ResizableTextarea({ storageKey, ...props }: ComponentProps<"textarea"> & { storageKey: string }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -165,6 +230,7 @@ export function EnglishV1Workbench({ sample, paperId, returnHref = "/admin/quest
   ));
   const [widths, setWidths] = useState<number[] | null>(null);
   const columns = useRef<Array<HTMLElement | null>>([]);
+  const stemEditorRef = useRef<HTMLDivElement | null>(null);
   const drag = useRef<{ index: number; startX: number; widths: number[] } | null>(null);
 
   function editPassage(number: number, update: (passage: EditablePassage) => EditablePassage) {
@@ -340,6 +406,18 @@ export function EnglishV1Workbench({ sample, paperId, returnHref = "/admin/quest
               >
                 <h2 className="sticky top-0 z-10 flex h-9 items-center justify-between border-b border-[#d7dee8] bg-[#eef3f8] px-3 text-sm font-bold">
                   {heading}
+                  {index === 2 && <button type="button" title="下划线" aria-label="下划线"
+                    className="ml-auto mr-3 rounded px-2 py-1 font-bold underline hover:bg-white disabled:opacity-50"
+                    disabled={!selectedPassage || saving}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      const editor = stemEditorRef.current;
+                      const selection = window.getSelection();
+                      if (!editor || !selection || selection.isCollapsed || !editor.contains(selection.anchorNode) || !editor.contains(selection.focusNode) || !selectedPassage) return;
+                      document.execCommand("underline");
+                      const stem = serializeStemEditor(editor);
+                      editPassage(selectedPassage.number, (passage) => ({ ...passage, stem }));
+                    }}>U</button>}
                   {(index === 2 || index === 3) && (
                     <button
                       className="rounded bg-[#1f9d8b] px-3 py-1 text-xs font-bold text-white hover:bg-[#178271] disabled:cursor-not-allowed disabled:opacity-50"
@@ -385,11 +463,9 @@ export function EnglishV1Workbench({ sample, paperId, returnHref = "/admin/quest
                       <CorrectionStemPreview stem={selectedPassage.stem} />
                       <p className="mb-2 text-xs text-slate-600">用 [A: 原文] 至 [D: 原文] 标出四处下划线。</p>
                     </>}
-                    <ResizableTextarea storageKey={JSON.stringify([sample?.title, activeKey, selectedPassage.number, "stem"])} aria-label={activeKey === "writingPassages" ? "写作题干" : "stemIssue" in selectedPassage ? `第 ${selectedPassage.number} 题题干` : `Passage ${selectedPassage.number} 题干`}
-                      className="h-[480px] min-h-32 w-full resize-y rounded-none border border-[#c6d3e6] bg-[#d9e5fb] p-3 leading-7 outline-none focus:border-blue-500"
+                    <StemEditor key={`${activeKey}-${selectedPassage.number}`} editorRef={stemEditorRef} storageKey={JSON.stringify([sample?.title, activeKey, selectedPassage.number, "stem"])}
                       value={selectedPassage.stem} disabled={saving}
-                      onChange={(event) => {
-                        const stem = event.target.value;
+                      onChange={(stem) => {
                         editPassage(selectedPassage.number, (passage) => ({ ...passage, stem }));
                       }} />
                   </div>

@@ -9,6 +9,17 @@ import { englishImportSections } from "@/lib/question-bank-types";
 const backHref = "/course-center/english-past-exams";
 const sections = Object.entries(englishImportSections).map(([key, { label }]) => ({ key, label }));
 
+function formatEnglishPassage(html: string) {
+  const inlineGroups = /[A-Za-z0-9]+(?:[-‐‑][A-Za-z0-9]+)+|\([^()\r\n]{1,40}\)|（[^（）\r\n]{1,40}）/g;
+  return html.replace(/<[^>]*>|[^<]+/g, (fragment) => {
+    if (fragment === "<p>") return '<p class="whitespace-pre-wrap">';
+    if (fragment.startsWith("<")) return fragment;
+    return fragment
+      .replace(/&nbsp;|&#0*160;|&#x0*a0;|\u00a0/gi, " ")
+      .replace(inlineGroups, (text) => `<span class="inline-block max-w-full break-words whitespace-normal">${text}</span>`);
+  });
+}
+
 export default async function EnglishPastExamAnswerPage({ params }: { params: Promise<{ paperId: string }> }) {
   const [user, { paperId }] = await Promise.all([requireUser(), params]);
   const paper = await getHenanEnglishPastExam(user.id, paperId);
@@ -27,7 +38,7 @@ export default async function EnglishPastExamAnswerPage({ params }: { params: Pr
         type: englishImportSections[group.section].type,
         section: group.section,
         number: row.number,
-        material: index === 0 ? row.contextHtml : undefined,
+        material: index === 0 ? formatEnglishPassage(row.contextHtml) : undefined,
         stem: row.prompt === String(row.number) || row.prompt === `第 ${row.number} 空` ? "" :
           group.section === "writing" ? row.promptHtml.replace(/^<p>Part\s+(?:VI|6)\s+Writing\s*\(\s*\d+\s+points?\s*\)<\/p>(?=<p>)/i, "") : row.promptHtml,
         options: (sharesWordBank ? wordBankOptions : Object.entries(row.options)).map(([key, text]) => ({

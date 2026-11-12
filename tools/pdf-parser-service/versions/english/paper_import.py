@@ -36,7 +36,7 @@ def make_question(section, kind, score, number, stem, item, analysis="", context
     answer = item.get("answer")
     return {
         "number": number, "type": kind, "englishSection": section, "score": score,
-        "stem": heading + paragraphs(context) + paragraphs(stem),
+        "stem": heading + paragraphs(context) + paragraphs(stem) if context.strip() or stem.strip() else "",
         "options": [{"key": key, "text": escape(text)} for key, text in item.get("options", {}).items()],
         "answer": [paragraphs(answer) if kind in {"short_answer", "question_answer", "writing"} else answer] if answer else [],
         "analysis": paragraphs(analysis),
@@ -60,17 +60,16 @@ def import_questions(reading, cloze, judgment, translations, corrections, writin
 
     for group, section, kind in zip(translations, ("translation_choice", "word_selection", "translation"),
                                     ("single_choice", "single_choice", "short_answer")):
+        warnings.extend(group.get("warnings", []))
         stems = translation_stems(group) if section != "word_selection" else {}
         for item in group["questions"]:
             number = item["number"]
-            stem = f"第 {number} 空" if section == "word_selection" else stems[number]
             context = group["stem"] if section == "word_selection" else ""
+            stem = (f"第 {number} 空" if context.strip() else "") if section == "word_selection" else stems.get(number, "")
             questions.append(make_question(section, kind, 2 if section == "translation_choice" else 3, number, stem, item, context=context))
 
     for group in corrections:
         number = group["number"]
-        if not group["stem"].strip():
-            raise ValueError(f"第 {number} 题未识别到短文改错题干。")
         item = group["questions"][0] if group["questions"] else {}
         if group["stemIssue"] or item.get("answerIssue"):
             warnings.append(f"第 {number} 题请对照原卷或答案 PDF 核对改错标记和参考答案。")

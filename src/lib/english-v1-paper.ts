@@ -11,6 +11,7 @@ export const englishPaperInclude = {
 
 type Paper = Prisma.ExamPaperGetPayload<{ include: typeof englishPaperInclude }>;
 const labels = new Map<string, EnglishImportSection>(Object.entries(englishImportSections).map(([key, value]) => [value.label, key as EnglishImportSection]));
+const sectionMarker = /^<p><strong>([^<]+)<\/strong><\/p>/;
 const groupKeys = ["passages", "clozePassages", "judgmentPassages", "translationSections", "correctionPassages", "writingPassages"] as const;
 const sectionKeys = {
   reading: "passages", cloze: "clozePassages", judgment: "judgmentPassages",
@@ -49,7 +50,25 @@ function escapeHtml(value: string) {
 }
 
 function paragraphs(value: string) {
-  return value.split(/\r?\n/).map((line) => "<p>" + (line ? escapeHtml(line).replace(/ /g, "&nbsp;") : "<br>") + "</p>").join("");
+  return value.split(/\r?\n/).map((line) => {
+    const content = escapeHtml(line).replace(/ /g, "&nbsp;").replace(/\uE000/g, "<u>").replace(/\uE001/g, "</u>");
+    return "<p>" + (content || "<br>") + "</p>";
+  }).join("");
+}
+
+export function englishImportStemBody(stem: string) {
+  const text = stem.trim();
+  const marker = text.match(sectionMarker);
+  return marker && labels.has(marker[1]) ? text.slice(marker[0].length).trim() : text;
+}
+
+export function encodeEnglishImportStem(section: EnglishImportSection, stem: string) {
+  const body = englishImportStemBody(stem);
+  const parts = body.match(/<p>[\s\S]*?<\/p>/gi);
+  const content = parts?.join("") === body ? body : paragraphs(richTextToPlainText(
+    body.replace(/<u\s*>/gi, "\uE000").replace(/<\/u\s*>/gi, "\uE001")
+  ));
+  return `<p><strong>${englishImportSections[section].label}</strong></p>${content}`;
 }
 
 function readParagraphs(html: string) {
@@ -58,14 +77,14 @@ function readParagraphs(html: string) {
     if (/^\s*(?:<br\s*\/?\s*>)?\s*$/i.test(match[1])) return "";
     let marker = "VIBE_WHITESPACE_MARKER";
     while (match[1].includes(marker)) marker += "_";
-    const protectedText = match[1].replace(/ |&nbsp;|&#160;|&#x0*a0;/gi, marker);
+    const protectedText = match[1].replace(/<u\s*>/gi, "\uE000").replace(/<\/u\s*>/gi, "\uE001").replace(/ |&nbsp;|&#160;|&#x0*a0;/gi, marker);
     return richTextToPlainText("x" + protectedText + "x").slice(1, -1).replaceAll(marker, " ");
   }).join("\n");
 }
 
 function decodeQuestion(entry: Paper["questions"][number]) {
   const { question, sortOrder: number } = entry;
-  const marker = question.stem.match(/^<p><strong>([^<]+)<\/strong><\/p>/);
+  const marker = question.stem.match(sectionMarker);
   const section = marker && labels.get(marker[1]);
   if (!marker || !section || question.type !== englishImportSections[section].type) {
     throw new EnglishPaperError("第 " + number + " 题缺少可识别的英语题型标记。");
@@ -195,6 +214,21 @@ export function planEnglishPaperEdit(paper: Paper, edit: z.infer<typeof englishP
     ? splitTranslationStems(change.stem, group.rows) : null;
   if (change.kind === "stem" && (!change.stem.trim() || stems?.some((stem) => !stem.trim()))) {
     throw new EnglishPaperError("题干不能为空。");
+  }
+  if (change.kind === "stem") {
+    for (const line of change.stem.split(/\r?\n/)) {
+      let underlined = false;
+      for (const char of line) {
+        if (char === "\uE000") {
+          if (underlined) throw new EnglishPaperError("下划线格式无效，请重新选择文字。");
+          underlined = true;
+        } else if (char === "\uE001") {
+          if (!underlined) throw new EnglishPaperError("下划线格式无效，请重新选择文字。");
+          underlined = false;
+        }
+      }
+      if (underlined) throw new EnglishPaperError("下划线格式无效，请重新选择文字。");
+    }
   }
   if (change.kind === "stem" && contextual.has(group.section)) {
     const position = groups.indexOf(group);

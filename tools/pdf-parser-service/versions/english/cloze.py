@@ -108,6 +108,9 @@ def parse_cloze(rows, fallback_rows):
                     passage[index] = candidate[0]
         position = blank_position(passage, token)
         if position is None:
+            # A printed option group can exist without a numbered blank in the passage.
+            if not any(token.search(row) for row in passage):
+                continue
             raise ValueError(f"无法确认第 {number} 空在完形填空原文中的位置。")
         index, match = position
         row = passage[index]

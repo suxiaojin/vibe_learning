@@ -355,7 +355,7 @@ def extract_judgment(pdf_path, cursor=None):
     return parse_judgment(rows)
 
 
-def extract_translation(pdf_path, cursor=None):
+def extract_translation(pdf_path, cursor=None, first_number=None):
     import cv2
     import fitz
     from rapidocr_onnxruntime import RapidOCR
@@ -377,7 +377,7 @@ def extract_translation(pdf_path, cursor=None):
                 rows.extend(page_rows)
                 if any(TRANSLATION_END.match(clean(row)) for row in page_rows):
                     break
-    return parse_translation(rows)
+    return parse_translation(rows, first_number)
 
 
 def fill_translation_answers(sections, answer_pdf):
@@ -443,14 +443,14 @@ def last_translation_question(data):
     return max(numbers)
 
 
-def extract_answer_key(pdf):
+def extract_answer_key(pdf, mode="ink"):
     import cv2
     import fitz
     import numpy as np
     from rapidocr_onnxruntime import RapidOCR
 
     cv2.setNumThreads(1)
-    recognize = None
+    ocr = None
     rows = []
     with fitz.open(pdf) as document:
         for page in document:
@@ -458,12 +458,16 @@ def extract_answer_key(pdf):
             if len(re.findall(r"[A-Za-z\u4e00-\u9fff]", text)) >= 160:
                 rows.extend(text.splitlines())
                 continue
-            if recognize is None:
-                recognize = RapidOCR(intra_op_num_threads=2, inter_op_num_threads=1).text_rec
+            if ocr is None:
+                ocr = RapidOCR(intra_op_num_threads=2, inter_op_num_threads=1)
+            if mode == "layout":
+                rows.extend(ocr_page_rows(page, ocr))
+                continue
             pixmap = page.get_pixmap(matrix=fitz.Matrix(2, 2), colorspace=fitz.csRGB, alpha=False)
             pixels = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(pixmap.height, pixmap.width, 3)
             image = cv2.cvtColor(pixels, cv2.COLOR_RGB2BGR)
-            rows.extend(text for _, text in ink_rows(image, recognize, margins=(.045, .025, .975, .982)))
+            right = .32 if mode == "labels" else .975
+            rows.extend(text for _, text in ink_rows(image, ocr.text_rec, margins=(.045, .025, right, .982)))
     return AnswerKey(rows)
 
 
@@ -476,26 +480,39 @@ def parse_import_paper(pdf, answer_pdf, meta, report):
     report("judgment", 40, "识别 Part III 阅读理解（判断）")
     judgment = extract_judgment(pdf, cursor)
     report("translation", 54, "识别 Part IV 翻译")
-    translations = extract_translation(pdf, cursor)
+    translations = extract_translation(pdf, cursor, first_number=judgment['questions'][-1]['number'] + 1)
     report("correction", 70, "识别 Part V 短文改错")
     corrections = extract_correction(pdf, last_translation_question({"translationSections": translations}), first_page=cursor.page_index + 1)
     unmatched = []
     writing_answer = ""
     if answer_pdf:
         report("answers", 88, "按原题号匹配答案解析")
-        answer_key = extract_answer_key(answer_pdf)
-        for group in [*reading, cloze, judgment, *translations]:
-            for item in group["questions"]:
-                number = item["number"]
-                item["answer"] = answer_key.choice(number, item["options"]) if item["options"] else answer_key.translation(number)
-                if not item["answer"]:
-                    unmatched.append(number)
+        items = [item for group in [*reading, cloze, judgment, *translations] for item in group["questions"]]
+        keys = [extract_answer_key(answer_pdf)]
+        writing_answer = extract_writing_answer(answer_pdf) or keys[0].essay()
+
+        def missing_choices():
+            return any(item["options"] and not any(key.choice(item["number"], item["options"]) for key in keys) for item in items)
+
+        if missing_choices() or not writing_answer:
+            layout = extract_answer_key(answer_pdf, mode="layout")
+            keys.append(layout)
+            writing_answer = writing_answer or layout.essay()
+        if missing_choices():
+            keys.append(extract_answer_key(answer_pdf, mode="labels"))
+
+        for item in items:
+            number = item["number"]
+            answers = (key.choice(number, item["options"]) if item["options"] else key.translation(number) for key in keys)
+            item["answer"] = next((answer for answer in answers if answer), None)
+            if not item["answer"]:
+                unmatched.append(number)
         for entry in corrections:
             number = entry["number"]
-            letter, replacement, explanation = answer_key.correction(number)
+            answers = [key.correction(number) for key in keys]
+            letter, replacement, explanation = next((answer for answer in answers if answer[0] and answer[1]), answers[0])
             entry["questions"] = [{"number": number, "answer": letter, "correction": replacement, "explanation": explanation,
                                    "answerIssue": not (letter and replacement)}]
-        writing_answer = extract_writing_answer(answer_pdf) or answer_key.essay()
     report("writing", 96, "识别 Part VI 写作")
     writing_page = max((entry["sourcePage"] for entry in corrections if entry.get("sourcePage")), default=1)
     writing_stem = extract_writing(pdf, first_page=writing_page, reference_title=writing_answer.partition("\n\n")[0])

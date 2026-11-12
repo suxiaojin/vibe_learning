@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import type { QuestionBankOwnerType } from "./question-bank-catalog";
 import { hasMeaningfulRichText } from "./rich-text-plain";
+import { encodeEnglishImportStem, englishImportStemBody } from "./english-v1-paper";
 
 import {
   englishImportSections, englishQuestionBankQuestionTypes, type EnglishImportSection,
@@ -67,7 +68,7 @@ type ImportOwner = {
   courseType: QuestionBankOwnerType;
 };
 
-export function assertImportQuestionPaperPayload(value: unknown): asserts value is ImportQuestionPaperPayload {
+export function assertImportQuestionPaperPayload(value: unknown, { allowIncompleteEnglish = false } = {}): asserts value is ImportQuestionPaperPayload {
   if (!value || typeof value !== "object") {
     throw new Error("导入数据格式不正确。");
   }
@@ -84,13 +85,17 @@ export function assertImportQuestionPaperPayload(value: unknown): asserts value 
   if (payload.questionBankStructure && payload.questionBankStructure !== "general_v1" && payload.questionBankStructure !== "english_v1") {
     throw new Error("导入数据的题库结构无效。");
   }
+  const editablePreview = allowIncompleteEnglish && payload.questionBankStructure === "english_v1";
 
   payload.questions.forEach((question, index) => {
     if (!question || typeof question !== "object") {
       throw new Error(`第 ${index + 1} 道题格式不正确。`);
     }
-    if (!Number.isFinite(question.number) || !question.type || !question.stem || !Array.isArray(question.answer)) {
+    if (!Number.isFinite(question.number) || !question.type || typeof question.stem !== "string" || !Array.isArray(question.answer)) {
       throw new Error(`第 ${index + 1} 道题缺少题号、题型、题干或答案。`);
+    }
+    if (!editablePreview && !question.stem.trim()) {
+      throw new Error(`请补录第 ${question.number} 题题干后再导入。`);
     }
     if (!Array.isArray(question.options)) {
       throw new Error(`第 ${index + 1} 道题选项格式不正确。`);
@@ -102,7 +107,7 @@ export function assertImportQuestionPaperPayload(value: unknown): asserts value 
       const source = option as unknown as Record<string, unknown>;
       const key = String(source.key || "").trim().toUpperCase();
       const text = String(source.text || source.content || "").trim();
-      if (!key || !text) {
+      if (!key || (!editablePreview && !text)) {
         throw new Error(`第 ${index + 1} 道题第 ${optionIndex + 1} 个选项缺少字母或内容。`);
       }
       return { key, text };
@@ -125,8 +130,12 @@ export function assertQuestionPaperCommit(payload: ImportQuestionPaperPayload, s
   }
   if (structure === "english_v1") {
     for (const question of payload.questions) {
-      if (!hasMeaningfulRichText(question.stem)) {
+      if (!hasMeaningfulRichText(englishImportStemBody(question.stem))) {
         throw new Error(`请填写第 ${question.number} 题题干。`);
+      }
+      const missingOptions = question.options.filter((option) => !hasMeaningfulRichText(option.text));
+      if (missingOptions.length) {
+        throw new Error(`请补录第 ${question.number} 题选项 ${missingOptions.map((option) => option.key).join("、")} 后再导入。`);
       }
       if (question.options.length > 0 && (question.answer.length !== 1 || !question.options.some((option) => option.key === question.answer[0]))) {
         throw new Error(`请核对第 ${question.number} 题的答案字母后再导入。`);
@@ -432,7 +441,8 @@ export async function importQuestionPaperPayload(
           knowledgePointId: knowledgePoint.id,
           syllabusItemId: tagSyllabusItemIds[0] || knowledgePoint.syllabusItemId,
           type: question.type,
-          stem: question.stem,
+          stem: structure === "english_v1" && question.englishSection
+            ? encodeEnglishImportStem(question.englishSection, question.stem) : question.stem,
           options: question.options,
           answer: question.answer,
           analysis: question.analysis,

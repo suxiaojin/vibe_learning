@@ -54,7 +54,7 @@ export async function GET(
 
   const task = (await response.json()) as { status?: string; payload?: unknown; stats?: Record<string, number> };
   if (task.status === "succeeded" && task.payload) {
-    assertImportQuestionPaperPayload(task.payload);
+    assertImportQuestionPaperPayload(task.payload, { allowIncompleteEnglish: version === "english" });
     return NextResponse.json({
       ...task,
       taskId,
