@@ -87,6 +87,14 @@ export function AdminAiModuleServerSelector({
           <p className="mt-2 font-semibold text-slate-400">{perQuestion ? "每道推荐问题依次分配一台模型；取消后重选会移到最后。" : "按勾选顺序轮询；取消后重选会移到最后。"}</p>
         </div>
       ) : null}
+      {moduleKey === "ai_study_generation" ? (
+        <div className="mt-3 space-y-1 border-t border-slate-200 pt-3">
+          <p className="text-sm font-bold text-ink">
+            保存后并发任务数 <output className="ml-1 tabular-nums text-teal">{orderedServers.length}</output>
+          </p>
+          <p className="text-xs text-slate-600">每台勾选的服务器同时处理 1 个提取知识点任务。</p>
+        </div>
+      ) : null}
     </div>
   );
 }

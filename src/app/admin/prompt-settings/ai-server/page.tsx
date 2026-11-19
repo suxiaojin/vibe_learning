@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { AdminAiServerSettingsPanel } from "@/components/admin-ai-server-settings";
 import { getAdminAiServerSettings } from "@/lib/ai-server-settings";
 import { requireAdmin } from "@/lib/auth";
+import { AiSettingsTabs } from "../ai-settings-tabs";
 
 const noticeText: Record<string, string> = {
   "ai-server-profile-saved": "AI 服务器配置已保存。",
@@ -35,18 +35,7 @@ export default async function AdminAiServerSettingsPage({
         <h1 className="text-xl font-black text-ink">AI配置</h1>
         <p className="mt-1 text-sm font-semibold text-slate-500">管理闯关页、学习搭子 Prompt、AI 服务器与模块分流。</p>
       </header>
-
-      <nav className="flex gap-8 overflow-x-auto whitespace-nowrap border-b border-slate-200 text-sm font-bold text-slate-600" aria-label="AI配置导航">
-        <Link className="border-b-2 border-transparent px-0 py-3 transition hover:border-teal hover:text-teal" href="/admin/prompt-settings">
-          闯关页prompt
-        </Link>
-        <Link className="border-b-2 border-transparent px-0 py-3 transition hover:border-teal hover:text-teal" href="/admin/prompt-settings/study-buddy">
-          学习搭子prompt
-        </Link>
-        <Link className="border-b-2 border-teal px-0 py-3 text-ink" href="/admin/prompt-settings/ai-server">
-          AI服务器配置
-        </Link>
-      </nav>
+      <AiSettingsTabs active="ai-server" />
 
       {notice ? <div className="rounded border border-teal/20 bg-teal/10 p-3 text-sm font-semibold text-teal">{notice}</div> : null}
       {error ? <div className="rounded border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</div> : null}

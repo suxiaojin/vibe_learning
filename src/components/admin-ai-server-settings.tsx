@@ -28,7 +28,7 @@ export function AdminAiServerSettingsPanel({ settings }: { settings: AdminAiServ
           {groups.map((group, index) => {
             const routes = settings.moduleRoutes.filter((route) => route.group === group);
             return (
-              <details className="border border-slate-200 bg-white" key={group} open={index === 0}>
+              <details className="border border-slate-200 bg-white" key={group} open={index === 0 || group === "学习搭子"}>
                 <summary className="flex cursor-pointer items-center justify-between gap-3 bg-slate-50 px-4 py-3 text-sm font-black text-ink">
                   <span>{group}</span>
                   <span className="bg-white px-2 py-1 text-xs font-bold text-slate-500">{routes.length} 个模块</span>
@@ -41,7 +41,9 @@ export function AdminAiServerSettingsPanel({ settings }: { settings: AdminAiServ
                         initialServerIds={route.serverIds}
                         moduleKey={route.key}
                         perQuestion={route.key === "ai_study_chat_suggestions"}
-                        servers={routeServerOptions}
+                        servers={route.key === "ai_study_generation" && !settings.builtIn.baseUrl
+                          ? routeServerOptions.filter(({ id }) => id !== settings.builtIn.id)
+                          : routeServerOptions}
                       />
                     </fieldset>
                   ))}

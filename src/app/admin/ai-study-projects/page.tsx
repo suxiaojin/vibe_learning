@@ -155,7 +155,7 @@ export default async function AdminAiStudyProjectsPage({
       </form>
 
       <div className="mt-5 overflow-x-auto">
-        <table className="w-full min-w-[1040px] border-separate border-spacing-0 text-left text-sm">
+        <table className="w-full min-w-[1120px] border-separate border-spacing-0 text-left text-sm">
           <thead>
             <tr className="text-slate-500">
               <th className="border-b border-slate-200 py-3 pr-4 font-semibold">项目</th>
@@ -164,13 +164,14 @@ export default async function AdminAiStudyProjectsPage({
               <th className="border-b border-slate-200 py-3 pr-4 font-semibold">公开状态</th>
               <th className="border-b border-slate-200 py-3 pr-4 font-semibold">购买用户</th>
               <th className="border-b border-slate-200 py-3 pr-4 font-semibold">创建时间</th>
+              <th className="whitespace-nowrap border-b border-slate-200 py-3 pr-4 font-semibold">项目完成耗时</th>
               <th className="border-b border-slate-200 py-3 font-semibold">操作</th>
             </tr>
           </thead>
           <tbody>
             {groups.length === 0 ? (
               <tr>
-                <td className="py-8 text-center text-slate-500" colSpan={7}>没有找到符合条件的学习搭子项目。</td>
+                  <td className="py-8 text-center text-slate-500" colSpan={8}>没有找到符合条件的学习搭子项目。</td>
               </tr>
             ) : groups.map((group) => {
               if (group.isPartGroup) {
@@ -192,6 +193,7 @@ export default async function AdminAiStudyProjectsPage({
                   visibility={visibility}
                   purchaseCount={group.parts.reduce((total, part) => total + part._count.purchases, 0)}
                   createdAt={formatDate(group.createdAt)}
+                    completionDuration={formatCompletionDuration(group.parts.map((part) => part.completionTime), group.expectedPartCount)}
                   actions={renderGroupActions(group, currentPath)}
                 >
                   {group.parts.map((part) => renderProjectRow(part, currentPath, true))}
@@ -243,6 +245,9 @@ function renderProjectRow(project: Awaited<ReturnType<typeof listAdminAiStudyPro
                   <td className="border-b border-slate-100 py-4 pr-4">
                     {formatDate(project.createdAt)}
                   </td>
+                    <td className="whitespace-nowrap border-b border-slate-100 py-4 pr-4 tabular-nums">
+                      {formatCompletionDuration([project.completionTime], 1)}
+                    </td>
                   <td className="border-b border-slate-100 py-4">
                     {nested ? <Link className="text-sm font-semibold text-teal hover:underline" href={`/admin/ai-study-projects/${project.id}`}>查看部分详情</Link> :
                     <div className="flex min-w-[250px] flex-wrap gap-2">
@@ -353,6 +358,19 @@ function VisibilityBadge({ visibility }: { visibility: string }) {
         ? "bg-slate-100 text-slate-500"
         : "bg-slate-50 text-slate-600";
   return <span className={`badge ${className}`}>{visibilityLabels[visibility] || visibility}</span>;
+}
+
+function formatCompletionDuration(parts: Array<{ startedAt: number; finishedAt: number } | null>, expectedPartCount: number) {
+  const completed = parts.filter((part) => part !== null);
+  if (completed.length === 0 || completed.length !== parts.length || completed.length !== expectedPartCount) return "—";
+  const firstStart = Math.min(...completed.map((part) => part.startedAt));
+  const lastFinish = Math.max(...completed.map((part) => part.finishedAt));
+  const seconds = Math.round((lastFinish - firstStart) / 1000);
+  if (seconds === 0) return "不足 1 秒";
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  return [hours ? `${hours} 小时` : "", minutes ? `${minutes} 分` : "", remainder ? `${remainder} 秒` : ""].filter(Boolean).join(" ");
 }
 
 function formatDate(value: Date | string | null) {

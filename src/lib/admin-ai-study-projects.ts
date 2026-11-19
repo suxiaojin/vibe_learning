@@ -88,10 +88,37 @@ export async function listAdminAiStudyProjects(input: AdminAiStudyProjectFilters
     })
     : [];
   const allVisibleProjects = new Map([...projects, ...siblings].map((project) => [project.id, project]));
+  const latestGenerationTasks = allVisibleProjects.size
+    ? await prisma.aiStudyGenerationTask.findMany({
+      where: {
+        projectId: { in: [...allVisibleProjects.keys()] },
+        type: { in: ["parse_source", "generate_outline", "generate_cards"] }
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      distinct: ["projectId", "type"],
+      select: { projectId: true, type: true, status: true, startedAt: true, finishedAt: true }
+    })
+    : [];
+  const tasksByProjectAndType = new Map(latestGenerationTasks.map((task) => [`${task.projectId}:${task.type}`, task]));
+  const projectsWithCompletionTime = [...allVisibleProjects.values()].map((project) => {
+    const parse = tasksByProjectAndType.get(`${project.id}:parse_source`);
+    const outline = tasksByProjectAndType.get(`${project.id}:generate_outline`);
+    const cards = tasksByProjectAndType.get(`${project.id}:generate_cards`);
+    const startedAt = parse?.startedAt?.getTime();
+    const parsedAt = parse?.finishedAt?.getTime();
+    const outlinedAt = outline?.finishedAt?.getTime();
+    const finishedAt = cards?.finishedAt?.getTime();
+    const completionTime = parse?.status === "succeeded" && outline?.status === "succeeded" && cards?.status === "succeeded"
+      && startedAt !== undefined && parsedAt !== undefined && outlinedAt !== undefined && finishedAt !== undefined
+      && startedAt <= parsedAt && parsedAt <= outlinedAt && outlinedAt <= finishedAt
+      ? { startedAt, finishedAt }
+      : null;
+    return { ...project, completionTime };
+  });
 
   return {
     filters,
-    groups: groupAdminAiStudyProjects(Array.from(allVisibleProjects.values())),
+    groups: groupAdminAiStudyProjects(projectsWithCompletionTime),
     stats: {
       filteredCount,
       activeCount,
@@ -219,6 +246,8 @@ export async function getAdminAiStudyProject(projectId: string) {
           stage: true,
           errorMessage: true,
           retryCount: true,
+          inputSummary: true,
+          outputSummary: true,
           startedAt: true,
           finishedAt: true,
           createdAt: true,

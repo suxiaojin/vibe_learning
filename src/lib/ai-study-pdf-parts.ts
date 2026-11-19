@@ -39,6 +39,10 @@ export async function inspectAndSplitPdf(body: Buffer): Promise<{ ranges: PdfPar
   const threshold = Math.max(target + 1, readPositiveInt(process.env.AI_STUDY_PDF_SPLIT_THRESHOLD_PAGES, defaultSplitThreshold));
   if (pageCount < threshold) return { ranges: planPdfParts(pageCount, [], target, threshold), parts: [body] };
   const ranges = planPdfParts(pageCount, outlinePages, target, threshold);
+  return { ranges, parts: await splitPdfByRanges(body, ranges) };
+}
+
+export async function splitPdfByRanges(body: Buffer, ranges: PdfPartRange[]): Promise<Buffer[]> {
   const directory = await mkdtemp(join(tmpdir(), "ai-study-pdf-parts-"));
   const inputPath = join(directory, "source.pdf");
   const parts: Buffer[] = [];
@@ -62,15 +66,16 @@ export async function inspectAndSplitPdf(body: Buffer): Promise<{ ranges: PdfPar
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
-  return { ranges, parts };
+  return parts;
 }
 
-async function inspectPdf(body: Buffer): Promise<{ pageCount: number; outlinePages: number[] }> {
+export async function inspectPdf(body: Buffer, includeOutline = true): Promise<{ pageCount: number; outlinePages: number[] }> {
   const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const loading = getDocument({ data: new Uint8Array(body), useSystemFonts: false, disableFontFace: true });
   const document = await loading.promise;
   try {
     const outlinePages: number[] = [];
+    if (!includeOutline) return { pageCount: document.numPages, outlinePages };
     try {
       const outline = await document.getOutline();
       for (const item of outline ?? []) {

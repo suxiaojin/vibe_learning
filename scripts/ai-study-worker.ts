@@ -1,6 +1,11 @@
 import { runCardJobCycle } from "../src/lib/ai-study-card-jobs";
 import { runAiStudyOverviewJobCycle } from "../src/lib/ai-study-overview-jobs";
-import { runAiStudyWorkerPoolCycle, type AiStudyWorkerPool } from "../src/lib/ai-study-worker-pools";
+import {
+  runAiStudyWorkerPoolCycle,
+  startAiStudyWorkerPoolTask,
+  type AiStudyWorkerPool
+} from "../src/lib/ai-study-worker-pools";
+import { maxStudyMineruConcurrency } from "../src/lib/ai-study-mineru-settings";
 import {
   ackAiStudyQueuedTask,
   claimStaleAiStudyQueuedTaskEntries,
@@ -12,6 +17,28 @@ import { disconnectRedis } from "../src/lib/redis";
 
 const pollIntervalMs = Math.max(250, Number(process.env.AI_STUDY_WORKER_INTERVAL_MS || 1000));
 let stopping = false;
+
+async function concurrentPoolLoop(pool: "parse_source" | "generate_outline", maxActive = Infinity) {
+  const active = new Set<Promise<unknown>>();
+  while (!stopping) {
+    try {
+      const task = active.size < maxActive
+        ? await startAiStudyWorkerPoolTask(pool)
+        : null;
+      if (task) {
+        const completion = task.completion
+          .catch((error) => console.error(`AI study ${pool} task failed`, error))
+          .finally(() => active.delete(completion));
+        active.add(completion);
+        continue;
+      }
+    } catch (error) {
+      console.error(`AI study ${pool} scheduling failed`, error);
+    }
+    await sleep(pollIntervalMs);
+  }
+  await Promise.all(active);
+}
 
 async function poolLoop(pool: AiStudyWorkerPool, lane: number) {
   while (!stopping) {
@@ -59,10 +86,11 @@ async function queueNotificationDrain() {
 }
 
 async function main() {
-  console.log("AI study worker started: MinerU parse=3, outline=3 (one per configured AI server), cards=on demand, level 2 and 3 overviews=3 lanes each with shared server occupancy");
+  console.log("AI study worker started: MinerU and outline concurrency from admin settings, cards=on demand, level 2 and 3 overviews=3 lanes each with shared server occupancy");
   await Promise.all([
-    ...Array.from({ length: 3 }, (_, index) => poolLoop("parse_source", index + 1)),
-    ...Array.from({ length: 3 }, (_, index) => poolLoop("generate_outline", index + 1)),
+    // Both MinerU services can have in-flight tasks after a provider switch.
+    concurrentPoolLoop("parse_source", 2 * maxStudyMineruConcurrency),
+    concurrentPoolLoop("generate_outline"),
     poolLoop("generate_cards", 1),
     cardLoop(),
     ...Array.from({ length: 3 }, (_, index) => overviewLoop(1, index + 1)),

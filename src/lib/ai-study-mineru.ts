@@ -1,9 +1,11 @@
 import crypto from "crypto";
+import type { ReportOnlineMineruStage } from "./ai-study-mineru-stages";
+import { parseOnlineMineruImages, parseOnlineMineruPdf } from "./ai-study-mineru-online";
+import { getStudyMineruToken, type StudyMineruSelection } from "./ai-study-mineru-settings";
 
 const mineruApiUrl = (process.env.AI_STUDY_MINERU_API_URL || "http://10.11.5.25:8000").replace(/\/+$/, "");
 const mineruBackend = process.env.AI_STUDY_MINERU_BACKEND || "hybrid-engine";
-const mineruPollIntervalMs = Number(process.env.AI_STUDY_MINERU_POLL_INTERVAL_MS || 3_000);
-const mineruTimeoutMs = Number(process.env.AI_STUDY_MINERU_TIMEOUT_MS || 1_800_000);
+type MineruTiming = Pick<StudyMineruSelection, "pollIntervalMs" | "timeoutMs">;
 
 type MineruTaskState = {
   task_id?: string;
@@ -62,7 +64,31 @@ export type MineruParseResult = {
   warnings: string[];
 };
 
-export async function parsePdfWithMineru(input: { body: Buffer; fileName: string }): Promise<MineruParseResult> {
+export async function parsePdfWithMineru(
+  input: { body: Buffer; fileName: string },
+  selection: StudyMineruSelection,
+  reportStage?: ReportOnlineMineruStage
+): Promise<MineruParseResult> {
+  if (selection.provider === "online") {
+    const options = { token: getStudyMineruToken(selection), pollIntervalMs: selection.pollIntervalMs, timeoutMs: selection.timeoutMs };
+    const parsed = await parseOnlineMineruPdf(input.body, options, reportStage);
+    const result: MineruParseResult = {
+      ...parsed,
+      backend: "mineru-online-vlm",
+      version: "unknown",
+      sourceSha256: crypto.createHash("sha256").update(input.body).digest("hex"),
+      imageFallbackAnalysisCount: 0,
+      warnings: []
+    };
+    if (selection.onlineImageSupplementEnabled) {
+      await enrichBlankImagesWithMineru(result, (files) =>
+        parseOnlineMineruImages(files, { ...options, timeoutMs: Math.min(180_000, options.timeoutMs) }),
+        () => reportStage?.("enriching_images")
+      );
+    }
+    return result;
+  }
+
   const form = new FormData();
   form.append("files", new Blob([toArrayBuffer(input.body)], { type: "application/pdf" }), input.fileName);
   form.append("backend", mineruBackend);
@@ -79,9 +105,9 @@ export async function parsePdfWithMineru(input: { body: Buffer; fileName: string
   form.append("return_images", "true");
   form.append("response_format_zip", "false");
 
-  const envelope = await submitAndWaitForMineru(form);
+  const envelope = await submitAndWaitForMineru(form, selection);
   const result = normalizeMineruResult(envelope, input.body);
-  await enrichBlankImagesWithMineru(result);
+  await enrichBlankImagesWithMineru(result, (files) => parsePrivateMineruImages(files, selection));
   return result;
 }
 
@@ -119,48 +145,86 @@ export function normalizeMineruResult(envelope: MineruResultEnvelope, body: Buff
   };
 }
 
-async function submitAndWaitForMineru(form: FormData) {
+async function submitAndWaitForMineru(form: FormData, timing: MineruTiming) {
+  const deadline = Date.now() + timing.timeoutMs;
+  const signal = AbortSignal.timeout(timing.timeoutMs);
+  try {
+    return await pollPrivateMineru(form, timing, deadline, signal);
+  } catch (error) {
+    if (signal.aborted) throw new Error(`MinerU 解析超时（${timing.timeoutMs / 1000} 秒）。`);
+    throw error;
+  }
+}
+
+async function pollPrivateMineru(form: FormData, timing: MineruTiming, deadline: number, signal: AbortSignal) {
   const submitted = await fetchJson<MineruTaskState>(`${mineruApiUrl}/tasks`, {
     method: "POST",
-    body: form
+    body: form,
+    signal
   });
   if (!submitted.task_id) {
     throw new Error(`MinerU 未返回任务 ID：${submitted.message || submitted.error || "未知错误"}`);
   }
 
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < mineruTimeoutMs) {
-    const state = await fetchJson<MineruTaskState>(`${mineruApiUrl}/tasks/${submitted.task_id}`);
+  while (Date.now() < deadline) {
+    const state = await fetchJson<MineruTaskState>(`${mineruApiUrl}/tasks/${submitted.task_id}`, { signal });
     if (state.status === "completed" || state.status === "success") {
-      return fetchJson<MineruResultEnvelope>(`${mineruApiUrl}/tasks/${submitted.task_id}/result`);
+      return fetchJson<MineruResultEnvelope>(`${mineruApiUrl}/tasks/${submitted.task_id}/result`, { signal });
     }
     if (state.status === "failed" || state.status === "error" || state.status === "cancelled") {
       throw new Error(`MinerU 解析失败：${state.message || state.error || state.status}`);
     }
-    await delay(mineruPollIntervalMs);
+    await delay(Math.min(timing.pollIntervalMs, Math.max(0, deadline - Date.now())));
   }
 
-  throw new Error(`MinerU 解析超时（${Math.round(mineruTimeoutMs / 60_000)} 分钟）。`);
+  throw new Error(`MinerU 解析超时（${timing.timeoutMs / 1000} 秒）。`);
 }
 
-async function enrichBlankImagesWithMineru(result: MineruParseResult) {
+async function enrichBlankImagesWithMineru(
+  result: MineruParseResult,
+  parseImages: (files: { name: string; body: Buffer }[]) => Promise<Map<string, MineruContentBlock[]>>,
+  onStart?: () => Promise<void> | undefined
+) {
   const candidates = result.contentList.flatMap((block, blockIndex) => {
     if (!isMeaningfulBlankVisual(block)) {
       return [];
     }
     const imagePath = readMineruImagePath(block);
     const body = findMineruImage(result.images, imagePath);
-    return body ? [{ block, blockIndex, body, imagePath }] : [];
+    if (!body) return [];
+    const extension = readImageExtension(imagePath);
+    return [{ block, body, name: `mineru-image-${blockIndex}.${extension}` }];
   });
   if (candidates.length === 0) {
     return;
   }
 
+  await onStart?.();
+  try {
+    const parsed = await parseImages(candidates);
+    for (const candidate of candidates) {
+      const contentList = parsed.get(candidate.name) ?? [];
+      const description = readMineruFallbackText(contentList);
+      if (description) {
+        candidate.block.content = description;
+        candidate.block.sub_type = candidate.block.sub_type || "mineru_image_fallback";
+        result.imageFallbackAnalysisCount += 1;
+      }
+    }
+    if (result.imageFallbackAnalysisCount < candidates.length) {
+      result.warnings.push(`MinerU 有 ${candidates.length - result.imageFallbackAnalysisCount} 张有效图片未生成语义文字。`);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "未知错误";
+    result.warnings.push(`MinerU 图片补充解析失败：${message}`);
+  }
+}
+
+async function parsePrivateMineruImages(files: { name: string; body: Buffer }[], timing: MineruTiming) {
   const form = new FormData();
-  for (const candidate of candidates) {
-    const extension = readImageExtension(candidate.imagePath);
-    const fileName = `mineru-image-${candidate.blockIndex}.${extension}`;
-    form.append("files", new Blob([toArrayBuffer(candidate.body)], { type: readImageContentType(extension) }), fileName);
+  for (const file of files) {
+    const extension = readImageExtension(file.name);
+    form.append("files", new Blob([toArrayBuffer(file.body)], { type: readImageContentType(extension) }), file.name);
   }
   form.append("backend", mineruBackend);
   form.append("lang_list", "ch");
@@ -176,29 +240,10 @@ async function enrichBlankImagesWithMineru(result: MineruParseResult) {
   form.append("return_images", "false");
   form.append("response_format_zip", "false");
 
-  try {
-    const envelope = await submitAndWaitForMineru(form);
-    for (const candidate of candidates) {
-      const resultKey = `mineru-image-${candidate.blockIndex}`;
-      const fileResult = envelope.results?.[resultKey];
-      if (!fileResult) {
-        continue;
-      }
-      const contentList = parseJsonValue<MineruContentBlock[]>(fileResult.content_list, []);
-      const description = readMineruFallbackText(contentList);
-      if (description) {
-        candidate.block.content = description;
-        candidate.block.sub_type = candidate.block.sub_type || "mineru_image_fallback";
-        result.imageFallbackAnalysisCount += 1;
-      }
-    }
-    if (result.imageFallbackAnalysisCount < candidates.length) {
-      result.warnings.push(`MinerU 有 ${candidates.length - result.imageFallbackAnalysisCount} 张有效图片未生成语义文字。`);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "未知错误";
-    result.warnings.push(`MinerU 图片补充解析失败：${message}`);
-  }
+  const envelope = await submitAndWaitForMineru(form, timing);
+  return new Map(files.map(({ name }) => [
+    name, parseJsonValue<MineruContentBlock[]>(envelope.results?.[name.slice(0, name.lastIndexOf("."))]?.content_list, [])
+  ]));
 }
 
 function isMeaningfulBlankVisual(block: MineruContentBlock) {

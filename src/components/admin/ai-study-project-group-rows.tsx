@@ -16,6 +16,7 @@ export function AiStudyProjectGroupRows({
   visibility,
   purchaseCount,
   createdAt,
+  completionDuration,
   actions,
   children
 }: {
@@ -30,6 +31,7 @@ export function AiStudyProjectGroupRows({
   visibility: string;
   purchaseCount: number;
   createdAt: string;
+  completionDuration: string;
   actions: ReactNode;
   children: ReactNode;
 }) {
@@ -61,6 +63,7 @@ export function AiStudyProjectGroupRows({
       </td>
       <td className="border-b border-slate-200 py-4 pr-4">{purchaseCount} 人次<span className="block text-xs text-slate-400">各部分合计</span></td>
       <td className="border-b border-slate-200 py-4 pr-4">{createdAt}</td>
+      <td className="whitespace-nowrap border-b border-slate-200 py-4 pr-4 tabular-nums">{completionDuration}</td>
       <td className="border-b border-slate-200 py-4">{actions}</td>
     </tr>
     {expanded ? children : null}

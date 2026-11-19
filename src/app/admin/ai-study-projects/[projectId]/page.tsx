@@ -8,6 +8,7 @@ import {
 } from "@/app/admin/ai-study-projects/actions";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { requireAdmin } from "@/lib/auth";
+import { onlineMineruStageLabels, readOnlineMineruTimeline } from "@/lib/ai-study-mineru-stages";
 import {
   getAdminAiStudyProject,
   getAiStudySourceDirectory
@@ -50,6 +51,21 @@ const taskStatusLabels: Record<string, string> = {
   canceled: "已取消"
 };
 
+type GenerationTask = NonNullable<Awaited<ReturnType<typeof getAdminAiStudyProject>>>["tasks"][number];
+
+function summaryRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function generationTaskGroup(task: GenerationTask) {
+  if (task.type !== "parse_source") return "generation";
+  const provider = summaryRecord(task.inputSummary).mineruProvider;
+  if (provider === "online" || provider === "private") return provider;
+  const backend = summaryRecord(task.outputSummary).parseBackend;
+  if (typeof backend === "string" && backend) return backend.startsWith("mineru-online") ? "online" : "private";
+  return "unassigned";
+}
+
 const noticeText: Record<string, string> = {
   published: "项目已转为公开。",
   privatized: "项目已转为私有。",
@@ -80,6 +96,12 @@ export default async function AdminAiStudyProjectDetailPage({ params, searchPara
   const deleteFormId = `delete-detail-${project.id}`;
   const notice = query?.notice ? noticeText[query.notice] : "";
   const error = query?.error ? errorText[query.error] : "";
+  const taskGroups = [
+    { id: "private", label: "内网 MinerU 解析" },
+    { id: "online", label: "MinerU 官方在线 API 解析" },
+    { id: "unassigned", label: "未分配服务或历史来源未记录" },
+    { id: "generation", label: "知识点与卡片生成" }
+  ].map((group) => ({ ...group, tasks: project.tasks.filter((task) => generationTaskGroup(task) === group.id) }));
 
   return (
     <main className="grid gap-6">
@@ -237,20 +259,28 @@ export default async function AdminAiStudyProjectDetailPage({ params, searchPara
                 <th className="border-b border-slate-200 py-3 font-semibold">错误</th>
               </tr>
             </thead>
-            <tbody>
-              {project.tasks.length === 0 ? (
+            {project.tasks.length === 0 ? (
+              <tbody>
                 <tr>
                   <td className="py-8 text-center text-slate-500" colSpan={6}>暂无生成任务。</td>
                 </tr>
-              ) : project.tasks.map((task) => (
+              </tbody>
+            ) : taskGroups.filter((group) => group.tasks.length > 0).map((group) => (
+              <tbody key={group.id}>
+                <tr>
+                  <th scope="rowgroup" colSpan={6} className="border-b border-slate-200 bg-slate-50 px-3 py-2 font-semibold text-ink">
+                    {group.label}
+                  </th>
+                </tr>
+                {group.tasks.map((task) => (
                 <tr key={task.id} className="align-top text-slate-700">
                   <td className="border-b border-slate-100 py-4 pr-4">
                     <div className="font-semibold text-ink">{task.type}</div>
                     <div className="mt-1 text-xs text-slate-400">{task.id}</div>
                   </td>
                   <td className="border-b border-slate-100 py-4 pr-4">{taskStatusLabels[task.status] || task.status}</td>
-                  <td className="max-w-[220px] border-b border-slate-100 py-4 pr-4">
-                    <span className="break-all">{task.stage || "暂无"}</span>
+                  <td className="max-w-[360px] border-b border-slate-100 py-4 pr-4">
+                    {group.id === "online" ? <OnlineMineruTaskStages task={task} /> : <span className="break-all">{task.stage || "暂无"}</span>}
                   </td>
                   <td className="border-b border-slate-100 py-4 pr-4">{task.retryCount}</td>
                   <td className="border-b border-slate-100 py-4 pr-4 leading-6">
@@ -262,12 +292,45 @@ export default async function AdminAiStudyProjectDetailPage({ params, searchPara
                     {task.errorMessage ? <span className="break-all text-red-700">{task.errorMessage}</span> : <span className="text-slate-400">无</span>}
                   </td>
                 </tr>
-              ))}
-            </tbody>
+                ))}
+              </tbody>
+            ))}
           </table>
         </div>
       </section>
     </main>
+  );
+}
+
+function OnlineMineruTaskStages({ task }: { task: GenerationTask }) {
+  const steps = readOnlineMineruTimeline(task.outputSummary, task.startedAt);
+  const warnings = summaryRecord(task.outputSummary).parseWarnings;
+  const lastStep = steps.at(-1);
+  if (!lastStep) return <span className="break-all">{task.stage || "暂无"}</span>;
+  return (
+    <div className="space-y-2">
+      <span className="font-semibold text-ink">{task.status === "succeeded" ? "结果已保存" : onlineMineruStageLabels[lastStep.stage]}</span>
+      <details className="text-xs text-slate-600">
+        <summary className="cursor-pointer font-semibold">查看阶段耗时</summary>
+        <ol className="mt-2 space-y-1">
+          {steps.map((step, index) => {
+            const end = steps[index + 1]?.startedAt ?? task.finishedAt;
+            const seconds = Math.max(0, (new Date(end ?? Date.now()).getTime() - Date.parse(step.startedAt)) / 1000);
+            return (
+              <li key={index} className="flex flex-wrap justify-between gap-x-3">
+                <span>{onlineMineruStageLabels[step.stage]}</span>
+                <span className="tabular-nums">{seconds.toFixed(1)} 秒{end ? "" : " · 进行中"}</span>
+              </li>
+            );
+          })}
+        </ol>
+      </details>
+      {Array.isArray(warnings) && warnings.length > 0 ? (
+        <ul className="space-y-1 break-words text-xs text-amber-800">
+          {warnings.filter((warning): warning is string => typeof warning === "string").map((warning, index) => <li key={index}>{warning}</li>)}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 

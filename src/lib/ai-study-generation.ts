@@ -13,6 +13,8 @@ import { chapterProtocol as curriculumProtocol, generateChapterCurriculum, type 
 import { readCardManifest, refreshCardProject } from "@/lib/ai-study-card-jobs";
 import { buildDirectoryCard, AiStudyContentValidationError } from "@/lib/ai-study-grounded-card";
 import { parsePdfWithMineru, type MineruContentBlock, type MineruParseResult } from "@/lib/ai-study-mineru";
+import type { StudyMineruSelection } from "@/lib/ai-study-mineru-settings";
+import type { OnlineMineruTimeline, ReportOnlineMineruStage } from "@/lib/ai-study-mineru-stages";
 import { inspectAndSplitPdf } from "@/lib/ai-study-pdf-parts";
 import {
   formatAiStudySourceBlockContent,
@@ -55,13 +57,17 @@ type SemanticChunk = {
   contentHash: string;
 };
 
-export async function processClaimedAiStudyTask(taskId: string, serverConfig?: ActiveAiServerConfig) {
+export async function processClaimedAiStudyTask(
+  taskId: string,
+  serverConfig?: ActiveAiServerConfig,
+  mineruSelection?: StudyMineruSelection
+) {
   const task = await prisma.aiStudyGenerationTask.findUnique({ where: { id: taskId } });
   if (!task || task.status !== "running") return false;
 
   try {
     await writeAiStudyTaskProgressCache(task);
-    await processAiStudyTask(task.id, serverConfig);
+    await processAiStudyTask(task.id, serverConfig, mineruSelection);
   } catch (error) {
     const message = error instanceof Error ? error.message : "AI 学习搭子任务执行失败。";
     await markAiStudyTaskFailed(task.id, message, "failed");
@@ -81,7 +87,11 @@ export async function processClaimedAiStudyTask(taskId: string, serverConfig?: A
   return true;
 }
 
-async function processAiStudyTask(taskId: string, serverConfig?: ActiveAiServerConfig) {
+async function processAiStudyTask(
+  taskId: string,
+  serverConfig?: ActiveAiServerConfig,
+  mineruSelection?: StudyMineruSelection
+) {
   const task = await prisma.aiStudyGenerationTask.findUnique({
     where: { id: taskId }
   });
@@ -95,7 +105,8 @@ async function processAiStudyTask(taskId: string, serverConfig?: ActiveAiServerC
   }
 
   if (task.type === "parse_source") {
-    await parseSource(task);
+    if (!mineruSelection) throw new Error("PDF 解析任务缺少 MinerU 服务配置。");
+    await parseSource(task, mineruSelection);
     return;
   }
 
@@ -105,7 +116,7 @@ async function processAiStudyTask(taskId: string, serverConfig?: ActiveAiServerC
   }
 }
 
-async function parseSource(task: AiStudyGenerationTask) {
+async function parseSource(task: AiStudyGenerationTask, mineruSelection: StudyMineruSelection) {
   if (!task.sourceId) {
     throw new Error("解析任务缺少 sourceId。");
   }
@@ -136,12 +147,25 @@ async function parseSource(task: AiStudyGenerationTask) {
 
   await updateAiStudyTaskStage(task, "submitting_to_mineru");
 
+  const onlineMineruTimeline: OnlineMineruTimeline | undefined = mineruSelection.provider === "online"
+    ? { attemptStartedAt: task.startedAt?.toISOString() ?? null, steps: [] }
+    : undefined;
+  const reportStage: ReportOnlineMineruStage | undefined = onlineMineruTimeline ? async (stage) => {
+    onlineMineruTimeline.steps.push({ stage, startedAt: new Date().toISOString() });
+    // Keep the student-facing stage unchanged while persisting admin diagnostics.
+    const result = await prisma.aiStudyGenerationTask.updateMany({
+      where: { id: task.id, status: "running", startedAt: task.startedAt },
+      data: { outputSummary: { onlineMineruTimeline } }
+    });
+    if (!result.count) throw new Error("PDF 解析任务已结束。");
+  } : undefined;
+
   const parsed = await parseAndPersistMineruArtifacts({
     body,
     fileName: source.fileName || "learning-material.pdf",
     projectId: source.projectId,
     sourceId: source.id
-  });
+  }, mineruSelection, reportStage);
   const chunks = parsed.chunks;
 
   if (chunks.length === 0) {
@@ -196,7 +220,8 @@ async function parseSource(task: AiStudyGenerationTask) {
           parserVersion: parsed.parserVersion,
           parseBackend: parsed.parseBackend,
           imageFallbackAnalysisCount: parsed.imageFallbackAnalysisCount,
-          warningCount: parsed.warningCount
+          warningCount: parsed.warningCount,
+          ...(onlineMineruTimeline ? { onlineMineruTimeline, parseWarnings: parsed.parseWarnings } : {})
         },
         finishedAt: new Date(),
         errorMessage: null
@@ -334,8 +359,9 @@ async function parseAndPersistMineruArtifacts(input: {
   fileName: string;
   projectId: string;
   sourceId: string;
-}) {
-  const result = await parsePdfWithMineru({ body: input.body, fileName: input.fileName });
+}, mineruSelection: StudyMineruSelection, reportStage?: ReportOnlineMineruStage) {
+  const result = await parsePdfWithMineru({ body: input.body, fileName: input.fileName }, mineruSelection, reportStage);
+  await reportStage?.("saving");
   const artifactPrefix = `ai-study/${input.projectId}/${input.sourceId}/mineru`;
   const parseMarkdownKey = `${artifactPrefix}/document.md`;
   const parseContentListKey = `${artifactPrefix}/content-list.json`;

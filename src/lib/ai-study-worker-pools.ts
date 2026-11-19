@@ -1,7 +1,8 @@
 import { Prisma, type AiStudyGenerationTask } from "@prisma/client";
-import { getAiServerConfigsForModule, type ActiveAiServerConfig } from "@/lib/ai-server-settings";
+import { getStudyOutlineServerConfigs, type ActiveAiServerConfig } from "@/lib/ai-server-settings";
 import { processClaimedAiStudyTask } from "@/lib/ai-study-generation";
 import { chooseFairAiStudyTask } from "@/lib/ai-study-task-fairness";
+import { readStudyMineruSelection, type StudyMineruSelection } from "@/lib/ai-study-mineru-settings";
 import { prisma } from "@/lib/prisma";
 
 export type AiStudyWorkerPool = "parse_source" | "generate_outline" | "generate_cards";
@@ -9,12 +10,11 @@ export type AiStudyWorkerPool = "parse_source" | "generate_outline" | "generate_
 // The database lock makes these limits global across worker processes. Model
 // requests and MinerU parsing run after the transaction has released it.
 const poolLockId = 71883009;
-const parseCapacity = 3;
-const outlineCapacity = 3;
 
 type ClaimedTask = {
   taskId: string;
   serverConfig?: ActiveAiServerConfig;
+  mineruSelection?: StudyMineruSelection;
 };
 
 function jsonRecord(value: unknown): Record<string, unknown> {
@@ -23,24 +23,28 @@ function jsonRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-export async function runAiStudyWorkerPoolCycle(pool: AiStudyWorkerPool): Promise<boolean> {
-  // Avoid loading and decrypting server settings on idle outline polls.
-  if (pool === "generate_outline" && !(await prisma.aiStudyGenerationTask.count({
-    where: { type: pool, status: "pending" }
-  }))) return false;
+export async function startAiStudyWorkerPoolTask(pool: AiStudyWorkerPool): Promise<{ completion: Promise<boolean> } | null> {
+  // Idle lanes do not need the shared claim lock.
+  if (pool !== "generate_cards" && !(await prisma.aiStudyGenerationTask.findFirst({
+    where: { type: pool, status: "pending" },
+    select: { id: true }
+  }))) return null;
 
-  const configs = pool === "generate_outline"
-    ? await getAiServerConfigsForModule("ai_study_generation")
-    : [];
   const claimed = await prisma.$transaction(async (tx): Promise<ClaimedTask | null> => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(${poolLockId})`;
 
     if (pool === "parse_source") {
+      const mineruSelection = await readStudyMineruSelection(tx);
       const running = await tx.aiStudyGenerationTask.findMany({
         where: { type: pool, status: "running" },
-        select: { project: { select: { ownerId: true } } }
+        select: { inputSummary: true, project: { select: { ownerId: true } } }
       });
-      if (running.length >= parseCapacity) return null;
+      const activeForProvider = running.filter((item) => {
+        // Tasks claimed by older workers count toward the private capacity.
+        const provider = jsonRecord(item.inputSummary).mineruProvider === "online" ? "online" : "private";
+        return provider === mineruSelection.provider;
+      });
+      if (activeForProvider.length >= mineruSelection.capacity) return null;
       const pending = await tx.aiStudyGenerationTask.findMany({
         where: { type: pool, status: "pending" },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -48,7 +52,10 @@ export async function runAiStudyWorkerPoolCycle(pool: AiStudyWorkerPool): Promis
       });
       const lastClaims = await getLastClaimedAtByOwner(tx, pool, pending.map((item) => item.project.ownerId));
       const task = chooseFairAiStudyTask(pending, running.map((item) => item.project.ownerId), lastClaims);
-      return task ? claimTask(tx, task) : null;
+      return task ? claimTask(tx, task, {
+        mineruSelection,
+        inputSummary: { ...jsonRecord(task.inputSummary), mineruProvider: mineruSelection.provider }
+      }) : null;
     }
 
     if (pool === "generate_cards") {
@@ -65,11 +72,13 @@ export async function runAiStudyWorkerPoolCycle(pool: AiStudyWorkerPool): Promis
       return task ? claimTask(tx, task) : null;
     }
 
+    const configs = await getStudyOutlineServerConfigs(tx);
     const running = await tx.aiStudyGenerationTask.findMany({
       where: { type: pool, status: "running" },
       select: { inputSummary: true, project: { select: { ownerId: true } } }
     });
-    if (running.length >= Math.min(outlineCapacity, configs.length)) return null;
+    // A legacy running task without an assignment still occupies a slot.
+    if (running.length >= configs.length) return null;
     const occupied = new Set(running.map((task) => jsonRecord(task.inputSummary).assignedAiServerId)
       .filter((id): id is string => typeof id === "string"));
     const freeConfigs = configs.filter((config) => !occupied.has(config.id));
@@ -115,9 +124,15 @@ export async function runAiStudyWorkerPoolCycle(pool: AiStudyWorkerPool): Promis
     });
   });
 
-  if (!claimed) return false;
+  if (!claimed) return null;
   console.log(`AI study ${pool} task=${claimed.taskId}${claimed.serverConfig ? ` model=${claimed.serverConfig.model} server=${claimed.serverConfig.id}` : ""}`);
-  await processClaimedAiStudyTask(claimed.taskId, claimed.serverConfig);
+  return { completion: processClaimedAiStudyTask(claimed.taskId, claimed.serverConfig, claimed.mineruSelection) };
+}
+
+export async function runAiStudyWorkerPoolCycle(pool: AiStudyWorkerPool): Promise<boolean> {
+  const task = await startAiStudyWorkerPoolTask(pool);
+  if (!task) return false;
+  await task.completion;
   return true;
 }
 
@@ -144,6 +159,7 @@ async function claimTask(
   task: AiStudyGenerationTask,
   options: {
     serverConfig?: ActiveAiServerConfig;
+    mineruSelection?: StudyMineruSelection;
     inputSummary?: Record<string, unknown>;
     outputSummary?: Record<string, unknown>;
   } = {}
@@ -160,5 +176,5 @@ async function claimTask(
       ...(options.outputSummary ? { outputSummary: options.outputSummary as Prisma.InputJsonValue } : {})
     }
   });
-  return { taskId: task.id, serverConfig: options.serverConfig };
+  return { taskId: task.id, serverConfig: options.serverConfig, mineruSelection: options.mineruSelection };
 }

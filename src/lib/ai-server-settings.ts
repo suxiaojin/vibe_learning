@@ -271,12 +271,12 @@ async function readAiServerSetting() {
 
 async function writeAiServerSetting(
   customServers: StoredAiServerProfile[],
-  moduleRoutes?: Partial<Record<AiModuleKey, string[]>>,
+  moduleRoutes?: Prisma.InputJsonObject,
   legacyPatch: Partial<Pick<AiServerSettingRecord, "customName" | "customBaseUrl" | "customModel" | "customApiKeyEncrypted">> = {}
 ) {
   const data = {
     customServers: customServers as unknown as Prisma.InputJsonValue,
-    ...(moduleRoutes ? { moduleRoutes: moduleRoutes as Prisma.InputJsonValue } : {}),
+    ...(moduleRoutes ? { moduleRoutes } : {}),
     ...legacyPatch
   };
   await prisma.aiServerSetting.upsert({
@@ -287,11 +287,19 @@ async function writeAiServerSetting(
 }
 
 export async function getAiServerConfigsForModule(moduleKey: AiModuleKey, advanceBy = 1): Promise<ActiveAiServerConfig[]> {
+  return resolveAiServerConfigs(moduleKey, await readAiServerSetting(), advanceBy);
+}
+
+export async function getStudyOutlineServerConfigs(db: Pick<Prisma.TransactionClient, "aiServerSetting"> = prisma) {
+  const setting = await db.aiServerSetting.findUnique({ where: { id: aiServerSettingsId } });
+  return resolveAiServerConfigs("ai_study_generation", setting);
+}
+
+function resolveAiServerConfigs(moduleKey: AiModuleKey, setting: AiServerSettingRecord | null, advanceBy = 1): ActiveAiServerConfig[] {
   if (!aiModuleKeySet.has(moduleKey)) {
     throw new Error(`Unknown AI module: ${moduleKey}`);
   }
   const builtIn = getBuiltInAiServerConfig();
-  const setting = await readAiServerSetting();
   const customServers = getCustomServers(setting);
   const orderedServerIds = getRoundRobinServerIds(
     moduleKey,
