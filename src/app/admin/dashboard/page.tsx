@@ -1,9 +1,9 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
-  Bot,
   BrainCircuit,
   ClipboardCheck,
+  Gem,
   LogIn,
   Medal,
   Trophy,
@@ -277,7 +277,7 @@ export default async function DashboardPage({
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black tracking-normal text-slate-950">运营仪表盘</h1>
-          <p className="mt-2 text-sm text-slate-500">用户增长、登录活跃、答题行为与 AI 使用概览，所有日期按北京时间统计。</p>
+          <p className="mt-2 text-sm text-slate-500">用户增长、登录活跃、答题行为与钻石扣减概览，所有日期按北京时间统计。</p>
         </div>
         <div className="border border-slate-300 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
           <span className="font-black text-slate-800">统计口径：</span>
@@ -325,11 +325,11 @@ export default async function DashboardPage({
           tone="#7c3aed"
         />
         <MetricCard
-          title="AI 使用人数"
-          value={overview.aiUsers.today}
-          counts={overview.aiUsers}
-          description="周期内至少成功获得一次 AI 回答的去重用户。"
-          icon={Bot}
+          title="钻石扣减数"
+          value={overview.diamondDeductions.today}
+          counts={overview.diamondDeductions}
+          description="周期内所有用户实际扣减的钻石总量。"
+          icon={Gem}
           tone="#ea580c"
         />
       </section>

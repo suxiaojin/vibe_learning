@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, Sparkle } from "lucide-react";
 
 export function CardJobControl({ nodeId, status, canRequest }: { nodeId: string; status: string; canRequest: boolean }) {
   const router = useRouter();
@@ -61,25 +61,29 @@ export function CardJobControl({ nodeId, status, canRequest }: { nodeId: string;
         : "详解已生成，请刷新页面查看。";
 
   return <section className="mt-6">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <h4 className="relative pb-2 text-[19px] font-black text-[#101828] after:absolute after:bottom-0 after:left-0 after:h-[3px] after:w-8 after:rounded-full after:bg-[#101828]">AI详解</h4>
-      {showButton ? <button
-        type="button"
-        disabled={loading}
-        aria-busy={loading}
-        onClick={() => void requestCard(canRetry)}
-        className={`inline-flex min-h-12 min-w-40 items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-base font-bold transition ${loading
-          ? "bg-[#9ee8d2] text-[#10251e] disabled:cursor-wait"
-          : "bg-[#16a329] text-white hover:bg-[#118522]"}`}
-      >{loading ? <><Loader2 className="animate-spin" size={20} aria-hidden="true" />生成中</> : canRetry ? "重试 AI 详解" : "生成 AI 详解"}</button> : null}
-    </div>
+    <h4 className="relative pb-2 text-[19px] font-black text-[#101828] after:absolute after:bottom-0 after:left-0 after:h-[3px] after:w-8 after:rounded-full after:bg-[#101828]">AI详解</h4>
+    {(!loading || showButton) ? (
+      <div className={`mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-xl bg-amber-50 text-sm text-amber-900 ${showButton ? "py-1 pl-4 pr-1.5" : "p-4"}`}>
+        <p>{loading ? "详解正在生成，原文可继续阅读。" : description}</p>
+        {showButton ? (
+          <button
+            type="button"
+            disabled={loading}
+            aria-busy={loading}
+            onClick={() => void requestCard(canRetry)}
+            className="ml-auto inline-flex min-h-10 min-w-[132px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full bg-[#f4e4c2] px-4 py-2 text-sm font-semibold text-[#62400a] transition-colors enabled:hover:bg-[#eed6a4] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8a5816] disabled:cursor-wait"
+          >
+            {loading ? <Loader2 className="motion-safe:animate-spin" size={16} aria-hidden="true" /> : <Sparkle size={16} aria-hidden="true" />}
+            {loading ? "生成中" : canRetry ? "重试 AI 详解" : "生成 AI 详解"}
+          </button>
+        ) : null}
+      </div>
+    ) : null}
     {loading ? (
       <div role="status" aria-label="AI 详解生成中" className="mt-4">
         <div aria-hidden="true" className="h-32 w-full rounded-2xl bg-[#e2eee8] motion-safe:animate-pulse md:h-40" />
       </div>
-    ) : (
-      <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{description}</p>
-    )}
+    ) : null}
     {error ? <p role="alert" className="mt-2 text-sm text-red-600">{error}</p> : null}
   </section>;
 }

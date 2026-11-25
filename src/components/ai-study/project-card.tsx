@@ -79,6 +79,7 @@ export function AiStudyProjectCard({
   const [draftTitle, setDraftTitle] = useState(title.slice(0, 35));
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isTitleOverflowing, setIsTitleOverflowing] = useState(false);
   const [error, setError] = useState("");
@@ -280,8 +281,7 @@ export function AiStudyProjectCard({
     }
   }
 
-  async function cancelGeneratingProject(event: MouseEvent<HTMLButtonElement>) {
-    event.stopPropagation();
+  async function cancelGeneratingProject() {
     if (!canManage || isSaving) {
       return;
     }
@@ -290,6 +290,7 @@ export function AiStudyProjectCard({
     setError("");
     try {
       await deleteProjectRequest(id);
+      setCancelOpen(false);
       setDisplayStatus("archived");
       router.refresh();
     } catch (caught) {
@@ -442,7 +443,15 @@ export function AiStudyProjectCard({
                 className="absolute bottom-0 right-0 z-30 h-8 min-w-[56px] rounded-[10px] border border-white/75 px-3 text-[12px] font-black text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
                 data-card-action
                 disabled={isSaving}
-                onClick={displayGeneration.learningAvailable ? (event) => { event.stopPropagation(); openProject(); } : cancelGeneratingProject}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (displayGeneration.learningAvailable) {
+                    openProject();
+                  } else {
+                    setError("");
+                    setCancelOpen(true);
+                  }
+                }}
                 type="button"
               >
                 {displayGeneration.learningAvailable ? "进入学习" : isSaving ? "取消中" : "取消"}
@@ -452,6 +461,30 @@ export function AiStudyProjectCard({
         ) : null}
       </article>
       <ProjectPurchaseFeedback {...purchase.dialogProps} />
+
+      {cancelOpen ? (
+        <div className="fixed inset-0 z-[70] flex items-start justify-center bg-black/50 px-4 pt-[165px]">
+          <div role="dialog" aria-modal="true" aria-labelledby="cancel-project-title" aria-describedby="cancel-project-description"
+            className="w-full max-w-[432px] rounded-[10px] bg-white px-6 pb-6 pt-5 shadow-[0_24px_72px_rgba(15,23,42,0.22)]">
+            <div className="flex items-center justify-between">
+              <h2 id="cancel-project-title" className="text-[22px] font-black tracking-normal text-[#101828]">取消项目生成？</h2>
+              <button className="grid size-8 place-items-center rounded-full text-[#111827] transition hover:bg-[#f2f4f7]" aria-label="关闭" disabled={isSaving} onClick={() => setCancelOpen(false)} type="button">
+                <X size={20} />
+              </button>
+            </div>
+            <p id="cancel-project-description" className="mt-7 text-[14px] font-medium text-[#344054]">确认后将删除该项目及学习进度。若项目已拆分，所有部分也将被删除。</p>
+            {error ? <p role="alert" className="mt-3 text-sm font-semibold text-[#d92d20]">{error}</p> : null}
+            <div className="mt-12 flex justify-end gap-6">
+              <button className="h-10 w-[94px] rounded-[9px] border border-[#d3d9e4] bg-white text-[15px] font-bold text-[#344054] transition hover:bg-[#f8fafc]" disabled={isSaving} onClick={() => setCancelOpen(false)} type="button">
+                继续生成
+              </button>
+              <button className="h-10 w-[94px] rounded-[9px] bg-[#ff4d55] text-[15px] font-bold text-white transition hover:bg-[#f13f48] disabled:cursor-not-allowed disabled:opacity-60" disabled={isSaving} onClick={cancelGeneratingProject} type="button">
+                {isSaving ? "取消中" : "确认取消"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {renameOpen ? (
         <div className="fixed inset-0 z-[70] flex items-start justify-center bg-black/50 px-4 pt-[165px]">

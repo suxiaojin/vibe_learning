@@ -26,7 +26,7 @@ export type DashboardOverview = {
   registrations: PeriodCounts;
   loginUsers: PeriodCounts;
   activeUsers: PeriodCounts;
-  aiUsers: PeriodCounts;
+  diamondDeductions: PeriodCounts;
 };
 
 export type DashboardRegionOption = {
@@ -148,7 +148,7 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
   const ranges = currentPeriodRanges();
   const onlineSince = new Date(Date.now() - 15 * 60 * 1000);
 
-  const [totalUsers, onlineUsers, registrationToday, registrationSevenDays, registrationThirtyDays, loginRows, activeRows, aiRows] = await Promise.all([
+  const [totalUsers, onlineUsers, registrationToday, registrationSevenDays, registrationThirtyDays, loginRows, activeRows, deductionRows] = await Promise.all([
     prisma.user.count({ where: { role: "student" } }),
     prisma.user.count({
       where: {
@@ -198,17 +198,18 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
       GROUP BY qa."userId", to_char(timezone('Asia/Shanghai', qa."createdAt" AT TIME ZONE 'UTC'), 'YYYY-MM-DD')
       HAVING COUNT(*) >= 30
     `),
-    prisma.$queryRaw<DailyUserRow[]>(Prisma.sql`
-      SELECT DISTINCT
-        ac."userId",
-        to_char(timezone('Asia/Shanghai', ac."createdAt" AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day
-      FROM "ai_conversations" ac
-      INNER JOIN "users" u ON u.id = ac."userId"
-      WHERE u.role = 'student'
-        AND ac."createdAt" >= CAST(${ranges.timestamp.thirtyDays} AS timestamp)
-        AND ac."createdAt" < CAST(${ranges.timestamp.tomorrow} AS timestamp)
+    prisma.$queryRaw<Array<Record<DashboardPeriod, bigint>>>(Prisma.sql`
+      SELECT
+        COALESCE(-SUM(amount) FILTER (WHERE "occurredOn" >= CAST(${ranges.dateOnly.today} AS date)), 0) AS today,
+        COALESCE(-SUM(amount) FILTER (WHERE "occurredOn" >= CAST(${ranges.dateOnly.sevenDays} AS date)), 0) AS "7d",
+        COALESCE(-SUM(amount), 0) AS "30d"
+      FROM "diamond_transactions"
+      WHERE amount < 0
+        AND "occurredOn" >= CAST(${ranges.dateOnly.thirtyDays} AS date)
+        AND "occurredOn" < CAST(${ranges.dateOnly.tomorrow} AS date)
     `)
   ]);
+  const [deductions] = deductionRows;
 
   return {
     totalUsers,
@@ -220,7 +221,11 @@ export async function getDashboardOverview(): Promise<DashboardOverview> {
     },
     loginUsers: countDailyUsers(loginRows, ranges.keys),
     activeUsers: countDailyUsers(activeRows, ranges.keys),
-    aiUsers: countDailyUsers(aiRows, ranges.keys)
+    diamondDeductions: {
+      today: Number(deductions.today),
+      "7d": Number(deductions["7d"]),
+      "30d": Number(deductions["30d"])
+    }
   };
 }
 
