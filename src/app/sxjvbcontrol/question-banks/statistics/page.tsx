@@ -13,6 +13,11 @@ import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { CopyChallengeDialog } from "@/components/copy-challenge-dialog";
 import { ChallengeDifficultyRating, ChallengePurposeSelect } from "@/components/challenge-difficulty-rating";
 import {
+  ChallengeQuestionCheckbox,
+  ChallengeQuestionSelectionHeader,
+  ChallengeQuestionSelectionTable
+} from "@/components/challenge-question-selection";
+import {
   QuestionBankStatisticsTree,
   QuestionBankStatisticsUiProvider,
   QuestionBankStatisticsWorkspace,
@@ -984,8 +989,9 @@ export default async function QuestionBankKnowledgeStatisticsPage({
   const copiedMappedCount = Math.max(0, Number.parseInt(params?.mapped || "0", 10) || 0);
   const copiedUnmappedCount = Math.max(0, Number.parseInt(params?.unmapped || "0", 10) || 0);
   const selectedChallengeQuestionIds = new Set(challengeVersion?.questions.map((item) => item.questionId) || []);
-  const challengeQuestionLimitReached = Boolean(
-    challengeVersion && challengeVersion.questions.length >= challengeVersion.targetQuestionCount
+  const remainingChallengeSlots = Math.max(
+    0,
+    (challengeVersion?.targetQuestionCount ?? 10) - (challengeVersion?.questions.length ?? 0)
   );
   const otherChallengeByQuestionId = new Map<string, string>();
   [...challengeVersions]
@@ -1003,12 +1009,13 @@ export default async function QuestionBankKnowledgeStatisticsPage({
         }
       });
     });
-  const oppositePurposeQuestionIds = selectedCourse && challengeVersion
+  const challengePurpose = challengeVersion?.purpose ?? "challenge";
+  const oppositePurposeQuestionIds = selectedCourse && challengeScope
     ? new Set(
         (await prisma.chapterChallengeQuestion.findMany({
           where: {
             challengeVersion: {
-              purpose: challengeVersion.purpose === "challenge" ? "special_practice" : "challenge",
+              purpose: challengePurpose === "challenge" ? "special_practice" : "challenge",
               status: { in: ["draft", "published"] },
               chapter: { courseId: selectedCourse.id }
             }
@@ -1056,6 +1063,17 @@ export default async function QuestionBankKnowledgeStatisticsPage({
           return knowledgePointCompare || yearCompare || left.paperTitle.localeCompare(right.paperTitle, "zh-Hans-CN") || left.sortOrder - right.sortOrder;
         })
     : [];
+  const eligibleQuestionIds = new Set(
+    challengeScope
+      ? selectedRows
+          .filter(({ questionId }) =>
+            !selectedChallengeQuestionIds.has(questionId)
+            && !otherChallengeByQuestionId.has(questionId)
+            && !oppositePurposeQuestionIds.has(questionId)
+          )
+          .map(({ questionId }) => questionId)
+      : []
+  );
   const selectedStatus = challengeStatus(selectedStats.total);
   const challengeScopeMatchesCourseMode = Boolean(
     selectedCourse && challengeScope && selectedCourse.challengeMode === challengeScope.type
@@ -1494,7 +1512,16 @@ export default async function QuestionBankKnowledgeStatisticsPage({
               </div>
 
               <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-[#e2e8f0]">
-                <table className="w-full min-w-[1000px] border-collapse text-left text-sm 2xl:min-w-[1120px]">
+                <ChallengeQuestionSelectionTable
+                  key={JSON.stringify([challengeScope?.type, challengeScope?.id, challengeVersion?.id, sourceFilter, bankSourceFilter, selectedQuestionType])}
+                  selection={challengeScope ? {
+                    scopeType: challengeScope.type,
+                    scopeId: challengeScope.id,
+                    challengeVersionId: challengeVersion?.id || "",
+                    remainingSlots: remainingChallengeSlots,
+                    eligibleQuestionIds: [...eligibleQuestionIds]
+                  } : null}
+                >
                   <thead className="sticky top-0 bg-[#f1f5f9] text-xs text-[#334155]">
                     <tr className="h-10">
                       <th className="border-r border-[#e2e8f0] px-3 font-black">题干</th>
@@ -1502,7 +1529,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                       <th className="w-[260px] border-r border-[#e2e8f0] px-3 font-black">题库</th>
                       <th className="w-[88px] border-r border-[#e2e8f0] px-3 font-black">题型</th>
                       <th className="w-[100px] border-r border-[#e2e8f0] px-3 font-black">打标来源</th>
-                      <th className="w-[180px] px-3 font-black">操作</th>
+                      <th className="w-[200px] px-3 font-black"><ChallengeQuestionSelectionHeader /></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1531,6 +1558,9 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                         </td>
                         <td className="px-3 py-3">
                           <div className="flex items-center gap-3">
+                            {eligibleQuestionIds.has(row.questionId) && (
+                              <ChallengeQuestionCheckbox questionId={row.questionId} />
+                            )}
                             {challengeScope ? (
                               selectedChallengeQuestionIds.has(row.questionId) ? (
                                 <span className="inline-flex items-center gap-1 text-xs font-black text-[#15803d]"><CheckCircle2 size={13} />已加入</span>
@@ -1547,12 +1577,12 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                                 <button
                                   className="inline-flex cursor-not-allowed items-center gap-1 text-xs font-black text-[#94a3b8]"
                                   disabled
-                                  title={`已用于${challengeVersion?.purpose === "challenge" ? "专项练习" : "闯关关卡"}`}
+                                  title={`已用于${challengePurpose === "challenge" ? "专项练习" : "闯关关卡"}`}
                                   type="button"
                                 >
                                   <Plus size={13} />已用于另一类关卡
                                 </button>
-                              ) : challengeQuestionLimitReached ? (
+                              ) : remainingChallengeSlots === 0 ? (
                                 <button
                                   className="inline-flex cursor-not-allowed items-center gap-1 text-xs font-black text-[#94a3b8]"
                                   disabled
@@ -1580,7 +1610,7 @@ export default async function QuestionBankKnowledgeStatisticsPage({
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </ChallengeQuestionSelectionTable>
               </div>
             </div>
           </section>

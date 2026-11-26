@@ -31,8 +31,8 @@ function getChallengeScopeInput(formData: FormData) {
   return { scopeType, scopeId };
 }
 
-async function ensureCourseCheckpoint(courseId: string) {
-  const existing = await prisma.syllabusItem.findFirst({
+async function ensureCourseCheckpoint(courseId: string, db: Prisma.TransactionClient = prisma) {
+  const existing = await db.syllabusItem.findFirst({
     where: { courseId, checkpointScope: "course" },
     select: { id: true }
   });
@@ -40,12 +40,12 @@ async function ensureCourseCheckpoint(courseId: string) {
     return existing;
   }
 
-  const latest = await prisma.syllabusItem.findFirst({
+  const latest = await db.syllabusItem.findFirst({
     where: { courseId, checkpointScope: null },
     orderBy: { sortOrder: "desc" },
     select: { sortOrder: true }
   });
-  return prisma.syllabusItem.create({
+  return db.syllabusItem.create({
     data: {
       courseId,
       parentId: null,
@@ -59,9 +59,14 @@ async function ensureCourseCheckpoint(courseId: string) {
   });
 }
 
-async function getChallengeScope(scopeType: ChallengeScopeType, scopeId: string, createCheckpoint = false) {
+async function getChallengeScope(
+  scopeType: ChallengeScopeType,
+  scopeId: string,
+  createCheckpoint = false,
+  db: Prisma.TransactionClient = prisma
+) {
   if (scopeType === "course") {
-    const course = await prisma.learningCourse.findUniqueOrThrow({
+    const course = await db.learningCourse.findUniqueOrThrow({
       where: { id: scopeId },
       select: {
         id: true,
@@ -73,12 +78,12 @@ async function getChallengeScope(scopeType: ChallengeScopeType, scopeId: string,
       }
     });
     const checkpoint = createCheckpoint
-      ? await ensureCourseCheckpoint(course.id)
-      : await prisma.syllabusItem.findFirstOrThrow({
+      ? await ensureCourseCheckpoint(course.id, db)
+      : await db.syllabusItem.findFirstOrThrow({
           where: { courseId: course.id, checkpointScope: "course" },
           select: { id: true }
         });
-    const syllabusItems = await prisma.syllabusItem.findMany({
+    const syllabusItems = await db.syllabusItem.findMany({
       where: { courseId: course.id, checkpointScope: null },
       select: { id: true }
     });
@@ -95,7 +100,7 @@ async function getChallengeScope(scopeType: ChallengeScopeType, scopeId: string,
     };
   }
 
-  const chapter = await prisma.syllabusItem.findFirstOrThrow({
+  const chapter = await db.syllabusItem.findFirstOrThrow({
     where: { id: scopeId, parentId: null, checkpointScope: null },
     select: {
       id: true,
@@ -111,7 +116,7 @@ async function getChallengeScope(scopeType: ChallengeScopeType, scopeId: string,
       }
     }
   });
-  const items = await prisma.syllabusItem.findMany({
+  const items = await db.syllabusItem.findMany({
     where: { courseId: chapter.courseId },
     select: { id: true, parentId: true }
   });
@@ -387,8 +392,12 @@ async function getCrossRegionChallengeCopyPlan(
   };
 }
 
-async function ensureDraft(chapterId: string, purpose: ChallengePurpose = "challenge") {
-  const existing = await prisma.chapterChallengeVersion.findFirst({
+async function ensureDraft(
+  chapterId: string,
+  purpose: ChallengePurpose = "challenge",
+  db: Prisma.TransactionClient = prisma
+) {
+  const existing = await db.chapterChallengeVersion.findFirst({
     where: { chapterId, purpose, status: "draft" },
     include: { questions: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] } },
     orderBy: { version: "desc" }
@@ -397,12 +406,12 @@ async function ensureDraft(chapterId: string, purpose: ChallengePurpose = "chall
     return existing;
   }
 
-  const latest = await prisma.chapterChallengeVersion.findFirst({
+  const latest = await db.chapterChallengeVersion.findFirst({
     where: { chapterId, purpose, status: { in: ["draft", "published"] } },
     include: { questions: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] } },
     orderBy: { version: "desc" }
   });
-  return prisma.chapterChallengeVersion.create({
+  return db.chapterChallengeVersion.create({
     data: {
       chapterId,
       purpose,
@@ -423,76 +432,28 @@ async function getEditableDraft(chapterId: string, challengeVersionId: string) {
   });
 }
 
-async function getExistingChallenge(chapterId: string, challengeVersionId: string) {
-  return prisma.chapterChallengeVersion.findFirstOrThrow({
+async function getExistingChallenge(
+  chapterId: string,
+  challengeVersionId: string,
+  db: Prisma.TransactionClient = prisma
+) {
+  return db.chapterChallengeVersion.findFirstOrThrow({
     where: { id: challengeVersionId, chapterId, status: { in: ["draft", "published"] } },
     include: { questions: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] } }
   });
 }
 
-async function getActiveChallenge(chapterId: string, challengeVersionId: string) {
-  return challengeVersionId
-    ? getExistingChallenge(chapterId, challengeVersionId)
-    : ensureDraft(chapterId, "challenge");
-}
-
-async function assertQuestionCanEnterChallenge(
-  scope: Awaited<ReturnType<typeof getChallengeScope>>,
-  questionId: string
-) {
-  await prisma.question.findFirstOrThrow({
-    where: {
-      id: questionId,
-      status: "published",
-      knowledgeTags: { some: { syllabusItemId: { in: scope.syllabusItemIds } } },
-      paperQuestions: {
-        some: {
-          paper: {
-            status: "published"
-          }
-        }
-      }
-    },
-    select: { id: true }
-  });
-}
-
-async function assertQuestionIsUnusedByOtherChallenge(checkpointId: string, challengeVersionId: string, questionId: string) {
-  const existing = await prisma.chapterChallengeQuestion.findFirst({
-    where: {
-      questionId,
-      challengeVersionId: { not: challengeVersionId },
-      challengeVersion: { chapterId: checkpointId, status: { in: ["draft", "published"] } }
-    },
-    select: { challengeVersion: { select: { version: true } } }
-  });
-  if (existing) {
-    throw new Error(`Question is already used by challenge ${existing.challengeVersion.version}`);
-  }
-}
-
-async function assertQuestionIsUnusedByOppositePurpose(
-  courseId: string,
+async function getActiveChallenge(
+  chapterId: string,
   challengeVersionId: string,
-  purpose: ChallengePurpose,
-  questionId: string
+  db: Prisma.TransactionClient = prisma
 ) {
-  const existing = await prisma.chapterChallengeQuestion.findFirst({
-    where: {
-      questionId,
-      challengeVersionId: { not: challengeVersionId },
-      challengeVersion: {
-        purpose: oppositeChallengePurpose(purpose),
-        status: { in: ["draft", "published"] },
-        chapter: { courseId }
-      }
-    },
-    select: { id: true }
-  });
-  if (existing) {
-    throw new Error("Question is already used by the other challenge purpose in this course");
-  }
+  return challengeVersionId
+    ? getExistingChallenge(chapterId, challengeVersionId, db)
+    : ensureDraft(chapterId, "challenge", db);
 }
+
+class ChallengeQuestionSelectionError extends Error {}
 
 async function renumberActiveChallenges(
   transaction: Prisma.TransactionClient,
@@ -734,31 +695,80 @@ export async function copyChallengeAcrossRegion(
   redirect(`${statisticsPath}?${query.toString()}`);
 }
 
-export async function addQuestionToChapterChallenge(formData: FormData) {
-  await requireAdmin();
+async function addChallengeQuestions(formData: FormData, questionIds: string[]) {
   const { scopeType, scopeId } = getChallengeScopeInput(formData);
   const challengeVersionId = String(formData.get("challengeVersionId") || "");
-  const questionId = String(formData.get("questionId") || "");
-  const scope = await getChallengeScope(scopeType, scopeId, scopeType === "course");
-  const challenge = await getActiveChallenge(scope.checkpointId, challengeVersionId);
-  await assertQuestionCanEnterChallenge(scope, questionId);
-  if (challenge.questions.some((item) => item.questionId === questionId)) {
-    refreshChallengePages(scope.checkpointId);
-    return;
-  }
-  if (challenge.questions.length >= challenge.targetQuestionCount) {
-    throw new Error("Challenge already has the configured number of questions");
-  }
-  await assertQuestionIsUnusedByOtherChallenge(scope.checkpointId, challenge.id, questionId);
-  await assertQuestionIsUnusedByOppositePurpose(scope.courseId, challenge.id, challenge.purpose, questionId);
-  await prisma.chapterChallengeQuestion.create({
-    data: {
-      challengeVersionId: challenge.id,
-      questionId,
-      sortOrder: challenge.questions.length + 1
+  const checkpointId = await prisma.$transaction(async (db) => {
+    const scope = await getChallengeScope(scopeType, scopeId, scopeType === "course", db);
+    const challenge = await getActiveChallenge(scope.checkpointId, challengeVersionId, db);
+    const availableCount = await db.question.count({
+      where: {
+        id: { in: questionIds },
+        status: "published",
+        knowledgeTags: { some: { syllabusItemId: { in: scope.syllabusItemIds } } },
+        paperQuestions: { some: { paper: { status: "published" } } }
+      }
+    });
+    if (availableCount !== questionIds.length) {
+      throw new ChallengeQuestionSelectionError("所选题目有变动，请刷新列表后重新勾选。");
     }
-  });
-  refreshChallengePages(scope.checkpointId);
+    const existingIds = new Set(challenge.questions.map((item) => item.questionId));
+    const newIds = questionIds.filter((id) => !existingIds.has(id));
+    const remainingSlots = Math.max(0, challenge.targetQuestionCount - challenge.questions.length);
+    if (newIds.length > remainingSlots) {
+      throw new ChallengeQuestionSelectionError(`本关还可加入 ${remainingSlots} 道题，请减少勾选数量。`);
+    }
+    if (newIds.length === 0) {
+      return scope.checkpointId;
+    }
+    const usedQuestion = await db.chapterChallengeQuestion.findFirst({
+      where: {
+        questionId: { in: newIds },
+        challengeVersionId: { not: challenge.id },
+        challengeVersion: {
+          status: { in: ["draft", "published"] },
+          OR: [
+            { chapterId: scope.checkpointId },
+            { purpose: oppositeChallengePurpose(challenge.purpose), chapter: { courseId: scope.courseId } }
+          ]
+        }
+      },
+      select: { id: true }
+    });
+    if (usedQuestion) {
+      throw new ChallengeQuestionSelectionError("部分所选题目已用于其他关卡，请刷新列表后重新勾选。");
+    }
+    await db.chapterChallengeQuestion.createMany({
+      data: newIds.map((questionId, index) => ({
+        challengeVersionId: challenge.id,
+        questionId,
+        sortOrder: challenge.questions.length + index + 1
+      }))
+    });
+    return scope.checkpointId;
+  }, { isolationLevel: "Serializable" });
+  refreshChallengePages(checkpointId);
+}
+
+export async function addQuestionToChapterChallenge(formData: FormData) {
+  await requireAdmin();
+  await addChallengeQuestions(formData, [String(formData.get("questionId") || "")]);
+}
+
+export async function addSelectedQuestionsToChapterChallenge(formData: FormData) {
+  await requireAdmin();
+  const questionIds = [...new Set(formData.getAll("questionId").map(String))];
+  if (!questionIds.length || questionIds.length > 100 || questionIds.includes("")) {
+    return "请选择 1 至 100 道题目。";
+  }
+  try {
+    await addChallengeQuestions(formData, questionIds);
+    return null;
+  } catch (error) {
+    return error instanceof ChallengeQuestionSelectionError
+      ? error.message
+      : "加入失败，请刷新列表后重试。";
+  }
 }
 
 export async function removeQuestionFromChapterChallenge(formData: FormData) {
