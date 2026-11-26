@@ -90,7 +90,7 @@ function actionFixture({ denied = false, failed = false, exists = true } = {}) {
   const calls = [];
   const invalidated = [];
   let row = exists ? { id: 'default', learningPathTheme: 'mist-blue', customerServiceEmail: 'keep@example.com', profileHomepageBackgroundImageUrl: '/keep.png' } : null;
-  const { updateLearningPathThemeSettings } = load('src/app/admin/settings/learning-path-theme-actions.ts', {
+  const { updateLearningPathThemeSettings } = load('src/app/sxjvbcontrol/settings/learning-path-theme-actions.ts', {
     'next/cache': { revalidatePath: (...args) => invalidated.push(args) },
     '@/lib/auth': { requireAdmin: async () => { if (denied) throw new Error('ADMIN_REQUIRED'); } },
     '@/lib/learning-path-theme': themes,
@@ -122,7 +122,7 @@ for (const theme of themes.learningPathThemes) {
     assert.equal(fixture.row().customerServiceEmail, 'keep@example.com');
     assert.equal(fixture.row().profileHomepageBackgroundImageUrl, '/keep.png');
     assert.deepEqual(fixture.invalidated, [
-      ['/admin/settings'],
+      ['/sxjvbcontrol/settings'],
       ['/learn'],
       ['/learn/stages'],
       ['/learn/[id]/guide', 'page'],
@@ -163,7 +163,7 @@ test('a missing settings row is created with defaults and the chosen theme', asy
 
 test('all colors including pink and red appear with the restore action in the administrator form', () => {
   const { AdminLearningPathThemeSettings } = load('src/components/admin-learning-path-theme-settings.tsx', {
-    '@/app/admin/settings/learning-path-theme-actions': { updateLearningPathThemeSettings: async () => {} },
+    '@/app/sxjvbcontrol/settings/learning-path-theme-actions': { updateLearningPathThemeSettings: async () => {} },
     '@/lib/learning-path-theme': themes,
     '@/lib/utils': { cn },
   });
@@ -186,7 +186,7 @@ test('retry submits the controlled preview color without native form reset', () 
       useActionState: () => [{ status: 'error', message: 'failed' }, (form) => { submitted = form.get('learningPathTheme'); }, false],
       startTransition: (callback) => callback(),
     },
-    '@/app/admin/settings/learning-path-theme-actions': { updateLearningPathThemeSettings: async () => {} },
+    '@/app/sxjvbcontrol/settings/learning-path-theme-actions': { updateLearningPathThemeSettings: async () => {} },
     '@/lib/learning-path-theme': themes,
     '@/lib/utils': { cn },
   }, {

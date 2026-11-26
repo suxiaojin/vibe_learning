@@ -191,7 +191,7 @@ function CorrectionStemPreview({ stem }: { stem: string }) {
   );
 }
 
-export function EnglishV1Workbench({ sample, paperId, returnHref = "/admin/question-banks", loadError }: {
+export function EnglishV1Workbench({ sample, paperId, returnHref = "/sxjvbcontrol/question-banks", loadError }: {
   sample: EnglishV1Sample | null;
   paperId?: string;
   returnHref?: string;

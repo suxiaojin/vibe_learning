@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { BookOpenCheck } from "lucide-react";
 
 const hiddenNavPrefixes = [
-  "/admin",
+  "/sxjvbcontrol",
   "/login",
   "/register",
   "/forgot-password",

@@ -33,7 +33,7 @@ import {
   updateQuestionBankQuestion,
   updateQuestionBankQuestionType,
   updateQuestionBankQuestionTypeConfig
-} from "@/app/admin/actions";
+} from "@/app/sxjvbcontrol/actions";
 import {
   getQuestionBankTypeLabel,
   isQuestionBankChoiceQuestionType,

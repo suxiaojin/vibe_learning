@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { updateStudentPlan } from "@/app/admin/students/major-actions";
+import { updateStudentPlan } from "@/app/sxjvbcontrol/students/major-actions";
 
 type PlanRegion = {
   id: string;

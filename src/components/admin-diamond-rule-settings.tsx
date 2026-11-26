@@ -1,5 +1,5 @@
 import { Save } from "lucide-react";
-import { updateDiamondRuleSettings } from "@/app/admin/actions";
+import { updateDiamondRuleSettings } from "@/app/sxjvbcontrol/actions";
 import {
   type DiamondRuleSettingItem,
   maxDiamondRuleAmount

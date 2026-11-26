@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Save, ArrowLeft } from "lucide-react";
-import { saveAgreement, saveChangelog, withdrawChangelog } from "@/app/admin/settings/agreement-actions";
+import { saveAgreement, saveChangelog, withdrawChangelog } from "@/app/sxjvbcontrol/settings/agreement-actions";
 import { agreementFields, type AgreementKey } from "@/lib/changelog-validation";
 import { cn } from "@/lib/utils";
 

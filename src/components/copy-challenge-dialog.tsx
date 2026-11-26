@@ -6,7 +6,7 @@ import { useFormStatus } from "react-dom";
 import {
   copyChallengeAcrossRegion,
   previewCrossRegionChallengeCopy
-} from "@/app/admin/question-banks/challenge-actions";
+} from "@/app/sxjvbcontrol/question-banks/challenge-actions";
 
 type TargetCourseOption = {
   id: string;

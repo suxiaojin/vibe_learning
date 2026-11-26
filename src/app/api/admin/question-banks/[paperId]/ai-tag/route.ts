@@ -404,7 +404,7 @@ export async function POST(_request: NextRequest, context: { params: Promise<{ p
       where: { id: paper.id },
       data: { updatedAt: new Date() }
     });
-    revalidatePath(`/admin/question-banks/${paper.id}`);
+    revalidatePath(`/sxjvbcontrol/question-banks/${paper.id}`);
   }
 
   return NextResponse.json({

@@ -15,7 +15,7 @@ function expect(source, snippet, label) {
 
 const schema = read("prisma/schema.prisma");
 const migration = read("prisma/migrations/20260917150000_add_question_ai_explanation_visibility/migration.sql");
-const adminPage = read("src/app/admin/question-banks/[paperId]/page.tsx");
+const adminPage = read("src/app/sxjvbcontrol/question-banks/[paperId]/page.tsx");
 const adminRoute = read("src/app/api/admin/question-banks/[paperId]/questions/[questionId]/ai-doubt/route.ts");
 const workbench = read("src/components/question-bank-detail-workbench.tsx");
 const resultPage = read("src/app/learn/[id]/result/page.tsx");

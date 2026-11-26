@@ -1,5 +1,5 @@
 import { Save } from "lucide-react";
-import { updateAiModuleRouteSettings } from "@/app/admin/actions";
+import { updateAiModuleRouteSettings } from "@/app/sxjvbcontrol/actions";
 import { AdminAiServerManager } from "@/components/admin-ai-server-manager";
 import { AdminAiModuleServerSelector } from "@/components/admin-ai-module-server-selector";
 import type { AdminAiServerSettings } from "@/lib/ai-server-settings";

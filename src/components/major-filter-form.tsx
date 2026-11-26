@@ -7,10 +7,10 @@ export function MajorFilterForm({ children, className }: { children: ReactNode; 
     const data = new FormData(event.currentTarget);
     const regionId = String(data.get("regionId") || "");
     const status = String(data.get("status") || "");
-    const attributes = "Path=/admin/majors; Max-Age=31536000; SameSite=Lax";
+    const attributes = "Path=/sxjvbcontrol/majors; Max-Age=31536000; SameSite=Lax";
     document.cookie = `adminMajorsRegionId=${encodeURIComponent(regionId)}; ${attributes}`;
     document.cookie = `adminMajorsStatus=${encodeURIComponent(status)}; ${attributes}`;
   }
 
-  return <form action="/admin/majors" className={className} onSubmit={saveFilters}>{children}</form>;
+  return <form action="/sxjvbcontrol/majors" className={className} onSubmit={saveFilters}>{children}</form>;
 }

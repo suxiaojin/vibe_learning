@@ -274,7 +274,7 @@ export function OfficialStudyMaterialPanel({
                   <div className="flex max-w-[330px] gap-3">
                     <FileText className={material.fileType === "pdf" ? "mt-0.5 shrink-0 text-red-500" : "mt-0.5 shrink-0 text-blue-600"} size={20} />
                     <div className="min-w-0">
-                      <Link className="font-semibold text-ink transition hover:text-teal hover:underline" href={`/admin/ai-study-projects/materials/${material.id}/preview`}>
+                      <Link className="font-semibold text-ink transition hover:text-teal hover:underline" href={`/sxjvbcontrol/ai-study-projects/materials/${material.id}/preview`}>
                         {material.title}
                       </Link>
                       <div className="mt-1 truncate text-xs text-slate-400" title={material.originalFileName}>{material.originalFileName} · {formatBytes(material.fileSizeBytes)}</div>

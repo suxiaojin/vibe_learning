@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Copy, X } from "lucide-react";
 import { useActionState, useEffect, useId, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { copyQuestionBankPaper, previewQuestionBankCopy } from "@/app/admin/actions";
+import { copyQuestionBankPaper, previewQuestionBankCopy } from "@/app/sxjvbcontrol/actions";
 
 type ContentStatus = "draft" | "published" | "archived";
 
@@ -72,8 +72,8 @@ export function CopyQuestionBankDialog({
   const selectedTargetRegion = targetRegions.find((region) => region.id === selectedTargetRegionId);
   const selectedTargetOwner = selectedTargetRegion?.owners.find((owner) => `${owner.type}:${owner.id}` === selectedTargetOwnerKey);
   const courseManagementHref = selectedTargetOwner?.type === "major"
-    ? `/admin/majors/${selectedTargetOwner.id}/courses`
-    : `/admin/public-subjects/${selectedTargetOwner?.id || ""}/courses`;
+    ? `/sxjvbcontrol/majors/${selectedTargetOwner.id}/courses`
+    : `/sxjvbcontrol/public-subjects/${selectedTargetOwner?.id || ""}/courses`;
 
   useEffect(() => {
     if (!isOpen || !selectedTargetRegionId || !selectedTargetOwner) return;

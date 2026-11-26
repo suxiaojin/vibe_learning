@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ChevronRight, Edit3, FileText, Folder, GripVertical, MoreVertical, Plus, Trash2 } from "lucide-react";
-import { createQuestionBankOwner, createQuestionBankPaper, deleteQuestionBankOwner, deleteQuestionBankPaper, renameQuestionBankOwner, reorderQuestionBankOwners } from "@/app/admin/actions";
+import { createQuestionBankOwner, createQuestionBankPaper, deleteQuestionBankOwner, deleteQuestionBankPaper, renameQuestionBankOwner, reorderQuestionBankOwners } from "@/app/sxjvbcontrol/actions";
 import { cn } from "@/lib/utils";
 import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 
@@ -41,12 +41,12 @@ function ownerKey(owner: Pick<QuestionBankSidebarOwner, "type" | "id">) {
 function ownerHref(owner: QuestionBankSidebarOwner, province: string, examType: string, otherBanks: boolean) {
   const query = new URLSearchParams({ type: owner.type, id: owner.id, page: "1", province, examType });
   if (otherBanks) query.set("view", "other");
-  return `/admin/question-banks?${query.toString()}`;
+  return `/sxjvbcontrol/question-banks?${query.toString()}`;
 }
 
 function paperHref(paperId: string, province: string, examType: string) {
   const query = new URLSearchParams({ province, examType });
-  return `/admin/question-banks/${paperId}?${query.toString()}`;
+  return `/sxjvbcontrol/question-banks/${paperId}?${query.toString()}`;
 }
 
 function ownerInputs(owner: QuestionBankSidebarOwner) {

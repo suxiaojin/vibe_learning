@@ -6,7 +6,7 @@ import { useFormStatus } from "react-dom";
 import {
   updateChapterChallengeDifficulty,
   updateChapterChallengePurpose
-} from "@/app/admin/question-banks/challenge-actions";
+} from "@/app/sxjvbcontrol/question-banks/challenge-actions";
 
 function formatChallengeDifficulty(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);

@@ -20,7 +20,7 @@ test("admin mutations check authorization first and agreement saves patch only t
   let authorized = false;
   const denied = new Error("denied");
   const writes: any[] = [];
-  const actions = loadActions("src/app/admin/settings/agreement-actions.ts", {
+  const actions = loadActions("src/app/sxjvbcontrol/settings/agreement-actions.ts", {
     "next/cache": { revalidatePath() {} },
     "@/lib/auth": { requireAdmin: async () => { if (!authorized) throw denied; } },
     "@/lib/prisma": { prisma: {

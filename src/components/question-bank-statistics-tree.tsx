@@ -103,7 +103,7 @@ function statisticsHref({
     scope: scopeType,
     scopeId
   });
-  return `/admin/question-banks/statistics?${query.toString()}`;
+  return `/sxjvbcontrol/question-banks/statistics?${query.toString()}`;
 }
 
 function includesQuery(value: string, query: string) {

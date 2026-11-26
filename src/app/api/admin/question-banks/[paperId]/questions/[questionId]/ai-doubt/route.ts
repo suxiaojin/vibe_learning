@@ -104,7 +104,7 @@ export async function PUT(request: Request, context: RouteContext) {
     data: { aiDoubtAnswer: answer || null, showAiExplanation }
   });
 
-  revalidatePath(`/admin/question-banks/${paperId}`);
+  revalidatePath(`/sxjvbcontrol/question-banks/${paperId}`);
   revalidatePath("/learn/[id]/result", "page");
   return NextResponse.json({ answer, showAiExplanation });
 }

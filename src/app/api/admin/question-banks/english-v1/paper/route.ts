@@ -38,8 +38,8 @@ export async function PUT(request: Request) {
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     if (!sample) return NextResponse.json({ error: "未找到英语 V1 题库。" }, { status: 404 });
 
-    revalidatePath("/admin/question-banks");
-    revalidatePath("/admin/question-banks/" + paperId);
+    revalidatePath("/sxjvbcontrol/question-banks");
+    revalidatePath("/sxjvbcontrol/question-banks/" + paperId);
     return NextResponse.json(sample);
   } catch (error) {
     if (error instanceof EnglishPaperError) {

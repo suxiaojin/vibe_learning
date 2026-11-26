@@ -7,10 +7,10 @@ export function QuestionBankFilterForm({ children, className }: { children: Reac
     const data = new FormData(event.currentTarget);
     const province = String(data.get("province") || "");
     const examType = String(data.get("examType") || "");
-    const attributes = "Path=/admin/question-banks; Max-Age=31536000; SameSite=Lax";
+    const attributes = "Path=/sxjvbcontrol/question-banks; Max-Age=31536000; SameSite=Lax";
     document.cookie = `adminQuestionBanksProvince=${encodeURIComponent(province)}; ${attributes}`;
     document.cookie = `adminQuestionBanksExamType=${encodeURIComponent(examType)}; ${attributes}`;
   }
 
-  return <form action="/admin/question-banks" className={className} onSubmit={saveFilters}>{children}</form>;
+  return <form action="/sxjvbcontrol/question-banks" className={className} onSubmit={saveFilters}>{children}</form>;
 }

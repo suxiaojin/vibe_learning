@@ -3,24 +3,25 @@ import { readFile } from "node:fs/promises";
 
 async function main() {
   const files = {
-    actions: await readFile("src/app/admin/actions.ts", "utf8"),
+    actions: await readFile("src/app/sxjvbcontrol/actions.ts", "utf8"),
     aiModuleServerSelector: await readFile("src/components/admin-ai-module-server-selector.tsx", "utf8"),
     aiServerPanel: await readFile("src/components/admin-ai-server-settings.tsx", "utf8"),
-    aiServerPage: await readFile("src/app/admin/prompt-settings/ai-server/page.tsx", "utf8"),
+    aiServerPage: await readFile("src/app/sxjvbcontrol/prompt-settings/ai-server/page.tsx", "utf8"),
     adminModules: await readFile("src/lib/admin-modules.ts", "utf8"),
-    challengePromptPage: await readFile("src/app/admin/prompt-settings/page.tsx", "utf8"),
-    studyBuddyPromptPage: await readFile("src/app/admin/prompt-settings/study-buddy/page.tsx", "utf8"),
-    systemSettingsPage: await readFile("src/app/admin/settings/page.tsx", "utf8")
+    aiSettingsTabs: await readFile("src/app/sxjvbcontrol/prompt-settings/ai-settings-tabs.tsx", "utf8"),
+    challengePromptPage: await readFile("src/app/sxjvbcontrol/prompt-settings/page.tsx", "utf8"),
+    studyBuddyPromptPage: await readFile("src/app/sxjvbcontrol/prompt-settings/study-buddy/page.tsx", "utf8"),
+    systemSettingsPage: await readFile("src/app/sxjvbcontrol/settings/page.tsx", "utf8")
   };
 
   assert.match(files.adminModules, /key: "prompt-settings", label: "AI配置"/);
-  assert.match(files.adminModules, /where: \{ key: "prompt-settings" \}[\s\S]*data: \{ label: "AI配置", href: "\/admin\/prompt-settings" \}/);
+  assert.match(files.adminModules, /where: \{ key: "prompt-settings" \}[\s\S]*data: \{ label: "AI配置", href: "\/sxjvbcontrol\/prompt-settings" \}/);
 
   for (const page of [files.challengePromptPage, files.studyBuddyPromptPage, files.aiServerPage]) {
     assert.match(page, />AI配置</);
-    assert.match(page, /href="\/admin\/prompt-settings\/ai-server"/);
-    assert.match(page, />\s*AI服务器配置\s*</);
+    assert.match(page, /<AiSettingsTabs active=/);
   }
+  assert.match(files.aiSettingsTabs, /href: "\/sxjvbcontrol\/prompt-settings\/ai-server", label: "AI服务器配置"/);
 
   assert.match(files.aiServerPage, /AdminAiServerSettingsPanel/);
   assert.match(files.aiServerPage, /getAdminAiServerSettings/);
@@ -43,7 +44,7 @@ async function main() {
   assert.match(aiServerAction, /export async function deleteAiServerProfileSettings/);
   assert.match(aiServerAction, /export async function updateAiModuleRouteSettings/);
   assert.match(aiServerAction, /aiServerConfigurationSettingsPath/);
-  assert.match(aiServerAction, /revalidatePath\("\/admin\/prompt-settings\/ai-server"\)/);
+  assert.match(aiServerAction, /revalidatePath\("\/sxjvbcontrol\/prompt-settings\/ai-server"\)/);
   assert.doesNotMatch(aiServerAction, /adminConfigurationSettingsPath/);
 }
 

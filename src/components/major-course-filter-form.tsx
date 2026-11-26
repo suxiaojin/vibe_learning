@@ -3,7 +3,7 @@
 import type { FormEvent, MouseEvent, ReactNode } from "react";
 
 export function MajorCourseFilterForm({ majorId, children, className }: { majorId: string; children: ReactNode; className: string }) {
-  const path = `/admin/majors/${encodeURIComponent(majorId)}/courses`;
+  const path = `/sxjvbcontrol/majors/${encodeURIComponent(majorId)}/courses`;
 
   function saveFilters(event: FormEvent<HTMLFormElement>) {
     const data = new FormData(event.currentTarget);

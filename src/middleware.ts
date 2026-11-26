@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 
 type AppSurface = "all" | "student" | "admin";
 
-const adminAuthPaths = new Set(["/api/auth/admin-login", "/api/auth/admin-logout"]);
 const publicAssetPattern = /\.(?:avif|css|gif|ico|jpg|jpeg|js|map|png|svg|txt|webmanifest|webp|xml)$/i;
 
 function getAppSurface(request: NextRequest): AppSurface {
@@ -24,7 +23,7 @@ function getAppSurface(request: NextRequest): AppSurface {
 }
 
 function isAdminPath(pathname: string) {
-  return pathname === "/admin" || pathname.startsWith("/admin/") || pathname === "/api/admin" || pathname.startsWith("/api/admin/");
+  return pathname === "/sxjvbcontrol" || pathname.startsWith("/sxjvbcontrol/") || pathname === "/api/admin" || pathname.startsWith("/api/admin/");
 }
 
 function isPublicAsset(pathname: string) {
@@ -48,22 +47,16 @@ export function middleware(request: NextRequest) {
   const surface = getAppSurface(request);
   const { pathname } = request.nextUrl;
 
-  if (surface === "all" || isPublicAsset(pathname)) {
+  if (surface === "all") {
     return NextResponse.next();
   }
 
+  const adminPath = isAdminPath(pathname);
   if (surface === "student") {
-    if (isAdminPath(pathname) || adminAuthPaths.has(pathname)) {
-      return notFound(pathname);
-    }
-    return NextResponse.next();
+    return adminPath ? notFound(pathname) : NextResponse.next();
   }
 
-  if (pathname === "/") {
-    return NextResponse.redirect(new URL("/admin", request.url));
-  }
-
-  if (isAdminPath(pathname) || adminAuthPaths.has(pathname)) {
+  if (adminPath || isPublicAsset(pathname)) {
     return NextResponse.next();
   }
 

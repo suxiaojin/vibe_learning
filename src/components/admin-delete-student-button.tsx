@@ -2,7 +2,7 @@
 
 import { useRef } from "react";
 import { useFormStatus } from "react-dom";
-import { deleteStudentAccount } from "@/app/admin/actions";
+import { deleteStudentAccount } from "@/app/sxjvbcontrol/actions";
 
 type AdminDeleteStudentButtonProps = {
   studentId: string;

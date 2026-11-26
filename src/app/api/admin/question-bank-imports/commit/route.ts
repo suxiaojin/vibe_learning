@@ -59,8 +59,8 @@ export async function POST(request: NextRequest) {
   }
   const result = await importQuestionPaperPayload(payload, target);
 
-  revalidatePath("/admin/question-banks");
-  revalidatePath(`/admin/question-banks/${result.paperId}`);
+  revalidatePath("/sxjvbcontrol/question-banks");
+  revalidatePath(`/sxjvbcontrol/question-banks/${result.paperId}`);
 
   return NextResponse.json({
     ...result,

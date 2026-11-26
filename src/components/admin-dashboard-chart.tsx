@@ -82,7 +82,7 @@ export function DashboardTrendChart({
           <h2 className="text-base font-black text-slate-900">{title}</h2>
           <p className="mt-1 text-xs text-slate-500">{description}</p>
         </div>
-        <form className="flex flex-wrap items-center gap-2" action="/admin/dashboard">
+        <form className="flex flex-wrap items-center gap-2" action="/sxjvbcontrol/dashboard">
           {Object.entries(preservedParams).map(([name, value]) => (
             <input key={name} name={name} type="hidden" value={value} />
           ))}

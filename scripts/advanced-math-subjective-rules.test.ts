@@ -47,8 +47,8 @@ const quizRunnerSource = readSource("src/components/quiz-runner.tsx");
 const specialPageSource = readSource("src/app/mock-tests/special/[sectionId]/page.tsx");
 const specialRunnerSource = readSource("src/app/mock-tests/special/[sectionId]/special-practice-runner.tsx");
 const schemaSource = readSource("prisma/schema.prisma");
-const adminActionsSource = readSource("src/app/admin/actions.ts");
-const questionBankPageSource = readSource("src/app/admin/question-banks/[paperId]/page.tsx");
+const adminActionsSource = readSource("src/app/sxjvbcontrol/actions.ts");
+const questionBankPageSource = readSource("src/app/sxjvbcontrol/question-banks/[paperId]/page.tsx");
 const migrationSource = readSource("prisma/migrations/20260920210000_add_fill_blank_scoring/migration.sql");
 
 assert.match(editorSource, /onPaste=\{pasteImage\}/);

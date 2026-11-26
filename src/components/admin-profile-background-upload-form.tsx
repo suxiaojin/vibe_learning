@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ImageUp, Save } from "lucide-react";
 import { useFormStatus } from "react-dom";
-import { updateProfileHomepageBackgroundSettings } from "@/app/admin/actions";
+import { updateProfileHomepageBackgroundSettings } from "@/app/sxjvbcontrol/actions";
 
 export function AdminProfileBackgroundUploadForm({
   currentBackgroundImageUrl

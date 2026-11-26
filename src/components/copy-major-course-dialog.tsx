@@ -3,7 +3,7 @@
 import { Copy, X } from "lucide-react";
 import { useId, useRef } from "react";
 import { useFormStatus } from "react-dom";
-import { copyMajorCourse } from "@/app/admin/actions";
+import { copyMajorCourse } from "@/app/sxjvbcontrol/actions";
 
 type TargetRegionOption = {
   id: string;

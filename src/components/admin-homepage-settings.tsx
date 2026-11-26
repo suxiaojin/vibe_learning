@@ -1,5 +1,5 @@
 import { ChevronDown, ImageUp, RotateCcw, Save } from "lucide-react";
-import { restoreHomepageImage, saveHomepageText, uploadHomepageImage } from "@/app/admin/settings/homepage-actions";
+import { restoreHomepageImage, saveHomepageText, uploadHomepageImage } from "@/app/sxjvbcontrol/settings/homepage-actions";
 import {
   homepageImageLabels,
   homepageImageSlots,

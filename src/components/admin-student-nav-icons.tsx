@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ImageUp, Save } from "lucide-react";
-import { updateStudentNavIcons } from "@/app/admin/actions";
+import { updateStudentNavIcons } from "@/app/sxjvbcontrol/actions";
 import { studentNavIconSlots, type StudentNavIconKey } from "@/lib/student-nav-icons";
 
 export function AdminStudentNavIcons({

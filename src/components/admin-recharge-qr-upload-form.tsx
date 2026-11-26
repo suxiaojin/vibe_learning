@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ImageUp, Save } from "lucide-react";
 import { useFormStatus } from "react-dom";
-import { updateDiamondRechargeQrSettings } from "@/app/admin/actions";
+import { updateDiamondRechargeQrSettings } from "@/app/sxjvbcontrol/actions";
 
 export function AdminRechargeQrUploadForm({ currentQrCodeUrl }: { currentQrCodeUrl: string }) {
   const previewUrlRef = useRef("");

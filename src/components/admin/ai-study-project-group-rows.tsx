@@ -51,7 +51,7 @@ export function AiStudyProjectGroupRows({
         <div className="ml-6 mt-1 text-xs text-slate-500">共 {expectedPartCount} 部分{availablePartCount !== expectedPartCount ? `，当前保留 ${availablePartCount} 部分` : ""}</div>
       </td>
       <td className="border-b border-slate-200 py-4 pr-4">
-        <Link className="font-semibold text-ink hover:text-teal hover:underline" href={`/admin/students/${ownerId}`}>{ownerName}</Link>
+        <Link className="font-semibold text-ink hover:text-teal hover:underline" href={`/sxjvbcontrol/students/${ownerId}`}>{ownerName}</Link>
         <div className="mt-1 text-xs text-slate-400">{ownerUsername}</div>
       </td>
       <td className="border-b border-slate-200 py-4 pr-4">

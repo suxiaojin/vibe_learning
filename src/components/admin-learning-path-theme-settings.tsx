@@ -2,7 +2,7 @@
 
 import { startTransition, useActionState, useEffect, useState, type FormEvent } from "react";
 import { ArrowLeft, BookOpenText, Check, Lock, RotateCcw, Save, Sparkles } from "lucide-react";
-import { updateLearningPathThemeSettings, type LearningPathThemeFormState } from "@/app/admin/settings/learning-path-theme-actions";
+import { updateLearningPathThemeSettings, type LearningPathThemeFormState } from "@/app/sxjvbcontrol/settings/learning-path-theme-actions";
 import { defaultLearningPathThemeKey, getLearningPathTheme, getLearningPathThemeStyle, learningPathThemes, type LearningPathThemeKey } from "@/lib/learning-path-theme";
 import { cn } from "@/lib/utils";
 

@@ -59,7 +59,7 @@ export default async function BuddyCirclePage({
 }) {
   const user = await requireUser();
   if (user.role !== "student") {
-    redirect("/admin");
+    redirect("/sxjvbcontrol");
   }
 
   const query = await searchParams;

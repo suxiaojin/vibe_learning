@@ -221,7 +221,7 @@ export async function POST(request: NextRequest) {
     where: { id: paperId },
     data: { updatedAt: new Date() }
   });
-  revalidatePath(`/admin/question-banks/${paperId}`);
+  revalidatePath(`/sxjvbcontrol/question-banks/${paperId}`);
 
   return NextResponse.json({ ok: true });
 }

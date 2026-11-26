@@ -152,7 +152,7 @@ test("admin upload and restore affect only the chosen slot and require admin fir
   let allowed = true;
   let mutations = 0;
   const stored = new Map<string, { body: Buffer; contentType: string }>();
-  const actions = loadSource("src/app/admin/settings/homepage-actions.ts", {
+  const actions = loadSource("src/app/sxjvbcontrol/settings/homepage-actions.ts", {
     "next/cache": { revalidatePath() {} },
     "next/navigation": { redirect(url: string) { throw new Error(`REDIRECT:${url}`); } },
     "@/lib/auth": { async requireAdmin() { if (!allowed) throw new Error("UNAUTHORIZED"); } },
@@ -206,7 +206,7 @@ test("homepage and admin render mixed images and videos in all six slots", async
   const marketing = loadSource("src/components/marketing-homepage.tsx", components);
   const admin = loadSource("src/components/admin-homepage-settings.tsx", {
     "@/lib/homepage-settings": settings,
-    "@/app/admin/settings/homepage-actions": { saveHomepageText() {}, uploadHomepageImage() {}, restoreHomepageImage() {} }
+    "@/app/sxjvbcontrol/settings/homepage-actions": { saveHomepageText() {}, uploadHomepageImage() {}, restoreHomepageImage() {} }
   });
   const html = renderToStaticMarkup(React.createElement(marketing.MarketingHomepage, { signedIn: false, content: settings.homepageTextDefaults, media }));
   assert.equal((html.match(/<video\b/g) ?? []).length, 6);

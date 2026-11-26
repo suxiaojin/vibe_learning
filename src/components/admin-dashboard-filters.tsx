@@ -78,7 +78,7 @@ export function DashboardMajorFilters({
   preservedParams: Record<string, string>;
 }) {
   return (
-    <form className="flex flex-wrap items-center gap-2" action="/admin/dashboard">
+    <form className="flex flex-wrap items-center gap-2" action="/sxjvbcontrol/dashboard">
       <HiddenParams params={preservedParams} />
       <RegionSelects
         regions={regions}
@@ -108,7 +108,7 @@ export function DashboardRankingFilters({
   preservedParams: Record<string, string>;
 }) {
   return (
-    <form className="flex flex-wrap items-center gap-2" action="/admin/dashboard">
+    <form className="flex flex-wrap items-center gap-2" action="/sxjvbcontrol/dashboard">
       <HiddenParams params={preservedParams} />
       <RegionSelects
         regions={regions}

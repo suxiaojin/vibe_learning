@@ -2,7 +2,7 @@
 
 import { useId, useState } from "react";
 import { ArrowDown, ArrowUp, Plus, Save, Trash2 } from "lucide-react";
-import { saveSocialFollowRecommendationSettings } from "@/app/admin/settings/social-recommendation-actions";
+import { saveSocialFollowRecommendationSettings } from "@/app/sxjvbcontrol/settings/social-recommendation-actions";
 
 type Rule = { targetUserId: string; province: string; studySystem: string; majorId: string };
 type Student = { id: string; username: string; nickname: string; status: string };

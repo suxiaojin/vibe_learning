@@ -20,7 +20,7 @@ export function StudentLearningTypographyScope({
     const body = document.body;
     const previousFontSize = root.style.fontSize;
     const previousFontFamily = body.style.fontFamily;
-    const isStudentPage = pathname !== null && !pathname.startsWith("/admin") && !pathname.startsWith("/api");
+    const isStudentPage = pathname !== null && !pathname.startsWith("/sxjvbcontrol") && !pathname.startsWith("/api");
 
     if (isStudentPage) {
       root.style.fontSize = `${getStudentLearningFontSizePixels(fontSize)}px`;

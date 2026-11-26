@@ -119,8 +119,8 @@ export async function POST(request: NextRequest) {
   };
   const result = await importQuestionPaperPayload(aiPayload, target, { defaultSourceType: "ai_generated", defaultKnowledgeTagSource: "ai" });
 
-  revalidatePath("/admin/question-banks");
-  revalidatePath(`/admin/question-banks/${result.paperId}`);
+  revalidatePath("/sxjvbcontrol/question-banks");
+  revalidatePath(`/sxjvbcontrol/question-banks/${result.paperId}`);
 
   return NextResponse.json({
     ...result,

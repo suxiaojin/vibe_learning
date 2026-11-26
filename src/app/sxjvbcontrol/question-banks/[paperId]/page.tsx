@@ -1,0 +1,294 @@
+import { QuestionBankDetailWorkbench, type KnowledgeTreeCourse } from "@/components/question-bank-detail-workbench";
+import { EnglishV1Workbench } from "@/components/english-v1-workbench";
+import { requireAdmin } from "@/lib/auth";
+import { EnglishPaperError, readEnglishPaper } from "@/lib/english-v1-paper";
+import { prisma } from "@/lib/prisma";
+import { isAdvancedMathPublicSubject, parseQuestionBankQuestionTypeConfig, resolveQuestionBankQuestionTypes } from "@/lib/question-bank-types";
+
+function toQuestionOptions(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const option = item as Record<string, unknown>;
+      return {
+        key: String(option.key || ""),
+        text: String(option.text || option.content || "")
+      };
+    })
+    .filter((item): item is { key: string; text: string } => Boolean(item?.key));
+}
+
+function toAnswerList(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item));
+  }
+  if (typeof value === "string") {
+    return [value];
+  }
+  return [];
+}
+
+function ownerHref(paper: {
+  ownerType: "public_subject" | "major";
+  publicSubjectId: string | null;
+  majorId: string | null;
+  isCrossRegionCopy: boolean;
+  region: { province: string; studySystem: string };
+}) {
+  const query = new URLSearchParams({
+    type: paper.ownerType,
+    id: paper.ownerType === "public_subject" ? paper.publicSubjectId || "" : paper.majorId || "",
+    province: paper.region.province,
+    examType: paper.region.studySystem,
+    page: "1"
+  });
+  if (paper.isCrossRegionCopy) query.set("view", "other");
+  return `/sxjvbcontrol/question-banks?${query.toString()}`;
+}
+
+function paperQuestionTypeText(
+  paper: {
+    title: string;
+    major: { name: string } | null;
+    publicSubject: { name: string } | null;
+  }
+) {
+  return [paper.title, paper.major?.name, paper.publicSubject?.name].filter(Boolean).join(" ");
+}
+
+type SyllabusItemRow = {
+  id: string;
+  parentId: string | null;
+  title: string;
+  sortOrder: number;
+  code: string | null;
+};
+
+type SyllabusTreeNode = SyllabusItemRow & {
+  children: SyllabusTreeNode[];
+};
+
+function sortSyllabusNodes(nodes: SyllabusTreeNode[]) {
+  nodes.sort((left, right) => {
+    if (left.sortOrder !== right.sortOrder) {
+      return left.sortOrder - right.sortOrder;
+    }
+    const codeCompare = (left.code || "").localeCompare(right.code || "", "zh-Hans-CN", { numeric: true });
+    return codeCompare || left.title.localeCompare(right.title, "zh-Hans-CN");
+  });
+  nodes.forEach((node) => sortSyllabusNodes(node.children));
+}
+
+function buildSyllabusTree(items: SyllabusItemRow[]) {
+  const nodes = new Map<string, SyllabusTreeNode>();
+  const roots: SyllabusTreeNode[] = [];
+
+  items.forEach((item) => {
+    nodes.set(item.id, { ...item, children: [] });
+  });
+
+  items.forEach((item) => {
+    const node = nodes.get(item.id);
+    if (!node) {
+      return;
+    }
+    if (item.parentId && nodes.has(item.parentId)) {
+      nodes.get(item.parentId)?.children.push(node);
+      return;
+    }
+    roots.push(node);
+  });
+
+  sortSyllabusNodes(roots);
+  return roots;
+}
+
+function toKnowledgeTreeCourse(course: {
+  id: string;
+  name: string;
+  syllabusItems: SyllabusItemRow[];
+}): KnowledgeTreeCourse {
+  const chapters = buildSyllabusTree(course.syllabusItems).map((chapter) => ({
+    id: chapter.id,
+    title: chapter.title,
+    sections: chapter.children.map((section) => ({
+      id: section.id,
+      title: section.title
+    }))
+  }));
+
+  return {
+    id: course.id,
+    title: course.name,
+    chapters
+  };
+}
+
+function buildKnowledgeDisplayMap(courses: Array<{ name: string; syllabusItems: SyllabusItemRow[] }>) {
+  const labels = new Map<string, { id: string; path: string }>();
+
+  courses.forEach((course) => {
+    const itemById = new Map(course.syllabusItems.map((item) => [item.id, item]));
+
+    function ancestorsFor(item: SyllabusItemRow) {
+      const ancestors = [item];
+      let parentId = item.parentId;
+
+      while (parentId) {
+        const parent = itemById.get(parentId);
+        if (!parent) {
+          break;
+        }
+        ancestors.unshift(parent);
+        parentId = parent.parentId;
+      }
+
+      return ancestors;
+    }
+
+    course.syllabusItems.forEach((item) => {
+      const ancestors = ancestorsFor(item);
+      const displayItems = ancestors.slice(0, 2);
+      const displayTarget = displayItems[displayItems.length - 1] || item;
+      labels.set(item.id, {
+        id: displayTarget.id,
+        path: [course.name, ...displayItems.map((ancestor) => ancestor.title)].join(" - ")
+      });
+    });
+  });
+
+  return labels;
+}
+
+export default async function QuestionBankDetailPage({
+  params
+}: {
+  params: Promise<{ paperId: string }>;
+}) {
+  await requireAdmin();
+  const { paperId } = await params;
+  const paper = await prisma.examPaper.findUniqueOrThrow({
+    where: { id: paperId },
+    include: {
+      major: true,
+      publicSubject: true,
+      region: {
+        select: {
+          province: true,
+          studySystem: true
+        }
+      },
+      questions: {
+        include: {
+          question: {
+            include: {
+              knowledgePoint: {
+                include: {
+                  chapter: true
+                }
+              },
+              knowledgeTags: {
+                select: {
+                  syllabusItemId: true
+                },
+                orderBy: [{ createdAt: "asc" }]
+              }
+            }
+          }
+        },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+      }
+    }
+  });
+  if (paper.questionBankStructure === "english_v1") {
+    try {
+      return <EnglishV1Workbench key={paper.id} sample={readEnglishPaper(paper).sample} paperId={paper.id} returnHref={ownerHref(paper)} />;
+    } catch (error) {
+      if (!(error instanceof EnglishPaperError)) throw error;
+      return (
+        <EnglishV1Workbench key={paper.id} sample={null} paperId={paper.id}
+          returnHref={ownerHref(paper)} loadError={error.message} />
+      );
+    }
+  }
+  const ownerCourseWhere =
+    paper.ownerType === "public_subject"
+      ? { courseType: "public_subject" as const, publicSubjectId: paper.publicSubjectId, regionId: paper.regionId }
+      : { courseType: "major" as const, majorId: paper.majorId, regionId: paper.regionId };
+  const knowledgeCourses = await prisma.learningCourse.findMany({
+    where: ownerCourseWhere,
+    include: {
+      syllabusItems: {
+        where: { checkpointScope: null },
+        select: {
+          id: true,
+          parentId: true,
+          code: true,
+          title: true,
+          sortOrder: true
+        },
+        orderBy: [{ parentId: "asc" }, { sortOrder: "asc" }, { code: "asc" }]
+      }
+    },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+  });
+  const knowledgeDisplayById = buildKnowledgeDisplayMap(knowledgeCourses);
+  const configuredQuestionTypes = parseQuestionBankQuestionTypeConfig(paper.questionTypeConfig);
+
+  return (
+    <QuestionBankDetailWorkbench
+      allowFillBlankScoring={!isAdvancedMathPublicSubject(
+        paper.ownerType,
+        paper.publicSubject?.name || paper.major?.name
+      )}
+      ownerName={paper.major?.name || paper.publicSubject?.name || "题库"}
+      paperId={paper.id}
+      paperTitle={paper.title}
+      ownerHref={ownerHref(paper)}
+      questionTypes={configuredQuestionTypes || resolveQuestionBankQuestionTypes(paperQuestionTypeText(paper))}
+      knowledgeTree={knowledgeCourses.map(toKnowledgeTreeCourse)}
+      questions={paper.questions.map((item) => {
+        const rawKnowledgeTagIds = [
+          ...item.question.knowledgeTags.map((tag) => tag.syllabusItemId),
+          ...(item.question.syllabusItemId ? [item.question.syllabusItemId] : [])
+        ];
+        const knowledgeTagLabels = [
+          ...new Map(
+            rawKnowledgeTagIds
+              .map((id) => knowledgeDisplayById.get(id))
+              .filter((item): item is { id: string; path: string } => Boolean(item))
+              .map((item) => [item.id, item])
+          ).values()
+        ];
+        const knowledgeTagIds = knowledgeTagLabels.map((item) => item.id);
+
+        return {
+          id: item.id,
+          reviewMarked: item.reviewMarked,
+          questionId: item.question.id,
+          title: item.question.stem,
+          type: item.question.type,
+          status: item.question.status,
+          difficulty: item.question.difficulty,
+          options: toQuestionOptions(item.question.options),
+          answer: toAnswerList(item.question.answer),
+          analysis: item.question.analysis,
+          showAnalysis: item.question.showAnalysis,
+          fillBlankScored: item.question.fillBlankScored,
+          aiDoubtAnswer: item.question.aiDoubtAnswer || "",
+          showAiExplanation: item.question.showAiExplanation,
+          knowledgePointTitle: item.question.knowledgePoint?.title || "未打标",
+          chapterTitle: item.question.knowledgePoint?.chapter.title || "未归类",
+          knowledgeTagIds,
+          knowledgeTagLabels
+        };
+      })}
+    />
+  );
+}

@@ -579,7 +579,7 @@ export function QuestionBankAiGenerationDialog({ selectedOwner, regions, knowled
         });
         const data = await readJson<CommitResponse>(response);
         setOpen(false);
-        router.push(`/admin/question-banks/${data.paperId}`);
+        router.push(`/sxjvbcontrol/question-banks/${data.paperId}`);
         router.refresh();
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : "AI 题库入库失败。");

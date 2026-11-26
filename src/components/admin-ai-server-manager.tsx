@@ -5,7 +5,7 @@ import { Plus, Save, Search, Server, Trash2, X } from "lucide-react";
 import {
   deleteAiServerProfileSettings,
   saveAiServerProfileSettings
-} from "@/app/admin/actions";
+} from "@/app/sxjvbcontrol/actions";
 import type { AdminAiServerProfile } from "@/lib/ai-server-settings";
 
 type BuiltInServer = AdminAiServerProfile;

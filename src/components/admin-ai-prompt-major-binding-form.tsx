@@ -2,7 +2,7 @@
 
 import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
-import { bindMajorAiExplainPrompt } from "@/app/admin/settings/prompt-actions";
+import { bindMajorAiExplainPrompt } from "@/app/sxjvbcontrol/settings/prompt-actions";
 
 type RegionMajorOption = {
   id: string;

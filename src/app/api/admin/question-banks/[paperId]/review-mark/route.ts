@@ -18,6 +18,6 @@ export async function PUT(request: Request, { params }: { params: Promise<{ pape
     data: { reviewMarked: body.reviewMarked }
   });
   if (!result.count) return NextResponse.json({ error: "题目不存在或不属于当前题库。" }, { status: 404 });
-  revalidatePath(`/admin/question-banks/${paperId}`);
+  revalidatePath(`/sxjvbcontrol/question-banks/${paperId}`);
   return NextResponse.json({ reviewMarked: body.reviewMarked });
 }

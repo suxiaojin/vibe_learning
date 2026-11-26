@@ -5,7 +5,7 @@ import {
   publishAiStudyPromptDraft,
   rollbackAiStudyPromptVersion,
   saveAiStudyPromptDraft
-} from "@/app/admin/prompt-settings/study-buddy/actions";
+} from "@/app/sxjvbcontrol/prompt-settings/study-buddy/actions";
 import { AdminAiStudyPromptEditor } from "@/components/admin-ai-study-prompt-editor";
 import { normalizeAiStudyPromptTemplates } from "@/lib/ai-study-prompt-template";
 import { getAiStudyPromptProfileForAdmin } from "@/lib/ai-study-prompts";
@@ -103,7 +103,7 @@ export async function AdminAiStudyPromptSettings({ promptVersionId }: { promptVe
               const selected = version.id === selectedPublishedVersion?.id;
               return (
                 <div className={cn("flex items-start gap-2 p-3", selected ? "bg-blue-50 ring-1 ring-inset ring-blue-300" : "hover:bg-slate-50")} key={version.id}>
-                  <Link className="min-w-0 flex-1" href={`/admin/prompt-settings/study-buddy?section=chat&promptVersionId=${version.id}`}>
+                  <Link className="min-w-0 flex-1" href={`/sxjvbcontrol/prompt-settings/study-buddy?section=chat&promptVersionId=${version.id}`}>
                     <p className="text-xs font-black text-ink">
                       v{version.version}
                       {active ? <span className="ml-1 bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">当前线上</span> : null}

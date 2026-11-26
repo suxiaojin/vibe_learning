@@ -51,7 +51,7 @@ export default async function SettingsPage({
 }) {
   const user = await requireUser();
   if (user.role !== "student") {
-    redirect("/admin");
+    redirect("/sxjvbcontrol");
   }
 
   const query = await searchParams;

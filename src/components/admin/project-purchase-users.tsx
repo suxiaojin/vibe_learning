@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { X } from "lucide-react";
-import { getStudyProjectPurchaseUsers } from "@/app/admin/ai-study-projects/purchase-actions";
+import { getStudyProjectPurchaseUsers } from "@/app/sxjvbcontrol/ai-study-projects/purchase-actions";
 import type { AdminProjectPurchasersPage } from "@/lib/admin-study-project-purchases";
 import type { ProjectDiamondPriceKind } from "@/lib/project-diamond-price";
 
@@ -105,7 +105,7 @@ export function ProjectPurchaseUsers({
                 {data.users.map((user) => (
                   <tr key={user.userId}>
                     <td className="max-w-[220px] break-all border-b border-slate-100 py-3 pr-3">
-                      <Link className="font-semibold text-teal hover:underline" href={`/admin/students/${encodeURIComponent(user.userId)}`} onClick={() => dialogRef.current?.close()} prefetch={false}>{user.username}</Link>
+                      <Link className="font-semibold text-teal hover:underline" href={`/sxjvbcontrol/students/${encodeURIComponent(user.userId)}`} onClick={() => dialogRef.current?.close()} prefetch={false}>{user.username}</Link>
                     </td>
                     <td className="whitespace-nowrap border-b border-slate-100 py-3 text-xs text-slate-600 sm:text-sm"><time dateTime={user.purchasedAt}>{formatPurchaseTime(user.purchasedAt)}</time></td>
                   </tr>

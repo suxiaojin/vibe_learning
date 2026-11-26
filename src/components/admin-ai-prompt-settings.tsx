@@ -9,7 +9,7 @@ import {
   rollbackAiExplainPromptVersion,
   saveAiExplainPromptDraft,
   unbindMajorAiExplainPrompt
-} from "@/app/admin/settings/prompt-actions";
+} from "@/app/sxjvbcontrol/settings/prompt-actions";
 import { AdminAiPromptEditor } from "@/components/admin-ai-prompt-editor";
 import { AdminAiPromptMajorBindingForm } from "@/components/admin-ai-prompt-major-binding-form";
 import { AdminAiPromptProfileDeleteButton } from "@/components/admin-ai-prompt-profile-delete-button";
@@ -32,7 +32,7 @@ function promptHref(profileId: string, query: string, status: string, versionId?
   if (status !== "all") {
     params.set("promptStatus", status);
   }
-  return `/admin/prompt-settings?${params.toString()}`;
+  return `/sxjvbcontrol/prompt-settings?${params.toString()}`;
 }
 
 function formatPublishedAt(value: Date | null) {

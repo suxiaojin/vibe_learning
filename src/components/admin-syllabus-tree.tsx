@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, MoreVertical, Plus, Trash2 } from "lucide-react";
-import { createSyllabusItem, deleteSyllabusItem, updateSyllabusItem } from "@/app/admin/actions";
+import { createSyllabusItem, deleteSyllabusItem, updateSyllabusItem } from "@/app/sxjvbcontrol/actions";
 
 type OwnerType = "major" | "public_subject";
 type ContentStatus = "draft" | "published" | "archived";

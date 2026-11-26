@@ -144,7 +144,7 @@ export async function requireUser() {
 export async function requireAdmin() {
   const user = await getCurrentAdmin();
   if (!user) {
-    redirect("/admin/login");
+    redirect("/sxjvbcontrol/login");
   }
   return user;
 }

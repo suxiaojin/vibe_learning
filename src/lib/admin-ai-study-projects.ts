@@ -36,7 +36,7 @@ export function buildAdminAiStudyProjectsPath(input: AdminAiStudyProjectFilters 
     params.set("visibility", filters.visibility);
   }
   const query = params.toString();
-  return query ? `/admin/ai-study-projects?${query}` : "/admin/ai-study-projects";
+  return query ? `/sxjvbcontrol/ai-study-projects?${query}` : "/sxjvbcontrol/ai-study-projects";
 }
 
 export async function listAdminAiStudyProjects(input: AdminAiStudyProjectFilters = {}) {

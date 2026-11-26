@@ -3,7 +3,7 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Diamond, X } from "lucide-react";
-import { setStudyProjectDiamondPrice } from "@/app/admin/ai-study-projects/actions";
+import { setStudyProjectDiamondPrice } from "@/app/sxjvbcontrol/ai-study-projects/actions";
 import {
   formatProjectDiamondPrice,
   maxProjectDiamondPrice,

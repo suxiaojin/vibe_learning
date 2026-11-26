@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ImageUp, Save } from "lucide-react";
-import { updateMajorCourseCenterIcon } from "@/app/admin/actions";
+import { updateMajorCourseCenterIcon } from "@/app/sxjvbcontrol/actions";
 
 type MajorIconItem = {
   id: string;

@@ -11,7 +11,7 @@ import {
   deleteQuestionBankKnowledgeMapItem,
   renameQuestionBankKnowledgeMapOwner,
   renameQuestionBankKnowledgeMapItem
-} from "@/app/admin/actions";
+} from "@/app/sxjvbcontrol/actions";
 import { cn } from "@/lib/utils";
 import type { QuestionBankOwnerType } from "@/lib/question-bank-catalog";
 
@@ -62,7 +62,7 @@ function ownerKey(owner: Pick<KnowledgeMapOwner, "type" | "id">) {
 
 function ownerMapHref(owner: KnowledgeMapOwner, province: string, examType: string) {
   const query = new URLSearchParams({ type: owner.type, id: owner.id, province, examType });
-  return `/admin/question-banks/knowledge-points?${query.toString()}`;
+  return `/sxjvbcontrol/question-banks/knowledge-points?${query.toString()}`;
 }
 
 function nodeTitle(node: KnowledgeMapNode) {

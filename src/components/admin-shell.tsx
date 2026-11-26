@@ -33,9 +33,9 @@ const iconMap = {
 
 export function AdminShell({ children, modules }: { children: React.ReactNode; modules: AdminModuleNavItem[] }) {
   const pathname = usePathname();
-  const isAdminLogin = pathname === "/admin/login";
-  const isAiStudyPreviewWorkspace = /^\/admin\/ai-study-projects\/[^/]+\/preview/.test(pathname);
-  const isQuestionBankWorkspace = pathname.startsWith("/admin/question-banks");
+  const isAdminLogin = pathname === "/sxjvbcontrol/login";
+  const isAiStudyPreviewWorkspace = /^\/sxjvbcontrol\/ai-study-projects\/[^/]+\/preview/.test(pathname);
+  const isQuestionBankWorkspace = pathname.startsWith("/sxjvbcontrol/question-banks");
 
   useEffect(() => {
     function closeOpenDetails(event: PointerEvent) {
@@ -66,7 +66,7 @@ export function AdminShell({ children, modules }: { children: React.ReactNode; m
 
         <div className="px-5 py-5">
           <Link
-            href="/admin/module-config"
+            href="/sxjvbcontrol/module-config"
             className="flex h-10 items-center justify-center gap-2 bg-[#0872b9] text-sm font-bold text-white shadow-sm transition hover:bg-[#0767a8]"
           >
             <Settings size={16} />
@@ -95,7 +95,7 @@ export function AdminShell({ children, modules }: { children: React.ReactNode; m
         </nav>
 
         <div className="border-t border-white/10 px-3 py-4">
-          <form action="/api/auth/admin-logout" method="post">
+          <form action="/sxjvbcontrol/auth/logout" method="post">
             <button className="flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm font-bold text-white/75 hover:bg-white/5 hover:text-white" type="submit">
               <LogOut size={18} />
               退出登录

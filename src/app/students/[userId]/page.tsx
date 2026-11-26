@@ -31,7 +31,7 @@ export default async function StudentProfilePage({
 }) {
   const currentUser = await requireUser();
   if (currentUser.role !== "student") {
-    redirect("/admin");
+    redirect("/sxjvbcontrol");
   }
   const { userId } = await params;
   const query = await searchParams;
